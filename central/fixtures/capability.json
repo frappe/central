@@ -178,5 +178,15 @@
   "name": "team:manage_members",
   "plane": "central",
   "resource": "team"
+ },
+ {
+  "capability": "team:manage_partners",
+  "description": "Add a partner, change what it can do, and end a partner link",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-11-14 12:00:00.000000",
+  "name": "team:manage_partners",
+  "plane": "central",
+  "resource": "team"
  }
 ]

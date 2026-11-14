@@ -302,7 +302,6 @@ scheduler_events = {
 	],
 	"daily": [
 		"central.identity.doctype.team_invitation.team_invitation.expire_pending_invitations",
-		"central.identity.doctype.partner_registration.partner_registration.expire_pending_registrations",
 		"central.signups.trial.run_trials",
 		"central.billing.revenue.dunning.run_dunning",
 		"central.billing.payments.charges.cleanup_payment_logs",
@@ -479,6 +478,7 @@ permission_query_conditions = {
 	"Site Domain": "central.permissions.site_domain_query_conditions",
 	"Team": "central.permissions.team_query_conditions",
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
+	"Partner Link": "central.permissions.partner_link_query_conditions",
 	"Team Notification": "central.permissions.team_notification_query_conditions",
 	"Activity Event": "central.permissions.activity_event_query_conditions",
 	"Team Role": "central.permissions.team_role_query_conditions",
@@ -500,6 +500,7 @@ has_permission = {
 	"Site Domain": "central.permissions.site_domain_has_permission",
 	"Team": "central.permissions.team_has_permission",
 	"Team Invitation": "central.permissions.team_invitation_has_permission",
+	"Partner Link": "central.permissions.partner_link_has_permission",
 	"Team Notification": "central.permissions.team_notification_has_permission",
 	"Activity Event": "central.permissions.activity_event_has_permission",
 	"Team Role": "central.permissions.team_role_has_permission",

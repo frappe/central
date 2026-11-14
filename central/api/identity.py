@@ -32,7 +32,8 @@ def my_capabilities(team: str | None = None) -> list[str]:
 def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 	"""Teams the signed-in user can switch between in the console — the teams they
 	are an active member of, each with a display label, the owner email, the
-	caller's own role, how many people are in it, when it was created, and the
+	caller's own role, how many people are in it, when it was created, whether it is a
+	partner team or has an active partner, and the
 	onboarding steps the caller still has to answer as its owner. A suspended team is listed with
 	its `status`, so the console can say why it cannot open it.
 
@@ -54,6 +55,7 @@ def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 			team.owner_user,
 			team.creation,
 			team.status,
+			team.connect_partner_id,
 			member.role,
 		)
 		.where(
@@ -81,6 +83,8 @@ def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 				"members": 0,
 				"created": r.creation,
 				"status": r.status,
+				"is_partner": bool(r.connect_partner_id),
+				"has_partner": False,
 			},
 		)
 		if _role_rank(r.role) < _role_rank(entry["role"]):
@@ -106,6 +110,13 @@ def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 	for row in counts:
 		teams[row.parent]["members"] = row.members
 
+	for customer_team in frappe.get_all(
+		"Partner Link",
+		filters={"customer_team": ("in", list(teams)), "status": "Active"},
+		pluck="customer_team",
+	):
+		teams[customer_team]["has_partner"] = True
+
 	for entry in teams.values():
 		entry["onboarding"] = []
 	owned_teams = [name for name, entry in teams.items() if entry["owner"] == user]
@@ -126,6 +137,8 @@ def _get_impersonated_team(name: str) -> dict[str, Any]:
 		"members": 0,
 		"created": team.creation,
 		"status": team.status,
+		"is_partner": bool(team.connect_partner_id),
+		"has_partner": False,
 		"is_impersonated": True,
 	}
 

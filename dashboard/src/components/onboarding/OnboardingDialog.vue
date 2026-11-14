@@ -7,6 +7,7 @@ import type {
 	OnboardingStepHandle,
 } from '@/components/onboarding/steps'
 import { type StepStatus, useOnboarding } from '@/composables/useOnboarding'
+import { usePartnerLinkIntent } from '@/composables/usePartnerLinks'
 import { getErrorMessage } from '@/lib/feedback'
 import { __ } from '@/lib/translate'
 
@@ -14,6 +15,7 @@ import { __ } from '@/lib/translate'
 // step saves its own work. It cannot be dismissed: the owner finishes or skips it.
 const router = useRouter()
 const { pendingSteps, answerStep, reload } = useOnboarding()
+const partnerIntent = usePartnerLinkIntent()
 
 const open = ref(false)
 const steps = ref<OnboardingStep[]>([])
@@ -72,6 +74,11 @@ async function record(step: OnboardingStep, status: StepStatus): Promise<void> {
 	// A new team brings its own stored steps. The team step itself is not stored.
 	if (step.key === 'team') {
 		steps.value = [step, ...pendingSteps.value]
+		return
+	}
+	// The partner step comes from a Connect link, not from the team, so it is not stored either.
+	if (step.key === 'partner') {
+		partnerIntent.clear()
 		return
 	}
 

@@ -6,6 +6,7 @@ import {
 	type OnboardingStep,
 } from '@/components/onboarding/steps'
 import { useAuth } from '@/composables/useAuth'
+import { usePartnerLinkIntent } from '@/composables/usePartnerLinks'
 import { useSession } from '@/composables/useSession'
 import { submitOrThrow } from '@/lib/frappeCall'
 import type { OnboardingStepKey } from '@/types/api'
@@ -27,6 +28,7 @@ const setStepCall = useCall<
 export function useOnboarding() {
 	const session = useSession()
 	const { currentUser } = useAuth()
+	const partnerIntent = usePartnerLinkIntent()
 
 	const pendingSteps = computed<OnboardingStep[]>(() => {
 		if (!session.isLoaded.value) return []
@@ -35,8 +37,13 @@ export function useOnboarding() {
 		const team = session.teams.value.find(
 			(row) => row.name === session.activeTeam.value,
 		)
-		if (!team || team.owner !== currentUser.value) return []
-		return stepsFor(team.onboarding)
+		if (!team || team.owner !== currentUser.value || !team.onboarding.length)
+			return []
+		// A Connect link asks to add a partner, so the new team adds it as part of its setup.
+		const addsPartner = Boolean(partnerIntent.code.value) && !team.has_partner
+		return stepsFor(
+			addsPartner ? ['partner', ...team.onboarding] : team.onboarding,
+		)
 	})
 
 	async function answerStep(

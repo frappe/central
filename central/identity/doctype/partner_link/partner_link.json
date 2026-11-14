@@ -1,0 +1,154 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:PLINK-{#####}",
+ "creation": "2026-11-14 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "customer_team",
+  "partner_team",
+  "column_break_identity",
+  "status",
+  "linked_on",
+  "linked_by",
+  "reference",
+  "ending_section",
+  "ended_on",
+  "ended_by",
+  "column_break_ending",
+  "end_reason"
+ ],
+ "fields": [
+  {
+   "description": "The team that added the partner.",
+   "fieldname": "customer_team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Customer Team",
+   "options": "Team",
+   "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "partner_team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Partner Team",
+   "options": "Team",
+   "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "column_break_identity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Active\nEnded",
+   "read_only": 1
+  },
+  {
+   "fieldname": "linked_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Linked On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "linked_by",
+   "fieldtype": "Link",
+   "label": "Linked By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "description": "The Partner Customer ID from the Frappe Connect link. Empty when the customer typed the code.",
+   "fieldname": "reference",
+   "fieldtype": "Data",
+   "label": "Connect Reference",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "collapsible_depends_on": "eval:doc.status==\"Ended\"",
+   "fieldname": "ending_section",
+   "fieldtype": "Section Break",
+   "label": "Ending"
+  },
+  {
+   "fieldname": "ended_on",
+   "fieldtype": "Datetime",
+   "label": "Ended On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ended_by",
+   "fieldtype": "Link",
+   "label": "Ended By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_ending",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "end_reason",
+   "fieldtype": "Small Text",
+   "label": "End Reason",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-11-14 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Identity",
+ "name": "Partner Link",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Central User",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Staff Viewer"
+  }
+ ],
+ "search_fields": "customer_team,partner_team,reference",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Green",
+   "title": "Active"
+  },
+  {
+   "color": "Gray",
+   "title": "Ended"
+  }
+ ],
+ "title_field": "customer_team",
+ "track_changes": 1
+}

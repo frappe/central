@@ -160,6 +160,19 @@ const routes = [
 				component: () => import('@/pages/team/AccessPage.vue'),
 				meta: { title: 'Team' },
 			},
+			{
+				// A customer's partner. A Frappe Connect link adds ?code=&reference=.
+				path: 'partner',
+				name: 'Partner',
+				component: () => import('@/pages/partners/PartnerPage.vue'),
+				meta: { title: 'Partner' },
+			},
+			{
+				path: 'customers',
+				name: 'Customers',
+				component: () => import('@/pages/partners/CustomersPage.vue'),
+				meta: { title: 'Customers' },
+			},
 			{ path: 'team/roles', redirect: '/team/members' },
 			{ path: 'team/settings', redirect: '/team/members' },
 		],
@@ -240,9 +253,15 @@ router.beforeEach((to) => {
 	}
 
 	if (isGuest.value) {
+		// A link that names the person, such as a Frappe Connect link, fills in the email.
+		// The emailed code still proves it.
+		const email = typeof to.query.email === 'string' ? to.query.email : ''
 		return {
 			path: '/login',
-			query: { 'redirect-to': `/dashboard${to.fullPath}` },
+			query: {
+				'redirect-to': `/dashboard${to.fullPath}`,
+				...(email ? { email } : {}),
+			},
 		}
 	}
 

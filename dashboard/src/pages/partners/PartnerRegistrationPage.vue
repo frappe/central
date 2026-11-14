@@ -60,12 +60,6 @@ const signInMessage = computed(() => {
 		? __('Sign in as {0} to continue.', [email])
 		: __('Create an account for {0} to continue.', [email])
 })
-
-const closedMessage = computed(() =>
-	registration.value?.status === 'Completed'
-		? __('This partner already has a Frappe Cloud team.')
-		: __('This link has expired. Open the latest link from Frappe Connect.'),
-)
 </script>
 
 <template>
@@ -92,7 +86,9 @@ const closedMessage = computed(() =>
 			<p class="mt-1 text-p-base text-ink-gray-5">{{ description }}</p>
 
 			<div v-if="step === 'closed'" class="mt-6 space-y-4">
-				<p class="text-p-base text-ink-gray-7">{{ closedMessage }}</p>
+				<p class="text-p-base text-ink-gray-7">
+					{{ __('This partner already has a Frappe Cloud team.') }}
+				</p>
 				<Button
 					class="w-full"
 					size="md"

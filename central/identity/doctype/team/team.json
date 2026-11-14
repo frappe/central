@@ -318,8 +318,8 @@
   },
   {
    "group": "Access",
-   "link_doctype": "Partner Registration",
-   "link_fieldname": "team"
+   "link_doctype": "Partner Link",
+   "link_fieldname": "customer_team"
   }
  ],
  "modified": "2026-11-14 12:00:00.000000",

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { Avatar, Button, TabButtons } from 'frappe-ui'
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import ActivityFeed from '@/components/activity/ActivityFeed.vue'
+import AddPartnerDialog from '@/components/partners/AddPartnerDialog.vue'
 import MembersPanel from '@/components/team/MembersPanel.vue'
 import RolesPanel from '@/components/team/RolesPanel.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -11,9 +13,18 @@ import { useTeamMembers } from '@/composables/useTeamMembers'
 
 // Members, roles and activity share one header, so they are tabs on one page.
 // Team settings (logo, rename, delete) open from the pencil.
-const { activeTeamLabel, activeTeamLogo } = useSession()
+const { activeTeam, activeTeamLabel, activeTeamLogo, teams } = useSession()
 const { members } = useTeamMembers()
-const { canEditTeam, canDeleteTeam } = useCapabilities()
+const { canEditTeam, canDeleteTeam, canManagePartners } = useCapabilities()
+
+// A team adds a partner here. Once linked, the Partner page in the sidebar owns it.
+const canAddPartner = computed(
+	() =>
+		canManagePartners.value &&
+		!teams.value.find((team) => team.name === activeTeam.value)?.has_partner,
+)
+const router = useRouter()
+const addingPartner = ref(false)
 
 const tab = ref('team')
 const tabs = [
@@ -54,13 +65,20 @@ const memberCountText = computed(() => {
 
 					<!-- Icon-only: renaming/deleting the team is rare. A label would
 					     outweigh the action. -->
-					<Button
-						v-if="canEditTeam || canDeleteTeam"
-						class="ml-auto my-auto"
-						icon="lucide-pencil"
-						label="Edit team"
-						@click="openSettings('team')"
-					/>
+					<div class="ml-auto my-auto flex items-center gap-2">
+						<Button
+							v-if="canAddPartner"
+							icon-left="lucide-handshake"
+							label="Add partner"
+							@click="addingPartner = true"
+						/>
+						<Button
+							v-if="canEditTeam || canDeleteTeam"
+							icon="lucide-pencil"
+							label="Edit team"
+							@click="openSettings('team')"
+						/>
+					</div>
 				</div>
 
 				<MembersPanel v-if="tab === 'team'">
@@ -94,5 +112,9 @@ const memberCountText = computed(() => {
 		</div>
 
 		<div id="team-page-aside" class="contents" />
+		<AddPartnerDialog
+			v-model:open="addingPartner"
+			@added="router.push('/partner')"
+		/>
 	</div>
 </template>

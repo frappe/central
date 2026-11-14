@@ -115,9 +115,19 @@ class Team(TeamLifecycle, Document):
 		self._set_partner_code()
 
 	def _set_partner_code(self) -> None:
-		# Both fields are permlevel 1, so only an operator or a completed Partner Registration sets them.
+		# Both fields are permlevel 1, so only an operator or register_as_partner sets them.
 		if self.connect_partner_id and not self.partner_code:
 			self.partner_code = generate_partner_code(self.team_name)
+
+	# Internal; the HTTP surface is central.api.partners.complete_partner_registration.
+	def register_as_partner(self, connect_partner_id: str) -> None:
+		"""Make this team the Central team of a Connect partner. The caller checked the owner."""
+		if self.connect_partner_id:
+			frappe.throw(_("This team already represents a partner. Choose another team."))
+
+		self.connect_partner_id = connect_partner_id
+		self.flags.ignore_permlevel_for_fields = ["connect_partner_id"]
+		self.save()
 
 	def _validate_team_logo(self) -> None:
 		"""The logo must be a file uploaded to this team's logo field, not any URL."""

@@ -112,6 +112,40 @@ def team_invitation_has_permission(doc, user: str | None = None, ptype: str | No
 	return doc.email == user or can(user, doc.team, "team:manage_members")
 
 
+def partner_link_query_conditions(user: str | None = None) -> str:
+	"""1. An operator or a Staff Viewer sees every link.
+	2. A user sees each link where they hold `team:manage_partners` in the customer or the partner team.
+	3. Anyone else sees no link."""
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user) or is_staff_read(user, "read"):
+		return ""
+
+	teams = get_user_team_names_with_capability(user, "team:manage_partners")
+	if not teams:
+		return "1 = 0"
+
+	escaped = _escape_values(teams)
+	return f"(`tabPartner Link`.`customer_team` in ({escaped}) or `tabPartner Link`.`partner_team` in ({escaped}))"
+
+
+def partner_link_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. An operator may do anything. A Staff Viewer may read.
+	2. Create: `team:manage_partners` in the customer team.
+	3. Delete: nobody else. An ended link stays as history.
+	4. Read or write: `team:manage_partners` in the customer or the partner team."""
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user) or is_staff_read(user, ptype):
+		return True
+	if ptype == "create":
+		return can(user, doc.customer_team, "team:manage_partners")
+	if ptype == "delete":
+		return False
+
+	return can(user, doc.customer_team, "team:manage_partners") or can(
+		user, doc.partner_team, "team:manage_partners"
+	)
+
+
 def server_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every server.
 	2. A Staff Viewer sees every server.

@@ -1,13 +1,11 @@
-import re
-
 import frappe
 from frappe.tests import IntegrationTestCase
-from frappe.utils import add_days, today
 
 from central.api.connect import get_partner_registration, register_partner
 from central.api.partners import complete_partner_registration
 from central.api.partners import get_partner_registration as get_registration_summary
 from central.tests.test_team_management import create_user
+from central.tests.utils import central_limit
 
 CONNECT_URL = "https://connect.example.test"
 RETURN_URL = f"{CONNECT_URL}/connect/partner-onboarding"
@@ -35,38 +33,26 @@ class TestConnectRegistration(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			register_partner(self.partner_id, "Tridots", self.owner, "https://evil.example.test/back")
 
-	def test_repeated_request_keeps_the_link_and_a_new_owner_gets_a_new_one(self):
-		first = self._register()
-		self.assertEqual(first["status"], "Pending")
-		self.assertEqual(self._register()["url"], first["url"])
-
-		other = create_user(f"other.owner.{frappe.generate_hash(length=6)}@example.test")
+	def test_a_partner_is_pending_until_a_team_represents_it(self):
 		frappe.set_user(self.integration)
-		changed = register_partner(self.partner_id, "Tridots", other, RETURN_URL)
-		self.assertNotEqual(changed["url"], first["url"])
-		with self.assertRaises(frappe.DoesNotExistError):
-			get_registration_summary(self._token(first))
-
-	def test_unknown_partner_has_no_registration(self):
-		frappe.set_user(self.integration)
-		with self.assertRaises(frappe.DoesNotExistError):
-			get_partner_registration("PARTNER-unknown")
+		self.assertEqual(get_partner_registration(self.partner_id), {"status": "Pending"})
 
 	def test_owner_completes_and_connect_reads_the_code(self):
 		token = self._token(self._register())
 
 		frappe.set_user(self.owner)
 		summary = get_registration_summary(token)
-		self.assertEqual([team.name for team in summary["teams"]], [self.team])
+		self.assertEqual(
+			(summary["status"], [team.name for team in summary["teams"]]), ("Pending", [self.team])
+		)
 
 		result = complete_partner_registration(token, self.team)
-		self.assertEqual(result["return_url"], RETURN_URL)
+		self.assertEqual(result, {"team": self.team, "return_url": RETURN_URL})
 		self.assertEqual(complete_partner_registration(token, self.team), result)
 
 		frappe.set_user(self.integration)
 		status = get_partner_registration(self.partner_id)
-		self.assertEqual(status["status"], "Completed")
-		self.assertEqual(status["team"], self.team)
+		self.assertEqual((status["status"], status["team"]), ("Completed", self.team))
 		self.assertRegex(status["partner_code"], r"^TRI-\d{5}$")
 		self.assertEqual(self._register()["partner_code"], status["partner_code"])
 
@@ -93,21 +79,19 @@ class TestConnectRegistration(IntegrationTestCase):
 			with self.assertRaises(frappe.PermissionError):
 				complete_partner_registration(token, team)
 
-	def test_expired_link_cannot_complete(self):
-		result = self._register()
-		frappe.db.set_value(
-			"Partner Registration",
-			{"connect_partner_id": self.partner_id},
-			"expires_on",
-			add_days(today(), -1),
-		)
-
+	def test_a_tampered_or_expired_link_is_refused(self):
+		token = self._token(self._register())
 		frappe.set_user(self.owner)
-		with self.assertRaises(frappe.ValidationError):
-			complete_partner_registration(self._token(result), self.team)
+		with self.assertRaises(frappe.DoesNotExistError):
+			complete_partner_registration(
+				token[:-2] + ("AA" if not token.endswith("AA") else "BB"), self.team
+			)
 
-		frappe.set_user(self.integration)
-		self.assertEqual(get_partner_registration(self.partner_id)["status"], "Expired")
+		with central_limit("invitation_expiry_days", -1):
+			expired = self._token(self._register())
+		frappe.set_user(self.owner)
+		with self.assertRaises(frappe.DoesNotExistError):
+			complete_partner_registration(expired, self.team)
 
 	def test_a_partner_team_cannot_represent_a_second_partner(self):
 		token = self._token(self._register())
@@ -138,7 +122,7 @@ class TestConnectRegistration(IntegrationTestCase):
 		return result
 
 	def _token(self, result: dict) -> str:
-		return re.search(r"/partner-registration/(\w+)$", result["url"]).group(1)
+		return result["url"].rsplit("/partner-registration/", 1)[1]
 
 	def _create_team(self, team_name: str, owner: str) -> str:
 		frappe.set_user("Administrator")

@@ -24,6 +24,10 @@ export interface Team {
 	status: 'Active' | 'Suspended'
 	/** Set when a System Manager opened the console as this team's owner. */
 	is_impersonated?: boolean
+	/** A Frappe partner's team: it has a partner code and customers. */
+	is_partner: boolean
+	/** The team has an Active link to a partner. */
+	has_partner: boolean
 }
 
 export type MemberStatus = 'Active' | 'Suspended'
@@ -128,6 +132,33 @@ export interface InvitationSummary {
 	has_account: boolean
 }
 
+/** The link between a partner team and a customer team (central Partner Link). */
+export interface PartnerLink {
+	name: string
+	status: 'Active' | 'Ended'
+	reference: string | null
+	linked_on: string
+	ended_on: string | null
+	partner_team: string
+	partner_name: string
+	partner_logo: string | null
+	customer_team: string
+	customer_name: string
+	customer_email: string
+}
+
+/** The partner team's code and its customer links. */
+export interface TeamCustomers {
+	partner_code: string | null
+	customers: PartnerLink[]
+}
+
+/** The partner that a code names, before the customer adds it. */
+export interface PartnerPreview {
+	partner_name: string
+	partner_logo: string | null
+}
+
 /** A team that can become the partner's team: Active, owned by the viewer, not a partner yet. */
 export interface RegistrableTeam {
 	name: string
@@ -138,7 +169,7 @@ export interface RegistrableTeam {
 export interface PartnerRegistrationSummary {
 	partner_name: string
 	owner_email: string
-	status: 'Pending' | 'Completed' | 'Expired'
+	status: 'Pending' | 'Completed'
 	has_account: boolean
 	teams: RegistrableTeam[]
 }

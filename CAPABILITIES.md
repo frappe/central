@@ -12,7 +12,7 @@ A capability is named `resource:action` and belongs to exactly one **plane**:
 | `atlas` | Atlas | Central, before each regional call (`central/utils/guards.py`, `central/iam.py`) |
 | `bench` | each bench | No capabilities on this plane today |
 
-## Server is the atomic unit (model v7)
+## Server is the atomic unit (model v8)
 
 Role capabilities live at the **team** and **server** level only. A team manages servers, and a server is a bench host. The **bench plane** holds no capabilities. Bench tokens carry no capabilities today. The `bench` plane value stays on Capability, so site-level capabilities can return under it later. `asset:view` is not a capability, because `server:view` gates the Virtual Machine registry.
 
@@ -23,9 +23,9 @@ The distinction matters:
 - **The vocabulary** is the set of capability strings below. Central enforces it, and stored grants, fixtures, and the dashboard depend on it. It is small and changes rarely.
 - **Roles** (system roles and team-defined custom roles) are named subsets of that vocabulary. A custom role recombines existing capabilities. It never mints a new capability string. Teams can create as many custom roles as they like without an effect on this contract.
 
-## The 18 capabilities
+## The 19 capabilities
 
-### `central` plane (9)
+### `central` plane (10)
 
 | Capability | Meaning |
 | --- | --- |
@@ -34,6 +34,7 @@ The distinction matters:
 | `team:edit` | Edit team metadata. |
 | `team:manage_members` | Invite, suspend, and change team members. |
 | `team:delete` | Archive a team. |
+| `team:manage_partners` | Add a partner by its partner code, change what the partner can do, and end a partner link. A partner team needs it to see and end its customer links. See [Connect](spec/CONNECT.md). |
 | `service:view` | View managed service configuration. |
 | `service:manage` | Create and delete storage buckets, set bucket quotas, rotate bucket credentials, and download, upload, and delete stored objects. |
 | `server:ssh-key` | Add, rotate, and remove Team SSH keys for selected servers. |
@@ -55,7 +56,7 @@ The distinction matters:
 
 ### `bench` plane (0)
 
-No capabilities are seeded on the bench plane in v7. Site-level management capabilities, such as `site:view`, `site:create`, or `site:apps`, would go here. Adding one needs an agreed bench token contract with Pilot first.
+No capabilities are seeded on the bench plane in v8. Site-level management capabilities, such as `site:view`, `site:create`, or `site:apps`, would go here. Adding one needs an agreed bench token contract with Pilot first.
 
 ## Capability implications
 
@@ -84,6 +85,7 @@ System roles are seeded from `fixtures/team_role.json` and are identical across 
 | `team:edit` | ✓ | ✓ | | | |
 | `team:manage_members` | ✓ | ✓ | | | |
 | `team:delete` | ✓ | | | | |
+| `team:manage_partners` | ✓ | ✓ | | | |
 | `billing:view` | ✓ | ✓ | | | ✓ |
 | `billing:manage` | ✓ | ✓ | | | ✓ |
 | `cluster:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -100,7 +102,7 @@ System roles are seeded from `fixtures/team_role.json` and are identical across 
 | `service:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `service:manage` | ✓ | ✓ | ✓ | | ✓ |
 
-Totals: Owner 18, Admin 17, Developer 13, Viewer 3, Billing 6.
+Totals: Owner 19, Admin 18, Developer 13, Viewer 3, Billing 6.
 
 The ladder reads top to bottom: **Viewer** (look), **Billing** (look and pay), **Developer** (operate servers), **Admin** (Developer and run the team), **Owner** (Admin and delete the team). A team has exactly one Owner, transferable through Transfer Ownership. For a different mix, such as server operations without billing, create a custom role.
 

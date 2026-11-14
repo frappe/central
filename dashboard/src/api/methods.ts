@@ -55,6 +55,11 @@ export const API = {
 	getPartnerRegistration: 'central.api.partners.get_partner_registration',
 	completePartnerRegistration:
 		'central.api.partners.complete_partner_registration',
+	getPartnerByCode: 'central.api.partners.get_partner_by_code',
+	addPartner: 'central.api.partners.add_partner',
+	getTeamPartner: 'central.api.partners.get_team_partner',
+	getTeamCustomers: 'central.api.partners.get_team_customers',
+	endPartnerLink: 'central.api.partners.end_partner_link',
 
 	registry: 'central.api.servers.registry',
 	listInstances: 'central.api.servers.list_instances',

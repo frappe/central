@@ -2,6 +2,7 @@ import { type Component, computed, defineAsyncComponent } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { openSearch } from '@/composables/useSearch'
+import { useSession } from '@/composables/useSession'
 import { features } from '@/lib/features'
 
 const NotificationsPanel = defineAsyncComponent(
@@ -29,8 +30,15 @@ type SidebarSection = {
 export const sidebarSections = computed<SidebarSection[]>(() => {
 	const isMobile = useIsMobile()
 
-	const { canViewServers, canViewBilling, canViewServices, isMember } =
-		useCapabilities()
+	const {
+		canViewServers,
+		canViewBilling,
+		canViewServices,
+		canManagePartners,
+		isMember,
+	} = useCapabilities()
+	const { teams, activeTeam } = useSession()
+	const team = teams.value.find((option) => option.name === activeTeam.value)
 
 	return [
 		{
@@ -66,6 +74,19 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					icon: 'lucide-users',
 					to: '/team/members',
 					condition: isMember.value,
+				},
+				// Only a team that works with partners sees these.
+				{
+					label: 'Customers',
+					icon: 'lucide-briefcase',
+					to: '/customers',
+					condition: canManagePartners.value && Boolean(team?.is_partner),
+				},
+				{
+					label: 'Partner',
+					icon: 'lucide-handshake',
+					to: '/partner',
+					condition: canManagePartners.value && Boolean(team?.has_partner),
 				},
 			],
 		},
