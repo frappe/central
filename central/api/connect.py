@@ -4,6 +4,7 @@ from frappe.utils import get_datetime
 
 from central.identity.doctype.partner_link.partner_link import LINK_FIELDS, summarize_links
 from central.identity.doctype.team.partner import (
+	get_customer_hosting,
 	get_partner_team,
 	get_registration_status,
 	request_registration,
@@ -42,8 +43,12 @@ def get_partner_customers(connect_partner_id: str, modified_after: str | None = 
 		filters["modified"] = (">", get_datetime(modified_after))
 	# The integration user is in no team; only_for above is its only gate.
 	links = frappe.get_all("Partner Link", filters=filters, fields=LINK_FIELDS, order_by="linked_on desc")
+	hosting = get_customer_hosting([link.customer_team for link in links if link.status == "Active"])
 
-	return [_to_connect_row(link) for link in summarize_links(links)]
+	return [
+		_to_connect_row(link, hosting.get(link["customer_team"]) if link["status"] == "Active" else None)
+		for link in summarize_links(links)
+	]
 
 
 @frappe.whitelist(methods=["POST"])
@@ -57,7 +62,9 @@ def end_partner_link(link: str, reason: str) -> dict:
 	return {"status": doc.status}
 
 
-def _to_connect_row(link: dict) -> dict:
+def _to_connect_row(link: dict, hosting: dict | None) -> dict:
+	"""An ended link has no hosting: the partner no longer sees the customer's servers."""
+	hosting = hosting or {"currency": None, "mrr": 0.0, "servers": []}
 	return {
 		"link": link["name"],
 		"reference": link["reference"],
@@ -68,4 +75,5 @@ def _to_connect_row(link: dict) -> dict:
 		"customer_email": link["customer_email"],
 		"linked_on": link["linked_on"],
 		"ended_on": link["ended_on"],
+		**hosting,
 	}

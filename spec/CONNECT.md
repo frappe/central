@@ -151,11 +151,12 @@ List the links of one partner. Connect uses it for the Customers page and to lea
   "customer_team": "TEAM-00012", "customer_team_name": "Northwind", "customer_email": "ops@northwind.example",
   "role": "Developer", "payer": "Customer", "linked_on": "2026-11-14 10:02:11", "ended_on": null,
   "currency": "INR", "mrr": 11500,
-  "sites": [{"name": "northwind.frappe.cloud", "plan": "Business", "amount": 9000, "status": "Active", "region": "Mumbai"}]
+  "servers": [{"name": "erp-1", "plan": "Business", "amount": 9000, "status": "Running", "region": "Mumbai",
+               "sites": ["northwind.frappe.cloud"]}]
 }]}
 ```
 
-`sites` and `mrr` are empty when the link's `role` is empty and its `payer` is `Customer`. The customer gave the partner no view of the account.
+Central bills a server, not a site, so each server carries its sites. `amount` is the server's committed monthly rate. `mrr` is the customer team's committed monthly run rate for all its subscriptions, servers and services, before tax, in `currency`. An `Ended` link has no `servers` and an `mrr` of 0, because the partner no longer sees the customer. `payer` comes with [Partner pays](#partner-pays).
 
 ### `central.api.connect.get_partner_invoices`
 
@@ -341,8 +342,8 @@ The steps go from the simplest to the hardest. Each step works without the next 
 | 1. Registration and code | `Team.connect_partner_id`, `Team.partner_code`, the signed registration link, the landing page, `register_partner`, `get_partner_registration` | Already calls both. Store the partner code on Partner. Replace the derived `referral_code`. |
 | 2. Link | `team:manage_partners`, Partner Link with `status` and `reference`, the Add partner dialog with the code only, `get_partner_customers` without `sites`, `end_partner_link`, the Partner and Customers pages and their sidebar items | Replace `request_cloud_link` and `sync_cloud_links` with the deep link and a list sync. Move the link state from Customer Project to Partner Customer. Remove the manual Approve link. Create `Own` customers. Call `end_partner_link` when the partner marks a customer Churned. |
 | 3. Access | `partner:act_on_customers`, the `role` field, the rules in `central/iam.py`, the team switcher, the activity log, the effects of ending a link, Remove from Partner Program | Show the role. |
-| 4. Reads for Connect | `sites` and `mrr` in `get_partner_customers`; `get_partner_invoices` | Replace the demo data in `central_billing.py` and the Invoicing page. Compute the tier from Central and Press invoices together. |
-| 5. Attribution and partner pays | `Invoice.partner_team`, the `payer` field, the accept action, `Invoice.payer_team`, collection, dunning, and permissions through the payer | Show who pays. |
+| 4. Reads for Connect | `servers`, `mrr`, and `currency` in `get_partner_customers` | Replace the demo data in `central_billing.py` with the synced servers and MRR. |
+| 5. Attribution and partner pays | `Invoice.partner_team`, `get_partner_invoices`, the `payer` field, the accept action, `Invoice.payer_team`, collection, dunning, and permissions through the payer | Show who pays. Replace the demo Invoicing page. Compute the tier from Central and Press invoices together. |
 | 6. Press migration | The import of partners and links | The import of Partner Customer rows |
 
 Before step 5, read `central/billing/revenue/invoicing/` to confirm how an invoice gets its currency and tax. When the customer and the partner differ in currency or tax regime, the invoice must use the payer's Billing Profile. This is not verified.

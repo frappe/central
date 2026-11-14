@@ -5,7 +5,8 @@ from urllib.parse import urlparse
 import frappe
 import jwt
 from frappe import _
-from frappe.utils import add_days, now_datetime, validate_email_address
+from frappe.query_builder.functions import GroupConcat
+from frappe.utils import add_days, flt, now_datetime, validate_email_address
 from frappe.utils.verified_command import get_secret
 
 from central.iam import get_owned_team_names, is_team_owner
@@ -173,3 +174,62 @@ def end_team_links(team: str, reason: str) -> None:
 		# A team closing or leaving the program ends its links; the caller checked who may.
 		link.flags.ignore_permissions = True
 		link.end(reason)
+
+
+def get_customer_hosting(teams: list[str]) -> dict[str, dict]:
+	"""For Connect: each team's currency, monthly recurring revenue, and servers with their
+	sites. The MRR is billing's committed run rate, before tax."""
+	from central.billing.catalog.subscriptions import active_segments, team_run_rate
+	from central.billing.doctype.billing_profile.billing_profile import get_team_currency
+
+	if not teams:
+		return {}
+
+	hosting = {
+		team: {"currency": get_team_currency(team), "mrr": team_run_rate(team), "servers": []}
+		for team in teams
+	}
+	rates = {
+		segment.server_id: segment.locked_rate
+		for segment in active_segments({"team": ("in", teams), "enabled": 1})
+		if segment.server_id
+	}
+	for server in _get_servers_with_sites(teams):
+		hosting[server.team]["servers"].append(
+			{
+				"name": server.title,
+				"plan": server.plan,
+				"amount": flt(rates.get(server.name)),
+				"status": server.status,
+				"region": server.region,
+				"sites": server.sites.split(",") if server.sites else [],
+			}
+		)
+
+	return hosting
+
+
+def _get_servers_with_sites(teams: list[str]) -> list[frappe._dict]:
+	server = frappe.qb.DocType("Virtual Machine")
+	plan = frappe.qb.DocType("Plan")
+	site = frappe.qb.DocType("Site")
+
+	return (
+		frappe.qb.from_(server)
+		.left_join(plan)
+		.on(plan.name == server.plan)
+		.left_join(site)
+		.on(site.server == server.name)
+		.select(
+			server.name,
+			server.team,
+			server.title,
+			plan.title.as_("plan"),
+			server.status,
+			server.region,
+			GroupConcat(site.site_name).as_("sites"),
+		)
+		.where(server.team.isin(teams) & (server.status != "Terminated"))
+		.groupby(server.name)
+		.orderby(server.title)
+	).run(as_dict=True)

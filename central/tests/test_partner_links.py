@@ -13,6 +13,7 @@ from central.api.partners import (
 	get_team_partner,
 )
 from central.tests.test_team_management import create_user
+from central.tests.utils import ensure_server
 
 
 class TestPartnerLinks(IntegrationTestCase):
@@ -146,12 +147,21 @@ class TestPartnerLinks(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			connect.get_partner_customers(self.partner_id)
 
+		frappe.set_user("Administrator")
+		server = ensure_server(f"vm-{frappe.generate_hash(length=6)}", self.customer_team, title="erp-1")
+
 		frappe.set_user(self.integration)
 		(row,) = connect.get_partner_customers(self.partner_id)
 		self.assertEqual(
-			(row["link"], row["reference"], row["customer_team_name"], row["customer_email"]),
-			(name, "PCUST-00012", "Northwind", self.customer_owner),
+			(row["link"], row["reference"], row["customer_team_name"], row["customer_email"], row["role"]),
+			(name, "PCUST-00012", "Northwind", self.customer_owner, "Viewer"),
 		)
+		self.assertEqual((row["mrr"], row["currency"]), (0.0, "INR"))
+		self.assertEqual(
+			[(item["name"], item["status"], item["amount"], item["sites"]) for item in row["servers"]],
+			[("erp-1", "Running", 0.0, [])],
+		)
+		self.assertNotIn(server, str(row["servers"]))
 		with self.assertRaises(frappe.ValidationError):
 			connect.get_partner_customers("PARTNER-unknown")
 
