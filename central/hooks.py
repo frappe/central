@@ -271,6 +271,7 @@ scheduler_events = {
 		"* * * * *": [
 			"central.infrastructure.doctype.warpgate_access.warpgate_access.revoke_ended_access",
 			"central.integrations.datum.publish_error_logs",
+			"central.integrations.metrics.publish_metrics",
 		],
 		"*/10 * * * *": [
 			# Repair observed state through scoped regional reads.
@@ -404,7 +405,7 @@ ignore_links_on_delete = ["Activity Event"]
 # Request Events
 # ----------------
 before_request = ["central.oidc.take_client_credentials"]
-# after_request = ["central.utils.after_request"]
+after_request = ["central.integrations.metrics.count_request"]
 
 # The OpenID Connect discovery document of the Central issuer.
 page_renderer = ["central.oidc.DiscoveryPage"]
