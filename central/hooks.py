@@ -270,6 +270,7 @@ scheduler_events = {
 	"cron": {
 		"* * * * *": [
 			"central.infrastructure.doctype.warpgate_access.warpgate_access.revoke_ended_access",
+			"central.integrations.datum.publish_error_logs",
 		],
 		"*/10 * * * *": [
 			# Repair observed state through scoped regional reads.
