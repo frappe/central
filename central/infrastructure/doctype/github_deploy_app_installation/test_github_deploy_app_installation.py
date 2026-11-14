@@ -10,6 +10,7 @@ from frappe.tests import IntegrationTestCase
 from central.infrastructure.doctype.github_connection.test_github_connection import make_team
 from central.infrastructure.doctype.github_deploy_app_installation.github_deploy_app_installation import (
 	GitHubDeployAppInstallation,
+	state_key,
 )
 from central.tests.test_iam import ensure_user
 
@@ -65,6 +66,15 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 		self.assertEqual((installation.team, installation.account), (self.team, "octo"))
 		with self.assertRaises(frappe.DoesNotExistError):
 			GitHubDeployAppInstallation.complete(state, self.owner)
+
+	def test_an_attempt_verified_in_another_process_is_seen(self):
+		state = self.start()
+		key = frappe.cache.make_key(state_key(state))
+		copy_from_start = frappe.local.cache[key]
+
+		GitHubDeployAppInstallation.verify(state, "code", "101", self.owner)
+		frappe.local.cache[key] = copy_from_start
+		self.assertTrue(GitHubDeployAppInstallation.is_verified(state, self.owner))
 
 	def test_an_installation_the_user_cannot_access_is_refused(self):
 		state = self.start()

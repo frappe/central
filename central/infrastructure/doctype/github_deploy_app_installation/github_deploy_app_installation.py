@@ -109,7 +109,8 @@ def require_deploy_access(user: str, team: str) -> None:
 
 
 def load_attempt(state: str, user: str) -> dict:
-	data = frappe.cache.get_value(state_key(state), expires=True)
+	# The callback updates the attempt in another process; set_value keeps a stale copy in this one.
+	data = frappe.cache.get_value(state_key(state), use_local_cache=False)
 	if not data:
 		frappe.throw(_("This GitHub link has expired. Connect GitHub again."), frappe.DoesNotExistError)
 
