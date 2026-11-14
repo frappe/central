@@ -1,0 +1,74 @@
+import hashlib
+import hmac
+import json
+from unittest.mock import MagicMock, patch
+
+import frappe
+from frappe.tests import IntegrationTestCase
+
+from central.api.integrations.github_deploy import webhook
+from central.integrations.github import GitHubApp, GitHubDeployApp
+
+PUSH = {
+	"ref": "refs/heads/main",
+	"after": "a" * 40,
+	"installation": {"id": 101},
+	"repository": {"id": 11, "full_name": "octo/app"},
+}
+
+
+def deploy_settings() -> MagicMock:
+	settings = MagicMock(
+		github_app_id=None,
+		github_deploy_app_id="2",
+		github_deploy_client_id="deploy-client",
+		github_deploy_app_slug="deploy-app",
+	)
+	settings.get_password.side_effect = lambda field, raise_exception=True: {
+		"github_deploy_webhook_secret": "deploy-secret"
+	}.get(field)
+	return settings
+
+
+class IntegrationTestGitHubDeploy(IntegrationTestCase):
+	def setUp(self):
+		self.settings = patch(
+			"central.integrations.github.frappe.get_cached_doc", return_value=deploy_settings()
+		)
+		self.settings.start()
+		self.addCleanup(self.settings.stop)
+
+	def deliver(self, delivery: str, secret: bytes = b"deploy-secret") -> MagicMock:
+		body = json.dumps(PUSH).encode()
+		headers = {
+			"X-Hub-Signature-256": "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest(),
+			"X-GitHub-Delivery": delivery,
+			"X-GitHub-Event": "push",
+		}
+		with (
+			patch("frappe.request", MagicMock(get_data=MagicMock(return_value=body))),
+			patch("frappe.get_request_header", side_effect=headers.get),
+			patch("frappe.logger") as logger,
+		):
+			webhook()
+		return logger.return_value.info
+
+	def test_the_deploy_app_reads_its_own_settings(self):
+		app = GitHubDeployApp()
+		self.assertEqual((app.app_id, app.client_id, app.slug), ("2", "deploy-client", "deploy-app"))
+		self.assertTrue(GitHubDeployApp.is_configured())
+		self.assertFalse(GitHubApp.is_configured())
+		self.assertTrue(GitHubDeployApp.callback_url().endswith("github_deploy.oauth_callback"))
+
+	def test_a_push_is_logged_once_per_delivery(self):
+		delivery = frappe.generate_hash()
+		log = self.deliver(delivery)
+		log.assert_called_once()
+		self.assertEqual(log.call_args.args[0]["repository"], "octo/app")
+		self.assertEqual(log.call_args.args[0]["ref"], "refs/heads/main")
+
+		self.deliver(delivery).assert_not_called()
+
+	def test_a_push_signed_with_another_secret_is_refused(self):
+		with self.assertRaises(frappe.AuthenticationError):
+			self.deliver(frappe.generate_hash(), secret=b"pilot-secret")

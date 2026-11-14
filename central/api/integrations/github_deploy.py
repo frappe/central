@@ -1,0 +1,64 @@
+import json
+
+import frappe
+from frappe import _
+
+from central.infrastructure.doctype.github_deploy_app_installation.github_deploy_app_installation import (
+	GitHubDeployAppInstallation,
+)
+from central.integrations.github import GitHubDeployApp
+
+DELIVERY_TTL_SECONDS = 24 * 60 * 60
+
+
+# nosemgrep: guest-whitelisted-method -- the state binds the callback to the user who started it.
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def oauth_callback(
+	state: str | None = None, code: str | None = None, installation_id: str | None = None, **kwargs
+) -> None:
+	"""GitHub returns here after an install. An install started on github.com has no state to link."""
+	if not (state and code and installation_id):
+		return frappe.respond_as_web_page(
+			_("Nothing to connect"),
+			_("Start the connection from Frappe Cloud, then install the GitHub App from the link it gives."),
+			indicator_color="orange",
+		)
+
+	GitHubDeployAppInstallation.verify(state, code, installation_id, frappe.session.user)
+	frappe.respond_as_web_page(
+		_("GitHub App installed"),
+		_("Go back to where you started to finish connecting it."),
+		indicator_color="green",
+	)
+
+
+# nosemgrep: guest-whitelisted-method -- the HMAC signature authenticates GitHub.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def webhook() -> None:
+	"""Events of the deploy App. Each delivery is handled once; for now events are only logged."""
+	body = frappe.request.get_data()
+	if not GitHubDeployApp().is_valid_webhook_signature(
+		body, frappe.get_request_header("X-Hub-Signature-256")
+	):
+		frappe.throw(_("Invalid webhook signature."), frappe.AuthenticationError)
+
+	delivery = frappe.get_request_header("X-GitHub-Delivery")
+	if not delivery:
+		frappe.throw(_("Missing X-GitHub-Delivery header."))
+	key = frappe.cache.make_key(f"github-deploy:delivery:{delivery}")
+	# nosemgrep: frappe-cache-breaks-multitenancy -- make_key adds the site prefix.
+	if not frappe.cache.set(key, 1, nx=True, ex=DELIVERY_TTL_SECONDS):
+		return
+
+	payload = json.loads(body)
+	frappe.logger("github_deploy").info(
+		{
+			"delivery": delivery,
+			"event": frappe.get_request_header("X-GitHub-Event"),
+			"action": payload.get("action"),
+			"installation_id": payload.get("installation", {}).get("id"),
+			"repository": payload.get("repository", {}).get("full_name"),
+			"ref": payload.get("ref"),
+			"after": payload.get("after"),
+		}
+	)

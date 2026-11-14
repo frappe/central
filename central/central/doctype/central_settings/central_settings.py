@@ -39,6 +39,12 @@ class CentralSettings(Document):
 		github_app_slug: DF.Data | None
 		github_client_id: DF.Data | None
 		github_client_secret: DF.Password | None
+		github_deploy_app_id: DF.Data | None
+		github_deploy_app_slug: DF.Data | None
+		github_deploy_client_id: DF.Data | None
+		github_deploy_client_secret: DF.Password | None
+		github_deploy_private_key: DF.Password | None
+		github_deploy_webhook_secret: DF.Password | None
 		github_private_key: DF.Password | None
 		github_webhook_secret: DF.Password | None
 		helpdesk_api_key: DF.Data | None
