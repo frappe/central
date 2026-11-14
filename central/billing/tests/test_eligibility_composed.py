@@ -115,6 +115,54 @@ class TestEligibilityComposed(IntegrationTestCase):
 			subscriptions.enforce_headroom(TEAM, 100, for_update=True)
 		get_value.assert_any_call("Billing Profile", TEAM, "name", for_update=True)
 
+	def test_the_limit_card_shows_the_figures_the_check_uses(self):
+		from central.billing.api.dashboard.account import get_trust_tier
+		from central.billing.catalog import subscriptions
+
+		set_team_tier(TEAM, max_spend=5000)  # an override, so the ladder's own cap differs
+		provisioned = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		frappe.db.set_value("Subscription", provisioned["subscription"], "enabled", 1)
+
+		tier = get_trust_tier(TEAM)
+		self.assertEqual((tier["spending_limit"], tier["running_monthly"]), (5000, 3400))
+		self.assertEqual(
+			subscriptions.remaining_headroom(TEAM), tier["spending_limit"] - tier["running_monthly"]
+		)
+
+	def test_a_refusal_names_the_server_the_limit_and_what_runs(self):
+		from central.billing.catalog import subscriptions
+
+		set_team_tier(TEAM, max_spend=5000)
+		provisioned = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		frappe.db.set_value("Subscription", provisioned["subscription"], "enabled", 1)
+
+		with self.assertRaises(frappe.ValidationError) as refused:
+			subscriptions.enforce_headroom(TEAM, 3400)
+		self.assertEqual(
+			str(refused.exception),
+			"This server adds ₹ 3,400.00 a month before tax. Your spending limit is ₹ 5,000.00 and "
+			"your servers already run at ₹ 3,400.00. Taxes are added on top.",
+		)
+		subscriptions.enforce_headroom(TEAM, 1600)  # exactly what is left passes
+
+	def test_a_resize_refusal_leaves_out_the_server_being_resized(self):
+		from central.billing.catalog import subscriptions
+
+		set_team_tier(TEAM, max_spend=8000)
+		provisioned = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		other = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		for name in (provisioned["subscription"], other["subscription"]):
+			frappe.db.set_value("Subscription", name, "enabled", 1)
+
+		with self.assertRaises(frappe.ValidationError) as refused:
+			subscriptions.enforce_headroom(TEAM, 5000, exclude=provisioned["subscription"])
+		self.assertEqual(
+			str(refused.exception),
+			"This server adds ₹ 5,000.00 a month before tax. Your spending limit is ₹ 8,000.00 and "
+			"your servers already run at ₹ 3,400.00. Taxes are added on top.",
+		)
+		subscriptions.enforce_headroom(TEAM, 4600, exclude=provisioned["subscription"])
+
 	def test_provision_off_ratio_refused_serverside(self):
 		bad = [
 			{"resource_type": "Compute", "quantity": 2, "unit": "vCPU"},

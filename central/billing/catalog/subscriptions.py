@@ -16,6 +16,8 @@ once (normal grace), so one enum would lose information. Every standing transiti
 writes an append-only Subscription Change.
 """
 
+from typing import NamedTuple
+
 import frappe
 from frappe.query_builder import Order
 
@@ -1093,22 +1095,44 @@ def enforce_headroom(team: str, new_rate, exclude: str | None = None, for_update
 		frappe.throw(frappe._("This configuration cannot be priced in your currency."))
 	if is_internal_team(team):
 		return
-	available = remaining_headroom(team, exclude, for_update)
-	if frappe.utils.flt(new_rate) > available:
+	headroom = _headroom(team, exclude, for_update)
+	if frappe.utils.flt(new_rate) > headroom.available:
 		frappe.throw(
-			frappe._("This configuration ({0}) exceeds your remaining headroom ({1}).").format(
-				frappe.utils.flt(new_rate), frappe.utils.flt(available)
+			frappe._(
+				"This server adds {0} a month before tax. Your spending limit is {1} and your servers "
+				"already run at {2}. Taxes are added on top."
+			).format(
+				*(
+					frappe.utils.fmt_money(v, currency=headroom.currency)
+					for v in (new_rate, headroom.cap, headroom.running)
+				)
 			)
 		)
 
 
 def remaining_headroom(team: str, exclude: str | None = None, for_update: bool = False) -> float:
 	"""The monthly spend the team can still add: its trust-tier cap minus its running run-rate."""
+	return _headroom(team, exclude, for_update).available
+
+
+class Headroom(NamedTuple):
+	"""A team's spending limit and what it runs now, both monthly and before tax."""
+
+	cap: float
+	running: float
+	currency: str
+
+	@property
+	def available(self) -> float:
+		return max(0.0, self.cap - self.running)
+
+
+def _headroom(team: str, exclude: str | None, for_update: bool) -> Headroom:
 	from central.billing.catalog.entitlements import get_team_caps
 
-	cap = frappe.utils.flt(get_team_caps(team).max_spend)
 	running = locked_team_run_rate(team, exclude) if for_update else team_run_rate(team, exclude=exclude)
-	return max(0.0, cap - running)
+	caps = get_team_caps(team)
+	return Headroom(frappe.utils.flt(caps.max_spend), running, caps.currency)
 
 
 def project_run_rate(team: str, project: str, exclude: str | None = None) -> float:

@@ -351,10 +351,12 @@ def get_trust_tier(team: str | None = None) -> dict:
 	promotion criteria — so a customer can see what unlocks more headroom.
 	"""
 	from central.billing.catalog import entitlements
+	from central.billing.catalog.subscriptions import team_run_rate
 
 	team = _resolve_team(team)
 	currency = _team_currency(team)
-	current_tier = entitlements.get_team_caps(team).tier
+	caps = entitlements.get_team_caps(team)
+	current_tier = caps.tier
 
 	# The ladder carries per-currency thresholds; everything below reads the row
 	# for THIS team's currency, so caps are native (no FX conversion).
@@ -411,6 +413,10 @@ def get_trust_tier(team: str | None = None) -> dict:
 		"current": level_view(current),
 		"next": level_view(nxt),
 		"is_top_tier": nxt is None,
+		# What the server-create check compares: the limit (with any override) and the
+		# monthly cost before tax of what runs now.
+		"spending_limit": frappe.utils.flt(caps.max_spend),
+		"running_monthly": team_run_rate(team),
 		"progress": {
 			"resources_used": resources_used,
 			"paid_invoices": paid_invoices,

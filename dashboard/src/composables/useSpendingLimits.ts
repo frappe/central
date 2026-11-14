@@ -1,11 +1,8 @@
-import { useCall } from 'frappe-ui'
 import { computed } from 'vue'
-import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
-import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { money } from '@/lib/format'
 import { spendLimitRatio } from '@/lib/spendShare'
-import type { TierLevel, TrustTier } from '@/types/billing'
+import type { TierLevel } from '@/types/billing'
 
 interface Gate {
 	label: string
@@ -22,23 +19,22 @@ interface Requirement {
 
 type RungState = 'reached' | 'current' | 'locked'
 
-const tier = useCall<TrustTier, { team: string }>({
-	url: method(API.trustTier),
-	params: teamParams,
-	immediate: false,
-	refetch: true,
-})
-whenTeamReady(() => tier.reload())
-
 export function useSpendingLimits() {
-	const { forecast, credit, methods } = useBillingOverview()
+	const { credit, methods, tier } = useBillingOverview()
 
 	const currency = computed(() => tier.data?.currency || 'INR')
 	const current = computed(() => tier.data?.current)
 	const progress = computed(() => tier.data?.progress)
-	// The spend limit is before tax, so it is compared with spend before tax.
-	const monthlySpend = computed(() => forecast.data?.subtotal)
+	// The figures the server-create check compares, both before tax.
+	const spendingLimit = computed(() => Number(tier.data?.spending_limit ?? 0))
+	const runningMonthly = computed(() => Number(tier.data?.running_monthly ?? 0))
+	// The two figures above read 0 until the tier loads; show them only once known.
+	const limitKnown = computed(() => Boolean(tier.data))
+	const limitFailed = computed(() => Boolean(tier.error) && !tier.data)
 	const nextLevel = computed(() => tier.data?.next ?? null)
+	const hasActiveMethod = computed(() =>
+		(methods.data ?? []).some((method) => method.status === 'Active'),
+	)
 
 	const payingSince = computed(() => {
 		const firstPaidAt = progress.value?.first_paid_at
@@ -55,11 +51,8 @@ export function useSpendingLimits() {
 			: `${months} month${months === 1 ? '' : 's'}`
 	})
 
-	const cycleRatio = computed(() =>
-		spendLimitRatio(
-			Number(monthlySpend.value ?? 0),
-			Number(current.value?.max_spend ?? 0),
-		),
+	const limitRatio = computed(() =>
+		spendLimitRatio(runningMonthly.value, spendingLimit.value),
 	)
 	const resourcesUsed = computed(() =>
 		Number(progress.value?.resources_used ?? 0),
@@ -121,13 +114,10 @@ export function useSpendingLimits() {
 		const paid = Number(progress.value?.paid_invoices ?? 0)
 		const cumulative = Number(progress.value?.cumulative_paid ?? 0)
 		if (level.sequence <= 0) {
-			const hasChargeableMethod = (methods.data ?? []).some(
-				(method) => method.status === 'Active',
-			)
 			return [
 				{
 					text: 'Card or prepaid credits',
-					met: hasChargeableMethod || Number(credit.data?.balance ?? 0) > 0,
+					met: hasActiveMethod.value || Number(credit.data?.balance ?? 0) > 0,
 				},
 			]
 		}
@@ -180,9 +170,13 @@ export function useSpendingLimits() {
 		currency,
 		current,
 		progress,
-		monthlySpend,
+		spendingLimit,
+		runningMonthly,
+		limitKnown,
+		limitFailed,
 		nextLevel,
-		cycleRatio,
+		hasActiveMethod,
+		limitRatio,
 		resourcesUsed,
 		resourceRatio,
 		record,

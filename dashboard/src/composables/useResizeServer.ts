@@ -12,6 +12,7 @@ import {
 import { getErrorMessage, isAbortError, successToast } from '@/lib/feedback'
 import { money } from '@/lib/format'
 import { planQuantity, presetPrice } from '@/lib/plans'
+import { __ } from '@/lib/translate'
 import type { ComposedConfig, Plan, Profile } from '@/types/api'
 import type { ServerTrial, TrialPlanChoice } from '@/types/billing'
 
@@ -352,7 +353,14 @@ export function useResizeServer(
 		if (targetPrice.value === null)
 			return 'The price could not be loaded. Please try again.'
 		if (available.value != null && targetPrice.value > available.value)
-			return 'This size is over your spending limit, including retained storage.'
+			return __(
+				'This size is over your spending limit, including retained storage. Up to {0} a month fits, before tax.',
+				[
+					money(available.value, currency.value || 'USD', {
+						trimTrailingZeros: true,
+					}),
+				],
+			)
 		return ''
 	})
 	const configError = computed(() =>
