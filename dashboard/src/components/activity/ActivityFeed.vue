@@ -163,11 +163,11 @@ const loadActivityErrorTitle = __("Couldn't load the activity")
 				:key="month.label"
 				class="mt-6 first:mt-2"
 			>
-				<h3 class="px-3.5 pb-1.5 text-sm-medium text-ink-gray-5">
+				<h3 class="pb-1.5 text-sm-medium text-ink-gray-5">
 					{{ month.label }}
 				</h3>
 
-				<ol class="space-y-0.5">
+				<ol class="-mx-2 space-y-0.5">
 					<ActivityEventRow
 						v-for="cluster in month.clusters"
 						:key="cluster.events[0].id"
@@ -186,7 +186,7 @@ const loadActivityErrorTitle = __("Couldn't load the activity")
 				class="mt-3"
 			/>
 
-			<div v-if="nextCursor" class="mt-4 px-3.5">
+			<div v-if="nextCursor" class="mt-4">
 				<Button
 					:label="__('Load more')"
 					class="border border-outline-gray-2 bg-surface-gray-2 text-ink-gray-8 hover:bg-surface-gray-3 hover:text-ink-gray-9 active:bg-surface-gray-4"

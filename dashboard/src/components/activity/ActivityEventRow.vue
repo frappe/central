@@ -70,7 +70,7 @@ function toggle() {
 <template>
 	<li class="relative">
 		<div
-			class="group flex items-start gap-3.5 rounded-6 px-3.5 py-3 transition-colors duration-150 sm:py-3.5"
+			class="group flex items-start gap-3 rounded-6 px-2 py-2.5 transition-colors duration-150"
 			:class="{
 				'cursor-pointer hover:bg-surface-gray-1/40': canExpand,
 				'bg-surface-gray-1/40': isOpen,
@@ -167,7 +167,7 @@ function toggle() {
 			v-if="canExpand"
 			v-show="isOpen"
 			:id="detailId"
-			class="mb-3 ml-11 mt-1 rounded-6 border border-outline-gray-1 p-2 text-p-sm sm:p-2.5"
+			class="mb-3 ml-9 mt-1 rounded-6 border border-outline-gray-1 p-2 text-p-sm sm:p-2.5"
 		>
 			<!-- One event: each change on its own line -->
 			<ul v-if="!isRun && filteredDetails.length" class="space-y-0.5">
