@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import dayjs from 'dayjs'
-import { Badge, Button, Tooltip } from 'frappe-ui'
+import { Badge, Button } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import DateRangeFilter, {
 	type DateRangePreset,
@@ -82,7 +82,8 @@ const columns: ListViewColumn<InvoiceSummary>[] = [
 	{
 		key: 'total',
 		label: 'Amount',
-		width: '7rem',
+		// Room for the tax note under the amount, e.g. "incl. CGST 9% + SGST 9%".
+		width: '10rem',
 		sortable: true,
 		align: 'end',
 	},
@@ -145,11 +146,17 @@ const filters: ListViewFilter[] = [
 		</template>
 
 		<template #total="{ row }">
-			<Tooltip :text="row.tax_note" :disabled="!row.tax_note">
-				<span class="tabular-nums text-ink-gray-8">
+			<div class="min-w-0 text-right">
+				<p class="tabular-nums text-ink-gray-8">
 					{{ money(row.total, row.currency) }}
-				</span>
-			</Tooltip>
+				</p>
+				<p
+					v-if="row.tax_note"
+					class="mt-0.5 truncate text-p-xs text-ink-gray-5"
+				>
+					{{ row.tax_note }}
+				</p>
+			</div>
 		</template>
 
 		<template #actions="{ row }">
