@@ -1016,6 +1016,40 @@ class TestReportPilotEvent(EngineTestBase):
 		self.assertEqual(row.message, "my-bench: cpu_usage_limit at 95.0%")
 		self.assertEqual((row.action_label, row.action_route), ("View server", "/servers/"))
 
+	def test_pilot_certificate_alerts_are_accepted_with_the_shipped_fixture(self):
+		"""Pilot sends certificate_expiry and certificate_failed with the domains of the certificate."""
+		fixture_path = frappe.get_app_path("central", "fixtures", "notification_event_type.json")
+		fixtures = {record["name"]: record for record in frappe.parse_json(frappe.read_file(fixture_path))}
+
+		class FakeCredential:
+			team = TEAM
+			server = None
+
+		for event_type, title in (
+			("certificate_expiry", "Certificate not renewing: a.example.com, b.example.com"),
+			("certificate_failed", "Certificate failed: a.example.com, b.example.com"),
+		):
+			with self.subTest(event_type):
+				self._ensure_event_type(
+					event_type, **{field: fixtures[event_type][field] for field in _FIXTURE_FIELDS}
+				)
+				with (
+					patch("central.api.pilot.PilotCredential.verify", return_value=FakeCredential()),
+					patch("frappe.get_request_header", return_value="fake-token"),
+				):
+					from central.notification.api import report_pilot_event
+
+					out = report_pilot_event(
+						event_type=event_type,
+						message="The certificate for a.example.com, b.example.com expired and has not renewed.",
+						context={"bench": "my-bench", "domains": ["a.example.com", "b.example.com"]},
+					)
+				self.assertTrue(out["created"])
+				row = frappe.get_all(
+					"Team Notification", {"team": TEAM, "event_type": event_type}, ["title", "action_route"]
+				)[0]
+				self.assertEqual((row.title, row.action_route), (title, "/servers/"))
+
 
 class TestTemplateContext(EngineTestBase):
 	def test_reference_doctype_in_template_context(self):
