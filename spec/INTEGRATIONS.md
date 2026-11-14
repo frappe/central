@@ -371,6 +371,10 @@ Central registers each region's Cargo after a health check. `cargo_connection.re
 
 Cargo reports `service`, `status`, and `service_endpoint`. Central records availability in Service Detail. Do not label a service healthy from a provisioning event.
 
+## How do Central errors reach Beacon?
+
+Each minute, Central sends its new Error Logs to the Datum of one region. The `telemetry_region` site config names that region. Without it, Central sends nothing. Central signs each request with a Datum token for resource `central` and keeps its place in the cache key `central:telemetry:error_log_cursor`. Beacon reads the rule `beacon/rules/central-errors.sql` from this repository and alerts when one error repeats. Change the rule in the same pull request as the data that it reads.
+
 ## How do rename, routes, and TLS work?
 
 Central calls the Pilot Admin API for renames.
