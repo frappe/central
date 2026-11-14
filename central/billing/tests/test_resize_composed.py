@@ -396,6 +396,21 @@ class TestResizeComposed(IntegrationTestCase):
 			)
 		)
 
+	def test_begin_resize_refuses_an_off_ratio_shape_before_the_vm(self):
+		sub = self._provision()
+		server = self._ready(sub)
+		off_ratio = [
+			{"resource_type": "Compute", "quantity": 4, "unit": "vCPU"},
+			{"resource_type": "Memory", "quantity": 8, "unit": "GB"},  # General needs 16
+			{"resource_type": "Disk", "quantity": 40, "unit": "GB"},
+		]
+
+		with self.assertRaises(frappe.ValidationError):
+			subscriptions.begin_resize(sub, includes=off_ratio, sub_category="General")
+
+		self.resize_server.assert_not_called()
+		self.assertFalse(frappe.db.exists("Resource Action", {"server": server}))
+
 	def test_resize_config_rounds_a_fractional_disk_up(self):
 		"""Atlas reports MiB, so a 12800 MiB disk mirrors as 12.5 GB. The resize API takes
 		whole GB, so the console must receive a disk it can send back."""
