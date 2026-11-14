@@ -18,6 +18,7 @@ const {
 	requirementsFor,
 	spendingLimit,
 	runningMonthly,
+	limitFailed,
 } = useSpendingLimits()
 
 const columns = [
@@ -48,6 +49,10 @@ const requirementText = (level: TierLevel) =>
 		description="Tiers rise automatically as you pay invoices."
 	>
 		<LoadingText v-if="tier.loading && !tier.data" :lines="8" class="p-5" />
+
+		<p v-else-if="limitFailed" class="p-5 text-p-sm text-ink-gray-5">
+			{{ __("Couldn't load your spending limit.") }}
+		</p>
 
 		<p v-else-if="!levels.length" class="p-5 text-p-sm text-ink-gray-5">
 			Spending tiers aren't configured yet.

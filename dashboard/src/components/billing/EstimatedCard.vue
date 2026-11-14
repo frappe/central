@@ -33,6 +33,8 @@ const {
 	current: tierCurrent,
 	spendingLimit: limit,
 	runningMonthly: running,
+	limitKnown,
+	limitFailed,
 } = useSpendingLimits()
 
 const loading = computed(() => forecast.loading && !forecast.data)
@@ -238,7 +240,13 @@ const saveBudgetAlertErrorTitle = __("Couldn't save the budget alert")
 				</p>
 			</div>
 
-			<div class="flex flex-col gap-2">
+			<p v-if="limitFailed" class="text-sm text-ink-gray-6">
+				{{ __("Couldn't load your spending limit.") }}
+			</p>
+
+			<LoadingText v-else-if="!limitKnown" :lines="2" class="w-56" />
+
+			<div v-else class="flex flex-col gap-2">
 				<div
 					class="flex flex-wrap justify-between gap-x-3 gap-y-1 text-sm text-ink-gray-6"
 				>

@@ -28,6 +28,9 @@ export function useSpendingLimits() {
 	// The figures the server-create check compares, both before tax.
 	const spendingLimit = computed(() => Number(tier.data?.spending_limit ?? 0))
 	const runningMonthly = computed(() => Number(tier.data?.running_monthly ?? 0))
+	// The two figures above read 0 until the tier loads; show them only once known.
+	const limitKnown = computed(() => Boolean(tier.data))
+	const limitFailed = computed(() => Boolean(tier.error) && !tier.data)
 	const nextLevel = computed(() => tier.data?.next ?? null)
 
 	const payingSince = computed(() => {
@@ -169,6 +172,8 @@ export function useSpendingLimits() {
 		progress,
 		spendingLimit,
 		runningMonthly,
+		limitKnown,
+		limitFailed,
 		nextLevel,
 		limitRatio,
 		resourcesUsed,

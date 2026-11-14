@@ -16,6 +16,7 @@ const {
 	current,
 	spendingLimit,
 	runningMonthly,
+	limitFailed,
 	nextLevel,
 	limitRatio,
 	resourcesUsed,
@@ -55,6 +56,10 @@ const startFirstTier = () => {
 			</div>
 
 			<LoadingText v-if="loading" :lines="2" />
+
+			<p v-else-if="limitFailed" class="text-p-sm text-ink-gray-6">
+				{{ __("Couldn't load your spending limit.") }}
+			</p>
 
 			<div v-else-if="!current" class="flex flex-col items-start gap-3">
 				<p class="text-p-sm text-ink-gray-6">
