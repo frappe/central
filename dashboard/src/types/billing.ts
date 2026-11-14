@@ -586,7 +586,6 @@ export interface NotificationCatalogEvent {
 	title: string
 	severity: NotificationSeverity
 	is_critical: 0 | 1
-	can_receive: 0 | 1
 }
 
 /** get_user_preferences: saved rows plus the events each category holds. */

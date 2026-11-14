@@ -563,13 +563,13 @@ class TestSaveUserPreferences(EngineTestBase):
 		self.assertEqual(billing["frequency"], "Weekly")
 		self.assertEqual(out["digest_hour"], 9)
 		self.assertEqual(billing["events"], [{"event_type": "payment_success", "email_enabled": 0}])
-		catalog = next(group for group in out["catalog"] if group["category"] == "Billing")
-		events = {event["event_type"]: event for event in catalog["events"]}
-		self.assertFalse(events["payment_success"]["can_receive"])
-		self.assertTrue(events["payment_failure"]["is_critical"])
-		server_catalog = next(group for group in out["catalog"] if group["category"] == "Server")
-		server_events = {event["event_type"]: event for event in server_catalog["events"]}
-		self.assertTrue(server_events["backup_failure"]["can_receive"])
+		catalog = {
+			group["category"]: [event["event_type"] for event in group["events"]] for group in out["catalog"]
+		}
+		self.assertNotIn("Billing", catalog)
+		self.assertIn("backup_failure", catalog["Server"])
+		self.assertIn("role_change", catalog["Team"])
+		self.assertNotIn("member_joined", catalog["Team"])
 
 	def test_rejects_event_from_another_category(self):
 		from central.notification.api import save_user_preferences
