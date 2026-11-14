@@ -112,6 +112,25 @@ class GitHubApp:
 		url = f"{API_URL}/installation/repositories"
 		return [repository_summary(repository) for repository in self._paginate(url, token, "repositories")]
 
+	def has_branch(self, installation_id: str, repository_id: str, full_name: str, branch: str) -> bool:
+		token = self.create_installation_token(installation_id, repository_id)["token"]
+		url = f"{API_URL}/repos/{full_name}/branches/{urllib.parse.quote(branch, safe='')}"
+		try:
+			response = requests.get(
+				url, headers={**API_HEADERS, "Authorization": f"Bearer {token}"}, timeout=TIMEOUT
+			)
+		except requests.RequestException as error:
+			frappe.throw(_("GitHub could not be reached: {0}").format(str(error)), GitHubError)
+
+		if response.status_code == 404:
+			return False
+		if not response.ok:
+			frappe.throw(
+				_("GitHub returned HTTP {0}: {1}").format(response.status_code, response.text[:200]),
+				GitHubError,
+			)
+		return True
+
 	def create_installation_token(self, installation_id: str, repository_id: str | None = None) -> dict:
 		"""An installation token, limited to one repository and `contents: read` when one is given."""
 		payload = {}
