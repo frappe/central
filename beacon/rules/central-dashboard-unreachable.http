@@ -1,0 +1,9 @@
+-- title: Central dashboard unreachable
+-- severity: High
+-- url: {central_url}/dashboard
+-- expected_text: <title>Frappe Cloud
+-- timeout: 10
+-- pending_for: 180
+-- resolve_after: 300
+-- runbook_url: https://github.com/frappe/central/blob/develop/beacon/runbooks/central-unreachable.md
+-- Beacon loads the dashboard page from outside. Customers cannot sign in or manage their sites when it fails. Desk sets the Regions to the Central Telemetry Region.

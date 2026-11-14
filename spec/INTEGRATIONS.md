@@ -371,6 +371,33 @@ Central registers each region's Cargo after a health check. `cargo_connection.re
 
 Cargo reports `service`, `status`, and `service_endpoint`. Central records availability in Service Detail. Do not label a service healthy from a provisioning event.
 
+## How do Central errors reach Beacon?
+
+Each minute, Central sends its new Error Logs to the Datum of one region: the Region with **Central Telemetry Region** set. Only one Region can have it. Without it, Central sends nothing. Set it on the region where Central runs, so the telemetry does not cross regions. Central signs each request with a Datum token for resource `central` and keeps its place in the cache key `central:telemetry:error_log_cursor`. Beacon reads the rule `beacon/rules/central-errors.sql` from this repository and alerts when one error repeats. Change the rule in the same pull request as the data that it reads.
+
+## What does Central report to Datum?
+
+Each minute, `central.integrations.metrics.publish_metrics` sends gauges to the same Datum. Each gauge is a count or an age, never a label for each record. All gauges of one collection share one timestamp, and the rules read only the newest collection, so a gauge that Central stops sending clears its alert.
+
+| Gauge | Meaning |
+| --- | --- |
+| `central_requests{group,status_class}` | API requests since the last accepted push, by `central.api` module and status class. The `after_request` hook `count_request` counts them in Redis. The minute job reads and resets the counts, and puts them back when the push fails. |
+| `central_resource_action_oldest_open_seconds{region,resource_type,action}`, `central_resource_actions_finished_last_hour{...,status}` | Open and finished Resource Actions. |
+| `central_payment_attempts_last_hour{gateway,status}`, `central_payment_last_capture_seconds{gateway}` | Payment Attempts and the newest capture. |
+| `central_gateway_webhooks_unprocessed{gateway}`, `central_gateway_webhook_oldest_unprocessed_seconds{gateway}`, `central_gateway_webhooks_failed_last_hour{gateway}` | Webhook Events that wait or failed. |
+| `central_billing_run_oldest_open_seconds`, `central_invoices_sync_failed` | Billing Runs that did not complete, and invoices that failed to sync to accounting. |
+| `central_site_domains_failed_last_hour{route_type}`, `central_site_domain_oldest_pending_seconds{route_type}` | Proxy routes. |
+| `central_vm_snapshots_failed_last_day{snapshot_type}`, `central_vm_snapshot_oldest_pending_seconds` | VM Snapshots. |
+| `central_emails_failed_last_hour`, `central_email_oldest_unsent_seconds` | The Email Queue. An email with a later `send_after` waits from that time. |
+| `central_job_queue_length{queue}`, `central_scheduled_job_late_seconds{job}` | Queues, and how late each scheduled Central job is. Failed jobs write Error Logs, so `central-errors` covers them. |
+| `frappe_webhook_requests_last_day{webhook,status}` | Webhook Request Logs of the last day. `Exhausted` means Frappe gave up after its retries. |
+
+The rules in `beacon/rules/` read these gauges, and the runbooks in `beacon/runbooks/` tell the responder what to do.
+
+Two SLOs in `beacon/services/` read the same data. `dashboard-api` counts the requests that did not fail with 5xx. `server-actions` counts the finished create, start, stop, restart and resize actions that succeeded. Both are global, so in Beacon set their Query Region to the Central Telemetry Region.
+
+Three checks in `beacon/rules/` call Central from outside: `central-dashboard-unreachable.http`, `central-api-unreachable.http` and `central-certificate.tls`. They use `{central_url}` from Beacon Settings and have no region, so Beacon adds them turned off. In Beacon, set their Regions to the Central Telemetry Region and turn them on.
+
 ## How do rename, routes, and TLS work?
 
 Central calls the Pilot Admin API for renames.
