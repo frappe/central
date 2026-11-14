@@ -71,10 +71,7 @@ function toggle() {
 	<li class="relative">
 		<div
 			class="group flex items-start gap-3 rounded-6 px-2 py-2.5 transition-colors duration-150"
-			:class="{
-				'cursor-pointer hover:bg-surface-gray-1/40': canExpand,
-				'bg-surface-gray-1/40': isOpen,
-			}"
+			:class="{ 'cursor-pointer hover:bg-surface-gray-1/40': canExpand }"
 			@click="toggle"
 		>
 			<div class="shrink-0 pt-0.5">
