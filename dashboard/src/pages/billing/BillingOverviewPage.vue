@@ -134,7 +134,7 @@ watch(
 	<div class="relative flex h-full min-h-0">
 		<ScrollArea class="min-w-0 flex-1">
 			<div
-				class="grid auto-rows-max grid-cols-[min(64rem,100%)] content-start justify-center gap-3 px-3 pb-24 pt-3 [container-type:inline-size] md:gap-4 md:px-6 md:pt-7"
+				class="grid auto-rows-max grid-cols-[min(64rem,100%)] content-start justify-center gap-3 px-3 pb-24 pt-3 [container-type:inline-size] md:gap-4 md:px-6 md:pt-4 lg:pt-8"
 			>
 				<OutstandingAlert
 					:statement="reports.statement.data ?? null"
