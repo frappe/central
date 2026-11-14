@@ -241,7 +241,6 @@ class TestDeduplication(EngineTestBase):
 		# timestamp outside the window.
 		cutoff = frappe.utils.add_to_date(None, minutes=-(DEDUP_WINDOW_MINUTES + 1))
 		frappe.db.set_value("Team Notification", result["notification"], "creation", cutoff)
-		frappe.db.commit()
 
 		third = dispatch(
 			TEAM, "backup_failure", message="third", reference_doctype="Site", reference_name="my-site"

@@ -158,7 +158,7 @@ The console serves customers. Desk serves the operator who has to answer a page 
 - Follow DRY, SOLID, and KISS. Apply them to remove real duplication and real coupling, not to add layers.
 - Reduce the layers a reader has to trace. Reduce the state a reader has to hold in their head.
 - Don't abstract for the sake of abstraction, abstract only if you can make a distinct concept from it. Every layer should provide a consistent interface and be part of a single task.
-- Review every test for it's necessity. If the type system covers it, remove the test. If an existing end to end / integration test covers it, remove it.
+- Review every test for it's necessity. If the type system covers it, remove the test. If an existing end to end / integration test covers it, remove it. When you add, change, or remove a test, check it against the `test-prune` rubric.
 
 ### Python
 
@@ -289,6 +289,7 @@ Use `pilot frappe ...` for any Frappe CLI command, such as `migrate` or `clear-c
 - Keep valid error handling, boundary validation, cleanup, synchronization, and security checks.
 - Validate untrusted input at its boundary. Central is the authorization source, so treat every capability and team check as security-sensitive.
 - Run the focused tests for the changed module, and the full app suite only before a broad refactor.
+- CI skips the billing tests on a pull request that changes only modules in `skippable` in `.github/workflows/ci.yml`. When billing code starts to use one of those modules, remove it from `skippable`.
 - Always run tests in isolation and in a separate site.
 - In the handover, report the result, the changed paths, and the verification. Explain implementation details only when the user asks or the reason is not clear.
 
@@ -364,6 +365,7 @@ Use the most specific available skill for the task. See [agent tooling setup](ll
 | `ui-design` | General dashboard design. Use the task-specific interface skills in [agent tooling setup](llm/README.md#interface-skills) for copy, accessibility, layout, typography, and polish. |
 | `grill-me` | Strict review of a plan or design before handover. |
 | `diagnose` | A hard bug or a performance regression. |
+| `test-prune` | Adding, changing, or removing a test, and a slow or redundant test suite. It ships in `.claude/skills`. |
 | `draft-security-advisory` | A security advisory for a fixed vulnerability. |
 | `i-have-adhd` | Focused, action-first output. Invoke it by name. |
 
