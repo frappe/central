@@ -16,6 +16,8 @@ from central.billing.ingester.settings import accounting_settings
 OVERSEAS_PLACE_OF_SUPPLY = "96-Other Countries"
 COMPANY_STATE_KEY = "billing:company_state_code"
 LAST_COMPANY_STATE_KEY = "billing:company_state_code:last"
+# Set after a failed read, so screens do not call the accounting system on every view.
+MISSED_COMPANY_STATE_KEY = "billing:company_state_code:missed"
 COMPANY_STATE_TTL = 24 * 60 * 60
 # After a failed read, the last known code is reused this long before trying again.
 RETRY_AFTER = 60 * 60
@@ -61,7 +63,7 @@ def is_state_recorded(invoice) -> bool:
 
 def filed_state(invoice, current_state: str | None) -> str | None:
 	"""The state an invoice's GST is filed under: the one recorded at issue, else the team's current one."""
-	return (invoice.gst_state or None) if is_state_recorded(invoice) else current_state
+	return (invoice.get("gst_state") or None) if is_state_recorded(invoice) else current_state
 
 
 def tax_rows(template: str | None, paid_amount: float | None = None) -> list[dict]:
@@ -136,12 +138,13 @@ def company_state_code() -> str:
 
 
 def _read_company_state_code() -> str | None:
-	if not connection.enabled():
+	if not connection.enabled() or frappe.cache.get_value(MISSED_COMPANY_STATE_KEY, use_local_cache=False):
 		return None
 	try:
 		return company_state_code() or None
 	except (requests.RequestException, connection.NoAccess):
 		frappe.log_error(title="Company GST state could not be read")
+		frappe.cache.set_value(MISSED_COMPANY_STATE_KEY, 1, expires_in_sec=RETRY_AFTER)
 		return None
 
 

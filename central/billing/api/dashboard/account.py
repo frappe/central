@@ -265,15 +265,19 @@ def get_collection_status(team: str | None = None) -> dict:
 	from central.billing.payments import collection_mode, instruments
 	from central.billing.revenue import credits
 
-	projected = frappe.utils.flt(get_forecast(team).get("projected_total"))
+	forecast = get_forecast(team)
+	projected = frappe.utils.flt(forecast.get("projected_total"))
 	st = collection_mode.status(team)
 	wallet = frappe.utils.flt(credits.get_balance(team)["balance"])
 	return {
 		**st,
 		"top_up_due": None if st["action_required"] else _top_up_due(team, projected),
 		"projected_total": projected,
+		"tax_note": forecast["tax_note"],
+		# The tax the amounts the limit caps include, as the Action Required notice names it.
+		"limit_tax_note": forecast["limit_tax_note"],
 		"wallet_balance": wallet,
-		"shortfall": max(0.0, frappe.utils.flt(projected - wallet, 2)),
+		"shortfall": forecast["shortfall"],
 		"currency": _team_currency(team),
 		"mandate_gap_note": instruments.mandate_gap_note(_team_currency(team)),
 	}

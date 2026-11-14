@@ -1,0 +1,281 @@
+# Copyright (c) 2026, Frappe and contributors
+# For license information, please see license.txt
+"""Every customer-visible amount names the GST it includes (#193 part B)."""
+
+from unittest.mock import patch
+
+import frappe
+
+from central.billing.api.dashboard import invoices as invoice_api
+from central.billing.api.dashboard import outlook
+from central.billing.revenue import credits, tax
+from central.billing.revenue.invoicing import wallet_draw
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import complete_billing_profile, ensure_team
+
+TEAM = "team-tax-labels"
+# The company is in Maharashtra (27).
+COMPANY_STATE = "27"
+# A payment date after any credit these tests grant today.
+PAY_ON = frappe.utils.add_days(frappe.utils.today(), 30)
+
+
+def _set_gst(team: str, **kw) -> None:
+	frappe.db.delete("Tax Profile", {"team": team})
+	frappe.get_doc(
+		{"doctype": "Tax Profile", "team": team, "output_tax_type": "GST", "output_tax_rate": 18, **kw}
+	).insert(ignore_permissions=True)
+
+
+def _invoice(team: str, subtotal=10000, rate=18, sez=False, **kw) -> str:
+	"""An open INR invoice, taxed at `rate` unless zero-rated to an SEZ."""
+	gst = 0 if sez else frappe.utils.flt(subtotal * rate / 100, 2)
+	total = subtotal + gst
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": team,
+				"invoice_type": "Billable",
+				"status": "Outstanding",
+				"period_start": "2026-10-01",
+				"period_end": "2026-10-31",
+				"payment_date": "2026-11-05",
+				"due_date": "2026-11-05",
+				"suspends_on": "2026-12-15",
+				"currency": "INR",
+				"subtotal": subtotal,
+				"output_tax_type": "GST",
+				"output_tax_rate": rate,
+				"output_tax_amount": gst,
+				"zero_rating_reason": "SEZ" if sez else None,
+				"total": total,
+				"expected_collection": total,
+				"items": [
+					{"resource_type": "bundle", "plan": "p", "rate": subtotal, "days": 31, "amount": subtotal}
+				],
+				**kw,
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
+
+
+class TaxLabelTestCase(IntegrationTestCase):
+	team = TEAM
+
+	def setUp(self):
+		ensure_team(self.team)
+		complete_billing_profile(self.team)
+		_set_gst(self.team)
+		frappe.db.delete("Billing Notification Log", {"team": self.team})
+		self.enterContext(
+			patch("central.billing.ingester.gst.cached_company_state_code", return_value=COMPANY_STATE)
+		)
+
+	def tearDown(self):
+		for doctype in ("Tax Profile", "Billing Notification Log", "Team Notification"):
+			frappe.db.delete(doctype, {"team": self.team})
+
+	def _move_to(self, state: str) -> None:
+		frappe.db.set_value("Billing Profile", self.team, "state", state)
+
+
+class TestInvoiceKeepsItsTax(TaxLabelTestCase):
+	def test_an_igst_invoice_is_named_igst(self):
+		self._move_to("Karnataka")
+		doc = frappe.get_doc("Invoice", _invoice(TEAM))
+		self.assertEqual(tax.TaxNames(TEAM).label(doc), "IGST 18%")
+		self.assertEqual(tax.TaxNames(TEAM).note(doc), "incl. IGST 18%")
+
+	def test_an_in_state_invoice_is_named_cgst_and_sgst(self):
+		doc = frappe.get_doc("Invoice", _invoice(TEAM))
+		self.assertEqual(tax.TaxNames(TEAM).note(doc), "incl. CGST 9% + SGST 9%")
+
+	def test_an_invoice_keeps_the_rate_it_was_issued_with(self):
+		self._move_to("Karnataka")
+		doc = frappe.get_doc("Invoice", _invoice(TEAM, rate=12))
+		self.assertEqual(tax.TaxNames(TEAM).label(doc), "IGST 12%")
+
+	def test_an_sez_invoice_stays_zero_rated_after_the_profile_changes(self):
+		doc = frappe.get_doc("Invoice", _invoice(TEAM, sez=True))
+		self.assertEqual(tax.TaxNames(TEAM).label(doc), "No GST (SEZ)")
+		self.assertEqual(tax.TaxNames(TEAM).note(doc), "SEZ supply, no GST")
+		self.assertIn("Special Economic Zone", tax.TaxNames.reason(doc))
+
+	def test_an_untaxed_invoice_names_nothing(self):
+		doc = frappe.get_doc("Invoice", _invoice(TEAM, rate=0))
+		self.assertIsNone(tax.TaxNames(TEAM).note(doc))
+
+
+class TestInvoiceKeepsItsState(TaxLabelTestCase):
+	"""An invoice is named by the state it was issued with, as it is filed."""
+
+	def _recorded(self, state, **kw):
+		return _invoice(TEAM, gst_state=state, gst_state_recorded=1, **kw)
+
+	def test_an_in_state_invoice_stays_cgst_after_the_team_moves(self):
+		name = self._recorded("Maharashtra")
+		self._move_to("Karnataka")
+		self.assertEqual(tax.TaxNames(TEAM).label(frappe.get_doc("Invoice", name)), "CGST 9% + SGST 9%")
+		self.assertEqual(invoice_api.get_invoice(name)["tax_label"], "CGST 9% + SGST 9%")
+
+	def test_an_invoice_issued_without_a_state_stays_igst(self):
+		name = self._recorded(None)
+		row = next(r for r in invoice_api.list_invoices(TEAM) if r["name"] == name)
+		self.assertEqual(row["tax_note"], "incl. IGST 18%")
+
+	def test_the_next_payment_follows_the_recorded_state(self):
+		self._recorded("Karnataka")
+		self.assertEqual(outlook.get_next_payment(TEAM)["tax_note"], "incl. IGST 18%")
+
+	def test_the_team_tax_today_follows_the_team_state(self):
+		self._recorded("Karnataka")
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "CGST 9% + SGST 9%")
+
+
+class TestApisExposeTheLabel(TaxLabelTestCase):
+	def test_the_invoice_detail_names_its_tax_and_reason(self):
+		self._move_to("Karnataka")
+		igst = invoice_api.get_invoice(_invoice(TEAM))
+		sez = invoice_api.get_invoice(_invoice(TEAM, sez=True, period_start="2026-09-01"))
+
+		self.assertEqual(igst["tax_label"], "IGST 18%")
+		self.assertIsNone(igst["tax_reason"])
+		self.assertEqual(sez["tax_label"], "No GST (SEZ)")
+		self.assertIn("Special Economic Zone", sez["tax_reason"])
+
+	def test_the_invoice_list_says_what_each_total_includes(self):
+		name = _invoice(TEAM)
+		row = next(r for r in invoice_api.list_invoices(TEAM) if r["name"] == name)
+		self.assertEqual(row["tax_note"], "incl. CGST 9% + SGST 9%")
+
+	def test_the_next_payment_says_what_it_includes(self):
+		self._move_to("Karnataka")
+		_invoice(TEAM)
+		self.assertEqual(outlook.get_next_payment(TEAM)["tax_note"], "incl. IGST 18%")
+
+	def test_the_wallet_history_names_the_gst_of_a_top_up(self):
+		with patch("central.billing.ingester.advance.enqueue_sync"):
+			credits.purchase(TEAM, 1180, "INR", gateway_payment_id="pay_tax_labels", gateway="razorpay")
+		self._move_to("Karnataka")
+		rows = invoice_api.credit_ledger(TEAM)
+		self.assertEqual(rows[0]["tax_label"], "IGST 18%")
+		self.assertEqual(rows[0]["tax_amount"], 180)
+
+	def test_a_top_up_keeps_its_gst_after_the_team_turns_sez(self):
+		with patch("central.billing.ingester.advance.enqueue_sync"):
+			credits.purchase(TEAM, 1180, "INR", gateway_payment_id="pay_tax_labels_sez", gateway="razorpay")
+		_set_gst(TEAM, zero_rated=1, zero_rating_reason="SEZ")
+		self.assertEqual(invoice_api.credit_ledger(TEAM)[0]["tax_label"], "CGST 9% + SGST 9%")
+
+	def test_a_top_up_names_the_rate_it_was_paid_at(self):
+		with patch("central.billing.ingester.advance.enqueue_sync"):
+			credits.purchase(TEAM, 1180, "INR", gateway_payment_id="pay_tax_labels_rate", gateway="razorpay")
+		_set_gst(TEAM, output_tax_rate=12)
+		self.assertEqual(invoice_api.credit_ledger(TEAM)[0]["tax_label"], "CGST 9% + SGST 9%")
+
+	def test_credit_without_gst_names_no_tax(self):
+		credits.grant_promotional_credits(TEAM, 500, "INR")
+		self.assertIsNone(invoice_api.credit_ledger(TEAM)[0]["tax_label"])
+
+	def test_returned_credit_with_gst_names_no_rate(self):
+		credits.return_credit(
+			TEAM, 1000, "INR", "Invoice", "INV-RETURNED", "Returned", paid_in=True, tax_amount=90
+		)
+		row = invoice_api.credit_ledger(TEAM)[0]
+		self.assertEqual(row["tax_amount"], 90)
+		self.assertIsNone(row["tax_label"])
+
+
+class TestForecastIsNamedByItsBill(TaxLabelTestCase):
+	def _forecast(self, tax_amount=0, zero_rating_reason=None):
+		block = {
+			"lines": [],
+			"subtotal": 0,
+			"output_tax_type": "GST",
+			"output_tax_rate": 18,
+			"output_tax_amount": tax_amount,
+			"zero_rating_reason": zero_rating_reason,
+			"total": tax_amount,
+			"expected_collection": tax_amount,
+		}
+		projection = {"invoice": block, "currency": "INR"}
+		with patch("central.billing.projection.engine.project", return_value=projection):
+			return invoice_api.get_forecast(TEAM)
+
+	def test_a_forecast_with_no_gst_charged_names_none(self):
+		forecast = self._forecast()
+		self.assertIsNone(forecast["tax_note"])
+		self.assertEqual(forecast["limit_tax_note"], "incl. CGST 9% + SGST 9%")
+
+	def test_an_sez_forecast_is_named_no_gst(self):
+		self.assertEqual(self._forecast(zero_rating_reason="SEZ")["tax_label"], "No GST (SEZ)")
+
+	def test_a_forecast_with_no_projected_bill_names_none(self):
+		projection = {"invoice": None, "currency": "INR"}
+		with patch("central.billing.projection.engine.project", return_value=projection):
+			forecast = invoice_api.get_forecast(TEAM)
+
+		self.assertIsNone(forecast["tax_label"])
+		self.assertIsNone(forecast["tax_note"])
+		self.assertEqual(forecast["limit_tax_note"], "incl. CGST 9% + SGST 9%")
+
+
+class TestProjectedNextPaymentIsNamedByItsBill(TaxLabelTestCase):
+	def _note(self, invoice):
+		projection = {"invoice": invoice, "currency": "INR"}
+		with patch("central.billing.projection.engine.project", return_value=projection):
+			return outlook.get_next_payment(TEAM)["tax_note"]
+
+	def _block(self, tax_amount):
+		return {
+			"output_tax_type": "GST",
+			"output_tax_rate": 18,
+			"output_tax_amount": tax_amount,
+			"expected_collection": 1000 + tax_amount,
+		}
+
+	def test_no_projected_bill_names_none(self):
+		self.assertIsNone(self._note(None))
+
+	def test_a_projection_with_no_gst_names_none(self):
+		self.assertIsNone(self._note(self._block(0)))
+
+	def test_a_projection_with_gst_is_named_from_its_block(self):
+		self.assertEqual(self._note(self._block(180)), "incl. CGST 9% + SGST 9%")
+
+
+class TestSpendLimitIsBeforeTax(TaxLabelTestCase):
+	def test_spend_history_carries_spend_before_tax(self):
+		from central.billing.api.dashboard import reports
+
+		with self.freeze_time("2026-11-13 10:00:00"):
+			_invoice(TEAM)
+			october = next(m for m in reports.get_spend_history(TEAM)["months"] if m["month"] == "2026-10")
+
+		self.assertEqual(october["subtotal"], 10000)
+		self.assertEqual(october["total"], 11800)
+
+
+class TestShortfallCountsTopUpGst(TaxLabelTestCase):
+	def test_gst_paid_with_top_ups_pays_the_bill_gst(self):
+		"""₹10,000 of top-ups with ₹1,800 GST paid on them pays a ₹11,800 bill outright."""
+		with patch("central.billing.ingester.advance.enqueue_sync"):
+			credits.purchase(TEAM, 11800, "INR", gateway_payment_id="pay_tax_labels_gst", gateway="razorpay")
+
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 10000)
+		self.assertEqual(wallet_draw.get_wallet_shortfall(TEAM, "INR", 11800, 1800, PAY_ON), 0)
+
+	def test_promotional_credit_pays_the_bill_with_its_gst(self):
+		credits.grant_promotional_credits(TEAM, 10000, "INR")
+		self.assertEqual(wallet_draw.get_wallet_shortfall(TEAM, "INR", 11800, 1800, PAY_ON), 1800)
+
+	def test_promotional_credit_expiring_by_the_payment_date_is_left_out(self):
+		credits.grant_promotional_credits(TEAM, 10000, "INR", expires_on=PAY_ON)
+		self.assertEqual(wallet_draw.get_wallet_shortfall(TEAM, "INR", 11800, 1800, PAY_ON), 11800)
+
+	def test_promotional_credit_valid_after_the_payment_date_counts(self):
+		credits.grant_promotional_credits(TEAM, 10000, "INR", expires_on=frappe.utils.add_days(PAY_ON, 1))
+		self.assertEqual(wallet_draw.get_wallet_shortfall(TEAM, "INR", 11800, 1800, PAY_ON), 1800)

@@ -4,6 +4,7 @@ import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { money } from '@/lib/format'
+import { spendLimitRatio } from '@/lib/spendShare'
 import type { TierLevel, TrustTier } from '@/types/billing'
 
 interface Gate {
@@ -35,7 +36,8 @@ export function useSpendingLimits() {
 	const currency = computed(() => tier.data?.currency || 'INR')
 	const current = computed(() => tier.data?.current)
 	const progress = computed(() => tier.data?.progress)
-	const monthlySpend = computed(() => forecast.data?.projected_total)
+	// The spend limit is before tax, so it is compared with spend before tax.
+	const monthlySpend = computed(() => forecast.data?.subtotal)
 	const nextLevel = computed(() => tier.data?.next ?? null)
 
 	const payingSince = computed(() => {
@@ -53,11 +55,12 @@ export function useSpendingLimits() {
 			: `${months} month${months === 1 ? '' : 's'}`
 	})
 
-	const cycleRatio = computed(() => {
-		const cap = Number(current.value?.max_spend ?? 0)
-		const spent = Number(monthlySpend.value ?? 0)
-		return cap ? Math.min(1, spent / cap) : 0
-	})
+	const cycleRatio = computed(() =>
+		spendLimitRatio(
+			Number(monthlySpend.value ?? 0),
+			Number(current.value?.max_spend ?? 0),
+		),
+	)
 	const resourcesUsed = computed(() =>
 		Number(progress.value?.resources_used ?? 0),
 	)

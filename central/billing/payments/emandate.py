@@ -28,6 +28,7 @@ from frappe.query_builder.functions import Max
 from central.billing.doctype.invoice.invoice import is_owed, owed_filters
 from central.billing.payments import collection, collection_mode
 from central.billing.platform.jobs import each_isolated
+from central.billing.revenue import tax
 
 PREDEBIT_NOTICE_HOURS = 24
 
@@ -113,7 +114,8 @@ def schedule_predebit(invoice: str, now=None, gateway: str | None = None) -> dic
 		"Pre-debit Notice",
 		context={
 			"invoice": invoice,
-			"amount": f"{frappe.utils.flt(inv.expected_collection)} {inv.currency or ''}".strip(),
+			"amount": frappe.utils.fmt_money(inv.expected_collection, currency=inv.currency),
+			"tax_note": tax.TaxNames(inv.team).note(inv),
 			"charge_on": frappe.utils.format_datetime(charge_after),
 		},
 		reference_doctype="Invoice",

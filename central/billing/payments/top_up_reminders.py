@@ -89,7 +89,7 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 
 	has_method = bool(collection.get_methods_left(team, invoice))
 	limit = collection_mode.off_session_limit(team, invoice) if has_method else 0.0
-	lots, gst_left = get_wallet_on(team, date)
+	lots, gst_left = wallet_draw.get_wallet_on(team, "INR", date)
 	draw = wallet_draw.plan_draw(lots, bill, gst, gst_left)
 	if collection_mode.is_within_limit(limit, get_card_share(bill, draw.owed, invoice)):
 		return None
@@ -100,12 +100,14 @@ def get_shortfall_due(team: str, bill: float, gst: float, date, invoice: str | N
 		# No amount would be true to state, so nothing is asked.
 		frappe.logger("billing").warning(f"top-up reminder skipped for {team}: no credit pays the bill")
 		return None
+	names = tax.get_tax_names(team)
 	return {
 		"amount": credit,
 		"amount_with_gst": frappe.utils.flt(credit + credits.top_up_gst(team, credit), 2),
-		"tax_label": tax.tax_label(team),
+		"tax_label": names["tax_label"],
 		"date": str(date),
 		"limit": limit,
+		"limit_tax_note": names["limit_tax_note"] if has_method else None,
 		"has_method": has_method,
 		"invoice": invoice,
 		"includes_earlier_gst": draw.gst_unpaid > 0
@@ -121,18 +123,6 @@ def get_card_share(bill: float, owed: float, invoice: str | None = None) -> floa
 	if frappe.utils.flt(owed, 2) <= 0:
 		return 0.0
 	return frappe.utils.flt(bill, 2) if invoice else frappe.utils.flt(owed, 2)
-
-
-def get_wallet_on(team: str, date) -> tuple[list, float]:
-	"""The wallet's credit lots and top-up GST balance as the collector reads them on `date`.
-	Promotional credit that expires by then is left out."""
-	on = frappe.utils.getdate(date)
-	lots = [
-		lot
-		for lot in credits.credit_lots(team, "INR")
-		if not lot.expires_on or frappe.utils.getdate(lot.expires_on) > on
-	]
-	return lots, credits.advance_gst_balance(team, "INR")
 
 
 def send_top_up_notice(team: str, due: dict) -> dict:
@@ -155,19 +145,20 @@ def send_top_up_notice(team: str, due: dict) -> dict:
 def format_due(due: dict, held: bool = False) -> dict:
 	"""The credit, its cost with GST and the GST it names, the payment date and the limit as
 	the email and the billing page show them. The cost is left out when there is no GST on
-	it. A held team's card or UPI is not charged, so its limit is not named."""
+	it. A held team's card or UPI is not charged, so its limit is not named. `limit_tax_note`
+	is the tax the limited amounts include."""
 	from central.billing.payments.payment_notices import format_date
 
 	with_gst = frappe.utils.flt(due.get("amount_with_gst"))
 	has_gst = with_gst > frappe.utils.flt(due["amount"])
+	shows_limit = due["has_method"] and not held
 	return {
 		"amount": frappe.utils.fmt_money(due["amount"], currency="INR"),
 		"amount_with_gst": frappe.utils.fmt_money(with_gst, currency="INR") if has_gst else None,
 		"tax_label": (due.get("tax_label") or _("GST")) if has_gst else None,
 		"payment_date": format_date(due["date"]),
-		"limit": frappe.utils.fmt_money(due["limit"], currency="INR")
-		if due["has_method"] and not held
-		else None,
+		"limit": frappe.utils.fmt_money(due["limit"], currency="INR") if shows_limit else None,
+		"limit_tax_note": due.get("limit_tax_note") if shows_limit else None,
 	}
 
 

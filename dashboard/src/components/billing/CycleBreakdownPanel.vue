@@ -68,7 +68,7 @@ const period = computed(() =>
 					class="flex items-baseline justify-between gap-3 py-1"
 				>
 					<span class="text-p-sm text-ink-gray-5">
-						{{ fc?.tax_type || 'Tax' }}
+						{{ fc?.tax_label || fc?.tax_type || __('Tax') }}
 					</span>
 					<span class="text-sm-medium tabular-nums text-ink-gray-8">
 						{{ money(fc?.tax_amount ?? 0, currency) }}
@@ -82,6 +82,12 @@ const period = computed(() =>
 						{{ money(fc?.projected_total ?? 0, currency) }}
 					</span>
 				</div>
+				<p
+					v-if="fc?.projected_total && fc?.tax_note"
+					class="mt-0.5 text-right text-p-sm text-ink-gray-5"
+				>
+					{{ fc.tax_note }}
+				</p>
 
 				<p v-if="fc?.has_estimates" class="mt-3 text-p-sm text-ink-gray-5">
 					Estimated lines are metered services nobody has finished using this

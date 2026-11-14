@@ -264,7 +264,7 @@ class TestPaymentReminder(test_emandate.EmandateTestBase):
 
 		context = payment_notices.get_payment_context(doc)
 
-		self.assertEqual(set(context), {"amount", "payment_date", "method", "over_limit"})
+		self.assertEqual(set(context), {"amount", "tax_note", "payment_date", "method", "over_limit"})
 		self.assertFalse(context["over_limit"])
 		self.assertEqual(context["payment_date"], "10 June 2026")
 		self.assertTrue(context["method"])

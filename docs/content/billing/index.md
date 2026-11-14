@@ -42,7 +42,7 @@ The panel at the top of **Billing > Overview** shows the current cycle.
 | Payment in progress | The date Frappe Cloud started a charge that your bank has not confirmed yet. This row shows from the day of the charge until the bank confirms or refuses the payment, or until the suspension date. |
 | Next retry | The date Frappe Cloud tries the payment again. This row shows only after a payment date passes and the invoice is not paid. |
 | Suspends on | The date your servers stop if the invoice stays unpaid. This row shows when no retry is left. It also shows below **Payment in progress** when the invoice is overdue. To avoid suspension, add credit to your wallet. See [When a payment is still in progress near the suspension date](/billing/invoices#when-a-payment-is-still-in-progress-near-the-suspension-date). When your team is already suspended, the row shows **Suspended since** and the suspension date. |
-| Wallet | Your prepaid credit balance. Click the history icon to see its history. Click **Add credit** to top up. |
+| Wallet | Your prepaid credit balance. Click the history icon to see its history. Click **Add credit** to top up. Hover over the balance to see how much of this cycle it pays. GST you paid with top-ups pays the GST of the bill. |
 | Payment method | The payment method that is charged first. |
 | Next invoice | The date of the next invoice. |
 | Next payment date | The next scheduled payment date. When an unpaid invoice passes its payment date, this row shows the payment date of the next invoice. |
@@ -59,6 +59,9 @@ Frappe Cloud sends these payment emails to team members who can see billing:
 | Payment due tomorrow | One day before the payment date. Frappe Cloud does not send it for an Indian mandate, which gets a pre-debit notice instead. |
 | Add credit before your payment date | INR bills only, on Prepaid or automatic payments. On the payment date, your card or UPI would be asked for more than it can pay automatically (at most ₹15,000), or no card or UPI is saved. Before the invoice is issued, your wallet pays what it can first. After it is issued, credit pays it only when the credit covers the whole amount due. Frappe Cloud sends it 5 days and 2 days before the payment date, at most once a day. It asks for enough credit for your wallet to pay the whole bill, rounded up to the next ₹100, and what that credit costs with GST. Click **Add credit** to open the top-up with that credit filled in. When an invoice like this is issued, you get this email instead of **Invoice is ready**. |
 | Payment date changed | You change the payment date. It shows the new day and the date of the next charge. An invoice that is already issued keeps its payment date. |
+| Upcoming auto-payment | An Indian mandate, 24 hours before the debit. It shows the amount and the date of the debit. |
+
+Each amount in these emails that includes tax names the tax, for example `₹11,800.00 (incl. IGST 18%)`. See [How the tax is named](/billing/invoices#how-the-tax-is-named).
 
 ### Budget alerts
 
@@ -71,7 +74,7 @@ The **Spend** card shows what your team was invoiced in the last 3, 6, or 12 mon
 <Screenshot name="billing/spend" alt="The Spend card with 12 months of invoiced amounts, the totals for invoiced, monthly average, paid by credits, and tax, and the spend by product" />
 
 - The top row shows the total invoiced, the monthly average, the amount paid by credits, and the tax.
-- The dark bars are invoiced months. The light bar is the current cycle.
+- The dark bars are invoiced months. The light bar is the current cycle. The bars and the spend limit line are before tax. Taxes are added on top.
 - **By product** splits the total, such as servers and AI tokens.
 - Click the download icon to export the data as a CSV file.
 

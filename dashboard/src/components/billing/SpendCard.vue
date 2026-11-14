@@ -11,6 +11,7 @@ import {
 } from '@/composables/useBillingReports'
 import { useSpendingLimits } from '@/composables/useSpendingLimits'
 import { currencySymbol, money } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { SpendSlice } from '@/types/billing'
 
 interface Props {
@@ -60,18 +61,19 @@ const limit = computed(() => Number(tierCurrent.value?.max_spend ?? 0))
 const chartRows = computed(() => {
 	const rows = history.value?.months ?? []
 
+	// Before tax, like the spend limit: taxes are added on top of both.
 	const accrued = Number(
-		forecast.data?.measured ?? forecast.data?.projected_total ?? 0,
+		forecast.data?.measured ?? forecast.data?.subtotal ?? 0,
 	)
 
 	return rows.map((row, index) => {
 		const isCurrent = index === rows.length - 1
-		const current = isCurrent ? Math.max(row.total, accrued) : 0
+		const current = isCurrent ? Math.max(row.subtotal, accrued) : 0
 		const within = limit.value ? Math.min(current, limit.value) : current
 
 		return {
 			month: row.month.endsWith('-01') ? row.month.slice(0, 4) : row.label,
-			invoiced: isCurrent ? 0 : row.total,
+			invoiced: isCurrent ? 0 : row.subtotal,
 			current: within,
 			over: current - within,
 			limit: limit.value,
@@ -112,7 +114,9 @@ const seriesConfig = computed(() => ({
 	current: { label: 'This cycle', color: themeColor('surface-gray-4') },
 	over: { label: 'Over limit', color: themeColor('surface-amber-6') },
 	limit: {
-		label: `Spend limit ${money(limit.value, currency.value, { trimTrailingZeros: true })}`,
+		label: __('Spend limit {0} before tax', [
+			money(limit.value, currency.value, { trimTrailingZeros: true }),
+		]),
 		type: 'line' as const,
 		dashed: true,
 		echartOptions: { lineStyle: { width: 1 } },
@@ -248,6 +252,9 @@ const breakdowns = computed(() =>
 						:y-axis="{ format: compact }"
 					/>
 				</div>
+				<p class="mt-2 text-p-sm text-ink-gray-5">
+					{{ __('Bars show spend before tax, as the spend limit does. Taxes are added on top.') }}
+				</p>
 			</template>
 		</BillingCard>
 

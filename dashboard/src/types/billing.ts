@@ -55,7 +55,16 @@ export interface Forecast {
 	subtotal: number
 	tax_amount: number
 	tax_type: string | null
+	/** The GST named as invoices name it, e.g. "IGST 18%"; null when no GST applies. */
+	tax_label: string | null
+	/** What follows the tax-inclusive total, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
+	tax_note: string | null
+	/** The note for the off-session limit, from the team's tax today; null when not taxed. */
+	limit_tax_note: string | null
 	credit_balance: number
+	/** What is collected after TDS; the shortfall is part of it. */
+	expected_collection: number
+	/** What the card or UPI pays after the wallet, drawn as the bill draws it. */
 	shortfall: number
 	days_remaining: number
 	currency: Currency
@@ -91,6 +100,8 @@ export interface ChargingMethod {
 export interface NextPayment {
 	currency: Currency
 	amount: number
+	/** The tax the amount includes, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
+	tax_note: string | null
 	charge_on: string | null
 	invoice: string | null
 	period_end: string | null
@@ -201,6 +212,8 @@ export interface CreditLedgerEntry {
 	amount: number
 	/** GST paid on top of a top-up; it later pays invoice GST. */
 	tax_amount: number
+	/** That GST named, e.g. "IGST 18%"; null when the entry has none. */
+	tax_label: string | null
 	/** A top-up booked in the accounting system, so its receipt can be downloaded. */
 	has_receipt: boolean
 	running_balance: number
@@ -233,6 +246,8 @@ export interface InvoiceSummary {
 	due_date: string | null
 	/** Issued in the accounting system, so its PDF can be downloaded. */
 	has_pdf: boolean
+	/** The tax the total includes, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
+	tax_note: string | null
 }
 
 /** One event in an invoice's lifecycle timeline (issued → credits → payment → settled). */
@@ -260,6 +275,10 @@ export interface InvoiceDetail {
 	output_tax_rate: number | null
 	output_tax_amount: number
 	zero_rating_reason: string | null
+	/** The invoice's GST, e.g. "IGST 18%" or "No GST (SEZ)"; null when none applies. */
+	tax_label: string | null
+	/** Why a zero-rated invoice carries no tax, in words. */
+	tax_reason: string | null
 	total: number
 	credit_applied: number
 	/** GST paid with the top-ups the credit came from, so not charged again. */
@@ -484,6 +503,10 @@ export interface CollectionStatus {
 	/** Most the team's card or UPI may be charged automatically; null when nothing caps it. */
 	threshold: number | null
 	projected_total: number
+	/** The tax the projected total includes, e.g. "incl. IGST 18%". */
+	tax_note: string | null
+	/** The tax the amounts the limit caps include, e.g. "incl. IGST 18%"; null for a team not taxed. */
+	limit_tax_note: string | null
 	wallet_balance: number
 	shortfall: number
 	currency: Currency
@@ -512,6 +535,8 @@ export interface TopUpDue {
 		tax_label: string | null
 		payment_date: string
 		limit: string | null
+		/** The tax the amounts the limit caps include; null with no limit or no GST. */
+		limit_tax_note: string | null
 	}
 }
 
@@ -577,6 +602,8 @@ export interface SpendMonth {
 	month: string
 	label: string
 	total: number
+	/** Spend before tax, which the spend limit is compared with. */
+	subtotal: number
 	paid: number
 	currency: Currency
 }

@@ -43,6 +43,11 @@ def _add_upi(team=TEAM) -> None:
 	).insert(ignore_permissions=True)
 
 
+def _forecast_of(total) -> dict:
+	"""A forecast of `total` that the wallet does not pay."""
+	return {"projected_total": total, "shortfall": total, "tax_note": None, "limit_tax_note": None}
+
+
 def _set_mode(mode, team=TEAM) -> None:
 	frappe.db.set_value("Billing Profile", team, "collection_mode", mode)
 
@@ -236,9 +241,7 @@ class TestBanner(TopUpTestCase):
 
 		with (
 			self.freeze_time("2026-11-13 10:00:00"),
-			patch(
-				"central.billing.api.dashboard.invoices.get_forecast", return_value={"projected_total": 40000}
-			),
+			patch("central.billing.api.dashboard.invoices.get_forecast", return_value=_forecast_of(40000)),
 		):
 			status = account.get_collection_status(TEAM)
 
@@ -259,6 +262,7 @@ class TestBanner(TopUpTestCase):
 				"tax_label": None,
 				"payment_date": "1 December 2026",
 				"limit": "₹ 15,000.00",
+				"limit_tax_note": None,
 			},
 		)
 
@@ -321,7 +325,7 @@ class TestBanner(TopUpTestCase):
 			self.freeze_time("2026-11-13 10:00:00"),
 			patch(
 				"central.billing.api.dashboard.invoices.get_forecast",
-				return_value={"projected_total": total},
+				return_value=_forecast_of(total),
 			),
 		):
 			yield

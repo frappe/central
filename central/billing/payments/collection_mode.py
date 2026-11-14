@@ -151,10 +151,23 @@ def trip(team: str, reason: str, invoice: str | None = None) -> None:
 	notifications.notify(
 		team,
 		"Action Required",
-		context={"reason": reason, "threshold": off_session_limit(team, invoice)},
+		context={"reason": reason, **_get_limit_context(team, invoice)},
 		reference_doctype="Billing Profile",
 		reference_name=team,
 	)
+
+
+def _get_limit_context(team: str, invoice: str | None) -> dict:
+	"""The limit the notice quotes, formatted, and the tax the amounts it limits include."""
+	from central.billing.revenue import tax
+
+	threshold = off_session_limit(team, invoice)
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	return {
+		"threshold": threshold,
+		"limit": frappe.utils.fmt_money(threshold, currency=currency) if threshold is not None else None,
+		"tax_note": tax.get_tax_names(team)["limit_tax_note"],
+	}
 
 
 def trip_off_session_debit(team: str, reason: str, invoice: str | None = None) -> None:

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, LoadingText } from 'frappe-ui'
+import { Button, LoadingText, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import AddMethodDialog from '@/components/AddMethodDialog.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
@@ -73,7 +73,13 @@ const startFirstTier = () => {
 				v-else
 				class="grid auto-cols-fr grid-flow-col grid-rows-3 gap-x-4 gap-y-1"
 			>
-				<span class="text-sm text-ink-gray-5">Spend per cycle</span>
+				<Tooltip
+					:text="__('The spend and the limit are before tax. Taxes are added on top.')"
+				>
+					<span class="text-sm text-ink-gray-5"
+						>{{ __('Spend per cycle, before tax') }}</span
+					>
+				</Tooltip>
 
 				<span class="text-base-medium tabular-nums">
 					<span :class="nearLimit ? 'text-ink-amber-6' : 'text-ink-gray-9'">

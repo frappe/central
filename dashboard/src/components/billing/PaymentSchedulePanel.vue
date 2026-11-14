@@ -97,6 +97,12 @@ const paymentScheduleLoadErrorTitle = __("The payment schedule couldn't load")
 							{{ money(amount, currency) }}
 						</span>
 					</div>
+					<p
+						v-if="amount > 0 && data?.tax_note"
+						class="mt-0.5 text-right text-p-sm text-ink-gray-5"
+					>
+						{{ data.tax_note }}
+					</p>
 					<div class="mt-1.5 flex items-baseline justify-between gap-3">
 						<span class="text-p-sm text-ink-gray-5"
 							>{{ chargeStep.label }}</span

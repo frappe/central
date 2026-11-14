@@ -51,10 +51,10 @@ Each team is on a trust tier. The tier sets two limits:
 
 | Limit | Meaning |
 | --- | --- |
-| Spend per cycle | The most your team can spend in one billing cycle. |
+| Spend per cycle | The most your team can spend in one billing cycle, before tax. Taxes are added on top. |
 | Resources | The most servers and subscribed services your team can run at one time. |
 
-The **Limits** card shows your tier, your projected spend for this cycle against the limit, and your resource count against the limit.
+The **Limits** card shows your tier, your projected spend for this cycle before tax against the limit, and your resource count against the limit.
 
 <Screenshot name="billing/limits" alt="The Limits card on the t3 tier: 749.44 of 12,048.19 dollars spend per cycle and 14 of 500 resources" />
 

@@ -51,8 +51,10 @@ function topUpAsk(due: TopUpDue) {
 		amount_with_gst: withGst,
 		tax_label: taxLabel,
 		payment_date: date,
-		limit,
+		limit: bareLimit,
+		limit_tax_note: limitNote,
 	} = due.labels
+	const limit = bareLimit ? withNote(bareLimit, limitNote) : null
 	if (withGst)
 		return topUpTextWithGst(amount, withGst, taxLabel ?? '', date, limit)
 	if (!limit)
@@ -134,7 +136,7 @@ const prepaidOverLimitBlurb = computed(() => {
 		return __('Add credit to your wallet to cover this bill.')
 	return __(
 		'Add credit to your wallet to cover this bill. Your card or UPI pays only amounts up to {0}.',
-		[money(s.value.threshold, currency.value)],
+		[limitText(s.value.threshold)],
 	)
 })
 
@@ -151,9 +153,9 @@ const reasonText = computed(() => {
 				)
 			: __(
 					'A bill is over the {0} limit for automatic payments. Your services keep running.',
-					[money(limit, currency.value)],
+					[limitText(limit)],
 				)
-	const projected = money(s.value?.projected_total, currency.value)
+	const projected = withTaxNote(money(s.value?.projected_total, currency.value))
 	return limit == null
 		? __(
 				'This month is heading to {0}, past the limit for automatic payments. Your services keep running.',
@@ -161,9 +163,23 @@ const reasonText = computed(() => {
 			)
 		: __(
 				'This month is heading to {0}, past the {1} limit for automatic payments. Your services keep running.',
-				[projected, money(limit, currency.value)],
+				[projected, limitText(limit)],
 			)
 })
+
+function withTaxNote(amount: string): string {
+	return withNote(amount, s.value?.tax_note)
+}
+
+// The limit caps amounts that include tax, as the Action Required notice says.
+function limitText(limit: number): string {
+	return withNote(money(limit, currency.value), s.value?.limit_tax_note)
+}
+
+function withNote(amount: string, note?: string | null): string {
+	// A format, not text: the note is already translated.
+	return note ? `${amount} (${note})` : amount
+}
 
 const options = computed(() => [
 	{

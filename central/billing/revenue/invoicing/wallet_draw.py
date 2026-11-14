@@ -49,6 +49,28 @@ def plan_draw(lots: list, collectable: float, gst_due: float, gst_left: float) -
 	)
 
 
+def get_wallet_shortfall(team: str, currency: str, collectable: float, gst_due: float, date) -> float:
+	"""What the card or UPI is left to pay of `collectable` on `date`, once the wallet is
+	drawn the way the collector draws it: GST paid with top-ups counts, credit without it
+	pays its own GST."""
+	lots, gst_left = get_wallet_on(team, currency, date)
+	return frappe.utils.flt(plan_draw(lots, collectable, gst_due, gst_left).owed, 2)
+
+
+def get_wallet_on(team: str, currency: str, date) -> tuple[list, float]:
+	"""The wallet's credit lots and top-up GST balance as the collector reads them on `date`.
+	Promotional credit that expires by then is left out."""
+	from central.billing.revenue import credits
+
+	on = frappe.utils.getdate(date)
+	lots = [
+		lot
+		for lot in credits.credit_lots(team, currency)
+		if not lot.expires_on or frappe.utils.getdate(lot.expires_on) > on
+	]
+	return lots, credits.advance_gst_balance(team, currency)
+
+
 # The cover formula can miss by a rounding step; a larger gap means the inputs disagree.
 MAX_EXTRA_STEPS = 3
 

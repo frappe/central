@@ -104,7 +104,7 @@ class TestAnIssuedBillWithGst(TopUpCreditTestCase):
 		)
 		self.assertIn(
 			"Add ₹ 28,900.00 of credit to your wallet by 8 December 2026 (₹ 34,102.00 incl. IGST 18%). "
-			"Your card or UPI pays only amounts up to ₹ 15,000.00.",
+			"Your card or UPI pays only amounts up to ₹ 15,000.00 (incl. IGST 18%).",
 			message,
 		)
 
@@ -261,7 +261,7 @@ class TestEarlierCreditWithoutGst(TopUpCreditTestCase):
 		self.assertTrue(due["includes_earlier_gst"])
 		self.assertIn(
 			"Add ₹ 33,900.00 of credit to your wallet by 8 December 2026 (₹ 40,002.00 incl. IGST 18%). "
-			f"Your card or UPI pays only amounts up to ₹ 15,000.00. {EARLIER_GST_NOTE}",
+			f"Your card or UPI pays only amounts up to ₹ 15,000.00 (incl. IGST 18%). {EARLIER_GST_NOTE}",
 			self._message(),
 		)
 		self._assert_it_settles(invoice, due["amount"])

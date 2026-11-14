@@ -9,6 +9,7 @@ from frappe import _
 from central.billing.doctype.invoice.invoice import is_owed, owed_filters
 from central.billing.platform import notifications
 from central.billing.platform.jobs import each_isolated
+from central.billing.revenue import tax
 from central.notification import engine
 
 
@@ -296,7 +297,7 @@ def _is_reminder_due(invoice, now: datetime) -> bool:
 
 
 def get_payment_context(invoice) -> dict:
-	"""The amount, the payment date and the method a payment notice names.
+	"""The amount, the tax it includes, the payment date and the method a payment notice names.
 
 	`over_limit` is set when the team has methods but none may take the amount off-session,
 	so the notice asks for a payment by hand instead of naming a method."""
@@ -305,6 +306,7 @@ def get_payment_context(invoice) -> dict:
 	method = _get_charging_method(invoice)
 	return {
 		"amount": frappe.utils.fmt_money(invoice.expected_collection, currency=invoice.currency),
+		"tax_note": tax.TaxNames(invoice.team).note(invoice),
 		"payment_date": format_date(invoice.payment_date),
 		"method": _get_method_label(method),
 		"over_limit": not method and bool(collection.get_methods_left(invoice.team, invoice.name)),

@@ -22,6 +22,7 @@ from central.billing.api.dashboard._shared import _resolve_team, _team_currency
 from central.billing.doctype.billing_profile.billing_profile import get_payment_date
 from central.billing.doctype.invoice.invoice import OVERDUE, owed_filters
 from central.billing.payments.charges import in_flight_attempt
+from central.billing.revenue import tax
 from central.billing.revenue.dunning import (
 	LADDER_FIELDS,
 	dunning_policy,
@@ -82,11 +83,7 @@ def get_next_payment(team: str | None = None) -> dict:
 
 	owed = _owed_invoices(team)
 	invoice = owed[0] if owed else None
-	if invoice:
-		amount = frappe.utils.flt(invoice.expected_collection)
-		period_end = invoice.period_end
-	else:
-		amount, period_end = _projected_collectable(team, today)
+	amount, period_end, bill = _amount_due(team, invoice, today)
 
 	charge_on = _scheduled_charge_on(team, owed, today)
 	missed = _missed_payment(team, invoice, today)
@@ -94,6 +91,7 @@ def get_next_payment(team: str | None = None) -> dict:
 	return {
 		"currency": currency,
 		"amount": amount,
+		"tax_note": _tax_note(team, bill),
 		"charge_on": str(charge_on) if charge_on else None,
 		"invoice": invoice.name if invoice else None,
 		"period_end": str(period_end) if period_end else None,
@@ -121,6 +119,19 @@ def get_payment_schedule(team: str | None = None) -> dict:
 	}
 
 
+def _amount_due(team: str, invoice, today) -> tuple[float, object, object]:
+	"""The amount, period end and bill of the next debit: the owed invoice, else the projection."""
+	if invoice:
+		return frappe.utils.flt(invoice.expected_collection), invoice.period_end, invoice
+	return _projected_collectable(team, today)
+
+
+def _tax_note(team: str, block) -> str | None:
+	"""What the amount includes, from the bill it totals: "incl. IGST 18%", or "SEZ supply,
+	no GST". None without a bill, since the amount then carries no tax."""
+	return tax.TaxNames(team).note(block) if block else None
+
+
 def _owed_invoices(team: str) -> list[frappe._dict]:
 	"""The open bills we still have to collect, oldest due first."""
 	return frappe.get_all(
@@ -137,6 +148,7 @@ def _owed_invoices(team: str) -> list[frappe._dict]:
 			*LADDER_FIELDS,
 			"period_end",
 			"predebit_charge_after",
+			*tax.LABEL_FIELDS,
 		],
 		order_by="due_date asc",
 	)
@@ -245,8 +257,9 @@ def _suspended_since(team: str):
 	)
 
 
-def _projected_collectable(team: str, today) -> tuple[float, object]:
-	"""What the current period would collect if it closed as projected."""
+def _projected_collectable(team: str, today) -> tuple[float, object, dict | None]:
+	"""What the current period would collect if it closed as projected, its end, and the
+	projected invoice (None when nothing is billable)."""
 	from central.billing.projection import engine
 
 	month_start = frappe.utils.get_first_day(today)
@@ -254,8 +267,8 @@ def _projected_collectable(team: str, today) -> tuple[float, object]:
 	# Unguarded for the same reason get_forecast is: a customer page must not fail
 	# because the request that reached it happened to write something first.
 	projection = engine.project(team, month_start, month_end, today=today, guarded=False)
-	invoice = projection["invoice"] or {}
-	return frappe.utils.flt(invoice.get("expected_collection")), month_end
+	invoice = projection["invoice"]
+	return frappe.utils.flt((invoice or {}).get("expected_collection")), month_end, invoice
 
 
 def _blockers(team: str, amount: float, currency: str, charge_on, today) -> list[dict]:
