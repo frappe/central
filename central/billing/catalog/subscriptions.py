@@ -451,7 +451,8 @@ def begin_resize(
 	_require_resize_target(doc, server, plan, includes, sub_category)
 	target = _resize_target(doc, plan, includes, sub_category, disk_gigabytes)
 	if not target.plan:
-		get_resize_profile(doc, target.sub_category, target.preset_plan)
+		profile = get_resize_profile(doc, target.sub_category, target.preset_plan)
+		_validate_resize_shape(profile, target.includes, doc.server_id, target.preset_plan)
 	shape = _plan_resize(doc, server, target.plan, target.includes, target.sub_category, target.override_rate)
 	if shape is None:
 		return {"queued": False, "resized": False}  # same config — nothing to do
@@ -641,7 +642,7 @@ def _plan_resize(doc, server, plan, includes, sub_category, override_rate=None) 
 	None when it's a no-op (same config). Runs the VM-free checks — no-op detection,
 	headroom, and the disk-shrink guard — so the user gets these errors immediately,
 	before anything is queued; the worker re-runs them authoritatively when it applies
-	the resize. (Composition validity is left to the worker.)"""
+	the resize."""
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
 	cluster = server.region if server else None
 	if plan:
