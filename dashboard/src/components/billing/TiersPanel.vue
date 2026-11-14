@@ -103,7 +103,7 @@ const requirementText = (level: TierLevel) =>
 							v-if="row.state === 'current'"
 							class="block text-sm text-ink-gray-5"
 						>
-							{{ __('{0} running a month before tax', [
+							{{ __('{0} running now', [
 									money(runningMonthly, currency, { trimTrailingZeros: true }),
 								]) }}
 						</span>
