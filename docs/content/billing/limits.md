@@ -1,6 +1,6 @@
 # Credits and spend limits
 
-Credits are money you pay in advance into your team's wallet. A spend limit is the most your team can spend in one billing cycle. Your limit comes from your trust tier, and the tier rises as you pay invoices.
+Credits are money you pay in advance into your team's wallet. A spending limit is the most that everything your team runs can cost in a month, before tax. Taxes are added on top. Your limit comes from your trust tier, and the tier rises as you pay invoices.
 
 ::: info
 You need the Owner, Admin, or Billing role to add credit. All billing roles can see the wallet and the limits.
@@ -51,12 +51,12 @@ Each team is on a trust tier. The tier sets two limits:
 
 | Limit | Meaning |
 | --- | --- |
-| Spend per cycle | The most your team can spend in one billing cycle, before tax. Taxes are added on top. |
+| Spending limit | The most that everything your team runs can cost in a month, before tax. Taxes are added on top. |
 | Resources | The most servers and subscribed services your team can run at one time. |
 
-The **Limits** card shows your tier, your projected spend for this cycle before tax against the limit, and your resource count against the limit.
+The **Limits** card shows your tier, what everything your team runs now costs a month before tax against the limit, and your resource count against the limit. This is the same figure that Frappe Cloud checks when you create or resize a server. It is not the projected bill for the cycle, which includes tax and can include usage.
 
-<Screenshot name="billing/limits" alt="The Limits card on the t3 tier: 749.44 of 12,048.19 dollars spend per cycle and 14 of 500 resources" />
+<Screenshot name="billing/limits" alt="The Limits card on the t3 tier: 749.44 of 12,048.19 dollars limit running a month before tax, and 14 of 500 resources" />
 
 ### Move to a higher tier
 
@@ -72,11 +72,11 @@ The tiers and amounts in your console depend on your billing currency. The conso
 
 Frappe Cloud checks your limits when you create or resize a server. It refuses the change when:
 
-- The new monthly cost and your current costs go above your spend limit. Choose a smaller plan.
+- The monthly cost of the new server, added to the monthly cost of what your team already runs, goes above your spending limit. Both costs are before tax. Taxes are added on top. Choose a smaller plan. The refusal shows the new cost, your limit, and what your servers already cost.
 - You pay with credits only, and your credits do not cover the new monthly cost and your current costs. Credit you added pays the cost before tax, and the GST you paid with it pays the tax. Free credit pays the tax too, so it covers less before tax. Add credit or a payment method.
 - Your team already runs the most servers that your tier allows. Terminate a server you no longer need.
 
-When your projected spend reaches 80% of the limit, the spend on the **Limits** card turns amber.
+When what your team runs reaches 80% of the limit, the amount on the **Limits** card turns amber.
 
 To ask for a higher limit, click **All tiers**, then click **Contact support**.
 
