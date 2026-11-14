@@ -17,9 +17,16 @@ FROM (
     GROUP BY labels['gateway']
     HAVING failed >= 5 AND failed >= 0.5 * sum(value)
     UNION ALL
-    SELECT concat('webhooks-waiting:', labels['gateway']), value, concat('a ', labels['gateway'], ' webhook waits for ', toString(round(value / 60)), ' min'), 'High'
-    FROM datum.samples_recent
-    WHERE metric = 'central_gateway_webhook_oldest_unprocessed_seconds' AND resource_id = 'central' AND ts = snapshot AND value > 900
+    SELECT concat('webhooks-waiting:', gateway), oldest, concat(toString(waiting), ' ', gateway, ' webhooks wait, the oldest for ', toString(round(oldest / 60)), ' min'), 'High'
+    FROM (
+        SELECT labels['gateway'] AS gateway,
+               maxIf(value, metric = 'central_gateway_webhook_oldest_unprocessed_seconds') AS oldest,
+               maxIf(value, metric = 'central_gateway_webhooks_unprocessed') AS waiting
+        FROM datum.samples_recent
+        WHERE metric IN ('central_gateway_webhook_oldest_unprocessed_seconds', 'central_gateway_webhooks_unprocessed') AND resource_id = 'central' AND ts = snapshot
+        GROUP BY gateway
+    )
+    WHERE oldest > 900
     UNION ALL
     SELECT concat('webhooks-failed:', labels['gateway']), value, concat(toString(value), ' ', labels['gateway'], ' webhooks failed in 1 h'), 'Medium'
     FROM datum.samples_recent
