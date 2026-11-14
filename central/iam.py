@@ -134,6 +134,21 @@ def is_active_team_member(user: str, team: str, statuses: tuple[str, ...] = ("Ac
 	return bool(query.run())
 
 
+def get_owned_team_names(user: str) -> list[str]:
+	"""The Active teams whose owner is `user`. A team has exactly one owner."""
+	return frappe.get_all(
+		"Team",
+		filters={"owner_user": user, "status": "Active"},
+		pluck="name",
+		order_by="name",
+	)
+
+
+def is_team_owner(user: str, team: str) -> bool:
+	"""Whether `user` owns the Active team `team`."""
+	return team in get_owned_team_names(user)
+
+
 def get_team_names_with_role(role: str, teams: list[str]) -> list[str]:
 	"""The teams among `teams` where at least one member holds `role`."""
 	return frappe.get_all(

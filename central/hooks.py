@@ -27,6 +27,7 @@ fixtures = [
 					"Atlas Warpgate Admin",
 					"Product Operator",
 					"Staff Viewer",
+					"Connect Integration",
 				],
 			]
 		],
@@ -301,6 +302,7 @@ scheduler_events = {
 	],
 	"daily": [
 		"central.identity.doctype.team_invitation.team_invitation.expire_pending_invitations",
+		"central.identity.doctype.partner_registration.partner_registration.expire_pending_registrations",
 		"central.signups.trial.run_trials",
 		"central.billing.revenue.dunning.run_dunning",
 		"central.billing.payments.charges.cleanup_payment_logs",

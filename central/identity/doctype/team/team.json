@@ -17,6 +17,10 @@
   "members",
   "onboarding_section",
   "onboarding_steps",
+  "partner_section",
+  "connect_partner_id",
+  "column_break_partner",
+  "partner_code",
   "attribution_section",
   "utm_source",
   "utm_medium",
@@ -157,6 +161,38 @@
    "label": "Referrer",
    "permlevel": 2,
    "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "description": "Set when the team completes a Frappe Connect partner registration.",
+   "fieldname": "partner_section",
+   "fieldtype": "Section Break",
+   "label": "Partner Program"
+  },
+  {
+   "description": "The partner ID in Frappe Connect. One Connect partner maps to one team.",
+   "fieldname": "connect_partner_id",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Connect Partner ID",
+   "no_copy": 1,
+   "permlevel": 1,
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "column_break_partner",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The code a customer enters to add this team as their partner.",
+   "fieldname": "partner_code",
+   "fieldtype": "Data",
+   "label": "Partner Code",
+   "no_copy": 1,
+   "permlevel": 1,
+   "read_only": 1,
+   "unique": 1
   }
  ],
  "links": [
@@ -279,9 +315,14 @@
    "group": "Access",
    "link_doctype": "WireGuard Device",
    "link_fieldname": "team"
+  },
+  {
+   "group": "Access",
+   "link_doctype": "Partner Registration",
+   "link_fieldname": "team"
   }
  ],
- "modified": "2026-11-04 12:00:00.000000",
+ "modified": "2026-11-14 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Identity",
  "name": "Team",
@@ -331,6 +372,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "search_fields": "partner_code",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

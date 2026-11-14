@@ -24,6 +24,7 @@ class CentralSettings(Document):
 		articles_enabled: DF.Check
 		central_id: DF.Int
 		common_site_config: DF.JSON | None
+		connect_url: DF.Data | None
 		disk_iops: DF.Int
 		disk_throughput_mibps: DF.Int
 		enable_addons: DF.Check

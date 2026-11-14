@@ -38,6 +38,13 @@ const routes = [
 		meta: { public: true, allowSignedIn: true },
 	},
 	{
+		// Frappe Connect's link for a partner's owner to choose the partner team.
+		path: '/partner-registration/:token',
+		name: 'PartnerRegistration',
+		component: () => import('@/pages/partners/PartnerRegistrationPage.vue'),
+		meta: { public: true, allowSignedIn: true },
+	},
+	{
 		path: '/onboarding/site',
 		name: 'OnboardingSite',
 		component: () => import('@/pages/onboarding/SiteNamePage.vue'),

@@ -128,6 +128,21 @@ export interface InvitationSummary {
 	has_account: boolean
 }
 
+/** A team that can become the partner's team: Active, owned by the viewer, not a partner yet. */
+export interface RegistrableTeam {
+	name: string
+	team_name: string
+}
+
+/** The partner registration behind a link from Frappe Connect. */
+export interface PartnerRegistrationSummary {
+	partner_name: string
+	owner_email: string
+	status: 'Pending' | 'Completed' | 'Expired'
+	has_account: boolean
+	teams: RegistrableTeam[]
+}
+
 /** One bundled resource in a plan (central Plan Includes). */
 export interface PlanInclude {
 	resource_type: 'Compute' | 'Memory' | 'Disk' | 'Transfer' | 'IP' | 'Snapshot'
