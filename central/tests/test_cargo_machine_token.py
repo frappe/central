@@ -38,6 +38,7 @@ class TestCargoMachineToken(IntegrationTestCase):
 			"region": self.region.name,
 			"machine": "vm-1",
 			"role": "storage",
+			"virtual_machine": "atlas-vm-1",
 			"iat": int(time.time()),
 			**claims,
 		}
@@ -51,17 +52,28 @@ class TestCargoMachineToken(IntegrationTestCase):
 		)
 		return datum_token()
 
-	def test_a_signed_machine_token_gets_a_datum_token_for_that_machine(self):
+	def test_a_machine_gets_a_datum_token_for_its_virtual_machine(self):
 		result = self.call(self.machine_token())
 
 		self.assertEqual(result["token"], "datum-token")
-		self.assertEqual(result["resource_id"], "cargo:vm-1")
-		self.mint.assert_called_once_with(60117, "cargo:vm-1")
+		self.assertEqual(result["resource_id"], "atlas-vm-1")
+		self.mint.assert_called_once_with(60117, "atlas-vm-1")
 
-	def test_the_cargo_host_gets_a_datum_token_for_its_region(self):
-		result = self.call(self.machine_token(role="cargo", machine=self.region.name))
+	def test_the_cargo_vm_gets_a_datum_token_for_its_virtual_machine(self):
+		result = self.call(self.machine_token(role="cargo_vm", machine=self.region.name))
 
-		self.assertEqual(result["resource_id"], f"cargo:{self.region.name}")
+		self.assertEqual(result["resource_id"], "atlas-vm-1")
+
+	def test_the_cargo_site_gets_a_datum_token_as_cargo(self):
+		result = self.call(self.machine_token(role="cargo", machine=self.region.name, virtual_machine=None))
+
+		self.assertEqual(result["resource_id"], "cargo")
+
+	def test_a_machine_token_without_a_virtual_machine_is_refused(self):
+		with self.assertRaises(frappe.AuthenticationError):
+			self.call(self.machine_token(virtual_machine=None))
+
+		self.mint.assert_not_called()
 
 	def test_a_token_signed_with_another_secret_is_refused(self):
 		with self.assertRaises(frappe.AuthenticationError):
