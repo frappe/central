@@ -351,6 +351,51 @@ class TestResizeComposed(IntegrationTestCase):
 			{"Compute": 4, "Memory": 16, "Disk": 40, "Transfer": 400},
 		)
 
+	def _profileless_preset(self) -> str:
+		"""A preset subscription on a plan without an optimisation profile, as a plain VM runs."""
+		plan = make_plan("resize-profileless-from", rates=[{"cluster": "", "currency": "INR", "rate": 3000}])
+		sub = subscriptions.create_subscription(TEAM, CLUSTER, plan=plan).name
+		server = self._ready(sub)
+		frappe.db.set_value(
+			"Virtual Machine", server, {"vcpus": 2, "memory_megabytes": 8192, "disk_gigabytes": 40}
+		)
+		return sub
+
+	def test_begin_resize_onto_a_profileless_preset_keeping_the_current_disk(self):
+		"""A plan family without profiles still moves onto a larger plan and keeps the current
+		disk, billed at the plan's bundle price."""
+		sub = self._profileless_preset()
+		plan = make_plan(
+			"resize-profileless-to",
+			rates=[{"cluster": "", "currency": "INR", "rate": 5000}],
+			includes=[
+				{"resource_type": "Compute", "quantity": 4, "unit": "vCPU"},
+				{"resource_type": "Memory", "quantity": 16, "unit": "GB"},
+				{"resource_type": "Disk", "quantity": 80, "unit": "GB"},
+			],
+		)
+
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			result = subscriptions.begin_resize(sub, plan=plan, disk_gigabytes=40)
+
+		self.assertEqual(frappe.db.get_value("Resource Action", result["action"], "status"), "Succeeded")
+		doc = frappe.get_doc("Subscription", sub)
+		self.assertEqual((doc.pricing_mode, doc.sub_category), ("Composed", None))
+		self.assertEqual(self._segments(sub)[-1].locked_rate, 5000)
+
+	def test_begin_resize_refuses_a_custom_shape_without_a_profile_before_the_vm(self):
+		sub = self._profileless_preset()
+
+		with self.assertRaisesRegex(frappe.ValidationError, "optimisation profile"):
+			subscriptions.begin_resize(sub, includes=BIG)
+
+		self.resize_server.assert_not_called()
+		self.assertFalse(
+			frappe.db.exists(
+				"Resource Action", {"server": frappe.db.get_value("Subscription", sub, "server_id")}
+			)
+		)
+
 	def test_resize_config_rounds_a_fractional_disk_up(self):
 		"""Atlas reports MiB, so a 12800 MiB disk mirrors as 12.5 GB. The resize API takes
 		whole GB, so the console must receive a disk it can send back."""
