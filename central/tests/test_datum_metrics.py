@@ -82,7 +82,7 @@ class TestCentralMetrics(IntegrationTestCase):
 			SimpleNamespace(path="/api/method/central.api.sites.get"), SimpleNamespace(status_code=500)
 		)
 		with (
-			patch.dict(frappe.conf, {"telemetry_region": "bom"}),
+			patch("central.integrations.metrics.get_central_telemetry_region", return_value="bom"),
 			patch("central.integrations.metrics.send_to_datum", return_value=False),
 		):
 			publish_metrics()
@@ -98,7 +98,7 @@ class TestCentralMetrics(IntegrationTestCase):
 
 	def test_metrics_go_to_the_telemetry_region(self) -> None:
 		with (
-			patch.dict(frappe.conf, {"telemetry_region": "bom"}),
+			patch("central.integrations.metrics.get_central_telemetry_region", return_value="bom"),
 			patch("central.integrations.metrics.send_to_datum") as send,
 		):
 			publish_metrics()

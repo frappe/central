@@ -6,7 +6,13 @@ import frappe
 import requests
 from frappe.tests import IntegrationTestCase
 
-from central.integrations.datum import CURSOR_KEY, ErrorLogPublisher, to_log_line
+from central.integrations.datum import (
+	CURSOR_KEY,
+	ErrorLogPublisher,
+	get_central_telemetry_region,
+	to_log_line,
+)
+from central.tests.utils import ensure_region
 
 TRACEBACK = 'Traceback (most recent call last):\n  File "app.py", line 1\nValueError: bad plan\n'
 
@@ -68,3 +74,22 @@ class TestErrorLogPublisher(IntegrationTestCase):
 
 		self.assertTrue(first_cursor)
 		self.assertEqual(frappe.cache.get_value(CURSOR_KEY), first_cursor)
+
+
+class TestCentralTelemetryRegion(IntegrationTestCase):
+	def test_central_sends_to_the_region_with_the_checkbox(self) -> None:
+		region = frappe.get_doc("Region", ensure_region("telemetry-test-a"))
+		region.is_central_telemetry_region = 1
+		region.save(ignore_permissions=True)
+
+		self.assertEqual(get_central_telemetry_region(), "telemetry-test-a")
+
+	def test_only_one_region_takes_the_central_telemetry(self) -> None:
+		first = frappe.get_doc("Region", ensure_region("telemetry-test-a"))
+		first.is_central_telemetry_region = 1
+		first.save(ignore_permissions=True)
+
+		second = frappe.get_doc("Region", ensure_region("telemetry-test-b"))
+		second.is_central_telemetry_region = 1
+		with self.assertRaises(frappe.ValidationError):
+			second.save(ignore_permissions=True)

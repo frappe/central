@@ -373,7 +373,7 @@ Cargo reports `service`, `status`, and `service_endpoint`. Central records avail
 
 ## How do Central errors reach Beacon?
 
-Each minute, Central sends its new Error Logs to the Datum of one region. The `telemetry_region` site config names that region. Without it, Central sends nothing. Central signs each request with a Datum token for resource `central` and keeps its place in the cache key `central:telemetry:error_log_cursor`. Beacon reads the rule `beacon/rules/central-errors.sql` from this repository and alerts when one error repeats. Change the rule in the same pull request as the data that it reads.
+Each minute, Central sends its new Error Logs to the Datum of one region: the Region with **Central Telemetry Region** set. Only one Region can have it. Without it, Central sends nothing. Set it on the region where Central runs, so the telemetry does not cross regions. Central signs each request with a Datum token for resource `central` and keeps its place in the cache key `central:telemetry:error_log_cursor`. Beacon reads the rule `beacon/rules/central-errors.sql` from this repository and alerts when one error repeats. Change the rule in the same pull request as the data that it reads.
 
 ## What does Central report to Datum?
 

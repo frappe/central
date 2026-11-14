@@ -24,7 +24,7 @@ ERROR_LOG_FIELDS = ["name", "creation", "method", "error", "fingerprint", "trace
 
 
 class ErrorLogPublisher:
-	"""Sends new Error Logs to the Datum of the region in the `telemetry_region` site config, so Beacon sees what fails in Central."""
+	"""Sends new Error Logs to the Datum of the Central telemetry region, so Beacon sees what fails in Central."""
 
 	def __init__(self, region: str):
 		self.region = region
@@ -52,6 +52,11 @@ class ErrorLogPublisher:
 		)
 
 
+def get_central_telemetry_region() -> str | None:
+	"""The region whose Datum takes the Central telemetry: the one with Central Telemetry Region set."""
+	return frappe.db.get_value("Region", {"is_central_telemetry_region": 1}, "name")
+
+
 def send_to_datum(region: str, path: str, payload: dict) -> bool:
 	"""Post one payload to the Datum of a region as Central. A failure is a warning, not an Error Log,
 	so an unreachable Datum does not make a Central error each minute. Returns whether Datum took it."""
@@ -75,8 +80,8 @@ def send_to_datum(region: str, path: str, payload: dict) -> bool:
 
 
 def publish_error_logs() -> None:
-	"""Scheduled every minute. Does nothing until the site config names a telemetry region."""
-	region = frappe.conf.get("telemetry_region")
+	"""Scheduled every minute. Does nothing until a region has Central Telemetry Region set."""
+	region = get_central_telemetry_region()
 	if not region:
 		return
 

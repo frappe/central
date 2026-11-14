@@ -40,7 +40,8 @@
   "cargo_registered_at",
   "cargo_delivery_section",
   "cargo_webhook_secret",
-  "telemetry_data_source"
+  "telemetry_data_source",
+  "is_central_telemetry_region"
  ],
  "fields": [
   {
@@ -253,6 +254,13 @@
    "description": "Name of the Insights data source that reads this region's telemetry (for example mumbai_telemetry). Capacity and usage reports read server and host usage from it."
   },
   {
+   "default": "0",
+   "description": "Central sends its error logs and health metrics to the Datum of this region. Only one region can have it.",
+   "fieldname": "is_central_telemetry_region",
+   "fieldtype": "Check",
+   "label": "Central Telemetry Region"
+  },
+  {
    "fieldname": "column_break_kufp",
    "fieldtype": "Column Break"
   },
@@ -296,7 +304,7 @@
    "link_fieldname": "region"
   }
  ],
- "modified": "2026-11-04 14:00:00.000000",
+ "modified": "2026-11-14 08:18:25.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Region",

@@ -10,7 +10,7 @@ from frappe.utils.background_jobs import get_queue, get_queue_list
 from frappe.utils.file_lock import LockTimeoutError
 from frappe.utils.synchronization import filelock
 
-from central.integrations.datum import send_to_datum
+from central.integrations.datum import get_central_telemetry_region, send_to_datum
 
 REQUEST_COUNTS_KEY = "central:telemetry:request_counts"
 OPEN_ACTION_STATUSES = ("Queued", "Dispatching", "Sent", "In Progress", "Uncertain")
@@ -272,8 +272,8 @@ def get_request_group(path: str) -> str | None:
 
 
 def publish_metrics() -> None:
-	"""Scheduled every minute. Does nothing until the site config names a telemetry region."""
-	region = frappe.conf.get("telemetry_region")
+	"""Scheduled every minute. Does nothing until a region has Central Telemetry Region set."""
+	region = get_central_telemetry_region()
 	if not region:
 		return
 
