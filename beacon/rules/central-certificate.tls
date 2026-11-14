@@ -1,0 +1,9 @@
+-- title: Central certificate expiring
+-- severity: Medium
+-- host: {central_url}
+-- minimum_days_left: 14
+-- timeout: 10
+-- pending_for: 900
+-- resolve_after: 1800
+-- runbook_url: https://github.com/frappe/central/blob/develop/beacon/runbooks/central-certificate.md
+-- Beacon reads the certificate that Central serves. When it expires, no customer can reach the dashboard or the API. Desk sets the Regions to the Central Telemetry Region.
