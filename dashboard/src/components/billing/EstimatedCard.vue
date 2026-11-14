@@ -278,7 +278,7 @@ const saveBudgetAlertErrorTitle = __("Couldn't save the budget alert")
 				</div>
 
 				<div class="text-sm text-ink-gray-6">
-					<span v-if="limit">
+					<span v-if="limit && tierCurrent?.tier">
 						<TranslatedText
 							:text="__('Spending limit {0} on the {1}. Taxes are added on top.')"
 						>
@@ -295,6 +295,18 @@ const saveBudgetAlertErrorTitle = __("Couldn't save the budget alert")
 								>
 									{{ __('{0} tier', [tierCurrent?.tier]) }}
 								</button>
+							</template>
+						</TranslatedText>
+					</span>
+					<!-- A manual limit can exist without a tier. -->
+					<span v-else-if="limit">
+						<TranslatedText
+							:text="__('Spending limit {0}. Taxes are added on top.')"
+						>
+							<template #0>
+								<span class="tabular-nums text-ink-gray-9"
+									>{{ money(limit, currency) }}</span
+								>
 							</template>
 						</TranslatedText>
 					</span>
