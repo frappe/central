@@ -99,12 +99,14 @@ def get_forecast(team: str | None = None) -> dict:
 
 
 def _tax_names(team: str, invoice: dict | None) -> dict:
-	"""Names the forecast's tax from the projected bill it totals. The limit note stays on
-	the team's tax today: it describes an off-session limit, not this bill."""
-	names = tax.get_tax_names(team)
-	if invoice:
-		names.update(tax_label=tax.TaxNames(team).label(invoice), tax_note=tax.TaxNames(team).note(invoice))
-	return names
+	"""Names the forecast's tax from the projected bill it totals, None without one. The
+	limit note stays on the team's tax today: it describes an off-session limit, not this bill."""
+	names = tax.TaxNames(team)
+	return {
+		"tax_label": names.label(invoice) if invoice else None,
+		"tax_note": names.note(invoice) if invoice else None,
+		"limit_tax_note": tax.get_tax_names(team)["limit_tax_note"],
+	}
 
 
 def _previous_month(team: str, month_start) -> dict:

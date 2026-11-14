@@ -213,6 +213,39 @@ class TestForecastIsNamedByItsBill(TaxLabelTestCase):
 	def test_an_sez_forecast_is_named_no_gst(self):
 		self.assertEqual(self._forecast(zero_rating_reason="SEZ")["tax_label"], "No GST (SEZ)")
 
+	def test_a_forecast_with_no_projected_bill_names_none(self):
+		projection = {"invoice": None, "currency": "INR"}
+		with patch("central.billing.projection.engine.project", return_value=projection):
+			forecast = invoice_api.get_forecast(TEAM)
+
+		self.assertIsNone(forecast["tax_label"])
+		self.assertIsNone(forecast["tax_note"])
+		self.assertEqual(forecast["limit_tax_note"], "incl. CGST 9% + SGST 9%")
+
+
+class TestProjectedNextPaymentIsNamedByItsBill(TaxLabelTestCase):
+	def _note(self, invoice):
+		projection = {"invoice": invoice, "currency": "INR"}
+		with patch("central.billing.projection.engine.project", return_value=projection):
+			return outlook.get_next_payment(TEAM)["tax_note"]
+
+	def _block(self, tax_amount):
+		return {
+			"output_tax_type": "GST",
+			"output_tax_rate": 18,
+			"output_tax_amount": tax_amount,
+			"expected_collection": 1000 + tax_amount,
+		}
+
+	def test_no_projected_bill_names_none(self):
+		self.assertIsNone(self._note(None))
+
+	def test_a_projection_with_no_gst_names_none(self):
+		self.assertIsNone(self._note(self._block(0)))
+
+	def test_a_projection_with_gst_is_named_from_its_block(self):
+		self.assertEqual(self._note(self._block(180)), "incl. CGST 9% + SGST 9%")
+
 
 class TestSpendLimitIsBeforeTax(TaxLabelTestCase):
 	def test_spend_history_carries_spend_before_tax(self):
