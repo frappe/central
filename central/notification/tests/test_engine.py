@@ -570,6 +570,9 @@ class TestSaveUserPreferences(EngineTestBase):
 		self.assertIn("backup_failure", catalog["Server"])
 		self.assertIn("role_change", catalog["Team"])
 		self.assertNotIn("member_joined", catalog["Team"])
+		server = next(group for group in out["catalog"] if group["category"] == "Server")
+		titles = {event["event_type"]: event["title"] for event in server["events"]}
+		self.assertEqual(titles["backup_failure"], "Backup failure")
 
 	def test_rejects_event_from_another_category(self):
 		from central.notification.api import save_user_preferences

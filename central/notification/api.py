@@ -167,7 +167,7 @@ def _is_receivable(event: frappe._dict, allowed: dict[str, bool]) -> bool:
 def _catalog_entry(event: frappe._dict) -> dict:
 	title = _(event.in_app_title)
 	if "{{" in title or "{%" in title:
-		title = frappe.unscrub(event.event_type)
+		title = event.event_type.replace("_", " ").capitalize()
 	return {
 		"event_type": event.event_type,
 		"title": title,
