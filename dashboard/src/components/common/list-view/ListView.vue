@@ -1,5 +1,12 @@
 <script setup lang="ts" generic="TData extends object">
-import { Alert, Button, Select, Skeleton, TextInput } from 'frappe-ui'
+import {
+	Alert,
+	Button,
+	ScrollArea,
+	Select,
+	Skeleton,
+	TextInput,
+} from 'frappe-ui'
 import {
 	List,
 	ListCell,
@@ -10,7 +17,6 @@ import {
 	ListRows,
 } from 'frappe-ui/list'
 import { computed, getCurrentInstance, ref } from 'vue'
-import Scrollbar from '@/components/common/Scrollbar.vue'
 import { __ } from '@/lib/translate'
 import ListViewPagination from './ListViewPagination.vue'
 import ListViewState from './ListViewState.vue'
@@ -333,10 +339,10 @@ const loadListErrorTitle = __("Couldn't load this list")
 			class="mb-2"
 		/>
 
-		<Scrollbar
+		<ScrollArea
 			v-if="isSkeleton || pageRows.length"
 			class="min-h-0 min-w-0 flex-1"
-			type="auto"
+			orientation="both"
 		>
 			<List
 				v-model:selection="selection"
@@ -424,7 +430,7 @@ const loadListErrorTitle = __("Couldn't load this list")
 					</ListRow>
 				</ListRows>
 			</List>
-		</Scrollbar>
+		</ScrollArea>
 
 		<ListViewState
 			v-else-if="stateKind === 'error'"

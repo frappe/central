@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert } from 'frappe-ui'
+import { Alert, ScrollArea } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
@@ -132,51 +132,53 @@ watch(
 
 <template>
 	<div class="relative flex h-full min-h-0">
-		<div
-			class="grid min-w-0 flex-1 auto-rows-max grid-cols-[min(64rem,100%)] content-start justify-center gap-3 overflow-y-auto px-3 pb-24 pt-3 [container-type:inline-size] md:gap-4 md:px-6 md:pt-7"
-		>
-			<OutstandingAlert
-				:statement="reports.statement.data ?? null"
-				:attempts="reports.attempts.data ?? null"
-			/>
-			<Alert
-				v-if="!complete"
-				theme="amber"
-				title="Add your billing details"
-				description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
-				:primary-action="{ label: 'Add billing details', onClick: () => { setupDialogOpen = true } }"
-			/>
-			<CollectionActionBanner @add-credit="onAddCredits" />
-			<TrialBillingBanner @upgrade="upgradeServerName = $event" />
-			<GstStatusBanner @edit="setupDialogOpen = true" />
-			<GstStateBanner @edit="setupDialogOpen = true" />
+		<ScrollArea class="min-w-0 flex-1">
+			<div
+				class="grid auto-rows-max grid-cols-[min(64rem,100%)] content-start justify-center gap-3 px-3 pb-24 pt-3 [container-type:inline-size] md:gap-4 md:px-6 md:pt-7"
+			>
+				<OutstandingAlert
+					:statement="reports.statement.data ?? null"
+					:attempts="reports.attempts.data ?? null"
+				/>
+				<Alert
+					v-if="!complete"
+					theme="amber"
+					title="Add your billing details"
+					description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
+					:primary-action="{ label: 'Add billing details', onClick: () => { setupDialogOpen = true } }"
+				/>
+				<CollectionActionBanner @add-credit="onAddCredits" />
+				<TrialBillingBanner @upgrade="upgradeServerName = $event" />
+				<GstStatusBanner @edit="setupDialogOpen = true" />
+				<GstStateBanner @edit="setupDialogOpen = true" />
 
-			<div class="grid gap-3 md:gap-4 lg:grid-cols-3">
-				<EstimatedCard
-					class="rounded-6 border border-outline-gray-1 lg:col-span-2"
-					:active="showCycleBreakdown"
-					@open="showCycleBreakdown = true"
-					@open-tiers="showTiers = true"
+				<div class="grid gap-3 md:gap-4 lg:grid-cols-3">
+					<EstimatedCard
+						class="rounded-6 border border-outline-gray-1 lg:col-span-2"
+						:active="showCycleBreakdown"
+						@open="showCycleBreakdown = true"
+						@open-tiers="showTiers = true"
+					/>
+					<CycleFacts
+						class="rounded-6 border border-outline-gray-1"
+						:outstanding="outstanding"
+						:wallet-active="showWalletHistory"
+						@open-schedule="showSchedule = true"
+						@open-wallet="showWalletHistory = true"
+						@add-credit="onAddCredits()"
+					/>
+				</div>
+
+				<PayingForCard
+					@open="showPayingFor = true"
+					@open-projects="showProjects = true"
 				/>
-				<CycleFacts
-					class="rounded-6 border border-outline-gray-1"
-					:outstanding="outstanding"
-					:wallet-active="showWalletHistory"
-					@open-schedule="showSchedule = true"
-					@open-wallet="showWalletHistory = true"
-					@add-credit="onAddCredits()"
-				/>
+
+				<SpendCard :reports="reports">
+					<LimitsCard @open-tiers="showTiers = true" />
+				</SpendCard>
 			</div>
-
-			<PayingForCard
-				@open="showPayingFor = true"
-				@open-projects="showProjects = true"
-			/>
-
-			<SpendCard :reports="reports">
-				<LimitsCard @open-tiers="showTiers = true" />
-			</SpendCard>
-		</div>
+		</ScrollArea>
 
 		<WalletHistoryPanel v-model:open="showWalletHistory" />
 		<CycleBreakdownPanel v-model:open="showCycleBreakdown" />

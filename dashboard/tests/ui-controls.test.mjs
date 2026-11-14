@@ -92,6 +92,7 @@ const ui = Object.fromEntries(
 		'Checkbox',
 		'Dialog',
 		'LoadingText',
+		'ScrollArea',
 		'TextInput',
 		'Select',
 		'Badge',
