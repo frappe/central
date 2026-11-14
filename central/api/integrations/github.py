@@ -10,7 +10,7 @@ from central.infrastructure.doctype.github_connection.github_connection import (
 	GitHubConnection,
 	GitHubConnectionAttempt,
 )
-from central.integrations.github import WEB_URL, GitHubApp, callback_url, convert_manifest
+from central.integrations.github import WEB_URL, GitHubApp, convert_manifest
 from central.sso import central_url
 
 MANIFEST_TTL_SECONDS = 15 * 60
@@ -197,7 +197,7 @@ def create_app_manifest(app_name: str, organization: str | None = None) -> dict:
 		"url": base_url,
 		"hook_attributes": {"url": f"{base_url}/api/method/central.api.integrations.github.webhook"},
 		"redirect_url": f"{base_url}/api/method/central.api.integrations.github.manifest_callback",
-		"callback_urls": [callback_url()],
+		"callback_urls": [GitHubApp.callback_url()],
 		"request_oauth_on_install": True,
 		"public": True,
 		"default_permissions": {"contents": "read", "metadata": "read"},

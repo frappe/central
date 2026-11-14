@@ -1,5 +1,15 @@
 [
  {
+  "capability": "app:deploy",
+  "description": "Connect GitHub and deploy apps from repositories",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-11-14 12:00:00.000000",
+  "name": "app:deploy",
+  "plane": "central",
+  "resource": "app"
+ },
+ {
   "capability": "billing:manage",
   "description": "Add credit, change payment methods, and update billing details",
   "docstatus": 0,
