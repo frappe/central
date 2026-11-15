@@ -12,7 +12,7 @@ from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_region
 
 PILOT = "central.integrations.pilot"
-TELEMETRY_CONFIG = {"endpoint": "https://datum.in-mumbai.example.test", "token": "datum-token"}
+TELEMETRY_CONFIG = {"endpoint": "https://datum.in-mumbai.example.test"}
 COMMON_SITE_CONFIG = (
 	"central.central.doctype.central_settings.central_settings.CentralSettings.get_common_site_config"
 )
@@ -76,11 +76,7 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 	def test_pilot_payload_contains_the_telemetry_configuration(self):
 		request = pilot_request()
 		request.requested_by = ensure_user("certificate.customer@example.test")
-		with (
-			patch(f"{PILOT}.get_telemetry_base_url", return_value=TELEMETRY_CONFIG["endpoint"]),
-			patch(f"{PILOT}.region_id_of", return_value=7),
-			patch(f"{PILOT}.mint_datum_token", return_value="datum-token") as mint,
-		):
+		with patch(f"{PILOT}.get_telemetry_base_url", return_value=TELEMETRY_CONFIG["endpoint"]):
 			payload = _create_payload(request)
 
 		metadata = payload["metadata"]
@@ -89,8 +85,7 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 			{"telemetry": TELEMETRY_CONFIG, "letsencrypt": {"email": request.requested_by}},
 		)
 		self.assertLessEqual(len(json.dumps(metadata).encode()), MAXIMUM_METADATA_BYTES)
-		# The server does not exist yet, so the token names the one this request creates.
-		mint.assert_called_once_with(7, "server-action-1")
+		# The Atlas VM does not exist yet, so Pilot fetches its token from datum_token later.
 
 	def test_a_region_without_a_telemetry_host_does_not_block_pilot_creation(self):
 		request = pilot_request()
