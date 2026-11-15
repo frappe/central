@@ -108,9 +108,11 @@ class ObjectStorageClient:
 			if response.status_code == 404:
 				raise ObjectStorageNotFound(_("The bucket does not exist."))
 			if 400 <= response.status_code < 500:
-				raise ObjectStorageRejected(
+				# Thrown, not raised: Frappe sends a caller the message log, not the exception's text.
+				frappe.throw(
 					ObjectStorageClient._read_validation_message(response)
-					or _("Object storage request was rejected.")
+					or _("Object storage request was rejected."),
+					ObjectStorageRejected,
 				)
 			raise ObjectStorageRequestUncertain()
 

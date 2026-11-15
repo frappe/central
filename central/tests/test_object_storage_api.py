@@ -325,8 +325,12 @@ class TestBucketAllowedOrigins(ObjectStorageTestCase):
 		messages = json.dumps([json.dumps({"message": refusal})])
 		self.cargo_answers(417, {"_server_messages": messages})
 
-		with self.assertRaisesRegex(ObjectStorageRejected, "needs Garage v2.3.0 or later"):
+		frappe.clear_messages()
+		with self.assertRaises(ObjectStorageRejected):
 			api.set_bucket_allowed_origins(self.team, self.bucket["name"], ["https://shop.example.test"])
+
+		# Frappe sends a caller the message log, not the exception's text.
+		self.assertIn(refusal, [message.get("message") for message in frappe.message_log])
 
 
 class BucketObjectsTestCase(ObjectStorageTestCase):
