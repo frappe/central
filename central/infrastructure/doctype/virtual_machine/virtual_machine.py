@@ -407,6 +407,18 @@ class VirtualMachine(Document):
 		self.enqueue_route_removal()
 
 	@frappe.whitelist(methods=["POST"])
+	def send_bucket_origins(self) -> list[str]:
+		"""Operator action: send the web addresses of this server's sites to its backup bucket
+		now, for a bucket made before Central sent them or one that Cargo refused."""
+		from central.integrations.pilot import has_bundled_bucket, send_bucket_origins
+
+		self.check_permission("write")
+		if not has_bundled_bucket(self.plan):
+			frappe.throw(_("This server's plan has no backup bucket."))
+
+		return send_bucket_origins(self)
+
+	@frappe.whitelist(methods=["POST"])
 	def sync_state(self) -> dict:
 		"""Read this server's state from the region now. The operator's way to refresh a record
 		that looks stale."""

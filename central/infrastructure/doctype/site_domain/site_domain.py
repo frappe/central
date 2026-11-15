@@ -105,6 +105,9 @@ class SiteDomain(Document):
 				_("Could not remove {0} from the proxy: {1}").format(self.domain, str(exception)), ProxyError
 			)
 
+		if self.status == "Active":
+			self.queue_bucket_origins_sync()
+
 	def get_route_type(self) -> str:
 		"""Site for one label below the regional zone, Domain for anything outside it."""
 		zone = Region.get_zone(self.region)
@@ -195,7 +198,16 @@ class SiteDomain(Document):
 				ipv6_address=address,
 			)
 
+		became_active = self.status != "Active" and values.get("status") == "Active"
 		self.db_set(values)
+		if became_active:
+			self.queue_bucket_origins_sync()
+
+	def queue_bucket_origins_sync(self) -> None:
+		"""A site may call its server's backup bucket from a browser only on an active route."""
+		from central.integrations.pilot import queue_bucket_origins_sync
+
+		queue_bucket_origins_sync(self.server)
 
 	def remove(self) -> None:
 		"""Delete this route and its proxy entry. A proxy failure stays on the record, and

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from typing import TYPE_CHECKING
 from urllib.parse import quote, urlparse
 
 import frappe
@@ -17,6 +18,9 @@ from central.integrations.object_storage import ObjectStorageClient, ObjectStora
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.services.doctype.team_service.team_service import get_bucket_name, get_storage_endpoint_url
 from central.sso import central_url, jwks_url, mint_bench_api_token, mint_site_login
+
+if TYPE_CHECKING:
+	from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 
 PILOT_TASK_TIMEOUT_SECONDS = 35
 # Metal caps each guest metadata value at 1 KiB. Not checked before a creation: unconfirmed
@@ -88,11 +92,15 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 
 def get_bundled_bucket(action) -> dict | None:
 	"""The [s3] settings when the selected paid plan bundles remote storage."""
-	plan = action.get_configuration().plan
-	if is_trial_plan(plan) or not plan_includes_storage(plan):
+	if not has_bundled_bucket(action.get_configuration().plan):
 		return None
 
 	return create_bundled_bucket(action.team, action.region, action.server_id)
+
+
+def has_bundled_bucket(plan: str | None) -> bool:
+	"""Whether a server on this plan has a backup bucket. A trial plan never has one."""
+	return not is_trial_plan(plan) and plan_includes_storage(plan)
 
 
 def plan_includes_storage(plan: str | None) -> bool:
@@ -149,6 +157,47 @@ def attach_bundled_bucket(server: str) -> None:
 	except Exception:
 		document.log_error(title=f"Backup bucket attach failed: {server}")
 		document.add_comment("Info", _("Central could not attach the backup bucket to this server."))
+		return
+
+	# The bucket is new, so no site may call it from a browser yet.
+	sync_bucket_origins(server)
+
+
+def queue_bucket_origins_sync(server: str) -> None:
+	"""Send the server's web addresses to its backup bucket after this transaction commits."""
+	frappe.enqueue("central.integrations.pilot.sync_bucket_origins", server=server, enqueue_after_commit=True)
+
+
+def sync_bucket_origins(server: str) -> None:
+	"""Background job: let the sites of a server call its backup bucket from a browser. A server
+	without a bucket, or a terminated one, is left alone."""
+	document = frappe.get_doc("Virtual Machine", server)
+	if document.status == "Terminated" or not has_bundled_bucket(document.plan):
+		return
+
+	try:
+		send_bucket_origins(document)
+	# This job is the worker boundary, so the failure stays on the server for the operator.
+	except Exception:
+		document.log_error(title=f"Bucket origins sync failed: {server}")
+		document.add_comment(
+			"Info", _("Central could not send this server's web addresses to its backup bucket.")
+		)
+
+
+def send_bucket_origins(server: VirtualMachine) -> list[str]:
+	"""Replace the origins of the server's backup bucket with `https://` and each hostname its
+	sites answer on: the site's own name and every active route. Returns what Cargo stored."""
+	hosts = frappe.get_all("Site", filters={"server": server.name}, pluck="site_name")
+	hosts += frappe.get_all(
+		"Site Domain", filters={"server": server.name, "status": "Active"}, pluck="domain"
+	)
+	origins = sorted({f"https://{host}" for host in hosts})
+
+	name = get_bucket_name(server.team, server.region, server.name)
+	receipt = ObjectStorageClient.from_region(server.region).set_allowed_origins(name, origins)
+
+	return receipt["allowed_origins"]
 
 
 def delete_bundled_bucket(action: str) -> None:
