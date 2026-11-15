@@ -127,6 +127,10 @@ export const API = {
 	createBucket: 'central.services.api.storage.create_bucket',
 	rotateBucketCredentials: 'central.services.api.storage.rotate_credentials',
 	setBucketQuota: 'central.services.api.storage.set_bucket_quota',
+	bucketAllowedOrigins:
+		'central.services.api.storage.get_bucket_allowed_origins',
+	setBucketAllowedOrigins:
+		'central.services.api.storage.set_bucket_allowed_origins',
 	deleteBucket: 'central.services.api.storage.delete_bucket',
 	listBucketObjects: 'central.services.api.storage.list_objects',
 	bucketObjectUrl: 'central.services.api.storage.get_object_url',

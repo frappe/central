@@ -36,6 +36,11 @@ export interface BucketUsage {
 	quota_objects: number | null
 }
 
+export interface BucketAllowedOrigins {
+	name: string
+	allowed_origins: string[]
+}
+
 export interface ObjectStorage {
 	regions: StorageRegion[]
 	buckets: StorageBucket[]

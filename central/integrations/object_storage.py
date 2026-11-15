@@ -95,7 +95,7 @@ class ObjectStorageClient:
 			)
 		elif method == "get_usage":
 			valid = valid and isinstance(receipt.get("usage"), dict)
-		elif method == "set_allowed_origins":
+		elif method in {"get_allowed_origins", "set_allowed_origins"}:
 			valid = valid and isinstance(receipt.get("allowed_origins"), list)
 
 		if not valid:
@@ -160,6 +160,10 @@ class ObjectStorageClient:
 	def set_quota(self, name: str, size_gib: int, max_objects: int) -> dict:
 		"""Cap a bucket's total size and object count. Zero lifts a cap."""
 		return self._call("set_quota", name, size_gib=size_gib, max_objects=max_objects)
+
+	def get_allowed_origins(self, name: str) -> dict:
+		"""The websites that may call a bucket from a browser, besides the Central dashboard."""
+		return self._call("get_allowed_origins", name)
 
 	def set_allowed_origins(self, name: str, origins: list[str]) -> dict:
 		"""Replace the websites that may call a bucket from a browser. Cargo always allows the
