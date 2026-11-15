@@ -239,13 +239,11 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 			patch(f"{PILOT}.frappe.get_doc", return_value=server),
 			patch(f"{PILOT}.create_bundled_bucket", return_value=bucket) as create,
 			patch(f"{PILOT}.write_pilot_when_awake") as write,
-			patch(f"{PILOT}.sync_bucket_origins") as sync_origins,
 		):
 			attach_bundled_bucket("server-1")
 
 		create.assert_called_once_with("TEAM-00001", "in-mumbai", "server-1")
 		write.assert_called_once_with("server-1", "PATCH", "/api/v1/settings", {"s3": bucket})
-		sync_origins.assert_called_once_with("server-1")
 		server.add_comment.assert_not_called()
 
 	def test_a_failed_bucket_attach_is_kept_on_the_server(self):

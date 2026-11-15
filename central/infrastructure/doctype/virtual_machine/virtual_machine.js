@@ -71,18 +71,6 @@ frappe.ui.form.on("Virtual Machine", {
 				frm.add_custom_button(__("SSH session"), () => openConsole("ssh"), __("Web Console"));
 				frm.add_custom_button(__("Serial console (TTY)"), () => openConsole("tty"), __("Web Console"));
 			}
-			if (frm.doc.status !== "Terminated") {
-				frm.add_custom_button(
-					__("Send Bucket Origins"),
-					async () => {
-						const response = await frm.call({ doc: frm.doc, method: "send_bucket_origins", freeze: true });
-						if (response.exc) return;
-						const origins = response.message.join(", ") || __("only the dashboard");
-						frappe.show_alert({ message: __("The backup bucket allows {0}", [origins]), indicator: "green" }, 8);
-					},
-					__("Server"),
-				);
-			}
 			frm.add_custom_button(
 				__("Revoke Pilot Access"),
 				() =>

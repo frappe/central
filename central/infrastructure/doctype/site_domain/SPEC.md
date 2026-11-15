@@ -55,7 +55,6 @@ server Terminated --> remove_server_routes job --> remove() each route --> recor
 - A delete fails when the proxy call fails. The record stays, so the route and the record cannot drift apart. Fix the cause and delete again.
 - When a server becomes Terminated, `Virtual Machine.on_update` queues `remove_server_routes`. It removes every route of that server. A removal that fails stays on the record as Failed with its reason.
 - `apply()` on a route of a Terminated server removes the route instead of sending it. So `retry_failed` and the **Retry** button also finish a failed removal.
-- When a route becomes Active, or an Active route is deleted, Central sends the server's new list of web origins to its backup bucket. See [Integrations](../../../../spec/INTEGRATIONS.md#server-operation-contract).
 - A route of a Terminated server that is still Active means the removal job did not run. The **Remove routes** button on the Virtual Machine form queues it again. It needs write permission on the Virtual Machine, so only a System Manager can run it.
 
 ## Pilot registration
