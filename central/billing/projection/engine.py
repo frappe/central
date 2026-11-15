@@ -15,6 +15,7 @@ guarantee rather than a convention — see `guard`.
 
 import frappe
 
+from central.billing.doctype.billing_profile.billing_profile import get_billing_currency
 from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.projection import behaviour, estimate, outcomes, state
 from central.billing.projection import events as injected
@@ -83,7 +84,7 @@ def _project(
 		# measurement, and the totals must not let it read as one.
 		injected.mark_assumed(invoice["lines"], events, start)
 		invoice.update(split_totals(invoice["lines"]))
-	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	currency = get_billing_currency(team, start)
 	calendar = injected.apply_declines(_calendar(team, end, today), team, events)
 
 	# Derived findings are read off the amount we would actually try to collect, not the

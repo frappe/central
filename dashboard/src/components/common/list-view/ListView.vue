@@ -52,6 +52,8 @@ const props = withDefaults(
 		 */
 		externalFilterActive?: boolean
 		minWidth?: string
+		/** Rows without a click target need no inset, so cells line up with the controls above. */
+		flush?: boolean
 	}>(),
 	{
 		loading: false,
@@ -71,6 +73,7 @@ const props = withDefaults(
 		activeKey: null,
 		externalFilterActive: false,
 		minWidth: '720px',
+		flush: false,
 		emptyState: () => ({
 			title: __('No data'),
 			description: __('There is nothing to show yet.'),
@@ -340,7 +343,8 @@ const loadListErrorTitle = __("Couldn't load this list")
 		>
 			<List
 				v-model:selection="selection"
-				class="list-gap-4 list-row-px-2"
+				class="list-gap-4"
+				:class="flush ? 'list-row-px-0' : 'list-row-px-2'"
 				:style="{ minWidth, contain: 'inline-size' }"
 				:columns="gridColumns"
 				:selectable="selectable"

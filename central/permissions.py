@@ -4,6 +4,7 @@ from frappe.realtime import has_permission as has_realtime_permission
 
 from central.iam import (
 	ALL_SERVERS,
+	PARTNER_CAPABILITY,
 	can,
 	can_on_any_server,
 	get_allowed_servers,
@@ -114,25 +115,31 @@ def team_invitation_has_permission(doc, user: str | None = None, ptype: str | No
 
 def partner_link_query_conditions(user: str | None = None) -> str:
 	"""1. An operator or a Staff Viewer sees every link.
-	2. A user sees each link where they hold `team:manage_partners` in the customer or the partner team.
-	3. Anyone else sees no link."""
+	2. A user sees each link where they hold `team:manage_partners` in the customer team.
+	3. A user sees each link where they hold `team:manage_partners` or `partner:act_on_customers`
+	   in the partner team.
+	4. Anyone else sees no link."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user) or is_staff_read(user, "read"):
 		return ""
 
-	teams = get_user_team_names_with_capability(user, "team:manage_partners")
-	if not teams:
+	customer_teams = get_user_team_names_with_capability(user, "team:manage_partners")
+	partner_teams = set(customer_teams) | set(get_user_team_names_with_capability(user, PARTNER_CAPABILITY))
+	if not partner_teams:
 		return "1 = 0"
 
-	escaped = _escape_values(teams)
-	return f"(`tabPartner Link`.`customer_team` in ({escaped}) or `tabPartner Link`.`partner_team` in ({escaped}))"
+	conditions = [f"`tabPartner Link`.`partner_team` in ({_escape_values(partner_teams)})"]
+	if customer_teams:
+		conditions.append(f"`tabPartner Link`.`customer_team` in ({_escape_values(customer_teams)})")
+	return f"({' or '.join(conditions)})"
 
 
 def partner_link_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
 	"""1. An operator may do anything. A Staff Viewer may read.
 	2. Create: `team:manage_partners` in the customer team.
 	3. Delete: nobody else. An ended link stays as history.
-	4. Read or write: `team:manage_partners` in the customer or the partner team."""
+	4. Write: `team:manage_partners` in the customer or the partner team.
+	5. Read: as write, or `partner:act_on_customers` in the partner team."""
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user) or is_staff_read(user, ptype):
 		return True
@@ -141,9 +148,12 @@ def partner_link_has_permission(doc, user: str | None = None, ptype: str | None 
 	if ptype == "delete":
 		return False
 
-	return can(user, doc.customer_team, "team:manage_partners") or can(
+	is_manager = can(user, doc.customer_team, "team:manage_partners") or can(
 		user, doc.partner_team, "team:manage_partners"
 	)
+	if ptype in MUTATING_PERMISSION_TYPES:
+		return is_manager
+	return is_manager or can(user, doc.partner_team, PARTNER_CAPABILITY)
 
 
 def server_query_conditions(user: str | None = None) -> str:

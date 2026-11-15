@@ -95,6 +95,16 @@ class TestPartnerLinks(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			add_partner(self.partner_team, self.code)
 
+	def test_a_partner_team_cannot_add_a_partner(self):
+		frappe.set_user("Administrator")
+		other = frappe.get_doc("Team", self.stranger_team)
+		other.connect_partner_id = f"OTHER-{frappe.generate_hash(length=6)}"
+		other.save()
+
+		frappe.set_user(self.partner_owner)
+		with self.assertRaisesRegex(frappe.ValidationError, "partner team cannot add"):
+			add_partner(self.partner_team, other.partner_code)
+
 	def test_only_the_two_teams_see_the_link(self):
 		frappe.set_user(self.customer_owner)
 		name = add_partner(self.customer_team, self.code)["name"]

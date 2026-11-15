@@ -52,6 +52,7 @@ export function useCapabilities() {
 		canEditTeam: computed(() => has('team:edit')),
 		canDeleteTeam: computed(() => has('team:delete')),
 		canManagePartners: computed(() => has('team:manage_partners')),
+		canActOnCustomers: computed(() => has('partner:act_on_customers')),
 		reload: () => capsCall.reload(),
 	}
 }

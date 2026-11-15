@@ -14,7 +14,7 @@ Status: planned. Central does not implement this contract yet. Connect `main` ha
 | The commercial deal between a partner and a customer | Connect | Connect's Project Quote and Partner Customer |
 | Which Central team belongs to a partner, and its partner code | Central | `Team.connect_partner_id`, `Team.partner_code` |
 | Whether a partner is linked to a customer team, with which role, and who pays | Central | Partner Link |
-| Which partner an invoice counts for, and who pays it | Central | `Invoice.partner_team`, `Invoice.payer_team` |
+| Which partner an invoice counts for, and who pays it | Central | `Invoice.partner_team`, the customer lines on the partner's invoice, `Partner Link.payer` |
 | What a person can do on a team | Central | Team Member, Team Role, and Partner Link, resolved by `central/iam.py` |
 
 Connect is the authority on who is a partner. The customer is the authority on what the partner can do and on who pays. Central enforces both.
@@ -84,6 +84,7 @@ The relationship between one partner team and one customer team.
 | `status` | `Active` or `Ended` |
 | `role` | `Viewer` or `Developer`. A new link starts as `Viewer`. See [Partner access](#partner-access). |
 | `payer` | `Customer`, `Partner Requested`, or `Partner`. See [Partner pays](#partner-pays). |
+| `partner_pays_from`, `partner_pays_until` | The first and the last day the partner pays. Central sets them. |
 | `reference` | An opaque value from Connect's deep link, normally the Partner Customer ID. Empty when the customer typed the code. |
 | `linked_by`, `linked_on` | The customer user who added the partner, and when |
 | `ended_by`, `ended_on`, `end_reason` | Who ended the link, when, and why |
@@ -98,10 +99,9 @@ Rules:
 
 | Field | Value |
 |---|---|
-| `partner_team` | The partner team of the customer's `Active` link when the invoice is generated. Empty when there is none. |
-| `payer_team` | The team that pays. It is the partner team when the link's `payer` is `Partner` at generation. Empty means the invoice's own team pays. |
+| `partner_team` | The partner team of the customer's `Active` link when the customer's own invoice is generated. Empty when there is none. |
 
-Both fields are a snapshot. A later change to the link does not change an existing invoice.
+Each line of a partner's invoice also has `customer_team` and `customer_title`, set when the line belongs to a customer the partner pays for. All three are a snapshot. A later change to the link does not change an existing invoice.
 
 ## Endpoints
 
@@ -176,7 +176,7 @@ List the paid invoices that count for one partner. Connect uses it for the Invoi
 }]}
 ```
 
-`amount` is the invoice amount after discount and before tax. The list has every `Paid`, `Billable` invoice where `partner_team` is the partner's team. It also has the invoices of the partner's own team.
+`amount` is the invoice amount after discount and before tax. The list has every `Paid`, `Billable` invoice where `partner_team` is the partner's team, and every invoice of the partner's own team, which includes the customers it pays for. They all count toward the tier.
 
 ### `central.api.connect.end_partner_link`
 
@@ -294,22 +294,24 @@ Connect's own roster (`Connect Partner Member.access`) controls Connect pages on
 
 ## Partner pays
 
-The customer decides who pays. The partner must accept, because the partner takes the liability.
+The customer decides who pays. The partner must accept, because the partner takes the liability. When the partner pays, the customer's usage is billed as part of the partner: on the partner's own monthly invoice, in the partner's currency, with the partner's tax, payment methods, wallet, and dunning.
 
-1. The customer sets "My partner pays" on the link. `payer` becomes `Partner Requested`. The customer still pays.
-2. A partner user with `team:manage_partners` accepts on the Customers page in Central. `payer` becomes `Partner`.
-3. The monthly run generates the customer's invoice as before, one per customer team, and sets `payer_team`.
-4. Collection uses the payer's Billing Profile, payment method, and wallet. Dunning goes to the payer. Central also tells the customer team's owner before a suspension.
-5. Users with `billing:view` in the payer team can read the invoice. The customer still sees usage and the invoice, marked "Paid by <partner>".
+| Change | Who | `payer` |
+|---|---|---|
+| The customer asks the partner to pay | A customer user with `team:manage_partners`, on the Partner page | `Customer` to `Partner Requested` |
+| The partner accepts | A partner user with `team:manage_partners`, on the Customers page | `Partner Requested` to `Partner` |
+| Either side declines the request | Either side | `Partner Requested` to `Customer` |
+| Either side stops partner pays | Either side | `Partner` to `Customer` |
 
 Rules:
 
-- The payer of an invoice is the payer when the invoice is generated. Central does not split a month.
-- The customer can go back to "I pay" at any time. The partner can stop paying at any time. Both take effect on the next invoice.
-- When a link ends, `payer` is no longer used. The customer pays from the next invoice.
-- The customer can always pay an invoice of their own team, also when the partner is the payer.
+- A change takes effect on the 1st of the next month. The partner pays from `partner_pays_from` to `partner_pays_until`. A stop before the partner starts cancels the payment. So every month has one payer and one currency.
+- Both sides see the date and the currency before they confirm. While the partner pays, the customer's plans and prices show and are charged in the partner's currency, and the customer's Billing page says "Paid by <partner>".
+- On the 1st, Central prices the customer's running subscriptions again in the new payer's currency (`reprice_paid_customers`). A payer in the same currency keeps every locked price.
+- The partner's monthly invoice lists its own usage and, grouped by customer, the usage of each customer it pays for. A customer that the partner pays for gets no invoice for that month.
+- When a link ends, partner pays stops at the end of the month.
 
-The partner gets one invoice per customer with every line item. Central does not merge customer usage into the partner's own invoice.
+The customer keeps its own wallet and payment methods. They are not used while the partner pays.
 
 ## What ending a link does
 
@@ -320,7 +322,7 @@ Either side can end a link: the customer on the Partner page, the partner on the
 | Console and API access | The next request from partner staff is refused. The customer team leaves their team switcher. |
 | Open sessions on the customer's sites | A site session that partner staff opened before the link ended runs until it expires, as for a member who is removed from a team. Central refuses new ones. |
 | Servers and sites the partner created | They stay with the customer. The customer team owns everything in it. |
-| Billing | Existing invoices keep `partner_team` and `payer_team`. New invoices have neither. |
+| Billing | Existing invoices keep `partner_team` and their customer lines. If the partner paid, it pays to the end of the month. From the next month the customer pays. |
 | Notification | Central sends the `partner_link_ended` notification, with the reason, to the members with `team:manage_partners` in both teams, by email and in the console. Connect reads the change with `get_partner_customers`. |
 
 ## Press migration
@@ -343,7 +345,7 @@ The steps go from the simplest to the hardest. Each step works without the next 
 | 2. Link | `team:manage_partners`, Partner Link with `status` and `reference`, the Add partner dialog with the code only, `get_partner_customers` without `sites`, `end_partner_link`, the Partner and Customers pages and their sidebar items | Replace `request_cloud_link` and `sync_cloud_links` with the deep link and a list sync. Move the link state from Customer Project to Partner Customer. Remove the manual Approve link. Create `Own` customers. Call `end_partner_link` when the partner marks a customer Churned. |
 | 3. Access | `partner:act_on_customers`, the `role` field, the rules in `central/iam.py`, the team switcher, the activity log, the effects of ending a link, Remove from Partner Program | Show the role. |
 | 4. Reads for Connect | `servers`, `mrr`, and `currency` in `get_partner_customers` | Replace the demo data in `central_billing.py` with the synced servers and MRR. |
-| 5. Attribution and partner pays | `Invoice.partner_team`, `get_partner_invoices`, the `payer` field, the accept action, `Invoice.payer_team`, collection, dunning, and permissions through the payer | Show who pays. Replace the demo Invoicing page. Compute the tier from Central and Press invoices together. |
+| 5. Attribution and partner pays | `Invoice.partner_team`, `get_partner_invoices`, the `payer` field and its effective dates, the customer lines on the partner's invoice, pricing in the payer's currency | Show who pays. Replace the demo Invoicing page. Compute the tier from Central and Press invoices together. |
 | 6. Press migration | The import of partners and links | The import of Partner Customer rows |
 
 Before step 5, read `central/billing/revenue/invoicing/` to confirm how an invoice gets its currency and tax. When the customer and the partner differ in currency or tax regime, the invoice must use the payer's Billing Profile. This is not verified.
@@ -354,8 +356,7 @@ Connect owns the tier. Until Press closes, Connect reads paid invoices from both
 
 ## Open decisions
 
-- The Invoicing page mock in Connect subtracts a tier discount from the partner's bill. Central has no partner discount. Decide if one is necessary.
-- `get_partner_invoices` includes the invoices of the partner's own team. Decide if they count toward the tier.
+- A tier discount on the partner's invoice, as in v1. It is a separate issue. It must be configurable, so that the discount on v1 and v2 can stop at different times.
 
 ## Not in this contract
 

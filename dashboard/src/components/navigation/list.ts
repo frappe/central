@@ -35,6 +35,7 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 		canViewBilling,
 		canViewServices,
 		canManagePartners,
+		canActOnCustomers,
 		isMember,
 	} = useCapabilities()
 	const { teams, activeTeam } = useSession()
@@ -81,7 +82,9 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					label: 'Customers',
 					icon: 'lucide-briefcase',
 					to: '/customers',
-					condition: canManagePartners.value && Boolean(team?.is_partner),
+					condition:
+						(canManagePartners.value || canActOnCustomers.value) &&
+						Boolean(team?.is_partner),
 				},
 				{
 					label: 'Partner',

@@ -14,6 +14,7 @@ import frappe
 
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
 from central.billing.catalog.subscriptions import team_active_segments
+from central.billing.doctype.billing_profile.billing_profile import get_pricing_currency
 
 
 @frappe.whitelist()
@@ -25,7 +26,7 @@ def get_cycle_costs(team: str | None = None) -> dict:
 	other is a synthesized subject (ADR 0013).
 	"""
 	team = _resolve_team(team)
-	currency = _team_currency(team)
+	currency = get_pricing_currency(team)
 	today = frappe.utils.getdate()
 
 	lines = _projected_lines(team, today)

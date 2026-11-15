@@ -19,6 +19,7 @@
   "dunning_starts_on",
   "suspends_on",
   "hold_reason",
+  "partner_team",
   "period_key",
   "section_break_items",
   "items",
@@ -408,6 +409,15 @@
    "label": "Payment Reminder Sent At",
    "read_only": 1,
    "description": "When the team was told that this invoice is charged the next day. A rail that sends a pre-debit notice gets no reminder."
+  },
+  {
+   "fieldname": "partner_team",
+   "fieldtype": "Link",
+   "options": "Team",
+   "label": "Partner Team",
+   "read_only": 1,
+   "in_standard_filter": 1,
+   "description": "The team's partner when the invoice was generated. The invoice counts toward the partner's tier. Empty when the team had no partner."
   }
  ],
  "index_web_pages_for_search": 1,

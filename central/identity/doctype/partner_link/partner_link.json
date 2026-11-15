@@ -14,6 +14,11 @@
   "linked_on",
   "linked_by",
   "reference",
+  "payment_section",
+  "payer",
+  "column_break_payment",
+  "partner_pays_from",
+  "partner_pays_until",
   "ending_section",
   "ended_on",
   "ended_by",
@@ -118,6 +123,40 @@
    "fieldname": "end_reason",
    "fieldtype": "Small Text",
    "label": "End Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payment_section",
+   "fieldtype": "Section Break",
+   "label": "Who Pays"
+  },
+  {
+   "default": "Customer",
+   "description": "Partner Requested when the customer asks the partner to pay, and Partner once the partner accepts.",
+   "fieldname": "payer",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Payer",
+   "options": "Customer\nPartner Requested\nPartner",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_payment",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The first day of the month from which the partner pays. A change takes effect on the 1st of the next month.",
+   "fieldname": "partner_pays_from",
+   "fieldtype": "Date",
+   "label": "Partner Pays From",
+   "read_only": 1
+  },
+  {
+   "description": "The last day the partner pays, after either side stops partner pays or the link ends.",
+   "fieldname": "partner_pays_until",
+   "fieldtype": "Date",
+   "label": "Partner Pays Until",
    "read_only": 1
   }
  ],

@@ -17,12 +17,11 @@ const { activeTeam, activeTeamLabel, activeTeamLogo, teams } = useSession()
 const { members } = useTeamMembers()
 const { canEditTeam, canDeleteTeam, canManagePartners } = useCapabilities()
 
-// A team adds a partner here. Once linked, the Partner page in the sidebar owns it.
-const canAddPartner = computed(
-	() =>
-		canManagePartners.value &&
-		!teams.value.find((team) => team.name === activeTeam.value)?.has_partner,
-)
+// A customer team adds a partner here. Once linked, the Partner page in the sidebar owns it.
+const canAddPartner = computed(() => {
+	const team = teams.value.find((team) => team.name === activeTeam.value)
+	return canManagePartners.value && !team?.has_partner && !team?.is_partner
+})
 const router = useRouter()
 const addingPartner = ref(false)
 

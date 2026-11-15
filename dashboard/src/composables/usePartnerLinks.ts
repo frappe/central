@@ -6,6 +6,7 @@ import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage } from '@/lib/feedback'
 import type {
 	PartnerLink,
+	PartnerPayer,
 	PartnerPreview,
 	PartnerRole,
 	TeamCustomers,
@@ -91,6 +92,13 @@ export function setPartnerRole(
 	return call<PartnerLink>(API.setPartnerRole, { link, role })
 }
 
+export function setPartnerPayer(
+	link: string,
+	payer: PartnerPayer,
+): Promise<PartnerLink> {
+	return call<PartnerLink>(API.setPartnerPayer, { link, payer })
+}
+
 /** The partner a Frappe Connect link asks to add: `/dashboard/partner?code=&reference=`. The
  *  values stay in the URL until they are used, so they survive sign-up and onboarding. */
 export function usePartnerLinkIntent() {
@@ -107,4 +115,24 @@ export function usePartnerLinkIntent() {
 		reference: computed(() => read('reference') || null),
 		clear: () => router.replace({ query: {} }),
 	}
+}
+
+function isoDate(date: Date): string {
+	const month = String(date.getMonth() + 1).padStart(2, '0')
+	const day = String(date.getDate()).padStart(2, '0')
+	return `${date.getFullYear()}-${month}-${day}`
+}
+
+/** The 1st of next month: when a change of who pays takes effect. */
+export function nextPayerChangeDay(): string {
+	const today = new Date()
+	return isoDate(new Date(today.getFullYear(), today.getMonth() + 1, 1))
+}
+
+/** Whether the partner pays the customer team's usage today. */
+export function isPartnerPaying(link: PartnerLink): boolean {
+	const today = isoDate(new Date())
+	const from = link.partner_pays_from
+	const until = link.partner_pays_until
+	return Boolean(from && from <= today && (!until || until >= today))
 }

@@ -302,6 +302,7 @@ scheduler_events = {
 	],
 	"daily": [
 		"central.identity.doctype.team_invitation.team_invitation.expire_pending_invitations",
+		"central.identity.doctype.partner_link.partner_link.reprice_paid_customers",
 		"central.signups.trial.run_trials",
 		"central.billing.revenue.dunning.run_dunning",
 		"central.billing.payments.charges.cleanup_payment_logs",

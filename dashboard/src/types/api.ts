@@ -30,6 +30,10 @@ export interface Team {
 	has_partner: boolean
 	/** The partner through which the user reaches this team. The user is not a member. */
 	via_partner?: string | null
+	/** That partner's team, to go back to. */
+	via_partner_team?: string | null
+	/** The partner that pays for this team's usage this month. */
+	paid_by?: string | null
 }
 
 export type MemberStatus = 'Active' | 'Suspended'
@@ -137,11 +141,21 @@ export interface InvitationSummary {
 /** What a partner's staff can do in the customer team. */
 export type PartnerRole = 'Viewer' | 'Developer'
 
+/** Who pays the customer team's usage. Partner Requested waits for the partner to accept. */
+export type PartnerPayer = 'Customer' | 'Partner Requested' | 'Partner'
+
 /** The link between a partner team and a customer team (central Partner Link). */
 export interface PartnerLink {
 	name: string
 	status: 'Active' | 'Ended'
 	role: PartnerRole
+	payer: PartnerPayer
+	/** The first day the partner pays. A change takes effect on the 1st of a month. */
+	partner_pays_from: string | null
+	/** The last day the partner pays, after a stop. */
+	partner_pays_until: string | null
+	/** The currency the partner pays in. Only on the customer side. */
+	partner_currency?: string
 	reference: string | null
 	linked_on: string
 	ended_on: string | null
@@ -150,13 +164,24 @@ export interface PartnerLink {
 	partner_logo: string | null
 	customer_team: string
 	customer_name: string
+	customer_logo: string | null
 	customer_email: string
 }
 
-/** The partner team's code and its customer links. */
+/** A customer link as the partner's Customers page shows it. */
+export interface CustomerLink extends PartnerLink {
+	currency: string | null
+	mrr: number | null
+	server_count: number | null
+	/** Whether the caller can open the customer's team. */
+	can_open: boolean
+}
+
+/** The partner team's code, the currency it pays in, and its customer links. */
 export interface TeamCustomers {
 	partner_code: string | null
-	customers: PartnerLink[]
+	currency: string
+	customers: CustomerLink[]
 }
 
 /** The partner that a code names, before the customer adds it. */

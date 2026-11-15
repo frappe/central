@@ -10,9 +10,14 @@ import { computed, ref, watch } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import AddPartnerDialog from '@/components/partners/AddPartnerDialog.vue'
 import EndPartnerLinkDialog from '@/components/partners/EndPartnerLinkDialog.vue'
+import PayerChangeDialog, {
+	type PayerChange,
+} from '@/components/partners/PayerChangeDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useOnboarding } from '@/composables/useOnboarding'
 import {
+	isPartnerPaying,
+	nextPayerChangeDay,
 	setPartnerRole,
 	usePartnerLinkIntent,
 	useTeamPartner,
@@ -69,6 +74,70 @@ const roleHint = computed(() =>
 				'Your partner can see your servers and sites, and cannot change them.',
 			),
 )
+const payerChange = ref<PayerChange | null>(null)
+const startDay = computed(() => formatDate(nextPayerChangeDay()))
+
+const payerText = computed(() => {
+	const current = link.value
+	if (!current) return ''
+	const partner = current.partner_name
+	const currency = current.partner_currency
+	if (current.payer === 'Partner Requested')
+		return __('You asked {0} to pay. They have not answered yet.', [partner])
+	if (current.payer === 'Partner')
+		return isPartnerPaying(current)
+			? __('{0} pays for your usage, in {1}.', [partner, currency])
+			: __('{0} pays for your usage from {1}, in {2}.', [
+					partner,
+					formatDate(current.partner_pays_from),
+					currency,
+				])
+	if (isPartnerPaying(current))
+		return __('{0} pays until {1}. You pay from the next day.', [
+			partner,
+			formatDate(current.partner_pays_until),
+		])
+	return __('You pay for your usage.')
+})
+
+// The one change the customer can make now, with the words they confirm.
+const payerAction = computed<PayerChange | null>(() => {
+	const current = link.value
+	if (!current) return null
+	const partner = current.partner_name
+	if (current.payer === 'Customer')
+		return {
+			link: current.name,
+			payer: 'Partner Requested',
+			title: __('Ask {0} to pay', [partner]),
+			message: __(
+				'If {0} accepts, it pays for your usage from {1}. From then, your prices show and are charged in {2}, its currency.',
+				[partner, startDay.value, current.partner_currency],
+			),
+			confirmLabel: __('Ask {0} to pay', [partner]),
+		}
+	if (current.payer === 'Partner Requested')
+		return {
+			link: current.name,
+			payer: 'Customer',
+			title: __('Withdraw the request'),
+			message: __('You keep paying for your usage.'),
+			confirmLabel: __('Withdraw request'),
+		}
+	return {
+		link: current.name,
+		payer: 'Customer',
+		title: __('Pay for your own usage'),
+		message: isPartnerPaying(current)
+			? __('You pay for your usage from {0}, in your own currency.', [
+					startDay.value,
+				])
+			: __('{0} will not start paying.', [partner]),
+		confirmLabel: __('Pay myself'),
+		isDestructive: true,
+	}
+})
+
 const savingRole = ref(false)
 const roleError = ref('')
 
@@ -149,6 +218,20 @@ function onChanged(): void {
 					<p class="mt-1.5 text-p-sm text-ink-gray-5">{{ roleHint }}</p>
 					<ErrorMessage v-if="roleError" class="mt-2" :message="roleError" />
 				</div>
+
+				<div
+					class="flex flex-wrap items-center justify-between gap-3 rounded-6 border border-outline-gray-2 p-4"
+				>
+					<div class="min-w-0">
+						<p class="text-base-medium text-ink-gray-8">{{ __('Who pays') }}</p>
+						<p class="mt-0.5 text-p-sm text-ink-gray-5">{{ payerText }}</p>
+					</div>
+					<Button
+						v-if="canManagePartners && payerAction"
+						:label="payerAction.confirmLabel"
+						@click="payerChange = payerAction"
+					/>
+				</div>
 			</template>
 
 			<EmptyState
@@ -173,6 +256,7 @@ function onChanged(): void {
 			:reference="intent.reference.value"
 			@added="onChanged"
 		/>
+		<PayerChangeDialog v-model:target="payerChange" @changed="onChanged" />
 		<EndPartnerLinkDialog
 			v-model:target="ending"
 			:other-team-name="link?.partner_name ?? ''"

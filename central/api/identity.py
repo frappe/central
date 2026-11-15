@@ -85,6 +85,7 @@ def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 				"status": r.status,
 				"is_partner": bool(r.connect_partner_id),
 				"has_partner": False,
+				"paid_by": None,
 			},
 		)
 		if _role_rank(r.role) < _role_rank(entry["role"]):
@@ -118,6 +119,8 @@ def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 		pluck="customer_team",
 	):
 		teams[customer_team]["has_partner"] = True
+	for row in _get_paying_partners(list(teams)):
+		teams[row.customer_team]["paid_by"] = row.partner_name
 
 	for entry in teams.values():
 		entry["onboarding"] = []
@@ -126,6 +129,24 @@ def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 		teams[row.parent]["onboarding"].append(row.step)
 
 	return list(teams.values())
+
+
+def _get_paying_partners(teams: list[str]) -> list[dict[str, Any]]:
+	"""The partner that pays for each of `teams` today, by name."""
+	link = frappe.qb.DocType("Partner Link")
+	partner = frappe.qb.DocType("Team")
+	today = frappe.utils.getdate()
+	return (
+		frappe.qb.from_(link)
+		.join(partner)
+		.on(partner.name == link.partner_team)
+		.select(link.customer_team, partner.team_name.as_("partner_name"))
+		.where(
+			link.customer_team.isin(teams)
+			& (link.partner_pays_from <= today)
+			& (link.partner_pays_until.isnull() | (link.partner_pays_until >= today))
+		)
+	).run(as_dict=True)
 
 
 def _get_partner_access_teams(user: str) -> list[dict[str, Any]]:
@@ -160,7 +181,9 @@ def _get_partner_access_teams(user: str) -> list[dict[str, Any]]:
 			"status": rows[team].status,
 			"is_partner": False,
 			"has_partner": True,
+			"paid_by": None,
 			"via_partner": rows[grant["partner_team"]].team_name,
+			"via_partner_team": grant["partner_team"],
 		}
 		for team, grant in partner_grants.items()
 	]
@@ -179,6 +202,7 @@ def _get_impersonated_team(name: str) -> dict[str, Any]:
 		"status": team.status,
 		"is_partner": bool(team.connect_partner_id),
 		"has_partner": False,
+		"paid_by": None,
 		"is_impersonated": True,
 	}
 

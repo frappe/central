@@ -2,9 +2,16 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils import get_first_day, getdate
 
 from central.api.identity import my_teams
-from central.api.partners import add_partner, end_partner_link, set_partner_role
+from central.api.partners import (
+	add_partner,
+	end_partner_link,
+	get_team_customers,
+	set_partner_payer,
+	set_partner_role,
+)
 from central.api.teams import list_team_members
 from central.iam import PARTNER_BLOCKED_CAPABILITIES, can, get_partner_team_of
 from central.tests.test_team_management import create_user
@@ -107,6 +114,33 @@ class TestPartnerAccess(IntegrationTestCase):
 			frappe.db.get_value("Team", self.partner_team, ["connect_partner_id", "partner_code"]),
 			(None, None),
 		)
+
+	def test_partner_staff_see_customers_but_only_managers_accept_paying(self):
+		frappe.set_user(self.staff)
+		(row,) = get_team_customers(self.partner_team)["customers"]
+		self.assertTrue(row["can_open"])
+		self.assertEqual((row["mrr"], row["server_count"]), (0.0, 0))
+
+		frappe.set_user(self.customer_owner)
+		self.assertEqual(set_partner_payer(self.link, "Partner Requested")["payer"], "Partner Requested")
+		frappe.set_user(self.staff)
+		with self.assertRaises(frappe.PermissionError):
+			set_partner_payer(self.link, "Partner")
+		frappe.set_user(self.partner_owner)
+		self.assertEqual(set_partner_payer(self.link, "Partner")["payer"], "Partner")
+
+		frappe.set_user(self.viewer_staff)
+		with self.assertRaises(frappe.PermissionError):
+			get_team_customers(self.partner_team)
+
+	def test_the_customer_team_shows_the_partner_that_pays(self):
+		frappe.db.set_value(
+			"Partner Link", self.link, {"payer": "Partner", "partner_pays_from": get_first_day(getdate())}
+		)
+		team = next(
+			team for team in self._teams_of(self.customer_owner) if team["name"] == self.customer_team
+		)
+		self.assertEqual(team["paid_by"], "Tridots")
 
 	def _teams_of(self, user: str) -> list[dict]:
 		frappe.set_user(user)

@@ -22,6 +22,7 @@ import frappe
 
 from central.billing import settings
 from central.billing.catalog import commitments
+from central.billing.doctype.billing_profile.billing_profile import get_billing_currency, get_billing_team
 from central.billing.doctype.billing_run_team.billing_run_team import (
 	BELOW_MINIMUM,
 	INVOICED,
@@ -201,7 +202,7 @@ def _rate(team: str, lines: list[dict], period_start, period_end):
 	discount = commitment["discount"]
 	clawback = commitment["clawback"]
 	taxable_base = frappe.utils.flt(subtotal - discount + clawback, 2)
-	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	currency = get_billing_currency(team, period_start)
 	tax = resolve_tax(team, taxable_base)
 	total = frappe.utils.flt(taxable_base + tax["output_tax_amount"], 2)
 	# expected_collection = total - tds (credits reduce it further at open).
@@ -294,9 +295,44 @@ def rate_team_period(
 		)
 	else:
 		lines += list(metered)
+	lines += _paid_customer_lines(team, period_start, period_end, explain)
 	if not lines:
 		return None
 	return _rate(team, lines, period_start, period_end)
+
+
+def _paid_customer_lines(team: str, period_start, period_end, explain: bool = False) -> list[dict]:
+	"""The lines of each customer team this partner team pays for in the period. Each line names
+	its customer, so the partner's invoice shows what every customer cost."""
+	from central.billing.revenue.metering import metered_line_items_for_clusters
+
+	lines = []
+	for customer in _get_paid_customers(team, period_start, period_end):
+		customer_lines = team_line_items(customer.name, period_start, period_end, explain=explain)
+		customer_lines += metered_line_items_for_clusters(
+			customer.name, team_clusters(customer.name), period_start, period_end, explain=explain
+		)
+		for line in customer_lines:
+			line["customer_team"], line["customer_title"] = customer.name, customer.team_name
+		lines += customer_lines
+	return lines
+
+
+def _get_paid_customers(team: str, period_start, period_end) -> list:
+	"""The customer teams whose usage this team pays for, for the whole period."""
+	link = frappe.qb.DocType("Partner Link")
+	customer = frappe.qb.DocType("Team")
+	return (
+		frappe.qb.from_(link)
+		.join(customer)
+		.on(customer.name == link.customer_team)
+		.select(customer.name, customer.team_name)
+		.where(
+			(link.partner_team == team)
+			& (link.partner_pays_from <= period_start)
+			& (link.partner_pays_until.isnull() | (link.partner_pays_until >= period_end))
+		)
+	).run(as_dict=True)
 
 
 def _generate_team_invoice(team: str, period_start, period_end):
@@ -315,6 +351,12 @@ def _generate_team_invoice(team: str, period_start, period_end):
 		record_outcome(team, period_end, INVOICED, invoice=existing)
 		return existing
 
+	# A partner that pays for the team bills the team's usage on the partner's own invoice.
+	billing_team = get_billing_team(team, period_start)
+	if billing_team != team:
+		record_outcome(team, period_end, NOTHING_TO_BILL, reason=f"Paid by partner {billing_team}.")
+		return None
+
 	rated = rate_team_period(team, period_start, period_end)
 	if not rated:
 		record_outcome(team, period_end, NOTHING_TO_BILL, reason="Nothing billable in this month.")
@@ -322,6 +364,9 @@ def _generate_team_invoice(team: str, period_start, period_end):
 	if is_below_minimum(rated.payload):
 		_forgive(team, period_end, rated.payload)
 		return None
+	rated.payload["partner_team"] = frappe.db.get_value(
+		"Partner Link", {"customer_team": team, "status": "Active"}, "partner_team"
+	)
 
 	name = _insert_invoice(rated.payload)
 	commitments.mark_breached(rated.commitment)

@@ -26,7 +26,7 @@ from central.billing.catalog.entitlements import get_team_caps
 from central.billing.catalog.pricing import resolve_config_rate
 from central.billing.catalog.server_plans import get_server_plans
 from central.billing.doctype.billing_profile.billing_profile import (
-	get_team_currency,
+	get_pricing_currency,
 	is_complete,
 	require_billing_profile,
 )
@@ -365,7 +365,7 @@ def _build_server_configuration(
 		offering=server_input.offering,
 		image_id=server_input.image_id,
 		plan=server_input.plan,
-		currency=get_team_currency(server_input.team),
+		currency=get_pricing_currency(server_input.team),
 		billing_cycle=frappe.db.get_value("Plan", server_input.plan, "billing_cycle")
 		if server_input.plan
 		else "Monthly",

@@ -70,6 +70,7 @@ def _to_connect_row(link: dict, hosting: dict | None) -> dict:
 		"reference": link["reference"],
 		"status": link["status"],
 		"role": link["role"],
+		"payer": link["payer"],
 		"customer_team": link["customer_team"],
 		"customer_team_name": link["customer_name"],
 		"customer_email": link["customer_email"],
@@ -77,3 +78,45 @@ def _to_connect_row(link: dict, hosting: dict | None) -> dict:
 		"ended_on": link["ended_on"],
 		**hosting,
 	}
+
+
+@frappe.whitelist(methods=["POST"])
+def get_partner_invoices(connect_partner_id: str, paid_after: str | None = None) -> list[dict]:
+	"""The paid invoices that count toward one registered partner's tier, the newest first: its
+	own invoices, which include the customers it pays for, and the invoices of customers who pay
+	themselves. `amount` is after discount and before tax."""
+	frappe.only_for(CONNECT_INTEGRATION_ROLE)
+	team = get_partner_team(connect_partner_id)
+	if not team:
+		frappe.throw(_("Partner {0} is not registered on Frappe Cloud.").format(connect_partner_id))
+
+	invoice = frappe.qb.DocType("Invoice")
+	customer = frappe.qb.DocType("Team")
+	query = (
+		frappe.qb.from_(invoice)
+		.join(customer)
+		.on(customer.name == invoice.team)
+		.select(
+			invoice.name.as_("invoice"),
+			invoice.team.as_("customer_team"),
+			customer.team_name.as_("customer_team_name"),
+			invoice.period_start,
+			invoice.period_end,
+			invoice.paid_at,
+			invoice.currency,
+			(invoice.subtotal - invoice.commitment_discount + invoice.commitment_clawback).as_("amount"),
+		)
+		.where(
+			(invoice.status == "Paid")
+			& (invoice.invoice_type == "Billable")
+			& ((invoice.team == team.name) | (invoice.partner_team == team.name))
+		)
+		.orderby(invoice.paid_at, order=frappe.qb.desc)
+	)
+	if paid_after:
+		query = query.where(invoice.paid_at > get_datetime(paid_after))
+
+	rows = query.run(as_dict=True)
+	for row in rows:
+		row["paid_by_partner"] = row.customer_team == team.name
+	return rows
