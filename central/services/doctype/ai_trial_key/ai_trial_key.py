@@ -10,6 +10,7 @@ from frappe.model.naming import make_autoname
 from frappe.query_builder import Interval
 from frappe.query_builder.functions import Now
 from frappe.utils import add_to_date, cint, flt, now_datetime
+from frappe.utils.password import remove_encrypted_password
 
 from central.integrations.grove import GroveClient
 
@@ -174,7 +175,11 @@ class AITrialKey(Document):
 		site = self.converted_site()
 		enable(site.team)
 		GroveClient.from_settings().transfer_key(TRIAL_TEAM, self.grove_key, site.team, site.name)
-		self.db_set({"status": "Converted", "team": site.team, "last_error": None}, commit=True)
+		# The team's key now: Central keeps no customer secret.
+		remove_encrypted_password("AI Trial Key", self.name, "api_key")
+		self.db_set(
+			{"status": "Converted", "team": site.team, "last_error": None, "api_key": None}, commit=True
+		)
 
 	def converted_site(self) -> frappe._dict:
 		"""The converted trial site on this key's server: its name is the key's title at Grove."""

@@ -338,6 +338,7 @@ class TestAITrialKey(IntegrationTestCase):
 			TRIAL_TEAM, key.grove_key, "TEAM-00001", "trial.example.test"
 		)
 		self.assertEqual((key.reload().status, key.team), ("Converted", "TEAM-00001"))
+		self.assertIsNone(key.get_password("api_key", raise_exception=False))
 		# The team's now: its server's termination takes nothing.
 		with patch(f"{MODULE}.frappe.enqueue"):
 			AITrialKey.queue_revoke(server="server-1")
