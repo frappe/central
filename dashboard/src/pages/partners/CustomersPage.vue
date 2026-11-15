@@ -28,7 +28,7 @@ const ending = ref<PartnerLink | null>(null)
 const payerChange = ref<PayerChange | null>(null)
 const rows = computed(() => customers.value?.customers ?? [])
 const partnerCode = computed(() => customers.value?.partner_code ?? '')
-const currency = computed(() => customers.value?.currency ?? 'INR')
+const currency = computed(() => customers.value?.currency ?? '')
 const startDay = computed(() => formatDate(nextPayerChangeDay()))
 
 function openTeam(row: CustomerLink): void {

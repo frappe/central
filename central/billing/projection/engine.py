@@ -15,7 +15,7 @@ guarantee rather than a convention — see `guard`.
 
 import frappe
 
-from central.billing.doctype.billing_profile.billing_profile import get_billing_currency
+from central.billing.doctype.billing_profile.billing_profile import get_billing_currency, get_billing_team
 from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.projection import behaviour, estimate, outcomes, state
 from central.billing.projection import events as injected
@@ -78,7 +78,8 @@ def _project(
 		changes=injected.merged_changes(events, start, end),
 	)
 
-	invoice = _invoice(rated)
+	paid_by = get_paid_by(team, start)
+	invoice = _invoice(rated, is_paid_by_partner=bool(paid_by))
 	if invoice and events:
 		# A line that only exists because somebody invented an event is not a
 		# measurement, and the totals must not let it read as one.
@@ -102,6 +103,7 @@ def _project(
 		"period_end": str(end),
 		"as_of": str(today),
 		"currency": currency,
+		"paid_by": paid_by,
 		"invoice": invoice,
 		"calendar": calendar,
 		"outcome": outcomes.verdict(mode, findings, assume),
@@ -114,8 +116,16 @@ def _project(
 	}
 
 
-def _invoice(rated) -> dict | None:
-	"""The projected invoice, with its lines' provenance carried into the totals."""
+def get_paid_by(team: str, period_start) -> str | None:
+	"""The partner team that pays for the team's usage in the period, or None."""
+	billing_team = get_billing_team(team, period_start)
+	return billing_team if billing_team != team else None
+
+
+def _invoice(rated, is_paid_by_partner: bool = False) -> dict | None:
+	"""The projected invoice, with its lines' provenance carried into the totals. A partner
+	that pays for the team collects the bill on its own invoice, so nothing is collected from
+	the team, though its usage still shows what it costs."""
 	if not rated:
 		return None
 
@@ -135,7 +145,7 @@ def _invoice(rated) -> dict | None:
 		"zero_rating_reason": payload.get("zero_rating_reason"),
 		"tds_amount": payload["tds_amount"],
 		"total": payload["total"],
-		"expected_collection": payload["expected_collection"],
+		"expected_collection": 0.0 if is_paid_by_partner else payload["expected_collection"],
 		"invoice_type": payload["invoice_type"],
 		# Never a bare total: a bill that is part guesswork must not read like a bill.
 		"measured": totals["measured"],
@@ -319,7 +329,7 @@ def _roll_one(team, carried, period_start, period_end, today, mode, assume, even
 		explain=True,
 		changes=injected.merged_changes(events, period_start, period_end),
 	)
-	invoice = _invoice(rated)
+	invoice = _invoice(rated, is_paid_by_partner=bool(get_paid_by(team, period_start)))
 	if invoice and events:
 		injected.mark_assumed(invoice["lines"], events, period_start)
 		invoice.update(split_totals(invoice["lines"]))

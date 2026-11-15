@@ -12,13 +12,15 @@ from central.api.partners import (
 	get_team_customers,
 	get_team_partner,
 )
+from central.errors import PartnersDisabledError
 from central.tests.test_team_management import create_user
-from central.tests.utils import ensure_server
+from central.tests.utils import central_limit, ensure_server
 
 
 class TestPartnerLinks(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
+		self.enterContext(central_limit("enable_partners", 1))
 		self.dispatch = patch("central.notification.engine.dispatch").start()
 		self.addCleanup(patch.stopall)
 		suffix = frappe.generate_hash(length=6)
@@ -94,6 +96,16 @@ class TestPartnerLinks(IntegrationTestCase):
 		frappe.set_user(self.partner_owner)
 		with self.assertRaises(frappe.ValidationError):
 			add_partner(self.partner_team, self.code)
+
+	def test_partners_off_refuses_a_new_link_but_keeps_the_active_one(self):
+		frappe.set_user(self.customer_owner)
+		add_partner(self.customer_team, self.code)
+
+		with central_limit("enable_partners", 0):
+			self.assertEqual(get_team_partner(self.customer_team)["status"], "Active")
+			frappe.set_user(self.stranger)
+			with self.assertRaises(PartnersDisabledError):
+				add_partner(self.stranger_team, self.code)
 
 	def test_a_partner_team_cannot_add_a_partner(self):
 		frappe.set_user("Administrator")

@@ -1,6 +1,6 @@
 import re
 import secrets
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import frappe
 import jwt
@@ -9,6 +9,7 @@ from frappe.query_builder.functions import GroupConcat
 from frappe.utils import add_days, flt, now_datetime, validate_email_address
 from frappe.utils.verified_command import get_secret
 
+from central.errors import PartnersDisabledError
 from central.iam import get_owned_team_names, is_team_owner
 from central.identity.doctype.team_invitation.team_invitation import get_expiry_days
 from central.sso import central_url
@@ -45,13 +46,28 @@ def get_partner_team(connect_partner_id: str) -> frappe._dict | None:
 	)
 
 
+def require_partners_enabled() -> None:
+	"""Refuse to start a new partner or partner link while Central Settings has partners off.
+	Partners and links that exist keep working."""
+	if not frappe.db.get_single_value("Central Settings", "enable_partners"):
+		frappe.throw(_("Frappe partners are not available on Frappe Cloud yet."), PartnersDisabledError)
+
+
 def get_registration_status(connect_partner_id: str) -> dict:
-	"""Completed, with the team and its code, once a team represents the partner. Else Pending."""
+	"""Completed, with the team, its code, and the Frappe Cloud pages Connect links to, once a
+	team represents the partner. Else Pending. Central owns its routes, so Connect never builds
+	one."""
 	team = get_partner_team(connect_partner_id)
 	if not team:
 		return {"status": "Pending"}
 
-	return {"status": "Completed", "team": team.name, "partner_code": team.partner_code}
+	return {
+		"status": "Completed",
+		"team": team.name,
+		"partner_code": team.partner_code,
+		"add_partner_url": f"{central_url()}/dashboard/partner?{urlencode({'code': team.partner_code})}",
+		"invoices_url": f"{central_url()}/dashboard/billing/invoices",
+	}
 
 
 def request_registration(
@@ -63,6 +79,7 @@ def request_registration(
 	if status["status"] == "Completed":
 		return status
 
+	require_partners_enabled()
 	validate_return_url(return_url)
 	claims = {
 		"aud": REGISTRATION_AUDIENCE,

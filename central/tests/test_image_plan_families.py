@@ -35,7 +35,9 @@ class TestImagePlanFamilies(IntegrationTestCase):
 		plans = [self.plain_plan, self.small_bundle, self.bundle]
 		caps = frappe._dict(max_spend=1000, allowed_plans=plans, allowed_clusters=None, tier="Entry")
 		self.enterContext(patch("central.billing.catalog.server_plans.get_team_caps", return_value=caps))
-		self.enterContext(patch("central.billing.catalog.server_plans.get_team_currency", return_value="INR"))
+		self.enterContext(
+			patch("central.billing.catalog.server_plans.get_pricing_currency", return_value="INR")
+		)
 
 	def make_plan(self, memory: float, **values) -> str:
 		return make_plan(

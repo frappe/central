@@ -201,7 +201,7 @@ class TestForecastIsNamedByItsBill(TaxLabelTestCase):
 			"total": tax_amount,
 			"expected_collection": tax_amount,
 		}
-		projection = {"invoice": block, "currency": "INR"}
+		projection = {"invoice": block, "currency": "INR", "paid_by": None}
 		with patch("central.billing.projection.engine.project", return_value=projection):
 			return invoice_api.get_forecast(TEAM)
 
@@ -214,7 +214,7 @@ class TestForecastIsNamedByItsBill(TaxLabelTestCase):
 		self.assertEqual(self._forecast(zero_rating_reason="SEZ")["tax_label"], "No GST (SEZ)")
 
 	def test_a_forecast_with_no_projected_bill_names_none(self):
-		projection = {"invoice": None, "currency": "INR"}
+		projection = {"invoice": None, "currency": "INR", "paid_by": None}
 		with patch("central.billing.projection.engine.project", return_value=projection):
 			forecast = invoice_api.get_forecast(TEAM)
 
@@ -225,7 +225,7 @@ class TestForecastIsNamedByItsBill(TaxLabelTestCase):
 
 class TestProjectedNextPaymentIsNamedByItsBill(TaxLabelTestCase):
 	def _note(self, invoice):
-		projection = {"invoice": invoice, "currency": "INR"}
+		projection = {"invoice": invoice, "currency": "INR", "paid_by": None}
 		with patch("central.billing.projection.engine.project", return_value=projection):
 			return outlook.get_next_payment(TEAM)["tax_note"]
 

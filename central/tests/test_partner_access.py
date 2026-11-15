@@ -15,6 +15,7 @@ from central.api.partners import (
 from central.api.teams import list_team_members
 from central.iam import PARTNER_BLOCKED_CAPABILITIES, can, get_partner_team_of
 from central.tests.test_team_management import create_user
+from central.tests.utils import central_limit
 
 
 class TestPartnerAccess(IntegrationTestCase):
@@ -22,6 +23,7 @@ class TestPartnerAccess(IntegrationTestCase):
 
 	def setUp(self):
 		frappe.set_user("Administrator")
+		self.enterContext(central_limit("enable_partners", 1))
 		self.dispatch = patch("central.notification.engine.dispatch").start()
 		self.addCleanup(patch.stopall)
 		suffix = frappe.generate_hash(length=6)

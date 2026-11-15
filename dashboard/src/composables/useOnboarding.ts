@@ -8,6 +8,7 @@ import {
 import { useAuth } from '@/composables/useAuth'
 import { usePartnerLinkIntent } from '@/composables/usePartnerLinks'
 import { useSession } from '@/composables/useSession'
+import { features } from '@/lib/features'
 import { submitOrThrow } from '@/lib/frappeCall'
 import type { OnboardingStepKey } from '@/types/api'
 
@@ -40,7 +41,10 @@ export function useOnboarding() {
 		if (!team || team.owner !== currentUser.value || !team.onboarding.length)
 			return []
 		// A Connect link asks to add a partner, so the new team adds it as part of its setup.
-		const addsPartner = Boolean(partnerIntent.code.value) && !team.has_partner
+		const addsPartner =
+			features.partners &&
+			Boolean(partnerIntent.code.value) &&
+			!team.has_partner
 		return stepsFor(
 			addsPartner ? ['partner', ...team.onboarding] : team.onboarding,
 		)

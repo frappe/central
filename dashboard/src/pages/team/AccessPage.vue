@@ -10,6 +10,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { openSettings } from '@/composables/useSettings'
 import { useTeamMembers } from '@/composables/useTeamMembers'
+import { features } from '@/lib/features'
 
 // Members, roles and activity share one header, so they are tabs on one page.
 // Team settings (logo, rename, delete) open from the pencil.
@@ -20,7 +21,12 @@ const { canEditTeam, canDeleteTeam, canManagePartners } = useCapabilities()
 // A customer team adds a partner here. Once linked, the Partner page in the sidebar owns it.
 const canAddPartner = computed(() => {
 	const team = teams.value.find((team) => team.name === activeTeam.value)
-	return canManagePartners.value && !team?.has_partner && !team?.is_partner
+	return (
+		features.partners &&
+		canManagePartners.value &&
+		!team?.has_partner &&
+		!team?.is_partner
+	)
 })
 const router = useRouter()
 const addingPartner = ref(false)

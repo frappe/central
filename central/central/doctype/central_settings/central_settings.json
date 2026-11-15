@@ -41,6 +41,8 @@
   "enable_public_ipv6",
   "column_break_networking_firewall",
   "enable_firewall",
+  "partners_section",
+  "enable_partners",
   "servers_tab",
   "server_creation_section",
   "require_payment_method",
@@ -276,6 +278,18 @@
    "fieldname": "enable_firewall",
    "fieldtype": "Check",
    "label": "Enable Firewall"
+  },
+  {
+   "fieldname": "partners_section",
+   "fieldtype": "Section Break",
+   "label": "Partners"
+  },
+  {
+   "default": "0",
+   "description": "Lets teams add a Frappe partner by its code, and lets Frappe Connect register partners. Existing partner links keep working when it is off.",
+   "fieldname": "enable_partners",
+   "fieldtype": "Check",
+   "label": "Enable Partners"
   },
   {
    "fieldname": "servers_tab",

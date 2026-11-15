@@ -46,6 +46,7 @@ Connect keeps the secret in its Integration Settings (`cloud_site_url`, `cloud_a
 |---|---|---|
 | Connect URL (`connect_url`) | Central Settings, Frappe Connect section | Central accepts a `return_url` only when its host is this host. This stops an open redirect. |
 | Invitation Expiry (Days) (`invitation_expiry_days`) | Central Settings | A registration link expires after this many days. Connect sends a new link after 14 days. |
+| Enable Partners (`enable_partners`) | Central Settings, Feature Flags tab, Partners section | Off by default. While it is off, Central refuses `register_partner` for a new partner, the completion of a registration link, and a new Partner Link, with `PartnersDisabledError`. The console hides Add partner. Partners and links that exist keep working, so it is not a kill switch. |
 
 ## Records
 
@@ -133,8 +134,14 @@ Read the state of a registration. The status is `Completed` while a team holds t
 | `connect_partner_id` | Yes | Connect's partner ID |
 
 ```json
-{"message": {"status": "Completed", "team": "TEAM-00007", "partner_code": "TRI-48213"}}
+{"message": {
+  "status": "Completed", "team": "TEAM-00007", "partner_code": "TRI-48213",
+  "add_partner_url": "https://central.example.com/dashboard/partner?code=TRI-48213",
+  "invoices_url": "https://central.example.com/dashboard/billing/invoices"
+}}
 ```
+
+Connect uses these URLs as they are and never builds a Frappe Cloud route. To send a customer to add the partner, Connect adds `reference` (the Partner Customer name) and `email` (the customer's email) as query parameters to `add_partner_url`.
 
 ### `central.api.connect.get_partner_customers`
 
@@ -160,7 +167,7 @@ Central bills a server, not a site, so each server carries its sites. `amount` i
 
 ### `central.api.connect.get_partner_invoices`
 
-List the paid invoices that count for one partner. Connect uses it for the Invoicing page and the tier.
+List the paid invoices that count for one partner. Connect uses it for the tier.
 
 | Argument | Required | Value |
 |---|---|---|
@@ -171,12 +178,11 @@ List the paid invoices that count for one partner. Connect uses it for the Invoi
 {"message": [{
   "invoice": "INV-2026-00418", "customer_team": "TEAM-00012", "customer_team_name": "Northwind",
   "period_start": "2026-10-01", "period_end": "2026-10-31", "paid_at": "2026-11-03 04:10:00",
-  "currency": "INR", "amount": 11500, "paid_by_partner": false,
-  "url": "https://central.example.com/dashboard/billing/invoices/INV-2026-00418"
+  "currency": "INR", "amount": 11500, "paid_by_partner": false
 }]}
 ```
 
-`amount` is the invoice amount after discount and before tax. The list has every `Paid`, `Billable` invoice where `partner_team` is the partner's team, and every invoice of the partner's own team, which includes the customers it pays for. They all count toward the tier.
+`amount` is the invoice amount after discount and before tax. The list has every `Paid`, `Billable` invoice where `partner_team` is the partner's team, and every invoice of the partner's own team, which includes the customers it pays for. `paid_by_partner` is true on the partner's own invoices. They all count toward the tier.
 
 ### `central.api.connect.end_partner_link`
 
@@ -308,7 +314,8 @@ Rules:
 - A change takes effect on the 1st of the next month. The partner pays from `partner_pays_from` to `partner_pays_until`. A stop before the partner starts cancels the payment. So every month has one payer and one currency.
 - Both sides see the date and the currency before they confirm. While the partner pays, the customer's plans and prices show and are charged in the partner's currency, and the customer's Billing page says "Paid by <partner>".
 - On the 1st, Central prices the customer's running subscriptions again in the new payer's currency (`reprice_paid_customers`). A payer in the same currency keeps every locked price.
-- The partner's monthly invoice lists its own usage and, grouped by customer, the usage of each customer it pays for. A customer that the partner pays for gets no invoice for that month.
+- The partner's monthly invoice lists its own usage and, grouped by customer, the usage of each customer it pays for. The partner's forecast and invoice pages on Frappe Cloud show the same groups. A customer that the partner pays for gets no invoice for that month.
+- The customer still sees its forecast, before tax and in the partner's currency, marked "Paid by <partner>". Nothing is collected from the customer: it gets no top-up reminder and no shortfall warning for that month.
 - When a link ends, partner pays stops at the end of the month.
 
 The customer keeps its own wallet and payment methods. They are not used while the partner pays.

@@ -2,13 +2,13 @@ import frappe
 from frappe import _
 from frappe.utils import get_datetime
 
-from central.identity.doctype.partner_link.partner_link import LINK_FIELDS, summarize_links
 from central.identity.doctype.team.partner import (
 	get_customer_hosting,
 	get_partner_team,
 	get_registration_status,
 	request_registration,
 )
+from central.partners.doctype.partner_link.partner_link import LINK_FIELDS, summarize_links
 
 CONNECT_INTEGRATION_ROLE = "Connect Integration"
 

@@ -4,16 +4,16 @@ from frappe.utils.translations import _lt
 
 from central.billing.doctype.billing_profile.billing_profile import get_team_currency
 from central.iam import PARTNER_CAPABILITY, can
-from central.identity.doctype.partner_link.partner_link import (
-	LINK_FIELDS,
-	PartnerLink,
-	get_partner_team_by_code,
-	summarize_links,
-)
 from central.identity.doctype.team.partner import (
 	complete_registration,
 	get_customer_hosting,
 	get_registration_summary,
+)
+from central.partners.doctype.partner_link.partner_link import (
+	LINK_FIELDS,
+	PartnerLink,
+	get_partner_team_by_code,
+	summarize_links,
 )
 from central.utils.guards import require_capability
 

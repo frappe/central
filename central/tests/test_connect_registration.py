@@ -4,6 +4,7 @@ from frappe.tests import IntegrationTestCase
 from central.api.connect import get_partner_registration, register_partner
 from central.api.partners import complete_partner_registration
 from central.api.partners import get_partner_registration as get_registration_summary
+from central.errors import PartnersDisabledError
 from central.tests.test_team_management import create_user
 from central.tests.utils import central_limit
 
@@ -14,6 +15,7 @@ RETURN_URL = f"{CONNECT_URL}/connect/partner-onboarding"
 class TestConnectRegistration(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
+		self.enterContext(central_limit("enable_partners", 1))
 		frappe.db.set_single_value("Central Settings", "connect_url", CONNECT_URL)
 		self.integration = self._create_integration_user()
 		self.partner_id = f"PARTNER-{frappe.generate_hash(length=8)}"
@@ -54,7 +56,26 @@ class TestConnectRegistration(IntegrationTestCase):
 		status = get_partner_registration(self.partner_id)
 		self.assertEqual((status["status"], status["team"]), ("Completed", self.team))
 		self.assertRegex(status["partner_code"], r"^TRI-\d{5}$")
+		self.assertTrue(
+			status["add_partner_url"].endswith(f"/dashboard/partner?code={status['partner_code']}")
+		)
+		self.assertTrue(status["invoices_url"].endswith("/dashboard/billing/invoices"))
 		self.assertEqual(self._register()["partner_code"], status["partner_code"])
+
+	def test_partners_off_refuses_new_partners_but_keeps_registered_ones(self):
+		token = self._token(self._register())
+		with central_limit("enable_partners", 0):
+			frappe.set_user(self.owner)
+			with self.assertRaises(PartnersDisabledError):
+				complete_partner_registration(token, self.team)
+
+		frappe.set_user(self.owner)
+		complete_partner_registration(token, self.team)
+		with central_limit("enable_partners", 0):
+			self.assertEqual(self._register()["status"], "Completed")
+			frappe.set_user(self.integration)
+			with self.assertRaises(PartnersDisabledError):
+				register_partner(f"OTHER-{self.partner_id}", "Other", self.owner, RETURN_URL)
 
 	def test_wrong_email_cannot_complete(self):
 		token = self._token(self._register())

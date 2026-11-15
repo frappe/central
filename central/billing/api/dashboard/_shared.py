@@ -240,6 +240,9 @@ def _describe_line(team: str, li) -> dict:
 		# forecast line (generate._tag_projects), so both read identically here.
 		"project": li.get("project"),
 		"project_title": li.get("project_title"),
+		# The customer a partner pays for. Set only on a paying partner's lines.
+		"customer_team": li.get("customer_team"),
+		"customer_title": li.get("customer_title"),
 	}
 	if li.resource_type == "bundle":
 		title = frappe.db.get_value("Plan", li.plan, "title") if li.plan else None
@@ -268,7 +271,11 @@ def _describe_line(team: str, li) -> dict:
 		# Surface the included allowance the usage ran past, so the bill is legible.
 		allowance = frappe.db.get_value(
 			"Usage Rollup",
-			{"team": team, "resource_id": li.subscription_resource, "resource_type": li.resource_type},
+			{
+				"team": li.get("customer_team") or team,
+				"resource_id": li.subscription_resource,
+				"resource_type": li.resource_type,
+			},
 			"locked_allowance",
 		)
 		# li.quantity is the BILLABLE overage (usage already minus the allowance). Spell

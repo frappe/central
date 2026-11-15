@@ -48,6 +48,10 @@ class CargoConnectionError(frappe.ValidationError):
 	"""A regional Cargo health check or webhook configuration call failed."""
 
 
+class PartnersDisabledError(frappe.ValidationError):
+	"""Central Settings has partners turned off, so no new partner or partner link can start."""
+
+
 # code -> user-facing copy. Templates are formatted with the call's context (action,
 # region, resource_id, field); a missing placeholder renders empty rather than crashing
 # the error path. `message` may be overridden when Central owns customer-safe copy.

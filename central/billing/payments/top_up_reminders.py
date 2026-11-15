@@ -226,6 +226,9 @@ def get_forecast_total(team: str, period_start, today) -> float:
 		mode="Optimistic",
 		guarded=False,
 	)
+	# A partner that pays for the team settles the bill, so the team's wallet owes nothing.
+	if projection["paid_by"]:
+		return 0.0
 	return frappe.utils.flt((projection["invoice"] or {}).get("total"))
 
 

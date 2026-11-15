@@ -2,8 +2,11 @@ import frappe
 from frappe.utils import add_months, get_first_day, get_last_day, getdate
 
 from central.api import connect
+from central.billing.api.dashboard._shared import _describe_line
 from central.billing.catalog.subscriptions import active_segments, reprice_team
 from central.billing.doctype.billing_profile.billing_profile import get_billing_team, get_pricing_currency
+from central.billing.payments.top_up_reminders import get_forecast_total
+from central.billing.projection import engine
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.tests.utils import (
 	BillingTestCase,
@@ -157,6 +160,24 @@ class TestPartnerPays(BillingTestCase):
 		self.assertEqual(
 			(row.invoice, row.customer_team, row.amount, row.paid_by_partner), (own, CUSTOMER, 3000, False)
 		)
+
+	def test_a_paid_customer_sees_its_forecast_but_owes_nothing(self):
+		self._partner_pays(from_day=JUNE[0])
+		projection = engine.project(CUSTOMER, *JUNE, today="2026-06-10", mode="Optimistic", guarded=False)
+
+		self.assertEqual(projection["paid_by"], PARTNER)
+		self.assertEqual(projection["invoice"]["subtotal"], 3000)
+		self.assertEqual(projection["invoice"]["expected_collection"], 0)
+		self.assertEqual(get_forecast_total(CUSTOMER, JUNE[0], getdate("2026-06-10")), 0)
+
+	def test_the_partner_forecast_names_the_customer_on_its_lines(self):
+		self._partner_pays(from_day=JUNE[0])
+		projection = engine.project(PARTNER, *JUNE, today="2026-06-10", mode="Optimistic", guarded=False)
+
+		self.assertIsNone(projection["paid_by"])
+		(line,) = [_describe_line(PARTNER, frappe._dict(line)) for line in projection["invoice"]["lines"]]
+		self.assertEqual((line["customer_team"], line["customer_title"]), (CUSTOMER, CUSTOMER))
+		self.assertGreater(projection["invoice"]["expected_collection"], 0)
 
 	def _partner_pays(self, from_day) -> None:
 		frappe.db.set_value(

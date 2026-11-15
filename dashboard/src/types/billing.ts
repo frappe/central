@@ -45,12 +45,17 @@ export interface BillingLine {
 	 *  one consolidated invoice regardless. */
 	project?: string | null
 	project_title?: string | null
+	/** The customer team a partner pays for, on the partner's own bill only. */
+	customer_team?: string | null
+	customer_title?: string | null
 }
 
 /** get_forecast — current-cycle projection vs wallet. */
 export interface Forecast {
 	period_start: string
 	period_end: string
+	/** The partner team, by title, that pays this bill on its own invoice. */
+	paid_by: string | null
 	projected_total: number
 	subtotal: number
 	tax_amount: number

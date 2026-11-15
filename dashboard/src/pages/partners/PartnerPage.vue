@@ -23,6 +23,7 @@ import {
 	useTeamPartner,
 } from '@/composables/usePartnerLinks'
 import { useSession } from '@/composables/useSession'
+import { features } from '@/lib/features'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { formatDate } from '@/lib/format'
 import { __ } from '@/lib/translate'
@@ -44,6 +45,7 @@ const isLinkWaiting = computed(() => {
 		(option) => option.name === session.activeTeam.value,
 	)
 	return (
+		features.partners &&
 		Boolean(intent.code.value) &&
 		Boolean(team) &&
 		!team?.has_partner &&
@@ -238,9 +240,13 @@ function onChanged(): void {
 				v-else
 				icon="lucide-handshake"
 				:title="__('No partner yet')"
-				:description="__('A Frappe partner can build and run your systems. Add one with the code they gave you.')"
+				:description="
+					features.partners
+						? __('A Frappe partner can build and run your systems. Add one with the code they gave you.')
+						: __('Adding a Frappe partner is not available yet.')
+				"
 			>
-				<template v-if="canManagePartners" #action>
+				<template v-if="canManagePartners && features.partners" #action>
 					<Button
 						variant="solid"
 						:label="__('Add partner')"

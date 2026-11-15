@@ -9,7 +9,7 @@ from frappe.utils import now_datetime
 from central.billing import settings as billing_settings
 from central.iam import can, clear_grants_cache, user_has_operator_bypass
 from central.identity.doctype.team.lifecycle import TeamLifecycle
-from central.identity.doctype.team.partner import generate_partner_code
+from central.identity.doctype.team.partner import generate_partner_code, require_partners_enabled
 from central.identity.doctype.team.tenant import (
 	allocate_tenant_id,
 	prepare_tenant_id_series,
@@ -122,6 +122,7 @@ class Team(TeamLifecycle, Document):
 	# Internal; the HTTP surface is central.api.partners.complete_partner_registration.
 	def register_as_partner(self, connect_partner_id: str) -> None:
 		"""Make this team the Central team of a Connect partner. The caller checked the owner."""
+		require_partners_enabled()
 		if self.connect_partner_id:
 			frappe.throw(_("This team already represents a partner. Choose another team."))
 

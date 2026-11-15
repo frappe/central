@@ -7,9 +7,12 @@ from frappe.model.document import Document
 from frappe.utils import add_days, add_months, get_datetime, get_first_day, get_last_day, getdate, now
 
 from central.iam import PARTNER_ROLES, can, user_has_operator_bypass
+from central.identity.doctype.team.partner import require_partners_enabled
 
 REFERENCE_MAX_LENGTH = 140
 END_REASON_MAX_LENGTH = 500
+# The daily re-pricing looks back this far, so it catches up after missed runs.
+REPRICE_CATCH_UP_DAYS = 7
 # Only the link actions change these after the link exists.
 ACTION_FIELDS = (
 	"status",
@@ -64,6 +67,7 @@ class PartnerLink(Document):
 	@classmethod
 	def add(cls, customer_team: str, partner_code: str, reference: str | None = None) -> "PartnerLink":
 		"""Link `customer_team` to the partner that owns `partner_code`."""
+		require_partners_enabled()
 		link = frappe.get_doc(
 			{
 				"doctype": "Partner Link",
@@ -302,7 +306,7 @@ def reprice_paid_customers() -> None:
 	from central.billing.catalog.subscriptions import reprice_team
 
 	today = getdate()
-	since = add_days(today, -7)
+	since = add_days(today, -REPRICE_CATCH_UP_DAYS)
 	link = frappe.qb.DocType("Partner Link")
 	rows = (
 		frappe.qb.from_(link)
