@@ -1,6 +1,6 @@
 # Payment methods
 
-Add a card so that Frappe Cloud can collect each invoice automatically. You can add more than one payment method and set the order in which they are charged.
+Add a card so that Frappe Cloud can collect each invoice automatically. You can add more than one payment method and set the order in which they are charged. When you pay each invoice yourself, your payment methods are not charged automatically. See [How you pay](#how-you-pay).
 
 ::: info
 You need the Owner, Admin, or Billing role to add, order, or remove payment methods.
@@ -17,10 +17,21 @@ The **Payment methods** card on **Billing > Payments** lists your prepaid credit
 <Screenshot name="billing/payment-methods" alt="The Payment methods card with prepaid credits, a Visa card marked Primary, and Add another card" />
 
 - An invoice uses your prepaid credits first.
-- Then Frappe Cloud charges the payment method marked **Primary**.
+- When you pay automatically, Frappe Cloud then charges the payment method marked **Primary**. See [How you pay](#how-you-pay).
 - When a charge fails, the next method, marked **Fallback 1**, **Fallback 2**, and so on, is charged.
 
 While your wallet has a balance, the wallet is the primary and every card is a fallback.
+
+## How you pay
+
+The **How you pay** card on **Billing > Payments** shows how your invoices are paid. Your wallet always pays first. Then:
+
+- **You pay automatically**: when your wallet is short, Frappe Cloud charges your **Primary** payment method. In INR, your card or UPI pays only amounts up to its limit, at most ₹15,000. With no active payment method, add one, or add credit, to pay the rest. Until then, the rest stays open on the invoice.
+- **You pay each invoice yourself**: INR billing only. Frappe Cloud emails you each invoice, and you pay what your wallet does not cover. Your payment methods are not charged automatically, even for a debit you were notified of before you switched.
+
+Teams billed in INR can switch between the two. Other teams pay automatically; a team that is paused can switch back to it. Click **Change**, select **Pay automatically** or **Pay each invoice yourself**, and click **Confirm**. The change applies to every unpaid invoice, from its next payment. Only the Owner, Admin, or Billing role sees **Change**. Making a payment method **Primary**, or adding one, does not change how you pay.
+
+When **Automatic payments are paused** shows, an INR bill was more than your card or UPI can pay automatically, or your mandate stopped working. Click **Choose how to pay**. Your services keep running.
 
 ## Add a card
 
@@ -81,8 +92,8 @@ Invoices then use your other methods, if any. With no payment method and no cred
 
 | Label | Meaning |
 | --- | --- |
-| **Primary** | Charged first after credits. |
-| **Fallback 1**, **Fallback 2** | Charged in this order when the methods above fail. |
+| **Primary** | Charged first after credits, when you pay automatically. |
+| **Fallback 1**, **Fallback 2** | Charged in this order when the methods above fail, when you pay automatically. |
 | **Re-auth needed** | The mandate's maximum is below your spend limit plus GST. It is still charged, up to that maximum. Authorise it again to cover larger bills. |
 | Any other status | The method is not active and is not charged. |
 

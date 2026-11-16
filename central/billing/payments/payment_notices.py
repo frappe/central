@@ -83,10 +83,12 @@ def notify_payment_date_changed(profile) -> None:
 		return
 
 	from central.billing.doctype.billing_profile.billing_profile import get_payment_date
+	from central.billing.payments import collection_mode
 
 	next_month = frappe.utils.add_months(frappe.utils.get_first_day(frappe.utils.nowdate()), 1)
 	context = {
 		"payment_day": get_ordinal(profile.payment_day),
+		"pays_by_hand": not collection_mode.is_debit_allowed(profile.team),
 		"next_payment_date": format_date(get_payment_date(profile.team, next_month)),
 		**_get_uncharged_invoice(profile.team),
 	}
@@ -239,7 +241,8 @@ def send_payment_reminder(invoice: str, now: datetime) -> dict:
 	"""Send one payment reminder, at most one notice per bill, decided in this order:
 
 	1. A bill the card or UPI cannot pay keeps the top-up notice as its only one.
-	2. A bill no method may take off-session gets the reminder, asking for a payment by hand.
+	2. A bill no method may take off-session, or a team that pays by hand, gets the reminder,
+	   asking for a payment by hand.
 	3. A method that owes a pre-debit notice gets that notice instead.
 	4. Otherwise the reminder names the method charged."""
 	from central.billing.payments import emandate
@@ -300,16 +303,20 @@ def get_payment_context(invoice) -> dict:
 	"""The amount, the tax it includes, the payment date and the method a payment notice names.
 
 	`over_limit` is set when the team has methods but none may take the amount off-session,
-	so the notice asks for a payment by hand instead of naming a method."""
-	from central.billing.payments import collection
+	so the notice asks for a payment by hand instead of naming a method. `pays_by_hand` is set
+	for a team whose methods are never charged off-session, so no method is named."""
+	from central.billing.payments import collection, collection_mode
 
+	pays_by_hand = not collection_mode.is_debit_allowed(invoice.team)
 	method = _get_charging_method(invoice)
 	return {
 		"amount": frappe.utils.fmt_money(invoice.expected_collection, currency=invoice.currency),
 		"tax_note": tax.TaxNames(invoice.team).note(invoice),
 		"payment_date": format_date(invoice.payment_date),
 		"method": _get_method_label(method),
-		"over_limit": not method and bool(collection.get_methods_left(invoice.team, invoice.name)),
+		"pays_by_hand": pays_by_hand,
+		"over_limit": not (pays_by_hand or method)
+		and bool(collection.get_methods_left(invoice.team, invoice.name)),
 	}
 
 
@@ -320,8 +327,11 @@ def _get_method_label(method) -> str | None:
 
 
 def _get_charging_method(invoice):
-	from central.billing.payments import collection
+	"""The method the charge lands on. None for a team whose methods are never charged off-session."""
+	from central.billing.payments import collection, collection_mode
 
+	if not collection_mode.is_debit_allowed(invoice.team):
+		return None
 	return collection.method_for_amount(
 		invoice.team, invoice.currency, frappe.utils.flt(invoice.expected_collection), invoice.name
 	)

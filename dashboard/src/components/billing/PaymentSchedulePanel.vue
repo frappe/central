@@ -59,7 +59,7 @@ const blockerLines = computed(() => {
 const chargeStep = computed(
 	() =>
 		getDunningSteps(data.value)[0] ?? {
-			label: __("We'll charge on"),
+			label: data.value?.debit_held ? __('Due on') : __("We'll charge on"),
 			date: data.value?.charge_on,
 			hint: '',
 		},

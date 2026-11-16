@@ -77,6 +77,8 @@ def get_next_payment(team: str | None = None) -> dict:
 	of an owed invoice, else the running cycle's. When the oldest owed invoice's own
 	payment date has passed, its place on the dunning ladder is reported beside it.
 	"""
+	from central.billing.payments import collection_mode
+
 	team = _resolve_team(team)
 	currency = _team_currency(team)
 	today = frappe.utils.getdate()
@@ -85,6 +87,7 @@ def get_next_payment(team: str | None = None) -> dict:
 	invoice = owed[0] if owed else None
 	amount, period_end, bill = _amount_due(team, invoice, today)
 
+	debit_held = not collection_mode.is_debit_allowed(team)
 	charge_on = _scheduled_charge_on(team, owed, today)
 	missed = _missed_payment(team, invoice, today)
 	blockers = _blockers(team, amount, currency, missed["next_retry_on"] or charge_on, today)
@@ -96,10 +99,11 @@ def get_next_payment(team: str | None = None) -> dict:
 		"invoice": invoice.name if invoice else None,
 		"period_end": str(period_end) if period_end else None,
 		"collection_mode": frappe.db.get_value("Billing Profile", team, "collection_mode"),
+		"debit_held": debit_held,
 		"method": _charging_method(team, amount, invoice.name if invoice else None),
 		# Empty blockers is not a promise the charge succeeds — only that nothing in
 		# the data decides otherwise. The UI says "we'll charge", never "it will work".
-		"will_auto_charge": not blockers,
+		"will_auto_charge": not (blockers or debit_held),
 		"blockers": blockers,
 		**missed,
 	}
@@ -293,9 +297,12 @@ def _charging_method(team: str, amount: float, invoice: str | None = None) -> di
 	"""The method the bill would be charged on, and the most it may take off-session.
 
 	The first method, primary first, whose own limit covers `amount`. None when none does:
-	the bill is then paid by hand, and a blocker says so."""
+	the bill is then paid by hand, and a blocker says so. None too for a team whose
+	methods are never charged off-session."""
 	from central.billing.payments import collection, collection_mode
 
+	if not collection_mode.is_debit_allowed(team):
+		return None
 	currency = _team_currency(team)
 	method = collection.method_for_amount(team, currency, amount, invoice)
 	if not method:

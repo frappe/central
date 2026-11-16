@@ -131,6 +131,39 @@ class TestCollectionMode(IntegrationTestCase):
 		self.assertEqual(st["collection_mode"], "Prepaid")
 		self.assertFalse(st["action_required"])
 
+	def test_prepaid_and_auto_charge_read_as_one_choice(self):
+		for mode, choice in (
+			("Prepaid", "Automatic"),
+			("Auto Charge", "Automatic"),
+			("Manual Checkout", "Manual"),
+		):
+			_set_mode(TEAM, mode)
+			self.assertEqual(collection_mode.status(TEAM)["choice"], choice)
+		_set_mode(TEAM, "Action Required", reason="mandate_failed")
+		self.assertIsNone(collection_mode.status(TEAM)["choice"])
+
+	def test_status_names_the_method_charged_first(self):
+		self.assertEqual(collection_mode.status(TEAM)["charged_method"], "UPI Autopay")
+		frappe.db.set_value("Payment Method", {"team": TEAM}, "priority", 5)
+		self._activate_method("tok_charged_first")
+		first = frappe.db.get_value("Payment Method", {"gateway_method_id": "tok_charged_first"})
+		frappe.db.set_value("Payment Method", first, {"priority": 1, "display_label": "UPI ····first"})
+		self.assertEqual(collection_mode.status(TEAM)["charged_method"], "UPI ····first")
+		frappe.db.delete("Payment Method", {"team": TEAM})
+		self.assertIsNone(collection_mode.status(TEAM)["charged_method"])
+
+	def test_only_an_inr_team_may_pay_each_invoice_by_hand(self):
+		self.assertTrue(collection_mode.status(TEAM)["manual_offered"])
+		usd_team = "team-collection-usd"
+		ensure_team(usd_team)
+		complete_billing_profile(usd_team, currency="USD")
+		self.assertFalse(collection_mode.status(usd_team)["manual_offered"])
+		with self.assertRaises(frappe.ValidationError):
+			collection_mode.choose(usd_team, "Manual Checkout")
+		self.assertNotEqual(
+			frappe.db.get_value("Billing Profile", usd_team, "collection_mode"), "Manual Checkout"
+		)
+
 	def test_returning_to_auto_needs_something_to_charge(self):
 		"""Auto Charge means "we debit something". Without a method it is a mode whose
 		first invoice would discover the gap for the customer."""
