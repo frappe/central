@@ -119,6 +119,15 @@ const geographyLabel = (name: string): string =>
 	geographies.value.find((g) => g.name === name)?.label ?? name
 
 const rowActions = (key: AIApiKey): DropdownOptions => [
+	...(prepaid.value
+		? [
+				{
+					label: 'Set cap',
+					icon: 'lucide-wallet',
+					onClick: () => openCaps(key.name),
+				},
+			]
+		: []),
 	{
 		label: 'Revoke',
 		icon: 'lucide-trash-2',
@@ -218,6 +227,13 @@ const create = async (): Promise<void> => {
 }
 
 const capsOpen = ref(false)
+// The one key the dialog is open for, from its row; blank is every live key.
+const capsOnly = ref('')
+const capKeys = computed(() =>
+	activeKeys.value.filter(
+		(key) => !capsOnly.value || key.name === capsOnly.value,
+	),
+)
 const capValues = ref<Record<string, string>>({})
 const capsError = ref('')
 const committedTotal = computed(() =>
@@ -238,10 +254,11 @@ const capsOverLimit = computed(
 const isValidCap = (value: string): boolean =>
 	Number.isInteger(Number(value)) && Number(value) >= 1
 const capsInvalid = computed(() =>
-	activeKeys.value.some((key) => !isValidCap(capValues.value[key.name])),
+	capKeys.value.some((key) => !isValidCap(capValues.value[key.name])),
 )
 
-const openCaps = (): void => {
+const openCaps = (only = ''): void => {
+	capsOnly.value = only
 	capValues.value = Object.fromEntries(
 		activeKeys.value.map((key) => [key.name, String(key.cap)]),
 	)
@@ -252,7 +269,7 @@ const openCaps = (): void => {
 const saveCaps = async (): Promise<void> => {
 	capsError.value = ''
 	const changed = Object.fromEntries(
-		activeKeys.value
+		capKeys.value
 			.filter((key) => Number(capValues.value[key.name]) !== key.cap)
 			.map((key) => [key.name, Number(capValues.value[key.name])]),
 	)
@@ -323,7 +340,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					v-if="canSetCaps"
 					label="Set caps"
 					icon-left="lucide-wallet"
-					@click="openCaps"
+					@click="openCaps()"
 				/>
 			</div>
 		</Teleport>
@@ -626,7 +643,11 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 		</template>
 	</Dialog>
 
-	<Dialog v-model="capsOpen" title="Set caps" size="2xl">
+	<Dialog
+		v-model="capsOpen"
+		:title="capsOnly ? 'Set cap' : 'Set caps'"
+		size="2xl"
+	>
 		<template #default>
 			<Alert v-if="capsError" class="mb-4" theme="red" :title="capsError" />
 			<div
@@ -640,7 +661,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 			</div>
 			<div class="space-y-3">
 				<div
-					v-for="(key, index) in activeKeys"
+					v-for="(key, index) in capKeys"
 					:key="key.name"
 					class="grid grid-cols-[2fr_1fr_1fr_1fr] items-center gap-3"
 				>
@@ -691,7 +712,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					/>
 					<Button
 						variant="solid"
-						label="Save caps"
+						:label="capsOnly ? 'Save cap' : 'Save caps'"
 						:loading="capsSaving"
 						:disabled="capsInvalid || capsOverLimit"
 						@click="saveCaps"
