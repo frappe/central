@@ -10,7 +10,7 @@ import CollectionModeDialog from '@/components/billing/CollectionModeDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { limitText as limitLabel, withNote } from '@/lib/collectionText'
+import { limitText, withNote } from '@/lib/collectionText'
 import { money } from '@/lib/format'
 import { __ } from '@/lib/translate'
 import type { CollectionStatus, TopUpDue } from '@/types/billing'
@@ -90,21 +90,25 @@ function topUpTextWithGst(
 const choosing = ref(false)
 
 const reasonText = computed(() => {
-	const limit = s.value?.threshold
-	if (s.value?.reason === 'mandate_failed')
+	const st = s.value
+	if (!st) return ''
+	const limit = st.threshold
+	// The limit caps amounts that include tax, as the Action Required notice says.
+	const limitLabel = limit == null ? '' : limitText(st, limit)
+	if (st.reason === 'mandate_failed')
 		return __(
 			'Your automatic payment approval was cancelled or stopped working. Choose how to pay. Your services keep running.',
 		)
-	if (s.value?.reason === 'invoice_over_threshold')
+	if (st.reason === 'invoice_over_threshold')
 		return limit == null
 			? __(
 					'A bill is over the limit for automatic payments. Your services keep running.',
 				)
 			: __(
 					'A bill is over the {0} limit for automatic payments. Your services keep running.',
-					[limitText(limit)],
+					[limitLabel],
 				)
-	const projected = withTaxNote(money(s.value?.projected_total, currency.value))
+	const projected = withTaxNote(money(st.projected_total, currency.value))
 	return limit == null
 		? __(
 				'This month is heading to {0}, past the limit for automatic payments. Your services keep running.',
@@ -112,17 +116,12 @@ const reasonText = computed(() => {
 			)
 		: __(
 				'This month is heading to {0}, past the {1} limit for automatic payments. Your services keep running.',
-				[projected, limitText(limit)],
+				[projected, limitLabel],
 			)
 })
 
 function withTaxNote(amount: string): string {
 	return withNote(amount, s.value?.tax_note)
-}
-
-// The limit caps amounts that include tax, as the Action Required notice says.
-function limitText(limit: number): string {
-	return limitLabel(s.value!, limit)
 }
 </script>
 
