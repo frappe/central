@@ -181,6 +181,27 @@ class TestEmandatePredebit(EmandateTestBase):
 		# charge_due reads the whole site, so count only this invoice's charge.
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 1)
 
+	def test_a_notified_debit_is_held_after_switching_to_manual_checkout(self):
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+		from central.billing.payments import collection
+
+		inv = self._invoice(5000)
+		emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")  # window opens 06-11 09:00
+		_set_mode(TEAM, "Manual Checkout")
+
+		adapter = MagicMock()
+		adapter.prepare_charge.return_value = None
+		adapter.charge.return_value = PaymentResult(
+			success=True, status="Captured", gateway_transaction_id="pay_held"
+		)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			collection.collect_on_payment_date(now="2026-06-11 10:00:00")
+
+		adapter.charge.assert_not_called()
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 0)
+
 	def test_an_exhausted_mandate_is_asked_for_another_method_once(self):
 		from unittest.mock import MagicMock, patch
 

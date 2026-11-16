@@ -174,11 +174,16 @@ def collect_invoice(invoice: str, new_round: bool = False, now: datetime | str |
 	is tried at most once per round. `new_round` starts a dunning retry round, and
 	`now` is the clock a pre-debit window is read against.
 	"""
+	from central.billing.payments import collection_mode
 	from central.billing.revenue.tax import is_internal_team
 
 	inv = frappe.get_doc("Invoice", invoice)
 	if is_internal_team(inv.team):
 		return {"collected": False, "reason": "internal_team"}
+	# A team that pays by hand, or is asked to choose, is never charged off-session,
+	# even when a pre-debit notice went out before it switched.
+	if not collection_mode.is_debit_allowed(inv.team):
+		return {"collected": False, "reason": "debit_held"}
 	earlier = attempts_of(invoice) if new_round else None
 	skipped = set()
 	while True:
