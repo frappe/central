@@ -293,9 +293,12 @@ def _charging_method(team: str, amount: float, invoice: str | None = None) -> di
 	"""The method the bill would be charged on, and the most it may take off-session.
 
 	The first method, primary first, whose own limit covers `amount`. None when none does:
-	the bill is then paid by hand, and a blocker says so."""
+	the bill is then paid by hand, and a blocker says so. None too for a team whose
+	methods are never charged off-session."""
 	from central.billing.payments import collection, collection_mode
 
+	if not collection_mode.is_debit_allowed(team):
+		return None
 	currency = _team_currency(team)
 	method = collection.method_for_amount(team, currency, amount, invoice)
 	if not method:

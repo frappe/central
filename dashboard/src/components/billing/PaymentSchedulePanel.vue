@@ -54,12 +54,19 @@ const blockerLines = computed(() => {
 	return lines.concat(blockers.value.slice(1).map((b) => b.title))
 })
 
+// A team that pays by hand, or is asked to choose, is never charged automatically.
+const isDebitHeld = computed(() =>
+	['Manual Checkout', 'Action Required'].includes(
+		data.value?.collection_mode ?? '',
+	),
+)
+
 // For a missed bill the amount above is that bill, so the date is its next step on
 // the dunning ladder rather than the next cycle's payment day.
 const chargeStep = computed(
 	() =>
 		getDunningSteps(data.value)[0] ?? {
-			label: __("We'll charge on"),
+			label: isDebitHeld.value ? __('Due on') : __("We'll charge on"),
 			date: data.value?.charge_on,
 			hint: '',
 		},
