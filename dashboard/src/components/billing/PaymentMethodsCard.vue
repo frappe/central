@@ -119,9 +119,7 @@ async function makeDefault(pm: PaymentMethod): Promise<void> {
 		await setDefault.submit({ payment_method: pm.name })
 		if (setDefault.error) throw setDefault.error
 		successToast(
-			__('{0} is charged first when your wallet is short', [
-				pm.display_label || pm.method_type,
-			]),
+			__('{0} is now first in the order', [pm.display_label || pm.method_type]),
 		)
 		reloadMethods()
 	} catch (e) {
