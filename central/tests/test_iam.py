@@ -53,10 +53,10 @@ class TestCentralIAM(IntegrationTestCase):
 		return team
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
-		# 18 capabilities across two live planes: central (9) + atlas (9). v5 merges
+		# 20 capabilities across two live planes: central (11) + atlas (9). v5 merges
 		# server:open into server:view. The bench plane remains deferred.
-		self.assertEqual(frappe.db.count("Capability"), 18)
-		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 9)
+		self.assertEqual(frappe.db.count("Capability"), 20)
+		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 11)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "atlas"}), 9)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "bench"}), 0)
 		# The retired roles are gone; the five-rung ladder is all that remains.
@@ -87,7 +87,9 @@ class TestCentralIAM(IntegrationTestCase):
 		# Team management is Owner/Admin; deleting the team is Owner-only.
 		for caps in (owner_caps, admin_caps):
 			self.assertIn("team:manage_members", caps)
+			self.assertIn("team:manage_partners", caps)
 		self.assertNotIn("team:manage_members", developer_caps)
+		self.assertNotIn("team:manage_partners", developer_caps)
 		self.assertIn("team:delete", owner_caps)
 		self.assertNotIn("team:delete", admin_caps)
 		# Billing is day-to-day team administration, so Owner/Admin/Billing carry it.

@@ -15,6 +15,8 @@
   "unit",
   "project",
   "project_title",
+  "customer_team",
+  "customer_title",
   "column_break_calc",
   "quantity",
   "rate",
@@ -121,6 +123,18 @@
    "in_list_view": 1,
    "label": "Amount",
    "description": "days x (rate / days_in_period), or hours x (rate / (days_in_period x 24)) for an hourly line"
+  },
+  {
+   "fieldname": "customer_team",
+   "fieldtype": "Data",
+   "label": "Customer Team",
+   "description": "The customer team this line belongs to, on the invoice of a partner that pays for the customer (snapshot at generation). Empty for the invoice team's own lines."
+  },
+  {
+   "fieldname": "customer_title",
+   "fieldtype": "Data",
+   "label": "Customer",
+   "description": "The customer team's name at generation time, for the breakdown."
   }
  ],
  "index_web_pages_for_search": 1,

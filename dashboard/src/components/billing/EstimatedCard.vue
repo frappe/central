@@ -26,7 +26,7 @@ import type { BillingSettings } from '@/types/billing'
 defineProps<{ active?: boolean }>()
 defineEmits<{ open: []; openTiers: [] }>()
 
-const { forecast, currency } = useBillingOverview()
+const { forecast, currency: teamCurrency } = useBillingOverview()
 const { activeTeam } = useSession()
 const { canManageBilling } = useCapabilities()
 const {
@@ -39,10 +39,17 @@ const {
 
 const loading = computed(() => forecast.loading && !forecast.data)
 const fc = computed(() => forecast.data)
+// The forecast is priced in the currency of the team that pays, which is a partner's
+// currency while the partner pays.
+const currency = computed(() => fc.value?.currency || teamCurrency.value)
+const paidBy = computed(() => fc.value?.paid_by ?? null)
 // The headline is what the cycle will cost with tax, the same figure the card is
 // charged. The budget alert compares the cycle before tax; the spending limit is
-// compared with what runs now, the figure the server-create check uses.
-const projected = computed(() => Number(fc.value?.projected_total ?? 0))
+// compared with what runs now, the figure the server-create check uses. A partner's
+// own tax applies to its invoice, so a paid team sees the amount before tax.
+const projected = computed(() =>
+	Number((paidBy.value ? fc.value?.subtotal : fc.value?.projected_total) ?? 0),
+)
 const taxAmount = computed(() => Number(fc.value?.tax_amount ?? 0))
 const subtotal = computed(() => Number(fc.value?.subtotal ?? 0))
 const hasCycle = computed(() => projected.value > 0)
@@ -217,12 +224,28 @@ const saveBudgetAlertErrorTitle = __("Couldn't save the budget alert")
 						{{ __('nothing billed yet this cycle') }}
 					</span>
 					<Badge
-						v-if="hasCycle && daysRemaining != null"
+						v-if="paidBy"
+						theme="blue"
+						:label="__('Paid by {0}', [paidBy])"
+					/>
+					<Badge
+						v-else-if="hasCycle && daysRemaining != null"
 						:label="__('Bills in {0} days', [daysRemaining])"
 					/>
 				</div>
 
-				<p v-if="hasCycle" class="text-sm text-ink-gray-6">
+				<p v-if="hasCycle && paidBy" class="text-sm text-ink-gray-6">
+					{{ __('{0} pays this on its invoice. You are not charged.', [paidBy]) }}
+					·
+					<button
+						type="button"
+						class="text-ink-gray-9 underline decoration-dotted underline-offset-[3px] transition-colors hover:decoration-solid"
+						@click="$emit('open')"
+					>
+						{{ __('See breakdown') }}
+					</button>
+				</p>
+				<p v-else-if="hasCycle" class="text-sm text-ink-gray-6">
 					<span class="tabular-nums">{{ money(subtotal, currency) }}</span>
 					<template v-if="taxAmount">
 						+

@@ -33,7 +33,9 @@ class TestTrialPlanSelection(IntegrationTestCase):
 			tier="Entry",
 		)
 		self.enterContext(patch("central.billing.catalog.server_plans.get_team_caps", return_value=self.caps))
-		self.enterContext(patch("central.billing.catalog.server_plans.get_team_currency", return_value="INR"))
+		self.enterContext(
+			patch("central.billing.catalog.server_plans.get_pricing_currency", return_value="INR")
+		)
 
 	def make_plan(self, disk: float, rate: float) -> str:
 		return make_plan(
@@ -158,7 +160,7 @@ class TestConvertedTrialPlanFloor(IntegrationTestCase):
 		floor = {"Compute": 0.5, "Memory": 1, "Disk": 12.5}
 		with (
 			patch("central.billing.catalog.server_plans.get_team_caps", return_value=caps),
-			patch("central.billing.catalog.server_plans.get_team_currency", return_value="INR"),
+			patch("central.billing.catalog.server_plans.get_pricing_currency", return_value="INR"),
 			patch("central.signups.trial.get_trial_plan_floor", return_value=floor),
 		):
 			menu = get_server_plans("floor-team", server="floor-server", for_resize=1)

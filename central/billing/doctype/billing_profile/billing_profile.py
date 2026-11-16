@@ -84,6 +84,37 @@ def get_team_currency(team: str) -> str:
 	return segment_currency or "INR"
 
 
+def get_billing_team(team: str, on_date=None) -> str:
+	"""The team that pays `team`'s usage on `on_date`: its partner while the partner pays for it,
+	else the team itself. A partner pays from the first day of a month to the last day of one,
+	so every month has one payer."""
+	link = frappe.qb.DocType("Partner Link")
+	day = frappe.utils.getdate(on_date)
+	partner = (
+		frappe.qb.from_(link)
+		.select(link.partner_team)
+		.where(
+			(link.customer_team == team)
+			& (link.partner_pays_from <= day)
+			& (link.partner_pays_until.isnull() | (link.partner_pays_until >= day))
+		)
+		.limit(1)
+	).run(pluck=True)
+	return partner[0] if partner else team
+
+
+def get_billing_currency(team: str, on_date=None) -> str | None:
+	"""The Billing Profile currency of the team that pays `team`'s usage on `on_date`. Empty when
+	that team has no profile yet."""
+	return frappe.db.get_value("Billing Profile", get_billing_team(team, on_date), "currency")
+
+
+def get_pricing_currency(team: str, on_date=None) -> str:
+	"""The currency `team`'s usage is priced in: the account currency of the team that pays it.
+	It is `get_team_currency(team)` unless a partner pays for the team."""
+	return get_team_currency(get_billing_team(team, on_date))
+
+
 def get_payment_date(team: str, opened_on: date | str) -> date:
 	"""The date an invoice opened on `opened_on` is charged: the team's payment day in that
 	month, or `opened_on` itself when the run opened the invoice after that day."""

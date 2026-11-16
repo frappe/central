@@ -109,12 +109,15 @@ def get_team_caps(team: str):
 		frappe.db.get_value(
 			"Billing Profile",
 			team,
-			["currency", "trust_tier_level", "manual_override", "override_max_spend"],
+			["trust_tier_level", "manual_override", "override_max_spend"],
 			as_dict=True,
 		)
 		or frappe._dict()
 	)
-	currency = profile.currency or "INR"
+	from central.billing.doctype.billing_profile.billing_profile import get_billing_currency
+
+	# The cap limits the team's usage, so it is read in the currency that usage is priced in.
+	currency = get_billing_currency(team) or "INR"
 	level = None
 	if profile.trust_tier_level:
 		level = next((l for l in get_ladder() if l.name == profile.trust_tier_level), None)

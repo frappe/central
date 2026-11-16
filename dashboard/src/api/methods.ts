@@ -52,6 +52,16 @@ export const API = {
 	declineInvitation: 'central.api.teams.decline_invitation',
 	getInvitation: 'central.api.teams.get_invitation',
 	signUpWithInvitation: 'central.api.auth.sign_up_with_invitation',
+	getPartnerRegistration: 'central.api.partners.get_partner_registration',
+	completePartnerRegistration:
+		'central.api.partners.complete_partner_registration',
+	getPartnerByCode: 'central.api.partners.get_partner_by_code',
+	addPartner: 'central.api.partners.add_partner',
+	getTeamPartner: 'central.api.partners.get_team_partner',
+	getTeamCustomers: 'central.api.partners.get_team_customers',
+	endPartnerLink: 'central.api.partners.end_partner_link',
+	setPartnerRole: 'central.api.partners.set_partner_role',
+	setPartnerPayer: 'central.api.partners.set_partner_payer',
 
 	registry: 'central.api.servers.registry',
 	listInstances: 'central.api.servers.list_instances',

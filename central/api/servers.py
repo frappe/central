@@ -8,6 +8,7 @@ from frappe.utils import get_system_timezone
 from frappe.utils.translations import _lt
 from pydantic import ValidationError
 
+from central.billing.doctype.billing_profile.billing_profile import get_billing_currency
 from central.errors import handle_resource_operation
 from central.iam import can, get_server_capabilities, user_has_operator_bypass
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
@@ -431,7 +432,7 @@ def _overview_plan(server: dict, team: str) -> dict:
 	billing module, which owns how a segment resolves."""
 	from central.billing.catalog.subscriptions import active_segment_for_resource
 
-	currency = frappe.db.get_value("Billing Profile", team, "currency") or "INR"
+	currency = get_billing_currency(team) or "INR"
 	billing_cycle = "Monthly"
 	title = None
 	rate = None

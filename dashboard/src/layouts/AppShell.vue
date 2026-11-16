@@ -19,6 +19,7 @@ import {
 import { useRoute } from 'vue-router'
 import ErrorAlertHost from '@/components/common/ErrorAlertHost.vue'
 import ImpersonationBanner from '@/components/navigation/ImpersonationBanner.vue'
+import PartnerAccessBanner from '@/components/navigation/PartnerAccessBanner.vue'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
 import OnboardingDialog from '@/components/onboarding/OnboardingDialog.vue'
@@ -106,6 +107,7 @@ onUnmounted(() => {
 <template>
 	<div v-if="isMobile" class="fixed inset-0 flex flex-col overflow-hidden">
 		<ImpersonationBanner />
+		<PartnerAccessBanner />
 		<header
 			class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-base px-3"
 		>
@@ -147,6 +149,7 @@ onUnmounted(() => {
 		</template>
 
 		<ImpersonationBanner />
+		<PartnerAccessBanner />
 		<header
 			class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 px-4"
 		>

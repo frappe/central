@@ -53,7 +53,9 @@ function selectTeam(name: string | null) {
 	}
 }
 
-function switchTeam(name: string | null): void {
+/** Switch to `name`. With `destination`, open that page in the new team, such as a partner
+ *  opening a customer's servers; without it, reload the current page. */
+function switchTeam(name: string | null, destination?: string): void {
 	if (name === activeTeam.value) return
 	if (impersonatedTeam && name !== impersonatedTeam) clearImpersonation()
 
@@ -66,6 +68,10 @@ function switchTeam(name: string | null): void {
 		)
 	}
 
+	if (destination) {
+		window.location.assign(destination)
+		return
+	}
 	const path = window.location.pathname
 	if (
 		path.startsWith('/dashboard/servers/') &&

@@ -17,6 +17,8 @@ export interface Features {
 	publicIpv6: boolean
 	/** The firewall switch on the New server page. */
 	firewall: boolean
+	/** Adding a Frappe partner. Existing partner links show either way. */
+	partners: boolean
 }
 
 // Defaults match the DocType: the area is on, individual services off until rolled out.
@@ -27,4 +29,5 @@ export const features: Features = {
 	publicIpv4: window.features?.public_ipv4 ?? false,
 	publicIpv6: window.features?.public_ipv6 ?? false,
 	firewall: window.features?.firewall ?? false,
+	partners: window.features?.partners ?? false,
 }

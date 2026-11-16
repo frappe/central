@@ -67,9 +67,12 @@ def get_forecast(team: str | None = None) -> dict:
 	pay_on = get_payment_date(team, frappe.utils.add_days(month_end, 1))
 	shortfall = wallet_draw.get_wallet_shortfall(team, currency, collectable, tax_amount, pay_on)
 
+	paid_by = projection["paid_by"]
 	return {
 		"period_start": str(month_start),
 		"period_end": str(month_end),
+		# The partner that pays this bill on its own invoice, by its team title.
+		"paid_by": frappe.db.get_value("Team", paid_by, "team_name") if paid_by else None,
 		"projected_total": projected_total,
 		"subtotal": subtotal,
 		# Never quote the projection as a bare number: the engine already knows which

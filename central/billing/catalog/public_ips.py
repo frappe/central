@@ -7,7 +7,7 @@ from frappe import _
 
 from central.billing.catalog.pricing import resolve_component_rate
 from central.billing.catalog.subscriptions import cancel_subscription
-from central.billing.doctype.billing_profile.billing_profile import get_team_currency
+from central.billing.doctype.billing_profile.billing_profile import get_pricing_currency
 
 if TYPE_CHECKING:
 	from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
@@ -18,7 +18,7 @@ IP_RESOURCE = "IP"
 def get_public_ipv4_rate(team: str, region: str) -> tuple[float | None, str]:
 	"""The team's monthly price for one public IPv4 in `region`, and its currency. The rate is
 	the `IP` Resource Type's Catalog Rate, so an operator changes it there. IPv6 is free."""
-	currency = get_team_currency(team)
+	currency = get_pricing_currency(team)
 	return resolve_component_rate(IP_RESOURCE, currency, region), currency
 
 

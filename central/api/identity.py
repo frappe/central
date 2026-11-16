@@ -32,7 +32,8 @@ def my_capabilities(team: str | None = None) -> list[str]:
 def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 	"""Teams the signed-in user can switch between in the console — the teams they
 	are an active member of, each with a display label, the owner email, the
-	caller's own role, how many people are in it, when it was created, and the
+	caller's own role, how many people are in it, when it was created, whether it is a
+	partner team or has an active partner, and the
 	onboarding steps the caller still has to answer as its owner. A suspended team is listed with
 	its `status`, so the console can say why it cannot open it.
 
@@ -54,6 +55,7 @@ def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 			team.owner_user,
 			team.creation,
 			team.status,
+			team.connect_partner_id,
 			member.role,
 		)
 		.where(
@@ -81,6 +83,9 @@ def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 				"members": 0,
 				"created": r.creation,
 				"status": r.status,
+				"is_partner": bool(r.connect_partner_id),
+				"has_partner": False,
+				"paid_by": None,
 			},
 		)
 		if _role_rank(r.role) < _role_rank(entry["role"]):
@@ -88,6 +93,8 @@ def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 
 	if view_as and user_has_operator_bypass(user):
 		teams[view_as] = _get_impersonated_team(view_as)
+	for entry in _get_partner_access_teams(user):
+		teams.setdefault(entry["name"], entry)
 
 	if not teams:
 		return []
@@ -106,6 +113,15 @@ def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 	for row in counts:
 		teams[row.parent]["members"] = row.members
 
+	for customer_team in frappe.get_all(
+		"Partner Link",
+		filters={"customer_team": ("in", list(teams)), "status": "Active"},
+		pluck="customer_team",
+	):
+		teams[customer_team]["has_partner"] = True
+	for row in _get_paying_partners(list(teams)):
+		teams[row.customer_team]["paid_by"] = row.partner_name
+
 	for entry in teams.values():
 		entry["onboarding"] = []
 	owned_teams = [name for name, entry in teams.items() if entry["owner"] == user]
@@ -113,6 +129,64 @@ def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
 		teams[row.parent]["onboarding"].append(row.step)
 
 	return list(teams.values())
+
+
+def _get_paying_partners(teams: list[str]) -> list[dict[str, Any]]:
+	"""The partner that pays for each of `teams` today, by name."""
+	link = frappe.qb.DocType("Partner Link")
+	partner = frappe.qb.DocType("Team")
+	today = frappe.utils.getdate()
+	return (
+		frappe.qb.from_(link)
+		.join(partner)
+		.on(partner.name == link.partner_team)
+		.select(link.customer_team, partner.team_name.as_("partner_name"))
+		.where(
+			link.customer_team.isin(teams)
+			& (link.partner_pays_from <= today)
+			& (link.partner_pays_until.isnull() | (link.partner_pays_until >= today))
+		)
+	).run(as_dict=True)
+
+
+def _get_partner_access_teams(user: str) -> list[dict[str, Any]]:
+	"""The customer teams the user acts on for a partner team. `via_partner` names the partner."""
+	partner_grants = {
+		team: grant
+		for team, grants in resolve_user_grants(user).items()
+		for grant in grants
+		if grant["source"] == "partner"
+	}
+	if not partner_grants:
+		return []
+
+	names = list(partner_grants) + [grant["partner_team"] for grant in partner_grants.values()]
+	rows = {
+		row.name: row
+		for row in frappe.get_all(
+			"Team",
+			filters={"name": ("in", names)},
+			fields=["name", "team_name", "team_logo", "owner_user", "creation", "status"],
+		)
+	}
+	return [
+		{
+			"name": team,
+			"label": rows[team].team_name,
+			"logo": rows[team].team_logo,
+			"owner": rows[team].owner_user,
+			"role": grant["role"],
+			"members": 0,
+			"created": rows[team].creation,
+			"status": rows[team].status,
+			"is_partner": False,
+			"has_partner": True,
+			"paid_by": None,
+			"via_partner": rows[grant["partner_team"]].team_name,
+			"via_partner_team": grant["partner_team"],
+		}
+		for team, grant in partner_grants.items()
+	]
 
 
 def _get_impersonated_team(name: str) -> dict[str, Any]:
@@ -126,6 +200,9 @@ def _get_impersonated_team(name: str) -> dict[str, Any]:
 		"members": 0,
 		"created": team.creation,
 		"status": team.status,
+		"is_partner": bool(team.connect_partner_id),
+		"has_partner": False,
+		"paid_by": None,
 		"is_impersonated": True,
 	}
 

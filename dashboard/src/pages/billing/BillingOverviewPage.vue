@@ -11,6 +11,7 @@ import GstStateBanner from '@/components/billing/GstStateBanner.vue'
 import GstStatusBanner from '@/components/billing/GstStatusBanner.vue'
 import LimitsCard from '@/components/billing/LimitsCard.vue'
 import OutstandingAlert from '@/components/billing/OutstandingAlert.vue'
+import PaidByPartnerBanner from '@/components/billing/PaidByPartnerBanner.vue'
 import PayingForCard from '@/components/billing/PayingForCard.vue'
 import PayingForPanel from '@/components/billing/PayingForPanel.vue'
 import PaymentSchedulePanel from '@/components/billing/PaymentSchedulePanel.vue'
@@ -147,6 +148,7 @@ watch(
 				:primary-action="{ label: 'Add billing details', onClick: () => { setupDialogOpen = true } }"
 			/>
 			<CollectionActionBanner @add-credit="onAddCredits" />
+			<PaidByPartnerBanner />
 			<TrialBillingBanner @upgrade="upgradeServerName = $event" />
 			<GstStatusBanner @edit="setupDialogOpen = true" />
 			<GstStateBanner @edit="setupDialogOpen = true" />

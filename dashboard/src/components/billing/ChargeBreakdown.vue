@@ -2,6 +2,7 @@
 import { Badge } from 'frappe-ui'
 import { computed } from 'vue'
 import { money } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { BillingLine } from '@/types/billing'
 
 // The charge list, as both the invoice receipt and the current-cycle tray show
@@ -24,45 +25,55 @@ const props = withDefaults(
 	{ showBasis: false },
 )
 
-// Purely a cosmetic project-wise breakdown — every line lands on the team's one
-// consolidated invoice regardless of whether it's tagged into a Project, so this
-// is not "which invoice this will land on", just "how to read the total". Split
-// into a section per project, but ONLY when more than one is actually present
-// this cycle: a team that has never tagged anything sees exactly the flat
-// breakdown below, unchanged.
+// Two cosmetic breakdowns, outermost first. A partner that pays for customers sees a
+// section per customer, its own usage first. Inside one customer, or for any other team,
+// a section per Project. Every line still lands on the team's one invoice. A level shows
+// only when more than one group is present, so an untagged team sees the flat list.
 interface ScopeGroup {
 	label: string
+	icon: string
 	lines: BillingLine[]
 	total: number
 }
 
-const UNTAGGED = 'Untagged'
+const OWN_USAGE = __('Your team')
+const UNTAGGED = __('Untagged')
 
-function scopeLabel(li: BillingLine): string {
-	return li.project_title ?? UNTAGGED
-}
-
-const scopeGroups = computed<ScopeGroup[] | null>(() => {
+function groupBy(
+	label: (li: BillingLine) => string,
+	icon: string,
+	leading: string,
+): ScopeGroup[] | null {
 	const byLabel = new Map<string, BillingLine[]>()
 	for (const li of props.lines) {
-		const label = scopeLabel(li)
-		if (!byLabel.has(label)) byLabel.set(label, [])
-		byLabel.get(label)!.push(li)
+		const key = label(li)
+		if (!byLabel.has(key)) byLabel.set(key, [])
+		byLabel.get(key)!.push(li)
 	}
 	if (byLabel.size <= 1) return null
-	const groups = Array.from(byLabel, ([label, lines]) => ({
-		label,
+	const groups = Array.from(byLabel, ([key, lines]) => ({
+		label: key,
+		icon,
 		lines,
 		total: lines.reduce((t, li) => t + Number(li.amount || 0), 0),
 	}))
-	// Untagged spend leads; the named projects follow, biggest first.
-	groups.sort((a, b) => {
-		if (a.label === UNTAGGED) return -1
-		if (b.label === UNTAGGED) return 1
+	// The leading group comes first. The rest follow, biggest first.
+	return groups.sort((a, b) => {
+		if (a.label === leading) return -1
+		if (b.label === leading) return 1
 		return b.total - a.total
 	})
-	return groups
-})
+}
+
+const scopeGroups = computed<ScopeGroup[] | null>(
+	() =>
+		groupBy(
+			(li) => li.customer_title ?? OWN_USAGE,
+			'lucide-building-2',
+			OWN_USAGE,
+		) ??
+		groupBy((li) => li.project_title ?? UNTAGGED, 'lucide-layers', UNTAGGED),
+)
 
 const servers = computed(() => props.lines.filter((li) => li.kind === 'Plan'))
 const services = computed(() => props.lines.filter((li) => li.kind !== 'Plan'))
@@ -124,7 +135,8 @@ function isEstimated(li: BillingLine): boolean {
 			<div class="mb-2 flex items-center justify-between gap-3">
 				<span class="flex items-center gap-1.5 text-sm-medium text-ink-gray-8">
 					<span
-						class="lucide-layers size-3.5 text-ink-gray-4"
+						class="size-3.5 text-ink-gray-4"
+						:class="group.icon"
 						aria-hidden="true"
 					/>
 					{{ group.label }}

@@ -13,10 +13,12 @@ import type { BillingLine } from '@/types/billing'
 // sums to. The split is the point — a bill that is part guesswork must not read
 // like a bill, so the card refuses to quote a bare number and this explains it.
 const open = defineModel<boolean>('open', { default: false })
-const { forecast, currency } = useBillingOverview()
+const { forecast, currency: teamCurrency } = useBillingOverview()
 
 const loading = computed(() => forecast.loading && !forecast.data)
 const fc = computed(() => forecast.data)
+// Priced in the paying team's currency, which is a partner's while the partner pays.
+const currency = computed(() => fc.value?.currency || teamCurrency.value)
 const lines = computed<BillingLine[]>(() => fc.value?.line_items ?? [])
 
 const period = computed(() =>
@@ -64,7 +66,7 @@ const period = computed(() =>
 					</span>
 				</div>
 				<div
-					v-if="fc?.tax_amount"
+					v-if="fc?.tax_amount && !fc.paid_by"
 					class="flex items-baseline justify-between gap-3 py-1"
 				>
 					<span class="text-p-sm text-ink-gray-5">
@@ -77,13 +79,21 @@ const period = computed(() =>
 				<div
 					class="mt-2 flex items-baseline justify-between gap-3 border-t border-outline-gray-1 pt-3"
 				>
-					<span class="text-base-medium text-ink-gray-9">Projected total</span>
+					<span class="text-base-medium text-ink-gray-9">
+						{{ fc?.paid_by ? __('Paid by {0}', [fc.paid_by]) : __('Projected total') }}
+					</span>
 					<span class="text-lg-semibold tabular-nums text-ink-gray-9">
-						{{ money(fc?.projected_total ?? 0, currency) }}
+						{{ money((fc?.paid_by ? fc.subtotal : fc?.projected_total) ?? 0, currency) }}
 					</span>
 				</div>
 				<p
-					v-if="fc?.projected_total && fc?.tax_note"
+					v-if="fc?.paid_by"
+					class="mt-0.5 text-right text-p-sm text-ink-gray-5"
+				>
+					{{ __('Before tax. {0} pays it on its invoice.', [fc.paid_by]) }}
+				</p>
+				<p
+					v-else-if="fc?.projected_total && fc?.tax_note"
 					class="mt-0.5 text-right text-p-sm text-ink-gray-5"
 				>
 					{{ fc.tax_note }}

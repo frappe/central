@@ -10,7 +10,7 @@ from frappe.query_builder import Order
 from frappe.utils import add_days, cint, now_datetime
 
 from central.central.doctype.activity_event.tracked import ACTION_EVENTS, TRACKED, EventKind, Tracked
-from central.iam import get_capability_gate, user_has_operator_bypass
+from central.iam import get_capability_gate, get_partner_team_of, user_has_operator_bypass
 
 MAX_VALUE_LENGTH = 120
 # A long or structured value reads as "changed", not as two values side by side.
@@ -27,6 +27,7 @@ FEED_FIELDS = (
 	"details",
 	"error",
 	"actor",
+	"partner_team",
 	"creation",
 )
 FEED_CACHE = "activity_feed"
@@ -44,6 +45,7 @@ class ActivityEvent(Document):
 		from frappe.types import DF
 
 		actor: DF.Link | None
+		partner_team: DF.Link | None
 		category: DF.Literal["action", "configuration", "snapshot", "site", "team", "member", "access"]
 		details: DF.JSON | None
 		error: DF.SmallText | None
@@ -211,6 +213,7 @@ def get_event(
 		"category": kind.category,
 		"required_capability": kind.capability,
 		"actor": get_actor(resource, actor or frappe.session.user),
+		"partner_team": get_partner_team_of(actor or frappe.session.user, team),
 		"status": status,
 		"details": frappe.as_json(details) if details else None,
 		"error": error,

@@ -24,6 +24,8 @@
   "helpdesk_api_key",
   "helpdesk_api_secret",
   "articles_enabled",
+  "connect_section",
+  "connect_url",
   "feature_flags_tab",
   "addons_section",
   "enable_addons",
@@ -39,6 +41,8 @@
   "enable_public_ipv6",
   "column_break_networking_firewall",
   "enable_firewall",
+  "partners_section",
+  "enable_partners",
   "servers_tab",
   "server_creation_section",
   "require_payment_method",
@@ -274,6 +278,18 @@
    "fieldname": "enable_firewall",
    "fieldtype": "Check",
    "label": "Enable Firewall"
+  },
+  {
+   "fieldname": "partners_section",
+   "fieldtype": "Section Break",
+   "label": "Partners"
+  },
+  {
+   "default": "0",
+   "description": "Lets teams add a Frappe partner by its code, and lets Frappe Connect register partners. Existing partner links keep working when it is off.",
+   "fieldname": "enable_partners",
+   "fieldtype": "Check",
+   "label": "Enable Partners"
   },
   {
    "fieldname": "servers_tab",
@@ -544,13 +560,25 @@
    "fieldtype": "Password",
    "label": "Private Key",
    "length": 8192
+  },
+  {
+   "fieldname": "connect_section",
+   "fieldtype": "Section Break",
+   "label": "Frappe Connect"
+  },
+  {
+   "description": "The address of Frappe Connect, such as https://connect.example.com. A partner registration returns only to this host.",
+   "fieldname": "connect_url",
+   "fieldtype": "Data",
+   "label": "Connect URL",
+   "options": "URL"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-04 12:00:00.000000",
+ "modified": "2026-11-14 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

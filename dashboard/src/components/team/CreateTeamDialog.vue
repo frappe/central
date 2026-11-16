@@ -4,13 +4,21 @@ import { computed, watch } from 'vue'
 import { useCreateTeam } from '@/composables/useCreateTeam'
 import { __ } from '@/lib/translate'
 
+interface CreateTeamDialogProps {
+	/** The name the field starts with, such as the partner's name. */
+	defaultName?: string
+}
+
+const props = defineProps<CreateTeamDialogProps>()
 const open = defineModel<boolean>('open', { default: false })
 
 const { teamName, name, duplicate, canSubmit, error, submit, reset } =
 	useCreateTeam()
 
 watch(open, (isOpen) => {
-	if (isOpen) reset()
+	if (!isOpen) return
+	reset()
+	teamName.value = props.defaultName ?? ''
 })
 
 const onSubmit = async () => {

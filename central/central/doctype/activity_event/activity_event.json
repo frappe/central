@@ -18,6 +18,7 @@
   "status",
   "body_section",
   "actor",
+  "partner_team",
   "details_column",
   "details",
   "error",
@@ -122,6 +123,14 @@
    "fieldtype": "Link",
    "label": "Actor",
    "options": "User",
+   "read_only": 1
+  },
+  {
+   "description": "Set when the actor acted for this partner team, not as a member.",
+   "fieldname": "partner_team",
+   "fieldtype": "Link",
+   "label": "Partner Team",
+   "options": "Team",
    "read_only": 1
   },
   {

@@ -35,6 +35,14 @@ from central.infrastructure.doctype.resource_action.resource_action import Resou
 from central.server_models import ActionStatus
 
 
+def _billing_currency(team: str) -> str | None:
+	"""The currency that prices `team`'s usage. Imported here, because the Billing Profile module
+	imports this one."""
+	from central.billing.doctype.billing_profile.billing_profile import get_billing_currency
+
+	return get_billing_currency(team)
+
+
 def anchor_subscription(team: str) -> str | None:
 	"""The subscription an invoice's dunning / charge-routing anchors on.
 
@@ -64,6 +72,7 @@ def _record_change(
 	changed_by=None,
 	locked_rate=None,
 	currency=None,
+	effective_at=None,
 ):
 	"""Append one immutable Subscription Change row. A change that opens a segment
 	carries its locked rate and currency."""
@@ -74,7 +83,7 @@ def _record_change(
 			"change_type": change_type,
 			"old_value": old_value,
 			"new_value": new_value,
-			"effective_at": frappe.utils.now_datetime(),
+			"effective_at": effective_at or frappe.utils.now_datetime(),
 			"changed_by": changed_by or frappe.session.user,
 			"locked_rate": locked_rate,
 			"currency": currency,
@@ -212,7 +221,7 @@ def provision_composed_subscription(
 	validate_composition(sub_category, includes)
 	# Re-check the config fits the team's remaining headroom (#83) — the client bounds
 	# are a convenience, the server is the gate.
-	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	currency = _billing_currency(team)
 	# Locked, so two parallel requests cannot both spend the same headroom.
 	enforce_headroom(team, resolve_config_rate(includes, currency, cluster), for_update=True)
 	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
@@ -395,7 +404,7 @@ def _require_sellable_service_plan(team: str, plan: str, cluster: str | None, al
 		frappe.throw(
 			frappe._("This plan is no longer offered. Choose a plan from the list."), frappe.ValidationError
 		)
-	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	currency = _billing_currency(team)
 	rate = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 	if rate is None:
 		frappe.throw(
@@ -645,7 +654,7 @@ def _plan_resize(doc, server, plan, includes, sub_category, override_rate=None) 
 	headroom, and the disk-shrink guard — so the user gets these errors immediately,
 	before anything is queued; the worker re-runs them authoritatively when it applies
 	the resize."""
-	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
+	currency = _billing_currency(doc.team)
 	cluster = server.region if server else None
 	if plan:
 		if doc.pricing_mode == "Preset" and doc.plan == plan:
@@ -730,7 +739,7 @@ def _preset_plus_disk_rate(doc, plan: str, disk_gigabytes) -> float | None:
 	cheaper à-la-carte total. Returns None if the plan has no rate in the team's currency."""
 	from central.billing.catalog.pricing import resolve_component_rate
 
-	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
+	currency = _billing_currency(doc.team)
 	cluster = frappe.db.get_value("Virtual Machine", doc.server_id, "region") if doc.server_id else None
 	base = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 	if base is None:
@@ -784,7 +793,7 @@ def resize_composed_subscription(
 		validate_shape_rows(rows)
 	_validate_resize_shape(profile, rows, doc.server_id, preset_plan)
 
-	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
+	currency = _billing_currency(doc.team)
 	region = frappe.db.get_value("Virtual Machine", doc.server_id, "region") if doc.server_id else None
 	# A preset grown past its own disk keeps the bundle price plus the extra disk; a genuine
 	# composed shape is priced à la carte. The headroom check uses whichever will be billed.
@@ -829,7 +838,7 @@ def resize_to_plan(
 	# gate resize_composed_subscription applies, so a preset target can't slip past the
 	# spend cap. Authoritative here (covers every caller, incl. the background job);
 	# begin_resize also checks it synchronously for immediate feedback.
-	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
+	currency = _billing_currency(doc.team)
 	new_rate = frappe.get_doc("Plan", new_plan).get_rate(currency, server.region if server else None)
 	enforce_headroom(doc.team, new_rate, exclude=subscription)
 	return change_plan(subscription, new_plan, changed_by=changed_by)
@@ -1058,6 +1067,35 @@ def current_segment_rate(subscription: str) -> float:
 	if not seg or seg.change_type in CLOSING_CHANGE_TYPES:
 		return 0.0
 	return frappe.utils.flt(seg.locked_rate)
+
+
+def reprice_team(team: str, effective_at) -> None:
+	"""Lock each open segment of `team` again in the currency its payer pays in from
+	`effective_at`, when a partner starts or stops paying for it. A segment already in that
+	currency keeps its locked rate, so a payer in the same currency changes no price. It covers
+	every open segment, because invoice lines are built from all of them."""
+	for segment in active_segments({"team": team}):
+		doc = frappe.get_doc("Subscription", segment.subscription)
+		rate, currency = doc.resolve_rate_snapshot(on_date=effective_at)
+		if currency == segment.currency:
+			continue
+		if rate is None:
+			frappe.throw(
+				frappe._("{0} has no price in {1}. Add the price before the payer changes.").format(
+					doc.segment_label(), currency
+				)
+			)
+
+		label = doc.segment_label()
+		_record_change(
+			segment.subscription,
+			"Plan Changed",
+			old_value=label,
+			new_value=label,
+			locked_rate=rate,
+			currency=currency,
+			effective_at=effective_at,
+		)
 
 
 def team_run_rate(team: str, exclude: str | None = None) -> float:

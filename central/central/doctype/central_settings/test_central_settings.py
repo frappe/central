@@ -15,6 +15,7 @@ FLAG_FIELDS = {
 	"public_ipv4": "enable_public_ipv4",
 	"public_ipv6": "enable_public_ipv6",
 	"firewall": "enable_firewall",
+	"partners": "enable_partners",
 }
 
 

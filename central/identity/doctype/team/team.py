@@ -9,6 +9,7 @@ from frappe.utils import now_datetime
 from central.billing import settings as billing_settings
 from central.iam import can, clear_grants_cache, user_has_operator_bypass
 from central.identity.doctype.team.lifecycle import TeamLifecycle
+from central.identity.doctype.team.partner import generate_partner_code, require_partners_enabled
 from central.identity.doctype.team.tenant import (
 	allocate_tenant_id,
 	prepare_tenant_id_series,
@@ -33,12 +34,14 @@ class Team(TeamLifecycle, Document):
 		from central.identity.doctype.team_member.team_member import TeamMember
 		from central.identity.doctype.team_onboarding_step.team_onboarding_step import TeamOnboardingStep
 
+		connect_partner_id: DF.Data | None
 		is_staging_trial: DF.Check
 		landing_product: DF.Link | None
 		members: DF.Table[TeamMember]
 		naming_series: DF.Literal["TEAM-.#####"]
 		onboarding_steps: DF.Table[TeamOnboardingStep]
 		owner_user: DF.Link
+		partner_code: DF.Data | None
 		referrer: DF.SmallText | None
 		status: DF.Literal["Active", "Suspended", "Archived"]
 		team_logo: DF.AttachImage | None
@@ -109,6 +112,23 @@ class Team(TeamLifecycle, Document):
 		self._validate_member_resources()
 		self._validate_changes()
 		self._validate_team_logo()
+		self._set_partner_code()
+
+	def _set_partner_code(self) -> None:
+		# Both fields are permlevel 1, so only an operator or register_as_partner sets them.
+		if self.connect_partner_id and not self.partner_code:
+			self.partner_code = generate_partner_code(self.team_name)
+
+	# Internal; the HTTP surface is central.api.partners.complete_partner_registration.
+	def register_as_partner(self, connect_partner_id: str) -> None:
+		"""Make this team the Central team of a Connect partner. The caller checked the owner."""
+		require_partners_enabled()
+		if self.connect_partner_id:
+			frappe.throw(_("This team already represents a partner. Choose another team."))
+
+		self.connect_partner_id = connect_partner_id
+		self.flags.ignore_permlevel_for_fields = ["connect_partner_id"]
+		self.save()
 
 	def _validate_team_logo(self) -> None:
 		"""The logo must be a file uploaded to this team's logo field, not any URL."""

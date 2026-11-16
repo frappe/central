@@ -247,7 +247,7 @@ class Subscription(Document):
 			return f"Custom: {summary}" if summary else "Custom config"
 		return doc.plan
 
-	def resolve_rate_snapshot(self) -> tuple[float | None, str | None]:
+	def resolve_rate_snapshot(self, on_date=None) -> tuple[float | None, str | None]:
 		"""The rate + currency to snapshot onto a Subscription Change now.
 
 		Billing reads this snapshot forever for the segment it opens — never the
@@ -255,7 +255,10 @@ class Subscription(Document):
 		preset snapshots its Plan's flat rate; a composed config snapshots the
 		whole-config rate `Σ(qty × component_rate)`, frozen as one number (ADR 0010).
 		"""
-		currency = frappe.db.get_value("Billing Profile", self.team, "currency")
+		from central.billing.doctype.billing_profile.billing_profile import get_billing_currency
+
+		# A partner that pays for the team prices its usage in the partner's currency.
+		currency = get_billing_currency(self.team, on_date)
 		if not currency:
 			return None, None
 		# A VM subscription resolves its cluster off the VirtualMachine; a team-level service

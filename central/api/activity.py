@@ -78,20 +78,25 @@ def get_activity(
 	page = rows[:page_size]
 	initiators = get_initiators(page)
 	actors = _get_actors({row.actor for row in page} | set(initiators.values()))
+	partners = _get_partner_names({row.partner_team for row in page})
 
 	return {
-		"events": [_to_event(row, actors, initiators.get(row.name)) for row in page],
+		"events": [_to_event(row, actors, initiators.get(row.name), partners) for row in page],
 		"next_cursor": _encode_cursor(page[-1]) if len(rows) > page_size else None,
 	}
 
 
-def _to_event(row, actors: dict[str, dict], initiator: str | None) -> dict:
+def _to_event(row, actors: dict[str, dict], initiator: str | None, partners: dict[str, str]) -> dict:
+	actor = actors.get(row.actor, NO_ACTOR)
+	# A partner's staff member reads with the partner, so the customer knows who acted.
+	if row.partner_team and row.partner_team in partners:
+		actor = {**actor, "label": _("{0} from {1}").format(actor["label"], partners[row.partner_team])}
 	return {
 		"id": row.name,
 		"event": row.event,
 		"category": row.category,
 		"occurred_at": str(row.creation),
-		"actor": actors.get(row.actor, NO_ACTOR),
+		"actor": actor,
 		"sentence": _(get_sentence(row.event, has_actor=bool(row.actor))),
 		"initiator": actors[initiator] if initiator else None,
 		"resource": {"type": row.resource_type, "name": row.resource_name, "label": row.resource_label},
@@ -127,6 +132,16 @@ def _get_actors(emails: set[str | None]) -> dict[str, dict]:
 		actors[user.name] = _actor_entry(user, is_operator_reader)
 
 	return actors
+
+
+def _get_partner_names(teams: set[str | None]) -> dict[str, str]:
+	names = [team for team in teams if team]
+	if not names:
+		return {}
+	# The reader may not read the partner's Team; the event already names it.
+	return dict(
+		frappe.get_all("Team", filters={"name": ("in", names)}, fields=["name", "team_name"], as_list=True)
+	)
 
 
 def _parse_instant(value: str | None) -> datetime | None:

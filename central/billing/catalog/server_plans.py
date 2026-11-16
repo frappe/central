@@ -14,7 +14,7 @@ from central.billing.catalog.entitlements import get_team_caps
 from central.billing.catalog.pricing import resolve_component_rate, resolve_rate
 from central.billing.catalog.rate_card import COMPONENT_UNITS
 from central.billing.catalog.trials import trial_plan_names
-from central.billing.doctype.billing_profile.billing_profile import get_team_currency
+from central.billing.doctype.billing_profile.billing_profile import get_pricing_currency
 from central.billing.revenue.tax import is_internal_team
 from central.utils.units import MIB_PER_GIB
 
@@ -61,7 +61,7 @@ def get_server_plans(
 	image_offering = _get_image_offering(offering, server)
 	minimum_memory_gib = image_offering.minimum_memory_mib / MIB_PER_GIB if image_offering else 0
 
-	currency = get_team_currency(team)
+	currency = get_pricing_currency(team)
 	caps = get_team_caps(team)
 	spend_cap = frappe.utils.flt(caps.max_spend)
 	current_spend = _current_run_rate(team, exclude=exclude_subscription)

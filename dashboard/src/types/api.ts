@@ -24,6 +24,16 @@ export interface Team {
 	status: 'Active' | 'Suspended'
 	/** Set when a System Manager opened the console as this team's owner. */
 	is_impersonated?: boolean
+	/** A Frappe partner's team: it has a partner code and customers. */
+	is_partner: boolean
+	/** The team has an Active link to a partner. */
+	has_partner: boolean
+	/** The partner through which the user reaches this team. The user is not a member. */
+	via_partner?: string | null
+	/** That partner's team, to go back to. */
+	via_partner_team?: string | null
+	/** The partner that pays for this team's usage this month. */
+	paid_by?: string | null
 }
 
 export type MemberStatus = 'Active' | 'Suspended'
@@ -126,6 +136,73 @@ export interface InvitationSummary {
 	role: string
 	expires_on: string
 	has_account: boolean
+}
+
+/** What a partner's staff can do in the customer team. */
+export type PartnerRole = 'Viewer' | 'Developer'
+
+/** Who pays the customer team's usage. Partner Requested waits for the partner to accept. */
+export type PartnerPayer = 'Customer' | 'Partner Requested' | 'Partner'
+
+/** The link between a partner team and a customer team (central Partner Link). */
+export interface PartnerLink {
+	name: string
+	status: 'Active' | 'Ended'
+	role: PartnerRole
+	payer: PartnerPayer
+	/** The first day the partner pays. A change takes effect on the 1st of a month. */
+	partner_pays_from: string | null
+	/** The last day the partner pays, after a stop. */
+	partner_pays_until: string | null
+	/** The currency the partner pays in. Only on the customer side. */
+	partner_currency?: string
+	reference: string | null
+	linked_on: string
+	ended_on: string | null
+	partner_team: string
+	partner_name: string
+	partner_logo: string | null
+	customer_team: string
+	customer_name: string
+	customer_logo: string | null
+	customer_email: string
+}
+
+/** A customer link as the partner's Customers page shows it. */
+export interface CustomerLink extends PartnerLink {
+	currency: string | null
+	mrr: number | null
+	server_count: number | null
+	/** Whether the caller can open the customer's team. */
+	can_open: boolean
+}
+
+/** The partner team's code, the currency it pays in, and its customer links. */
+export interface TeamCustomers {
+	partner_code: string | null
+	currency: string
+	customers: CustomerLink[]
+}
+
+/** The partner that a code names, before the customer adds it. */
+export interface PartnerPreview {
+	partner_name: string
+	partner_logo: string | null
+}
+
+/** A team that can become the partner's team: Active, owned by the viewer, not a partner yet. */
+export interface RegistrableTeam {
+	name: string
+	team_name: string
+}
+
+/** The partner registration behind a link from Frappe Connect. */
+export interface PartnerRegistrationSummary {
+	partner_name: string
+	owner_email: string
+	status: 'Pending' | 'Completed'
+	has_account: boolean
+	teams: RegistrableTeam[]
 }
 
 /** One bundled resource in a plan (central Plan Includes). */

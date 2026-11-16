@@ -2,25 +2,26 @@
 
 ## Purpose
 
-This document is the contract between Central and Frappe Connect. Connect is the marketplace where a customer finds a partner. Central is where the customer's team, servers, and access live.
+This document is the contract between Central and Frappe Connect. Connect is the partner portal and marketplace. Central is where teams, servers, access, and invoices live.
 
-Status: planned. Central does not implement this contract yet. Connect can build against it now. Change this document before you change the contract.
+Status: planned. Central does not implement this contract yet. Connect `main` has a client for an earlier version of it in `connect/partner/cloud_integration.py`. Change this document before you change the contract.
 
 ## Who owns what
 
 | Fact | Owner | Record |
 |---|---|---|
-| Who is a partner | Connect | Connect's Partner |
-| The commercial deal between a partner and a customer | Connect | Connect's Engagement |
-| Which Central team belongs to a partner | Central | `Team.connect_partner_id` |
-| Whether a partner team can act on a customer team, and with which role | Central | Partner Link |
+| Who is a partner, and its tier | Connect | Connect's Partner |
+| The commercial deal between a partner and a customer | Connect | Connect's Project Quote and Partner Customer |
+| Which Central team belongs to a partner, and its partner code | Central | `Team.connect_partner_id`, `Team.partner_code` |
+| Whether a partner is linked to a customer team, with which role, and who pays | Central | Partner Link |
+| Which partner an invoice counts for, and who pays it | Central | `Invoice.partner_team`, the customer lines on the partner's invoice, `Partner Link.payer` |
 | What a person can do on a team | Central | Team Member, Team Role, and Partner Link, resolved by `central/iam.py` |
 
-Connect is the authority on who is a partner. The customer is the authority on what the partner can do. Central enforces both.
+Connect is the authority on who is a partner. The customer is the authority on what the partner can do and on who pays. Central enforces both.
 
 ## Communication
 
-Connect calls Central. Central never calls Connect, and Central never reads Connect's data.
+Connect calls Central. Central never calls Connect, and Central never reads Connect's data. When Connect is down, Central works without change.
 
 ```text
 Connect ──HTTPS, Authorization: token <api key>:<api secret>──▶ Central /api/method/central.api.connect.*
@@ -31,129 +32,172 @@ Central mints the only credential. It is a standard Frappe API key on one integr
 
 | Item | Value |
 |---|---|
-| User | `connect@integration`, a System User with no other roles |
+| User | `connect@integration.localhost`, a System User with no other roles. Frappe needs a domain suffix in a User email. |
 | Role | `Connect Integration` |
-| Credential | The API key and API secret of that user, generated in desk |
 | Allowed routes | Only `central.api.connect.*`. Each route starts with `frappe.only_for("Connect Integration")`. |
 | Rotation | Generate new keys on the user. The old secret stops working at once. |
 | Kill switch | Disable the user. Every Connect call fails with HTTP 401. |
 
-Connect keeps the secret in its site configuration. Do not put the secret in a URL, a log, or a browser.
-
-Example:
-
-```bash
-curl -X POST https://central.example.com/api/method/central.api.connect.create_partner_link \
-  -H "Authorization: token 1a2b3c4d5e:6f7g8h9i0j" \
-  -H "Content-Type: application/json" \
-  -d '{"connect_partner_id": "PTR-0001", "engagement_id": "ENG-0042", "customer_email": "ops@northwind.example", "project_title": "Manufacturing implementation", "return_url": "https://connect.example.com/projects/ENG-0042"}'
-```
+Connect keeps the secret in its Integration Settings (`cloud_site_url`, `cloud_api_key`, `cloud_api_secret`). Connect cannot create a link, set a role, or set who pays. It can register a partner, read, and end a link.
 
 ## Configuration
 
 | Setting | Where | Use |
 |---|---|---|
-| Connect URL | Central Settings | Central accepts a `return_url` only when its host is this host. This stops an open redirect. |
-| Invitation Expiry (Days) | Central Settings | A Partner Registration or a Partner Link that nobody answers expires after this many days. |
+| Connect URL (`connect_url`) | Central Settings, Frappe Connect section | Central accepts a `return_url` only when its host is this host. This stops an open redirect. |
+| Invitation Expiry (Days) (`invitation_expiry_days`) | Central Settings | A registration link expires after this many days. Connect sends a new link after 14 days. |
+| Enable Partners (`enable_partners`) | Central Settings, Feature Flags tab, Partners section | Off by default. While it is off, Central refuses `register_partner` for a new partner, the completion of a registration link, and a new Partner Link, with `PartnersDisabledError`. The console hides Add partner. Partners and links that exist keep working, so it is not a kill switch. |
 
 ## Records
 
 ### Team
 
-A team is a partner team when `connect_partner_id` is set. Only a completed Partner Registration sets it. The field is read-only in desk. One Connect partner maps to one team.
-
-### Partner Registration
-
-A request for the owner of a partner to choose their Central team.
-
 | Field | Value |
 |---|---|
-| `connect_partner_id` | Connect's partner ID. Unique. |
-| `partner_name` | The name Connect shows for the partner |
-| `owner_email` | The email of the person who must confirm |
-| `token` | A random value. It is the only key the landing page reads. |
-| `status` | `Pending`, `Completed`, or `Expired` |
-| `team` | The team the owner chose, after completion |
+| `connect_partner_id` | Connect's partner ID. Unique. Set only by a completed registration link or by the Press migration. Read-only in desk. |
+| `partner_code` | The code a customer enters to add this partner. Unique. Central generates it when `connect_partner_id` is set. A partner that comes from Press keeps its Press `partner_referral_code`. |
+
+A team is a partner team when `connect_partner_id` is set. One Connect partner maps to one team.
+
+### Registration link
+
+Central stores nothing for a registration until the partner's admin completes it. `register_partner` returns a link with a token signed by Central (JWT, HS256, signed with the site secret). The token holds:
+
+| Claim | Value |
+|---|---|
+| `sub` | Connect's partner ID |
+| `name` | The name Connect shows for the partner |
+| `email` | The email of the person who must confirm |
+| `return_url` | Where the admin goes back to in Connect. Optional. |
+| `exp` | When the link stops working, from Invitation Expiry (Days) |
+| `aud` | `central:partner-registration`, so the token cannot pass as another Central token |
+
+A link cannot be withdrawn before it expires. Only the person who signs in with `email` and owns a team can complete it.
 
 ### Partner Link
 
-The relationship between one partner team and one customer team, for one engagement.
+The relationship between one partner team and one customer team.
 
 | Field | Value |
 |---|---|
-| `engagement_id` | Connect's engagement ID. Unique. |
 | `partner_team` | The partner's team |
-| `customer_email` | The email of the customer who must answer |
-| `customer_team` | The team the customer chose, after acceptance |
-| `project_title` | The title the customer sees |
-| `return_url` | Where the customer goes back to in Connect |
-| `token` | A random value. It is the only key the landing page reads. |
-| `status` | See [Partner Link states](#partner-link-states) |
-| `role` | The customer team role the partner gets: `Developer` or `Viewer` |
+| `customer_team` | The customer's team |
+| `status` | `Active` or `Ended` |
+| `role` | `Viewer` or `Developer`. A new link starts as `Viewer`. See [Partner access](#partner-access). |
+| `payer` | `Customer`, `Partner Requested`, or `Partner`. See [Partner pays](#partner-pays). |
+| `partner_pays_from`, `partner_pays_until` | The first and the last day the partner pays. Central sets them. |
+| `reference` | An opaque value from Connect's deep link, normally the Partner Customer ID. Empty when the customer typed the code. |
+| `linked_by`, `linked_on` | The customer user who added the partner, and when |
 | `ended_by`, `ended_on`, `end_reason` | Who ended the link, when, and why |
+
+Rules:
+
+- A customer team has at most one `Active` link. The customer ends the current link before they add another partner.
+- A partner team cannot link to itself.
+- Central never makes an `Ended` link active again. A new link is a new record, so each period has its own history.
+
+### Invoice
+
+| Field | Value |
+|---|---|
+| `partner_team` | The partner team of the customer's `Active` link when the customer's own invoice is generated. Empty when there is none. |
+
+Each line of a partner's invoice also has `customer_team` and `customer_title`, set when the line belongs to a customer the partner pays for. All three are a snapshot. A later change to the link does not change an existing invoice.
 
 ## Endpoints
 
-All endpoints use `POST` and return JSON in `message`. A repeated call with the same `connect_partner_id` or `engagement_id` returns the existing record, so a retry is safe.
+All endpoints use `POST` and return JSON in `message`. A repeated call is safe.
 
 ### `central.api.connect.register_partner`
 
-Ask the owner of a partner to choose the Central team that represents the partner.
+Ask the admin of a partner to choose the Central team that represents the partner.
 
 | Argument | Required | Value |
 |---|---|---|
 | `connect_partner_id` | Yes | Connect's partner ID |
 | `partner_name` | Yes | The partner's display name |
-| `owner_email` | Yes | The owner's email |
+| `owner_email` | Yes | The admin's email |
+| `return_url` | No | A URL on the configured Connect host |
 
 ```json
-{"message": {"status": "Pending", "url": "https://central.example.com/dashboard/connect/partner/k3Jd9..."}}
+{"message": {"status": "Pending", "url": "https://central.example.com/dashboard/partner-registration/k3Jd9..."}}
 ```
 
-When the registration is already `Completed`, the response has `status` and `team`, and no `url`.
+When the registration is `Completed`, the response is `{"status": "Completed", "team": "TEAM-00007", "partner_code": "TRI-48213"}` and has no `url`.
 
-### `central.api.connect.create_partner_link`
+### `central.api.connect.get_partner_registration`
 
-Ask a customer to accept a partner on their team.
+Read the state of a registration. The status is `Completed` while a team holds the `connect_partner_id`, and `Pending` otherwise. Connect sends a new link with `register_partner` when its last one is older than 14 days.
+
+| Argument | Required | Value |
+|---|---|---|
+| `connect_partner_id` | Yes | Connect's partner ID |
+
+```json
+{"message": {
+  "status": "Completed", "team": "TEAM-00007", "partner_code": "TRI-48213",
+  "add_partner_url": "https://central.example.com/dashboard/partner?code=TRI-48213",
+  "invoices_url": "https://central.example.com/dashboard/billing/invoices"
+}}
+```
+
+Connect uses these URLs as they are and never builds a Frappe Cloud route. To send a customer to add the partner, Connect adds `reference` (the Partner Customer name) and `email` (the customer's email) as query parameters to `add_partner_url`.
+
+### `central.api.connect.get_partner_customers`
+
+List the links of one partner. Connect uses it for the Customers page and to learn about new and ended links.
 
 | Argument | Required | Value |
 |---|---|---|
 | `connect_partner_id` | Yes | A partner with a `Completed` registration |
-| `engagement_id` | Yes | Connect's engagement ID |
-| `customer_email` | Yes | The customer's email |
-| `project_title` | Yes | The title the customer sees |
-| `return_url` | Yes | A URL on the configured Connect host |
+| `modified_after` | No | Return only links changed after this datetime |
 
 ```json
-{"message": {"status": "Requested", "url": "https://central.example.com/dashboard/connect/customer/Qm81x..."}}
+{"message": [{
+  "link": "PLINK-00031", "reference": "PCUST-00012", "status": "Active",
+  "customer_team": "TEAM-00012", "customer_team_name": "Northwind", "customer_email": "ops@northwind.example",
+  "role": "Developer", "payer": "Customer", "linked_on": "2026-11-14 10:02:11", "ended_on": null,
+  "currency": "INR", "mrr": 11500,
+  "servers": [{"name": "erp-1", "plan": "Business", "amount": 9000, "status": "Running", "region": "Mumbai",
+               "sites": ["northwind.frappe.cloud"]}]
+}]}
 ```
 
-### `central.api.connect.get_partner_link`
+Central bills a server, not a site, so each server carries its sites. `amount` is the server's committed monthly rate. `mrr` is the customer team's committed monthly run rate for all its subscriptions, servers and services, before tax, in `currency`. An `Ended` link has no `servers` and an `mrr` of 0, because the partner no longer sees the customer. `payer` comes with [Partner pays](#partner-pays).
 
-Read the state of a link.
+### `central.api.connect.get_partner_invoices`
+
+List the paid invoices that count for one partner. Connect uses it for the tier.
 
 | Argument | Required | Value |
 |---|---|---|
-| `engagement_id` | Yes | Connect's engagement ID |
+| `connect_partner_id` | Yes | A partner with a `Completed` registration |
+| `paid_after` | No | Return only invoices paid after this datetime |
 
 ```json
-{"message": {"status": "Active", "customer_team": "TEAM-00012", "role": "Developer", "ended_by": null, "ended_on": null}}
+{"message": [{
+  "invoice": "INV-2026-00418", "customer_team": "TEAM-00012", "customer_team_name": "Northwind",
+  "period_start": "2026-10-01", "period_end": "2026-10-31", "paid_at": "2026-11-03 04:10:00",
+  "currency": "INR", "amount": 11500, "paid_by_partner": false
+}]}
 ```
+
+`amount` is the invoice amount after discount and before tax. The list has every `Paid`, `Billable` invoice where `partner_team` is the partner's team, and every invoice of the partner's own team, which includes the customers it pays for. `paid_by_partner` is true on the partner's own invoices. They all count toward the tier.
 
 ### `central.api.connect.end_partner_link`
 
-End a link. Use it when the engagement ends or is cancelled in Connect.
+End a link. Connect calls it when the partner marks the customer as churned, or when Connect removes the partner from the program.
 
 | Argument | Required | Value |
 |---|---|---|
-| `engagement_id` | Yes | Connect's engagement ID |
+| `link` | Yes | The Partner Link name from `get_partner_customers` |
 | `reason` | Yes | A short sentence. The other team's owner reads it. |
 
 ```json
 {"message": {"status": "Ended"}}
 ```
 
-Ending a link that is already `Ended`, `Declined`, or `Expired` returns its status and changes nothing.
+Ending a link that is already `Ended` returns its status and changes nothing.
 
 ### Errors
 
@@ -161,85 +205,172 @@ Ending a link that is already `Ended`, `Declined`, or `Expired` returns its stat
 |---|---|---|
 | 401 | `AuthenticationError` | The API key or secret is wrong, or the integration user is disabled. |
 | 403 | `PermissionError` | The user does not have the `Connect Integration` role. |
-| 404 | `DoesNotExistError` | No Partner Link has this `engagement_id`. |
+| 404 | `DoesNotExistError` | No record has this ID. |
 | 417 | `ValidationError` | An argument is missing or wrong, the partner is not registered, or the `return_url` host is not the Connect host. The message says which. |
 
-## Partner registration flow
+## Flows
 
-1. Connect calls `register_partner` and sends the `url` to the partner's owner.
-2. The owner opens the URL and signs in to Central.
+### A partner registers
+
+A partner needs a Central team before a customer can add it. The partner's admin does not need a Central account in advance.
+
+1. Connect calls `register_partner`. This happens in the Frappe Cloud step of partner onboarding, or when a customer hires a partner that has not registered.
+2. The admin opens the URL. If they have no Central account, they sign up with an email code.
 3. If the signed-in email is not `owner_email`, Central shows an error and stops.
-4. The owner chooses one of the teams they own, or creates a team.
-5. Central sets `Team.connect_partner_id` and marks the registration `Completed`.
+4. The admin chooses one of the teams they own, or creates a team. Central does not ask for a payment method.
+5. Central sets `Team.connect_partner_id` and `Team.partner_code`, and sends the admin to `return_url`.
+6. Connect calls `get_partner_registration` and stores the partner code.
 
-## Customer flow
+### A customer adds a partner
 
-1. Connect calls `create_partner_link` and shows the `url` as "Log in to Frappe Cloud".
-2. The customer opens the URL. If they are not signed in, Central sends them to sign in or sign up and back to the URL after.
-3. If the signed-in email is not `customer_email`, Central shows an error and stops.
-4. If the customer has no team, the onboarding dialog asks them to create one.
-5. The onboarding dialog shows the partner step: the partner's name and logo, the project title, Accept, and Decline.
-6. If the customer accepts, they choose the team when they own more than one, and the role: `Developer` or `Viewer`.
-7. Central sets the link to `Active` or `Declined` and shows a button back to `return_url`.
-8. Connect calls `get_partner_link` to read the result.
+The customer always starts the link, in Central, with the partner code.
 
-Example: Frappe is a partner. Northwind accepts Frappe for "Manufacturing implementation" with the `Developer` role. Frappe staff with partner access can now manage Northwind's servers. They cannot change Northwind's members or billing.
+1. The customer opens the Add partner dialog. There are two ways to get there:
+   - From Connect: the hired project shows "Set up on Frappe Cloud". It opens `/dashboard/partner?code=<partner code>&reference=<Partner Customer ID>&email=<customer email>`, which opens the dialog with the code filled in.
+   - From Team: the Team page shows "Add partner" to a user with `team:manage_partners` when the team has no partner.
+   - Directly: the partner gives the customer the code, as on Press.
+2. If the customer is not signed in, Central sends them to sign in or sign up and back to the page. If they have no team, the onboarding dialog asks them to create one first.
+3. Central shows the partner's team name and logo for the code. An unknown code shows an error.
+4. The customer chooses the team when they own more than one, the role, and who pays.
+5. Central creates the Partner Link as `Active`. No approval from the partner is necessary for access or attribution.
+6. Connect reads the link with `get_partner_customers` on its next sync.
 
-## Partner Link states
+`code`, `reference`, and `email` in the URL are untrusted input. Central checks the code against `Team.partner_code`, stores `reference` as text, and only fills in the sign-in page with `email`. The emailed code proves the email. Connect must ignore a `reference` that is not a Partner Customer of that partner.
 
-```text
-Requested ──customer accepts──▶ Active ──ended──▶ Ended
-    │
-    ├──customer declines──▶ Declined
-    ├──nobody answers before expiry──▶ Expired
-    └──ended──▶ Ended
-```
+Example: Northwind hires Tridots on Connect. Northwind opens the link, signs up, creates a team, and adds Tridots with the `Developer` role and "I pay". Tridots staff with partner access can now manage Northwind's servers. They cannot change Northwind's members or billing.
 
-Only the customer can make a link `Active` or change its role. Ending removes access, so more than one party can do it:
+### Cases
 
-| Who | Where | Capability |
-|---|---|---|
-| The customer team owner | Central, Team, Partners, Remove partner | `team:manage_partners` on the customer team |
-| The partner team owner | Central, Customers, Stop working with this customer | `team:manage_partners` on the partner team |
-| Connect | `end_partner_link` | `Connect Integration` |
-| Central | When the customer team is deleted, or the partner team loses `connect_partner_id` | None |
+| Case | What happens |
+|---|---|
+| The customer hires a partner on Connect | Deep link with `code` and `reference`. Connect matches the link to its Partner Customer by `reference`. A Partner Customer holds one link. A link from a second Central team of the same customer becomes a separate customer with source `Own`. |
+| The partner brings its own client | The customer types the code. The link has no `reference`. Connect creates a Partner Customer with source `Own` from `customer_team_name` and `customer_email`. |
+| The partner has no Central team | The partner has no code. Connect registers the partner first and shows the customer "Waiting for partner" until the registration is `Completed`. |
+| The customer has no Central account | Central signs them up and returns them to the Add partner page. |
+| The customer changes partner | The customer ends the current link and adds the new code. Each invoice keeps the partner it had at generation. |
+| A partner staff member leaves | The partner removes them from its team. They lose every customer at once. |
+| Connect removes a partner from the program | An operator uses Remove from Partner Program on the partner's Team in desk. It ends every link of the partner. |
+| The partner hosts a client that wants no account | No link. The partner creates the servers in its own team and groups them in one Project per client. |
+| A customer moves from Press | See [Press migration](#press-migration). |
 
-Central never makes an `Ended`, `Declined`, or `Expired` link active again. A new engagement creates a new Partner Link, so each period of access has its own record.
+## Console pages
+
+Central has only the pages that decide access, money, or the trust boundary. Connect has the rest of partner relationship management: stages, owners, notes, sites, revenue, and the tier.
+
+| Page | Path | Who sees it | Use |
+|---|---|---|---|
+| Partner registration | `/dashboard/partner-registration/<token>` | The `email` in the token | Choose or create the partner team |
+| Partner | `/dashboard/partner` | A user with `team:manage_partners`. The sidebar shows it when the team has an `Active` link. | See the partner, add one, or end the link |
+| Customers | `/dashboard/customers` | A user with `team:manage_partners` in a partner team. The sidebar shows it for a partner team. | See the partner code and the customer links, or end a link |
 
 ## Partner access
 
-A partner staff member can act on a customer team only when all of these rules pass:
+A partner staff member can act on a customer team only when all of these rules pass. `central/iam.py` adds them as a partner grant, so every capability check applies them.
 
-1. The staff member holds `partner:act_on_customers` in the partner team.
-2. A Partner Link from the partner team to the customer team is `Active`.
+1. The staff member holds `partner:act_on_customers` team-wide in the partner team.
+2. A Partner Link from the partner team to the customer team is `Active`, and the customer team is `Active`.
 3. The capability is in the link's `role`.
 4. The capability is not in the list that a partner can never get.
 
 A partner can never get these capabilities on a customer team:
 
-- `team:edit`
-- `team:manage_members`
-- `team:delete`
-- `team:manage_partners`
-- `billing:manage`
+| Capability | Why |
+|---|---|
+| `team:edit`, `team:manage_members`, `team:delete`, `team:manage_partners` | The customer runs its own team. |
+| `billing:manage` | The customer controls payment. |
+| `server:ssh-key`, `server:wireguard` | A key or a device would outlive the link. Without them, ending a link revokes all partner access. |
+| `partner:act_on_customers` | A partner cannot reach the customers of a customer that is also a partner. |
 
-The partner staff member is never a member of the customer team. A change to the partner team's members applies to every customer at once. The customer's activity log shows each action with the staff member and the partner team.
+Capabilities:
+
+| Capability | Default roles | Use |
+|---|---|---|
+| `partner:act_on_customers` | Owner, Admin, Developer | Act on the customer teams linked to this partner team |
+| `team:manage_partners` | Owner, Admin | Add a partner, change its role or payer, end a link, accept or stop partner pays |
+
+The role on a link:
+
+- A new link has the `Viewer` role. The customer changes it to `Developer` on the Partner page, which says that `Developer` can create, change, and delete servers. Only the customer side changes the role.
+- There is no other choice. A partner always has `Viewer` or `Developer` access.
+- There is no separate partner role. A partner that wants to keep a staff member away from customers gives them a role without `partner:act_on_customers`, such as `Viewer`.
+
+The partner staff member is never a member of the customer team, so the team's members, roles, and activity stay closed to them. The customer team appears in their team switcher as "Through <partner>". Each activity event that partner staff cause stores `partner_team`, and the customer's activity log shows the person as "<name> from <partner>".
+
+Connect's own roster (`Connect Partner Member.access`) controls Connect pages only. Central does not read it.
+
+## Partner pays
+
+The customer decides who pays. The partner must accept, because the partner takes the liability. When the partner pays, the customer's usage is billed as part of the partner: on the partner's own monthly invoice, in the partner's currency, with the partner's tax, payment methods, wallet, and dunning.
+
+| Change | Who | `payer` |
+|---|---|---|
+| The customer asks the partner to pay | A customer user with `team:manage_partners`, on the Partner page | `Customer` to `Partner Requested` |
+| The partner accepts | A partner user with `team:manage_partners`, on the Customers page | `Partner Requested` to `Partner` |
+| Either side declines the request | Either side | `Partner Requested` to `Customer` |
+| Either side stops partner pays | Either side | `Partner` to `Customer` |
+
+Rules:
+
+- A change takes effect on the 1st of the next month. The partner pays from `partner_pays_from` to `partner_pays_until`. A stop before the partner starts cancels the payment. So every month has one payer and one currency.
+- Both sides see the date and the currency before they confirm. While the partner pays, the customer's plans and prices show and are charged in the partner's currency, and the customer's Billing page says "Paid by <partner>".
+- On the 1st, Central prices the customer's running subscriptions again in the new payer's currency (`reprice_paid_customers`). A payer in the same currency keeps every locked price.
+- The partner's monthly invoice lists its own usage and, grouped by customer, the usage of each customer it pays for. The partner's forecast and invoice pages on Frappe Cloud show the same groups. A customer that the partner pays for gets no invoice for that month.
+- The customer still sees its forecast, before tax and in the partner's currency, marked "Paid by <partner>". Nothing is collected from the customer: it gets no top-up reminder and no shortfall warning for that month.
+- When a link ends, partner pays stops at the end of the month.
+
+The customer keeps its own wallet and payment methods. They are not used while the partner pays.
 
 ## What ending a link does
+
+Either side can end a link: the customer on the Partner page, the partner on the Customers page, and Connect with `end_partner_link`. Central ends the links of a team that is archived, and an operator ends a partner's links with Remove from Partner Program on the Team in desk, which also clears its `connect_partner_id` and `partner_code`.
 
 | Area | Result |
 |---|---|
 | Console and API access | The next request from partner staff is refused. The customer team leaves their team switcher. |
-| Open sessions on the customer's sites | Central asks Pilot to end the sessions of partner staff on the customer's sites. |
-| SSH keys that partner staff added | Central removes them from the customer's servers. |
+| Open sessions on the customer's sites | A site session that partner staff opened before the link ended runs until it expires, as for a member who is removed from a team. Central refuses new ones. |
 | Servers and sites the partner created | They stay with the customer. The customer team owns everything in it. |
-| History | The link keeps `ended_by`, `ended_on`, and `end_reason`. The activity log keeps every action. |
-| Notification | Central sends an email to the owner of the other team. Connect reads the change with `get_partner_link`. |
+| Billing | Existing invoices keep `partner_team` and their customer lines. If the partner paid, it pays to the end of the month. From the next month the customer pays. |
+| Notification | Central sends the `partner_link_ended` notification, with the reason, to the members with `team:manage_partners` in both teams, by email and in the console. Connect reads the change with `get_partner_customers`. |
+
+## Press migration
+
+Press holds 276 partner teams and 1,387 customer teams that name a partner. 112 of the customer teams are `Paid By Partner`.
+
+1. Register each active Press partner before its customers move, and keep its Press `partner_referral_code` as `partner_code`.
+2. When a customer team moves to Central, the migration creates the Partner Link directly as `Active`, with the `Viewer` role.
+3. Set `payer` to `Partner` when the Press team is `Paid By Partner`. Press already recorded both approvals.
+4. Central does not ask the customer again. The customer can change the role and the payer afterward.
+5. The 87 Press child teams become ordinary teams. Their owner decides whether to keep them or move the servers into a Project.
+
+## Build order
+
+The steps go from the simplest to the hardest. Each step works without the next one.
+
+| Step | Central | Connect |
+|---|---|---|
+| 1. Registration and code | `Team.connect_partner_id`, `Team.partner_code`, the signed registration link, the landing page, `register_partner`, `get_partner_registration` | Already calls both. Store the partner code on Partner. Replace the derived `referral_code`. |
+| 2. Link | `team:manage_partners`, Partner Link with `status` and `reference`, the Add partner dialog with the code only, `get_partner_customers` without `sites`, `end_partner_link`, the Partner and Customers pages and their sidebar items | Replace `request_cloud_link` and `sync_cloud_links` with the deep link and a list sync. Move the link state from Customer Project to Partner Customer. Remove the manual Approve link. Create `Own` customers. Call `end_partner_link` when the partner marks a customer Churned. |
+| 3. Access | `partner:act_on_customers`, the `role` field, the rules in `central/iam.py`, the team switcher, the activity log, the effects of ending a link, Remove from Partner Program | Show the role. |
+| 4. Reads for Connect | `servers`, `mrr`, and `currency` in `get_partner_customers` | Replace the demo data in `central_billing.py` with the synced servers and MRR. |
+| 5. Attribution and partner pays | `Invoice.partner_team`, `get_partner_invoices`, the `payer` field and its effective dates, the customer lines on the partner's invoice, pricing in the payer's currency | Show who pays. Replace the demo Invoicing page. Compute the tier from Central and Press invoices together. |
+| 6. Press migration | The import of partners and links | The import of Partner Customer rows |
+
+Before step 5, read `central/billing/revenue/invoicing/` to confirm how an invoice gets its currency and tax. When the customer and the partner differ in currency or tax regime, the invoice must use the payer's Billing Profile. This is not verified.
+
+## Tier
+
+Connect owns the tier. Until Press closes, Connect reads paid invoices from both clouds, stores one row per source and invoice, and computes the tier from their sum. The basis is paid invoices, after discount, before tax. When Press closes, Connect removes that source.
+
+## Open decisions
+
+- A tier discount on the partner's invoice, as in v1. It is a separate issue. It must be configurable, so that the discount on v1 and v2 can stop at different times.
 
 ## Not in this contract
 
-- Billing through the partner. The partner pays the customer's invoices. This needs its own billing design.
-- Promotional credits for partner customers.
+- A spending limit or budget for a customer that the partner pays for.
+- Commission, referral rewards, and promotional credits.
+- Local payment partners (Mpesa). They stay on Press.
+- Leads, certificates, audits, and partner onboarding data. They move from Press and frappe.io to Connect and never reach Central.
 - A push from Central to Connect. If Central must push later, Central signs the request and Connect checks it against Central's JWKS.
 
 ## Changes to this contract

@@ -24,6 +24,7 @@ class CentralSettings(Document):
 		articles_enabled: DF.Check
 		central_id: DF.Int
 		common_site_config: DF.JSON | None
+		connect_url: DF.Data | None
 		disk_iops: DF.Int
 		disk_throughput_mibps: DF.Int
 		enable_addons: DF.Check
@@ -31,6 +32,7 @@ class CentralSettings(Document):
 		enable_firewall: DF.Check
 		enable_llm_service: DF.Check
 		enable_object_storage_service: DF.Check
+		enable_partners: DF.Check
 		enable_pdf_print_service: DF.Check
 		enable_public_ipv4: DF.Check
 		enable_public_ipv6: DF.Check
@@ -118,6 +120,7 @@ class CentralSettings(Document):
 			"public_ipv4": bool(self.enable_public_ipv4),
 			"public_ipv6": bool(self.enable_public_ipv6),
 			"firewall": bool(self.enable_firewall),
+			"partners": bool(self.enable_partners),
 		}
 
 	def help_links(self) -> dict[str, str | bool | None]:

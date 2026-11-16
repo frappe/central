@@ -1,6 +1,7 @@
 import type { Component } from 'vue'
 import BillingStep from '@/components/onboarding/BillingStep.vue'
 import InviteStep from '@/components/onboarding/InviteStep.vue'
+import PartnerStep from '@/components/onboarding/PartnerStep.vue'
 import StartStep from '@/components/onboarding/StartStep.vue'
 import TeamStep from '@/components/onboarding/TeamStep.vue'
 import type { OnboardingStepKey } from '@/types/api'
@@ -16,8 +17,9 @@ export interface OnboardingStepHandle {
 }
 
 export interface OnboardingStep {
-	/** `team` is shown to a user with no team. The others are rows on the team. */
-	key: 'team' | OnboardingStepKey
+	/** `team` is shown to a user with no team, and `partner` to one a Frappe Connect link
+	 *  brought here. The others are rows on the team. */
+	key: 'team' | 'partner' | OnboardingStepKey
 	title: string
 	description: string
 	component: Component
@@ -33,6 +35,14 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
 			'A team holds your servers, sites and billing. You are its owner.',
 		component: TeamStep,
 		isRequired: true,
+	},
+	{
+		key: 'partner',
+		title: 'Add your partner',
+		description:
+			'You came from Frappe Connect to work with this partner. Add them to your team.',
+		component: PartnerStep,
+		isRequired: false,
 	},
 	{
 		key: 'invite',

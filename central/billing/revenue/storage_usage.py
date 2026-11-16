@@ -7,7 +7,7 @@ from collections import defaultdict
 
 import frappe
 
-from central.billing.doctype.billing_profile.billing_profile import get_team_currency
+from central.billing.doctype.billing_profile.billing_profile import get_pricing_currency
 from central.billing.revenue.metering import ingest_rollup, live_rollup
 
 # Cargo counts and caps buckets in GiB; billing names the unit GB.
@@ -53,7 +53,7 @@ def record_subscription_usage(subscription: str, buckets: list, today: datetime.
 			"meter_type": "Gauge",
 			"team": sub.team,
 			"cluster": sub.cluster,
-			"currency": get_team_currency(sub.team),
+			"currency": get_pricing_currency(sub.team),
 			"period_start": month_start,
 			"period_end": today.replace(day=days_in_month),
 			"quantity": gib * new_days / days_in_month,
