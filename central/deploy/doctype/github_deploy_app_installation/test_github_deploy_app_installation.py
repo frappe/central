@@ -7,11 +7,11 @@ import frappe
 from frappe.model.document import Document
 from frappe.tests import IntegrationTestCase
 
-from central.infrastructure.doctype.github_connection.test_github_connection import make_team
-from central.infrastructure.doctype.github_deploy_app_installation.github_deploy_app_installation import (
+from central.deploy.doctype.github_deploy_app_installation.github_deploy_app_installation import (
 	GitHubDeployAppInstallation,
 	state_key,
 )
+from central.infrastructure.doctype.github_connection.test_github_connection import make_team
 from central.tests.test_iam import ensure_user
 
 INSTALLATION = {"installation_id": "101", "account": "octo", "account_type": "Organization"}
@@ -38,7 +38,7 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 		self.other_team = make_team("GitHub Deploy Other Team", self.owner)
 
 		app = patch(
-			"central.infrastructure.doctype.github_deploy_app_installation.github_deploy_app_installation.GitHubDeployApp"
+			"central.deploy.doctype.github_deploy_app_installation.github_deploy_app_installation.GitHubDeployApp"
 		).start()
 		self.addCleanup(patch.stopall)
 		app.return_value.get_user_installations.return_value = [INSTALLATION]

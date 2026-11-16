@@ -1,17 +1,18 @@
 import hashlib
 import hmac
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.integrations.github_deploy import webhook
-from central.infrastructure.doctype.github_connection.test_github_connection import make_team
-from central.infrastructure.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
+from central.deploy.api import webhook
+from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
 	make_installation,
 )
-from central.integrations.github import GitHubApp, GitHubDeployApp
+from central.deploy.github import GitHubDeployApp
+from central.infrastructure.doctype.github_connection.test_github_connection import make_team
+from central.integrations.github import GitHubApp
 from central.tests.test_iam import ensure_user
 
 PUSH = {
@@ -53,52 +54,52 @@ class IntegrationTestGitHubDeploy(IntegrationTestCase):
 		with (
 			patch("frappe.request", MagicMock(get_data=MagicMock(return_value=body))),
 			patch("frappe.get_request_header", side_effect=headers.get),
-			patch("frappe.logger") as logger,
+			patch("central.deploy.api.DeployRequest.queue") as queue,
 		):
 			webhook()
-		return logger.return_value.info
+		return queue
 
 	def test_the_deploy_app_reads_its_own_settings(self):
 		app = GitHubDeployApp()
 		self.assertEqual((app.app_id, app.client_id, app.slug), ("2", "deploy-client", "deploy-app"))
 		self.assertTrue(GitHubDeployApp.is_configured())
 		self.assertFalse(GitHubApp.is_configured())
-		self.assertTrue(GitHubDeployApp.callback_url().endswith("github_deploy.oauth_callback"))
+		self.assertTrue(
+			GitHubDeployApp.callback_url().endswith("/api/method/central.deploy.api.oauth_callback")
+		)
 
-	def test_a_push_is_logged_once_per_delivery(self):
+	def test_a_delivery_is_handled_once(self):
+		self.make_app()
 		delivery = frappe.generate_hash()
-		log = self.deliver(delivery)
-		log.assert_called_once()
-		self.assertEqual(log.call_args.args[0]["repository"], "octo/app")
-		self.assertEqual(log.call_args.args[0]["ref"], "refs/heads/main")
-
+		self.deliver(delivery).assert_called()
 		self.deliver(delivery).assert_not_called()
 
 	def test_a_push_signed_with_another_secret_is_refused(self):
 		with self.assertRaises(frappe.AuthenticationError):
 			self.deliver(frappe.generate_hash(), secret=b"pilot-secret")
 
-	def test_a_push_to_a_deployed_branch_names_its_apps(self):
+	def make_app(self) -> str:
 		team = make_team("GitHub Deploy Push Team", ensure_user("github.deploy.push@example.test"))
-		app = frappe.get_doc(
-			{
-				"doctype": "Deploy App",
-				"team": team,
-				"installation": make_installation(team).name,
-				"repository": "octo/app",
-				"repository_id": "11",
-				"branch": "main",
-			}
-		).insert()
-
-		log = self.deliver(frappe.generate_hash())
-		self.assertEqual(log.call_args.args[0]["deploy_apps"], [app.name])
-
-		tag = {**PUSH, "ref": "refs/tags/main"}
-		self.assertEqual(
-			self.deliver(frappe.generate_hash(), payload=tag).call_args.args[0]["deploy_apps"], []
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Deploy App",
+					"team": team,
+					"installation": make_installation(team).name,
+					"repository": "octo/app",
+					"repository_id": "11",
+					"branch": "main",
+				}
+			)
+			.insert()
+			.name
 		)
-		deleted = {**PUSH, "deleted": True}
-		self.assertEqual(
-			self.deliver(frappe.generate_hash(), payload=deleted).call_args.args[0]["deploy_apps"], []
-		)
+
+	def test_a_push_to_a_deployed_branch_queues_its_apps(self):
+		app = self.make_app()
+		delivery = frappe.generate_hash()
+		# Rows from the class's other tests may match the same push too.
+		self.assertIn(call(app, "a" * 40, delivery), self.deliver(delivery).call_args_list)
+
+		self.deliver(frappe.generate_hash(), payload={**PUSH, "ref": "refs/tags/main"}).assert_not_called()
+		self.deliver(frappe.generate_hash(), payload={**PUSH, "deleted": True}).assert_not_called()

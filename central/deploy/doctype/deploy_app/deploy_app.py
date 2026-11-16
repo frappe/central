@@ -7,7 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.integrations.github import GitHubDeployApp
+from central.deploy.github import GitHubDeployApp
 
 
 class DeployApp(Document):
@@ -23,10 +23,12 @@ class DeployApp(Document):
 
 		branch: DF.Data
 		installation: DF.Link
+		region: DF.Link | None
 		repository: DF.Data
 		repository_id: DF.Data
 		status: DF.Literal["Active", "Disabled"]
 		team: DF.Link
+		virtual_machine: DF.Link | None
 	# end: auto-generated types
 
 	@staticmethod
