@@ -11,7 +11,7 @@ from central.billing.gateways.base import PaymentResult
 from central.billing.payments import payments
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import ensure_team
+from central.billing.tests.utils import complete_billing_profile, ensure_team
 
 TEAM = "team-cards"
 GATEWAY = "Stripe"
@@ -224,6 +224,21 @@ class TestDefaultAndDelete(CardTestBase):
 		self.assertTrue(frappe.db.get_value("Payment Method", second, "is_default"))
 		defaults = frappe.get_all("Payment Method", filters={"team": TEAM, "is_default": 1}, pluck="name")
 		self.assertEqual(len(defaults), 1)
+
+	def test_promoting_a_method_keeps_how_the_team_pays(self):
+		complete_billing_profile(TEAM, currency="USD")
+		self.add_active_card()
+		second = self.add_active_card(last4="5555")
+		for mode in ("Prepaid", "Manual Checkout"):
+			frappe.db.set_value("Billing Profile", TEAM, "collection_mode", mode)
+			payments.set_default_payment_method(second)
+			self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), mode)
+
+	def test_adding_a_method_keeps_manual_checkout(self):
+		complete_billing_profile(TEAM, currency="USD")
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Manual Checkout")
+		self.add_active_card()
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Manual Checkout")
 
 	def test_non_active_method_cannot_be_default(self):
 		with stub_adapter(validate=False):

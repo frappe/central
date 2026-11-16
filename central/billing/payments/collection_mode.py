@@ -42,6 +42,10 @@ RETURNABLE = ("Auto Charge",)
 # The modes that hold an off-session debit back (`is_debit_allowed`).
 DEBIT_HELD_MODES = ("Manual Checkout", "Action Required")
 
+# What the customer sees. Prepaid and Auto Charge collect the same way (wallet first,
+# then the saved methods), so both read as one choice.
+CHOICE_OF_MODE = {"Prepaid": "Automatic", "Auto Charge": "Automatic", "Manual Checkout": "Manual"}
+
 
 def team_rail(team: str) -> tuple[str | None, str | None]:
 	"""The (gateway, currency) a team's bill would be pulled through.
@@ -230,7 +234,21 @@ def status(team: str) -> dict:
 		"threshold": shown_limit(team, p.collection_action_reason),
 		"choices": list(CUSTOMER_CHOOSABLE),
 		"can_return_to_auto": _has_chargeable_method(team),
+		"choice": CHOICE_OF_MODE.get(mode),
+		"charged_method": _first_method_label(team),
 	}
+
+
+def _first_method_label(team: str) -> str | None:
+	"""The method charged first when the wallet is short, as the Payments page names it."""
+	first = frappe.db.get_value(
+		"Payment Method",
+		{"team": team, "status": "Active"},
+		["display_label", "method_type"],
+		order_by="priority asc, creation asc",
+		as_dict=True,
+	)
+	return (first.display_label or first.method_type) if first else None
 
 
 def shown_limit(team: str, reason: str | None) -> float | None:

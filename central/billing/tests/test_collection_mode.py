@@ -131,6 +131,22 @@ class TestCollectionMode(IntegrationTestCase):
 		self.assertEqual(st["collection_mode"], "Prepaid")
 		self.assertFalse(st["action_required"])
 
+	def test_prepaid_and_auto_charge_read_as_one_choice(self):
+		for mode, choice in (
+			("Prepaid", "Automatic"),
+			("Auto Charge", "Automatic"),
+			("Manual Checkout", "Manual"),
+		):
+			_set_mode(TEAM, mode)
+			self.assertEqual(collection_mode.status(TEAM)["choice"], choice)
+		_set_mode(TEAM, "Action Required", reason="mandate_failed")
+		self.assertIsNone(collection_mode.status(TEAM)["choice"])
+
+	def test_status_names_the_method_charged_first(self):
+		self.assertEqual(collection_mode.status(TEAM)["charged_method"], "UPI Autopay")
+		frappe.db.delete("Payment Method", {"team": TEAM})
+		self.assertIsNone(collection_mode.status(TEAM)["charged_method"])
+
 	def test_returning_to_auto_needs_something_to_charge(self):
 		"""Auto Charge means "we debit something". Without a method it is a mode whose
 		first invoice would discover the gap for the customer."""

@@ -397,6 +397,8 @@ class TestTeamScoping(CustomerDataBase):
 				dashboard.save_billing_settings(team=team.name, min_balance=5000)
 			with self.assertRaises(frappe.PermissionError):
 				dashboard.create_topup_order(team=team.name, amount=100)
+			with self.assertRaises(frappe.PermissionError):
+				dashboard.set_collection_mode(team=team.name, mode="Manual Checkout")
 		finally:
 			frappe.set_user("Administrator")
 
