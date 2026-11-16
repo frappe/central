@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -8,7 +8,7 @@ from frappe.tests import IntegrationTestCase
 from central.api.support import create_ticket, find_related, get_ticket_options, list_tickets
 from central.iam import clear_grants_cache
 from central.integrations.helpdesk import HelpdeskUnavailable
-from central.support import team_context_line
+from central.support import backfill_helpdesk_customers, get_customer_contacts, team_context_line
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_server
 
@@ -38,6 +38,9 @@ class SupportTestCase(IntegrationTestCase):
 			patch("central.api.support.HelpdeskClient")
 		).from_settings.return_value
 		self.helpdesk.create_ticket.return_value = {"name": "HD-1", "url": "https://support.test/help"}
+		self.customer_helpdesk = self.enterContext(
+			patch("central.support.HelpdeskClient")
+		).from_settings.return_value
 		self.own_ticket = {"name": "HD-9", "raised_by": self.owner, "url": "https://support.test/help/HD-9"}
 
 	def _team(self, label: str, roles: dict[str, str]) -> str:
@@ -53,6 +56,11 @@ class SupportTestCase(IntegrationTestCase):
 		)
 
 		return team.insert().name
+
+	def _add_member(self, user: str, role: str, status: str = "Active") -> None:
+		team = frappe.get_doc("Team", self.team)
+		team.append("members", {"user": user, "role": role, "status": status})
+		team.save()
 
 	def _grant_server(self, user: str, server: str) -> None:
 		"""Make `user` a Developer on `server` only."""
@@ -153,6 +161,8 @@ class TestSupportTickets(SupportTestCase):
 		kwargs = self.helpdesk.create_ticket.call_args.kwargs
 		self.assertEqual(kwargs["subject"], f"[Server · {SERVER_ISSUE}] Slow at noon")
 		self.assertEqual(kwargs["raised_by"], self.owner)
+		self.assertEqual(kwargs["customer"], self.team)
+		self.assertEqual(self.customer_helpdesk.sync_customer.call_args.args[0], self.team)
 		self.assertIn("It lags &lt;badly&gt;<br>since today.", kwargs["description"])
 		self.assertIn(f"Team: {self.team}<br>", kwargs["description"])
 		self.assertIn(f"User: {self.owner}<br>", kwargs["description"])
@@ -213,18 +223,82 @@ class TestSupportTickets(SupportTestCase):
 
 		self.helpdesk.list_open_tickets.assert_called_once_with(team=self.team)
 
-	def test_only_the_tickets_the_caller_raised_link_to_the_portal(self):
-		mate = {"name": "HD-8", "raised_by": "mate@example.test", "url": "https://support.test/help/HD-8"}
-		mine = self.own_ticket | {"raised_by": self.owner.upper()}
+	def test_a_teammates_ticket_does_not_link_to_the_portal(self):
+		developer = ensure_user("support.developer@example.test")
+		self._add_member(developer, "Developer")
+		mate = {"name": "HD-8", "raised_by": self.owner, "url": "https://support.test/help/HD-8"}
+		mine = self.own_ticket | {"raised_by": developer.upper()}
 		self.helpdesk.list_open_tickets.return_value = [mine, mate]
 		self.helpdesk.list_related_tickets.return_value = [mine, mate]
-		frappe.set_user(self.owner)
 
+		frappe.set_user(developer)
 		for tickets in (list_tickets(self.team), find_related(self.team, "broken mail")["tickets"]):
 			self.assertEqual([ticket["url"] for ticket in tickets], [mine["url"], None])
 
 		frappe.set_user("Administrator")
 		self.assertEqual([ticket["url"] for ticket in list_tickets(self.team)], [mine["url"], mate["url"]])
+
+	def test_customer_contacts_name_active_members_and_their_manager_flag(self):
+		developer = ensure_user("support.developer@example.test")
+		invited = ensure_user("support.invited@example.test")
+		self._add_member(developer, "Developer")
+		self._add_member(invited, "Developer", status="Invited")
+
+		contacts = {contact["email"]: contact for contact in get_customer_contacts(self.team)}
+
+		self.assertTrue(contacts[self.owner]["is_manager"])
+		self.assertEqual(
+			contacts[self.owner]["full_name"], frappe.db.get_value("User", self.owner, "full_name")
+		)
+		self.assertFalse(contacts[developer]["is_manager"])
+		self.assertNotIn(invited, contacts)
+
+	def test_a_member_change_enqueues_one_helpdesk_customer_sync(self):
+		member = ensure_user("support.member@example.test")
+		self.enterContext(patch("central.support.is_helpdesk_configured", return_value=True))
+		enqueue = self.enterContext(patch("frappe.enqueue"))
+
+		self._add_member(member, "Developer")
+
+		enqueue.assert_called_once()
+		self.assertEqual(enqueue.call_args.args[0], "central.support.sync_helpdesk_customer")
+		self.assertEqual(enqueue.call_args.kwargs["team"], self.team)
+
+	def test_a_team_save_without_a_member_change_enqueues_no_sync(self):
+		self.enterContext(patch("central.support.is_helpdesk_configured", return_value=True))
+		enqueue = self.enterContext(patch("frappe.enqueue"))
+		team = frappe.get_doc("Team", self.team)
+		team.team_name = f"Renamed {self.suffix}"
+
+		team.save()
+
+		enqueue.assert_not_called()
+
+	def _failed_sync(self, team: str, contacts: list[dict]) -> None:
+		if team == self.team:
+			raise RuntimeError("Helpdesk is down")
+
+	def test_the_backfill_syncs_every_team_and_assigns_the_marked_tickets(self):
+		self.enterContext(patch("central.support.is_helpdesk_configured", return_value=True))
+		log_error = self.enterContext(patch("frappe.log_error"))
+		self.customer_helpdesk.sync_customer.side_effect = self._failed_sync
+		self.customer_helpdesk.list_marked_tickets.return_value = [
+			{"name": "HD-1", "description": team_context_line(self.team)},
+			{"name": "HD-2", "description": team_context_line(self.team)},
+			{"name": "HD-3", "description": team_context_line(self.other_team)},
+			{"name": "HD-4", "description": team_context_line("TEAM-404")},
+		]
+
+		backfill_helpdesk_customers()
+
+		synced = [item.args[0] for item in self.customer_helpdesk.sync_customer.call_args_list]
+		self.assertIn(self.team, synced)
+		self.assertIn(self.other_team, synced)
+		self.customer_helpdesk.set_ticket_customer.assert_has_calls(
+			[call(["HD-1", "HD-2"], self.team), call(["HD-3"], self.other_team)]
+		)
+		self.assertEqual(self.customer_helpdesk.set_ticket_customer.call_count, 2)
+		self.assertEqual(log_error.call_args.kwargs["title"], "Helpdesk customer backfill failed")
 
 	def test_a_suspended_team_member_can_open_and_list_tickets(self):
 		team = frappe.get_doc("Team", self.team)

@@ -28,11 +28,13 @@ def create_ticket(
 	support.validate_ticket(category, issue_type, description)
 	server_row = support.get_server(team, server) if server else None
 	site_row = support.get_site(team, site) if site else None
+	support.sync_helpdesk_customer(team)
 
 	return HelpdeskClient.from_settings().create_ticket(
 		subject=support.build_subject(category, issue_type, subject),
 		description=support.build_description(description, team, category, issue_type, server_row, site_row),
 		raised_by=support.get_user_email(),
+		customer=team,
 		priority=support.resolve_priority(issue_type),
 	)
 

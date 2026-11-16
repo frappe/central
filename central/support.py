@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import html
+import re
 
 import frappe
 from frappe import _
 
-from central.iam import user_has_operator_bypass
+from central.iam import can, get_active_team_member_users, user_has_operator_bypass
+from central.integrations.helpdesk import HelpdeskClient
 
 SUPPORT_CATEGORIES: dict[str, tuple[str, ...]] = {
 	"server": (
@@ -59,15 +61,32 @@ SERVER_FIELDS = ("name", "resource_id", "atlas_vm_id", "title", "region", "statu
 SITE_FIELDS = ("name", "subdomain", "server")
 
 
+TEAM_CONTEXT_FORMAT = "<hr><p><strong>Context</strong><br>Team: {0}<br>"
+TEAM_CONTEXT_PREFIX, TEAM_CONTEXT_SUFFIX = TEAM_CONTEXT_FORMAT.split("{0}")
+TEAM_CONTEXT_PATTERN = re.compile(f"{re.escape(TEAM_CONTEXT_PREFIX)}([^<]+){re.escape(TEAM_CONTEXT_SUFFIX)}")
+
+
 def team_context_line(team: str) -> str:
-	"""The marker for a ticket's team, and the only text a list filters on.
-	Central writes it after it escapes the customer's text, so a description cannot fake it."""
-	return f"<hr><p><strong>Context</strong><br>Team: {html.escape(team)}<br>"
+	"""The marker for a ticket's team. It names the team for an agent and lets the one-time
+	backfill find a ticket's team. Central escapes the customer's text first, so it cannot be faked."""
+	return TEAM_CONTEXT_FORMAT.format(html.escape(team))
+
+
+def ticket_team(description: str) -> str | None:
+	"""The team a ticket was opened for, read from the line that `team_context_line` writes."""
+	match = TEAM_CONTEXT_PATTERN.search(description)
+
+	return html.unescape(match.group(1)) if match else None
 
 
 def is_articles_enabled() -> bool:
 	"""Help articles stay hidden until an operator enables them, because a new deployment has none."""
 	return bool(frappe.db.get_single_value("Central Settings", "articles_enabled"))
+
+
+def is_helpdesk_configured() -> bool:
+	"""Whether Central Settings holds the Helpdesk URL, key and secret, the same check the console makes."""
+	return bool(frappe.get_cached_doc("Central Settings").help_links()["in_app_tickets"])
 
 
 def get_ticket_options() -> list[dict]:
@@ -99,6 +118,80 @@ def keep_own_ticket_links(tickets: list[dict]) -> list[dict]:
 		ticket if (ticket.get("raised_by") or "").lower() == email else ticket | {"url": None}
 		for ticket in tickets
 	]
+
+
+def get_customer_contacts(team: str) -> list[dict]:
+	"""The Active members of `team` as Helpdesk customer contacts, one per user.
+	A member who manages the team is a Helpdesk Customer Manager."""
+	users = get_active_team_member_users(team)
+	if not users:
+		return []
+
+	# Runs as the system in a background job, so the caller's User permissions must not apply.
+	rows = frappe.get_all("User", filters={"name": ["in", users]}, fields=["name", "email", "full_name"])
+	details = {row.name: row for row in rows}
+
+	return [
+		{
+			"email": details[user].email,
+			"full_name": details[user].full_name or "",
+			"is_manager": can(user, team, "team:manage_members"),
+		}
+		for user in users
+		if details.get(user) and details[user].email
+	]
+
+
+def sync_helpdesk_customer(team: str) -> None:
+	"""Copy `team` and its Active members to Helpdesk as a customer and its contacts."""
+	HelpdeskClient.from_settings().sync_customer(team, get_customer_contacts(team))
+
+
+def enqueue_helpdesk_customer_sync(team) -> None:
+	"""Queue a Helpdesk customer sync, because a new team and a member change both alter its contacts."""
+	if not is_helpdesk_configured() or not team.has_member_change():
+		return
+
+	frappe.enqueue(
+		"central.support.sync_helpdesk_customer",
+		team=team.name,
+		enqueue_after_commit=True,
+		job_id=f"helpdesk_customer::{team.name}",
+		deduplicate=True,
+	)
+
+
+def backfill_helpdesk_customers() -> None:
+	"""Make every Team a Helpdesk customer, then point the tickets opened before the customer model
+	at their team. One team's failure is logged and must not stop the rest."""
+	if not is_helpdesk_configured():
+		return
+
+	teams = frappe.get_all("Team", pluck="name")
+	for team in teams:
+		try:
+			sync_helpdesk_customer(team)
+		except Exception as error:
+			frappe.log_error(title="Helpdesk customer backfill failed", message=f"{team}: {error}")
+
+	assign_marked_tickets(teams)
+
+
+def assign_marked_tickets(teams: list[str]) -> None:
+	"""Give each ticket without a customer the team its marker names, in one call per team."""
+	client = HelpdeskClient.from_settings()
+	known_teams = set(teams)
+	tickets_by_team: dict[str, list[str]] = {}
+	for ticket in client.list_marked_tickets():
+		team = ticket_team(ticket.get("description") or "")
+		if team in known_teams:
+			tickets_by_team.setdefault(team, []).append(ticket["name"])
+
+	for team, tickets in tickets_by_team.items():
+		try:
+			client.set_ticket_customer(tickets, team)
+		except Exception as error:
+			frappe.log_error(title="Helpdesk customer backfill failed", message=f"{team}: {error}")
 
 
 def get_user_email() -> str:

@@ -9,7 +9,6 @@ from frappe import _
 from frappe.utils import strip_html_tags
 
 from central.iam import user_has_operator_bypass
-from central.support import team_context_line
 
 # Connect, read. A search answers while the customer types, so a late answer is useless.
 SEARCH_TIMEOUT = (3, 5)
@@ -51,7 +50,8 @@ class HelpdeskRequestFailed(frappe.ValidationError):
 class HelpdeskClient:
 	"""Calls a Frappe Helpdesk site's REST API as Central.
 	Central creates and lists a team's tickets, and Helpdesk owns the tickets and the portal.
-	A ticket's team is written into its description, which is how a list is narrowed to one team."""
+	A team is an HD Customer named by the team id, and its Active members are that customer's
+	Contacts, so Helpdesk lists a team's tickets by customer."""
 
 	def __init__(self, base_url: str, api_key: str, api_secret: str):
 		self.base_url = base_url.rstrip("/")
@@ -77,6 +77,7 @@ class HelpdeskClient:
 		subject: str,
 		description: str,
 		raised_by: str,
+		customer: str,
 		priority: str | None = None,
 	) -> dict:
 		"""Open a ticket in the customer portal on behalf of `raised_by`.
@@ -86,6 +87,7 @@ class HelpdeskClient:
 			"subject": subject,
 			"description": description,
 			"raised_by": raised_by,
+			"customer": customer,
 			"via_customer_portal": 1,
 			"utm_source": "central",
 			"entry_point": "External",
@@ -104,6 +106,74 @@ class HelpdeskClient:
 			"url": self.ticket_portal_url(ticket["name"]),
 		}
 
+	def sync_customer(self, team: str, contacts: list[dict]) -> None:
+		"""Make `team` an HD Customer whose Contacts are exactly `contacts`, in their order."""
+		if not self.call("frappe.client.get_list", doctype="HD Customer", filters={"name": team}):
+			self.call(
+				"frappe.client.insert",
+				timeout=WRITE_TIMEOUT,
+				doc={"doctype": "HD Customer", "customer_name": team},
+			)
+
+		contact_names = self.ensure_contacts(contacts)
+		rows = [
+			{
+				"contact_name": contact_names[contact["email"].lower()],
+				"is_manager": 1 if contact["is_manager"] else 0,
+			}
+			for contact in contacts
+		]
+		self.call(
+			"frappe.client.set_value",
+			timeout=WRITE_TIMEOUT,
+			doctype="HD Customer",
+			name=team,
+			fieldname={"contacts": rows},
+		)
+
+	def ensure_contacts(self, contacts: list[dict]) -> dict[str, str]:
+		"""The Contact name for each email in `contacts`, creating the missing Contacts in one call."""
+		emails = list(dict.fromkeys(contact["email"].lower() for contact in contacts))
+		if not emails:
+			return {}
+
+		names = self.contacts_by_email(emails)
+		missing = [contact for contact in contacts if contact["email"].lower() not in names]
+		if not missing:
+			return names
+
+		created = self.call(
+			"frappe.client.insert_many",
+			timeout=WRITE_TIMEOUT,
+			docs=self.contact_documents(missing),
+		)
+		for contact, name in zip(missing, created, strict=True):
+			names[contact["email"].lower()] = name
+
+		return names
+
+	def contacts_by_email(self, emails: list[str]) -> dict[str, str]:
+		"""The name of each existing Contact in `emails`, keyed by lower-cased email."""
+		existing = self.call(
+			"frappe.client.get_list",
+			doctype="Contact",
+			filters={"email_id": ["in", emails]},
+			fields=["name", "email_id"],
+		)
+
+		return {row["email_id"].lower(): row["name"] for row in existing or []}
+
+	def contact_documents(self, contacts: list[dict]) -> list[dict]:
+		"""One Contact document per item of `contacts`, for one `insert_many` call."""
+		return [
+			{
+				"doctype": "Contact",
+				"first_name": contact["full_name"] or contact["email"],
+				"email_ids": [{"email_id": contact["email"], "is_primary": 1}],
+			}
+			for contact in contacts
+		]
+
 	def get_service_user(self) -> str:
 		"""The Helpdesk user that Central's API key signs in as. It owns every ticket Central opens.
 		Cached, because the key decides it and a list must not pay one more call each time."""
@@ -115,23 +185,17 @@ class HelpdeskClient:
 
 		return user
 
-	def get_team_filters(self, team: str) -> list[list]:
-		"""Tickets that Central opened for `team`. Anyone can email Helpdesk a description that
-		copies the team line, so the ticket must also be owned by Central's service user."""
-		return [
-			["HD Ticket", "description", "like", f"%{team_context_line(team)}%"],
-			["HD Ticket", "owner", "=", self.get_service_user()],
-		]
-
 	def list_open_tickets(self, team: str) -> list[dict]:
-		"""The newest unresolved tickets that carry `team` in their context, each with its portal `url`.
+		"""The newest unresolved tickets of `team`, each with its portal `url`.
 		A ticket waiting on the customer is Paused, not Resolved, and is still open."""
-		filters = [["HD Ticket", "status_category", "not in", ["Resolved"]], *self.get_team_filters(team)]
 		rows = self.call(
 			"frappe.client.get_list",
 			doctype="HD Ticket",
 			fields=TICKET_FIELDS,
-			filters=filters,
+			filters=[
+				["HD Ticket", "customer", "=", team],
+				["HD Ticket", "status_category", "not in", ["Resolved"]],
+			],
 			order_by="creation desc",
 			limit_page_length=50,
 		)
@@ -197,16 +261,43 @@ class HelpdeskClient:
 		return tickets
 
 	def get_team_tickets(self, team: str) -> dict[str, str | None]:
-		"""Every ticket Central opened for `team`, any status, mapped to the email that raised it."""
+		"""Every ticket of `team`, any status, mapped to the email that raised it."""
 		rows = self.call(
 			"frappe.client.get_list",
 			doctype="HD Ticket",
+			filters=[["HD Ticket", "customer", "=", team]],
 			fields=["name", "raised_by"],
-			filters=self.get_team_filters(team),
 			limit_page_length=TEAM_TICKET_LIMIT,
 		)
 
 		return {row["name"]: row.get("raised_by") for row in rows or []}
+
+	def set_ticket_customer(self, tickets: list[str], customer: str) -> None:
+		"""Point each ticket at `customer`."""
+		for ticket in tickets:
+			self.call(
+				"frappe.client.set_value",
+				timeout=WRITE_TIMEOUT,
+				doctype="HD Ticket",
+				name=ticket,
+				fieldname="customer",
+				value=customer,
+			)
+
+	def list_marked_tickets(self) -> list[dict]:
+		"""The tickets Central opened that have no customer yet, with their descriptions."""
+		rows = self.call(
+			"frappe.client.get_list",
+			doctype="HD Ticket",
+			filters=[
+				["HD Ticket", "owner", "=", self.get_service_user()],
+				["HD Ticket", "customer", "is", "not set"],
+			],
+			fields=["name", "description"],
+			limit_page_length=0,
+		)
+
+		return rows or []
 
 	def search_tickets(self, query: str, names: list[str]) -> list[dict]:
 		"""Helpdesk search rows for `query`, narrowed to the ticket names.

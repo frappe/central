@@ -130,6 +130,7 @@ class Team(TeamLifecycle, Document):
 	def on_update(self) -> None:
 		from central.billing.payments.provisioning import on_team_update
 		from central.infrastructure.doctype.wireguard_device.wireguard_device import remove_departed_devices
+		from central.support import enqueue_helpdesk_customer_sync
 
 		# Team and member-row edits change resolved capabilities; drop the request-cached
 		# grants so later checks in this request see the new state.
@@ -137,6 +138,14 @@ class Team(TeamLifecycle, Document):
 		# A staging-trial team keeps a complete billing profile, so it can create servers.
 		on_team_update(self)
 		remove_departed_devices(self)
+		enqueue_helpdesk_customer_sync(self)
+
+	def has_member_change(self) -> bool:
+		"""Whether this save changes the team's members, including a new team.
+		`has_value_changed` cannot answer for a child table, whose rows compare by identity."""
+		previous = self.get_doc_before_save()
+
+		return not previous or self._members_changed(previous)
 
 	def on_trash(self) -> None:
 		self._require_capability("team:delete")
@@ -164,6 +173,14 @@ class Team(TeamLifecycle, Document):
 		for name in frappe.get_all("WireGuard Device", {"team": self.name}, pluck="name"):
 			# Team deletion already passed team:delete and its on_trash takes the peer off the gateway.
 			frappe.delete_doc("WireGuard Device", name, ignore_permissions=True, force=True)
+
+	@frappe.whitelist()
+	def sync_helpdesk_customer(self) -> None:
+		"""Operator action: copy this team and its Active members to Helpdesk as a customer and its contacts."""
+		from central import support
+
+		frappe.only_for("System Manager")
+		support.sync_helpdesk_customer(self.name)
 
 	# Internal; the HTTP surface is central.api.teams.invite_team_member.
 	def invite_member(
