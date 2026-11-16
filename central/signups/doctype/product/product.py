@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import re
+from urllib.parse import urlsplit
 
 import frappe
 from frappe import _
@@ -13,6 +14,8 @@ PRODUCT_KEY_PATTERN = re.compile(r"[a-z][a-z0-9-]*")
 # A Frappe app's module name, which Cargo writes as the image's app tag.
 # A path on the site itself, never another host.
 LANDING_ROUTE_PATTERN = re.compile(r"/[A-Za-z0-9_/-]*")
+# A path on the site, which can name a whitelisted method such as /api/method/app.module.method.
+CONNECTOR_ROUTE_PATTERN = re.compile(r"/[A-Za-z0-9_./-]*")
 APP_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
 # A Frappe branch as Cargo writes it in the image's frappe_version tag.
 FRAPPE_VERSION_PATTERN = re.compile(r"develop|version-[0-9]+(-hotfix)?")
@@ -41,6 +44,8 @@ class Product(Document):
 		from central.signups.doctype.product_email_note.product_email_note import ProductEmailNote
 		from central.signups.doctype.product_plan_note.product_plan_note import ProductPlanNote
 
+		connector_hosts: DF.SmallText | None
+		connector_route: DF.Data | None
 		email_notes: DF.Table[ProductEmailNote]
 		enabled: DF.Check
 		frappe_version: DF.Data
@@ -79,6 +84,9 @@ class Product(Document):
 		if self.landing_route and not LANDING_ROUTE_PATTERN.fullmatch(self.landing_route):
 			frappe.throw(_("Use a path on the site for the landing route, such as /raven."))
 
+		if self.connector_route and not CONNECTOR_ROUTE_PATTERN.fullmatch(self.connector_route):
+			frappe.throw(_("Use a path on the site for the connector route."))
+
 		self.validate_emails()
 
 		plans = [row.plan for row in self.plan_notes]
@@ -116,6 +124,12 @@ class Product(Document):
 			"notes": [escape_html(part.strip()) for part in note.split("\n\n") if part.strip()],
 			"getting_started_url": escape_html(url) if url else None,
 		}
+
+	def is_connector_return(self, url: str) -> bool:
+		"""A connector sign in returns only over https, to a host this product lists."""
+		parts = urlsplit(url)
+		hosts = (self.connector_hosts or "").split()
+		return bool(self.connector_route) and parts.scheme == "https" and parts.netloc in hosts
 
 	def get_plan_notes(self) -> dict[str, str]:
 		"""The note for each plan, by plan name."""
