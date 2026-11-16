@@ -150,22 +150,19 @@ def _message(rows: list[dict]) -> str | None:
 
 
 def _chart(rows: list[dict]) -> dict | None:
-	if not rows:
-		return None
 	ordered = sorted(rows, key=lambda r: r["day"])
-	return {
-		"data": {
-			"labels": [str(r["day"]) for r in ordered],
-			"datasets": [
-				{
-					"name": _("Delivery p95 seconds"),
-					"values": [r["delivery_p95_seconds"] or 0 for r in ordered],
-				},
-				{"name": _("Processing p95 seconds"), "values": [r["p95_seconds"] or 0 for r in ordered]},
-			],
-		},
-		"type": "line",
-	}
+	# A chart draws an unknown time as 0, so a line is drawn only when every day has a time.
+	datasets = [
+		{"name": name, "values": [r[key] for r in ordered]}
+		for name, key in (
+			(_("Delivery p95 seconds"), "delivery_p95_seconds"),
+			(_("Processing p95 seconds"), "p95_seconds"),
+		)
+		if all(r[key] is not None for r in ordered)
+	]
+	if not (ordered and datasets):
+		return None
+	return {"data": {"labels": [str(r["day"]) for r in ordered], "datasets": datasets}, "type": "line"}
 
 
 def _summary(events: list[dict]) -> list[dict]:

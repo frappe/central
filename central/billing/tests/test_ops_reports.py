@@ -101,6 +101,27 @@ class TestWebhookLag(BillingTestCase):
 		self.assertEqual(rows[0]["failed"], 1)
 		self.assertEqual(rows[0]["repeat_deliveries"], 2)
 
+	def test_the_chart_plots_delivery_only_when_every_day_has_a_time(self):
+		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:02")
+		self._webhook("2026-06-11 10:00:00", "2026-06-11 10:00:03", occurred="2026-06-11 09:58:00")
+		filters = {"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+
+		chart = webhook_lag.execute(filters)[3]
+		self.assertEqual(chart["data"]["labels"], ["2026-06-10", "2026-06-11"])
+		self.assertEqual([d["values"] for d in chart["data"]["datasets"]], [[2.0, 3.0]])
+
+		chart = webhook_lag.execute({**filters, "from_date": "2026-06-11"})[3]
+		self.assertEqual([d["values"] for d in chart["data"]["datasets"]], [[120.0], [3.0]])
+
+	def test_a_day_where_every_event_failed_draws_no_processing_line(self):
+		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:02")
+		self._webhook("2026-06-11 10:00:00", None, status="Failed")
+
+		chart = webhook_lag.execute(
+			{"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)[3]
+		self.assertIsNone(chart)
+
 	def test_an_unprocessed_webhook_has_no_lag_to_report(self):
 		frappe.get_doc(
 			{
