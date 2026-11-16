@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import shlex
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 import frappe
 import httpx
+import yaml
 from atlas_client import AuthenticatedClient
 from atlas_client.api.images import list_images
 from atlas_client.api.vm_actions import resize_virtual_machine, start_virtual_machine, stop_virtual_machine
@@ -13,12 +15,14 @@ from atlas_client.models import CreateVirtualMachinePayload, ListImagesImageType
 from frappe import _
 
 from central.infrastructure.doctype.virtual_machine import firewall
-from central.sso import mint_atlas_token
+from central.sso import central_url, mint_atlas_token
 
 if TYPE_CHECKING:
 	from central.deploy.doctype.deploy_app.deploy_app import DeployApp
 
 DEPLOY_IMAGE_TAG = "purpose:deploy"
+# The deploy agent's systemd units read this. Matches cargo/image_builder/conf/build_agent.
+AGENT_ENV_FILE = "/etc/deploy-agent/agent.env"
 # The most a list route returns in one page.
 PAGE_LIMIT = 100
 
@@ -77,11 +81,23 @@ class DeployMachine:
 			"public_network_throughput_mibps": settings.public_network_throughput_mibps,
 			"firewall": firewall.get_new_server_firewall(True),
 			"tags": self.tags,
+			"user_data": self.user_data,
 		}
 		created = self.call(create_virtual_machine, body=CreateVirtualMachinePayload.from_dict(payload))
 		if not isinstance(created, dict) or not created.get("id"):
 			raise AtlasError(_("Atlas created a VM but returned no ID."))
 		return created["id"]
+
+	@property
+	def user_data(self) -> str:
+		"""Cloud-init that gives the VM's deploy agent where Central is and the app's credential."""
+		env = {
+			"CENTRAL_URL": central_url(),
+			"AGENT_CREDENTIAL": f"{self.app.name}:{self.app.get_password('agent_token')}",
+		}
+		content = "".join(f"{key}={shlex.quote(value)}\n" for key, value in env.items())
+		file = {"path": AGENT_ENV_FILE, "owner": "root:root", "permissions": "0600", "content": content}
+		return "#cloud-config\n" + yaml.safe_dump({"write_files": [file]}, sort_keys=False)
 
 	def get(self, vm_id: str) -> dict:
 		"""The VM as Atlas sees it now, with `current_state`, `compute` and `disk`."""

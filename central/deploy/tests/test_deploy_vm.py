@@ -2,9 +2,9 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 import httpx
+import yaml
 from frappe.tests import IntegrationTestCase
 
-from central.deploy.agent import DeployAgent
 from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
 from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
 	make_installation,
@@ -130,21 +130,6 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 			self.request.resize_virtual_machine(name)
 		self.machine.stop.assert_not_called()
 
-	def test_the_agent_is_called_on_the_mesh_address_with_a_central_token(self):
-		server = MagicMock(ipv6_address="fd00::7")
-		server.name = "server-deploy-x"
-		with (
-			patch("central.deploy.agent.mint_deploy_agent_token", return_value="token") as mint,
-			patch("central.deploy.agent.requests.request") as request,
-		):
-			request.return_value = MagicMock(ok=True, json=MagicMock(return_value={"build_id": "b1"}))
-			self.assertEqual(DeployAgent(server).start_build({"commit": "a" * 40}), {"build_id": "b1"})
-
-		mint.assert_called_once_with("server-deploy-x")
-		method, url = request.call_args.args
-		self.assertEqual((method, url), ("POST", "http://[fd00::7]:7070/builds"))
-		self.assertEqual(request.call_args.kwargs["headers"], {"Authorization": "Bearer token"})
-
 
 class IntegrationTestDeployMachine(IntegrationTestCase):
 	def setUp(self):
@@ -178,6 +163,18 @@ class IntegrationTestDeployMachine(IntegrationTestCase):
 		request = self.request.call_args.kwargs
 		self.assertEqual(request["params"]["tag"], "purpose:deploy,deploy_app:deploy-app-1")
 		self.assertEqual(request["headers"]["X-Tenant-ID"], str(TENANT_ID))
+
+	def test_the_user_data_gives_the_agent_central_and_its_credential(self):
+		self.machine.app = MagicMock(get_password=MagicMock(return_value="secret"))
+		self.machine.app.name = "deploy-app-1"
+		with patch("central.deploy.virtual_machine.central_url", return_value="https://central.test"):
+			config = yaml.safe_load(self.machine.user_data)
+
+		(file,) = config["write_files"]
+		self.assertEqual((file["path"], file["permissions"]), ("/etc/deploy-agent/agent.env", "0600"))
+		self.assertEqual(
+			file["content"], "CENTRAL_URL=https://central.test\nAGENT_CREDENTIAL=deploy-app-1:secret\n"
+		)
 
 	def test_a_failed_call_raises_atlas_error(self):
 		self.answer(503, {"error": {"message": "busy"}})

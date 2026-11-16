@@ -12,7 +12,6 @@ from frappe import _
 from frappe.utils import now_datetime, time_diff_in_seconds
 from redis.exceptions import LockError
 
-from central.deploy.agent import DeployAgent, DeployAgentError
 from central.deploy.config import CONFIG_FILE, MACHINE_LIMITS, find_containerfile, get_machine_specs
 from central.deploy.github import GitHubDeployApp
 from central.deploy.virtual_machine import DeployMachine
@@ -29,10 +28,20 @@ if TYPE_CHECKING:
 SUPERSEDABLE_STATES = ("Queued", "Validating", "Provisioning", "Building")
 # Long enough for Atlas to answer one create; another worker skips the app meanwhile.
 VM_LOCK_SECONDS = 5 * 60
+# The agent reports while it builds; a build that runs longer fails the deploy.
+BUILD_TIMEOUT_SECONDS = 60 * 60
 
 
 class DeploySupersededError(frappe.ValidationError):
 	"""A newer push replaced this deploy while it ran."""
+
+
+class DeployBuildError(frappe.ValidationError):
+	"""The deploy agent failed the build."""
+
+
+class DeployTimeoutError(frappe.ValidationError):
+	"""A step waited longer than it may."""
 
 
 class DeployRequest(PipelineBuilder):
@@ -46,7 +55,8 @@ class DeployRequest(PipelineBuilder):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		agent_build_id: DF.Data | None
+		build_log: DF.Code | None
+		build_status: DF.Literal["", "Running", "Succeeded", "Failed"]
 		commit: DF.Data
 		cpu_millicores: DF.Int
 		delivery: DF.Data | None
@@ -106,8 +116,7 @@ class DeployRequest(PipelineBuilder):
 		if not machine["is_new"]:
 			self.resize_virtual_machine(machine["name"])
 		self.wait_for_virtual_machine(machine["name"])
-		self.ping_deploy_agent(machine["name"])
-		self.enqueue_deploy_on_agent(machine["name"])
+		self.wait_for_build()
 
 	@task
 	def ensure_dockerfile(self) -> str:
@@ -180,35 +189,18 @@ class DeployRequest(PipelineBuilder):
 
 	@task
 	def wait_for_virtual_machine(self, name: str) -> None:
-		"""Wait until the VM runs and has the mesh address Central reaches its agent on."""
-		server = frappe.get_doc("Virtual Machine", name)
-		if servers.observe_server(server) != "Running" or not frappe.db.get_value(
-			"Virtual Machine", name, "ipv6_address"
-		):
+		"""Wait until the VM runs, so its deploy agent can claim the build."""
+		if servers.observe_server(frappe.get_doc("Virtual Machine", name)) != "Running":
 			self.wait(_("Virtual Machine {0} is not ready yet.").format(name), for_=500)
 
 	@task
-	def ping_deploy_agent(self, virtual_machine: str):
-		try:
-			self.get_agent(virtual_machine).get_health()
-		except DeployAgentError:
-			self.wait(_("The deploy agent on {0} is not answering yet.").format(virtual_machine), for_=300)
-
-	@task
-	def enqueue_deploy_on_agent(self, virtual_machine: str):
-		"""Start the build once, then defer until the agent reports it finished."""
+	def wait_for_build(self):
+		"""The deploy agent on the VM claims the build and reports on it; this only waits for its result."""
 		self.set_status("Building")
-		agent = self.get_agent(virtual_machine)
-		if not self.agent_build_id:
-			self.agent_build_id = agent.start_build(self.get_build_payload())["build_id"]
-			# Central records the team's build; no Desk user owns it.
-			self.save(ignore_permissions=True)
-
-		build = agent.get_build(self.agent_build_id)
-		if build["status"] == "failed":
-			frappe.throw(build.get("error") or _("The build failed."), DeployAgentError)
-		if build["status"] != "succeeded":
-			self.defer_current_task(_("Build {0} is still running.").format(self.agent_build_id))
+		if self.build_status == "Failed":
+			frappe.throw(_("The build failed. See its log."), DeployBuildError)
+		if self.build_status != "Succeeded":
+			self.wait(_("The build has not finished."), for_=BUILD_TIMEOUT_SECONDS)
 
 	@property
 	def specs(self) -> dict[str, int]:
@@ -273,9 +265,6 @@ class DeployRequest(PipelineBuilder):
 		# Central records the server it created for the team's app; no Desk user owns it.
 		return server.insert(ignore_permissions=True)
 
-	def get_agent(self, virtual_machine: str) -> DeployAgent:
-		return DeployAgent(frappe.get_doc("Virtual Machine", virtual_machine))
-
 	def get_build_payload(self) -> dict:
 		"""What the agent needs to fetch and build the commit; the token reads only this repository."""
 		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
@@ -283,14 +272,19 @@ class DeployRequest(PipelineBuilder):
 			"GitHub Deploy App Installation", app.installation, "installation_id"
 		)
 		token = GitHubDeployApp().create_installation_token(installation_id, app.repository_id)["token"]
-		return {"repository": app.repository, "commit": self.commit, "token": token}
+		return {
+			"deploy_request": self.name,
+			"repository": app.repository,
+			"commit": self.commit,
+			"token": token,
+		}
 
 	def wait(self, message: str, for_: int) -> None:
 		"""Try this step again later, or fail the deploy once this step has waited `for_` seconds."""
 		task = self.flags.current_pipeline_task
 		started = frappe.db.get_value("Pipeline Task", task, "creation") if task else self.creation
 		if time_diff_in_seconds(now_datetime(), started) > for_:
-			frappe.throw(message, DeployAgentError)
+			frappe.throw(message, DeployTimeoutError)
 		self.defer_current_task(message)
 
 	def on_pipeline_success(self, pipeline: Pipeline) -> None:
@@ -299,27 +293,11 @@ class DeployRequest(PipelineBuilder):
 	def on_pipeline_failure(self, pipeline: Pipeline) -> None:
 		self.reload()
 		if self.status == "Superseded":
-			self.cancel_build()
 			return
 
 		traceback = (pipeline.pipeline_traceback or pipeline.traceback or "").strip()
 		self.error = traceback.splitlines()[-1] if traceback else _("The deploy failed.")
 		self.set_status("Failed")
-
-	def cancel_build(self) -> None:
-		"""Stop the build a newer push replaced, so it doesn't hold the VM's memory."""
-		virtual_machine = frappe.db.get_value("Deploy App", self.deploy_app, "virtual_machine")
-		if not (self.agent_build_id and virtual_machine):
-			return
-		try:
-			self.get_agent(virtual_machine).cancel_build(self.agent_build_id)
-		except DeployAgentError:
-			# The newer deploy builds on the same VM anyway; a stuck build shows in its logs.
-			frappe.log_error(
-				"Could not cancel a superseded build",
-				reference_doctype=self.doctype,
-				reference_name=self.name,
-			)
 
 	def set_status(self, status: str) -> None:
 		"""Save `status`, unless a newer push superseded this deploy meanwhile, which stops its pipeline."""
