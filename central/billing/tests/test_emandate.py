@@ -606,6 +606,11 @@ class TestChargingMethod(OffSessionLimitBase):
 		)
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 			collection.collect_invoice(inv, now="2026-06-11 10:00:00")
+		# The decline left no method for the bill, so the team was paused; a paused team is
+		# named no method. Resume it to check which methods are left out.
+		self.assertEqual(self._mode(), "Action Required")
+		self.assertIsNone(self._method(9000))
+		_set_mode(TEAM, "Auto Charge")
 		self.assertEqual(self._method(9000)["label"], self._label(card))
 		self.assertIsNone(self._method(9000, inv))
 		out = self._method(8000, inv)
