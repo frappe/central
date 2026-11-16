@@ -280,9 +280,10 @@ scheduler_events = {
 		],
 		# 09:00 system time (Asia/Kolkata): remind INR teams to top up before the payment date.
 		"0 9 * * *": ["central.billing.payments.top_up_reminders.run_top_up_reminders"],
-		# Retry proxy routes that failed or never ran, up to the attempt limit.
 		"*/5 * * * *": [
+			# Credit a recent top-up whose callback and webhook are late.
 			"central.billing.payments.reconciliation.reconcile_recent_top_up_orders",
+			# Retry proxy routes that failed or never ran, up to the attempt limit.
 			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",
 			"central.infrastructure.doctype.site.site.record_ready_sites",
 			"central.infrastructure.doctype.site.site.poll_site_renames",
