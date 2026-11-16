@@ -14,6 +14,9 @@
   "status",
   "payment_attempt",
   "payment_method",
+  "occurred_at",
+  "delivery_id",
+  "deliveries",
   "column_break_main",
   "processed_at",
   "error",
@@ -70,6 +73,28 @@
    "read_only": 1
   },
   {
+   "fieldname": "occurred_at",
+   "fieldtype": "Datetime",
+   "label": "Sent by Gateway At",
+   "read_only": 1,
+   "description": "When the gateway raised the event. Received At is the creation time."
+  },
+  {
+   "fieldname": "delivery_id",
+   "fieldtype": "Data",
+   "label": "Delivery ID",
+   "read_only": 1,
+   "description": "The gateway's id for this delivery, for finding it in the gateway's webhook logs."
+  },
+  {
+   "fieldname": "deliveries",
+   "fieldtype": "Int",
+   "label": "Deliveries",
+   "default": "1",
+   "read_only": 1,
+   "description": "How many times the gateway delivered this event."
+  },
+  {
    "fieldname": "column_break_main",
    "fieldtype": "Column Break"
   },
@@ -104,7 +129,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-25 12:00:00.000000",
+ "modified": "2026-11-16 15:21:29.641554",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Webhook Event",
