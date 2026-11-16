@@ -440,6 +440,18 @@ class TestTopUpReconciliation(ReconTestBase):
 		self.assertEqual(frappe.db.get_value("Top-up Order", just_made, "status"), "Created")
 		self.assertEqual(frappe.db.get_value("Top-up Order", older, "status"), "Created")
 
+	def test_a_gateway_outage_leaves_recent_top_ups_for_the_next_run_without_logging(self):
+		from central.billing.gateways.base import GatewayTimeout
+
+		order = self._order("pi_outage", hours_old=0.25)
+		logs = frappe.db.count("Error Log")
+		with gateway_status("succeeded") as adapter:
+			adapter.find_order_payment.side_effect = GatewayTimeout("gateway down")
+			reconciliation.reconcile_recent_top_up_orders()
+
+		self.assertEqual(frappe.db.get_value("Top-up Order", order, "status"), "Created")
+		self.assertEqual(frappe.db.count("Error Log"), logs)
+
 	def test_an_unpaid_top_up_expires(self):
 		order = self._order("pi_never", hours_old=8 * 24)
 		with gateway_status("requires_payment_method") as adapter:

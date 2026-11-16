@@ -299,7 +299,7 @@ def reconcile_recent_top_up_orders(now=None) -> list[dict]:
 	now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
 	return _reconcile_top_ups(
 		"Recent top-up reconciliation",
-		_reconcile_top_up_order,
+		_reconcile_recent_top_up_order,
 		now,
 		since=frappe.utils.add_to_date(now, hours=-RECENT_TOP_UP_HOURS),
 		until=frappe.utils.add_to_date(now, minutes=-RECENT_GRACE_MINUTES),
@@ -318,6 +318,18 @@ def _reconcile_top_ups(job: str, work, now, since, until) -> list[dict]:
 	orders = frappe.get_all("Top-up Order", filters=filters, pluck="name")
 	results = each_isolated(job, "Top-up Order", orders, lambda name: work(name, now))
 	return [result for result in results if result]
+
+
+def _reconcile_recent_top_up_order(name: str, now) -> dict | None:
+	"""A gateway error is left to the next run, so an outage does not log one error per order."""
+	from central.billing.gateways.base import GatewayError
+
+	order = frappe.get_doc("Top-up Order", name)
+	try:
+		payment = _find_order_payment(order.gateway, order.gateway_order_id)
+	except GatewayError:
+		return None
+	return _credit_top_up(order, payment) if payment else None
 
 
 def _reconcile_top_up_order(name: str, now) -> dict | None:
