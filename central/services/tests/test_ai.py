@@ -409,6 +409,29 @@ class TestAI(IntegrationTestCase):
 			api.revoke_api_key(self.team, "k1")
 		revoke_key.assert_called_once_with(self.team, "k1")
 
+	def test_no_key_is_minted_while_a_trials_key_is_on_its_way_to_the_team(self):
+		self.enabled()
+		moving = frappe.get_doc(
+			{"doctype": "AI Trial Key", "grove_key": "k-moving", "team": self.team, "status": "Converting"}
+		).insert(ignore_permissions=True)
+		self.addCleanup(frappe.db.delete, "AI Trial Key", {"name": moving.name})
+		figures = {"spend": {}, "keys": [], "usage": EMPTY_USAGE}
+		with (
+			patch.object(GroveClient, "provision_key", return_value=MINTED) as provision_key,
+			patch.object(GroveClient, "list_models", return_value=MODELS),
+			patch.object(GroveClient, "get_figures", return_value=figures),
+			patch.object(GroveClient, "list_geographies", return_value=GEOGRAPHIES),
+		):
+			self.assertTrue(api.get_ai(self.team)["key_handover_pending"])
+			with self.assertRaisesRegex(frappe.ValidationError, "being moved to this team"):
+				api.create_api_key(self.team, "app", "eu", "5")
+			provision_key.assert_not_called()
+
+			moving.db_set("status", "Converted")
+			self.assertFalse(api.get_ai(self.team)["key_handover_pending"])
+			api.create_api_key(self.team, "app", "eu", "5")
+		provision_key.assert_called_once()
+
 	def test_prompt_logging_is_set_at_grove_by_a_service_manager_only(self):
 		self.enabled()
 		outsider = ensure_user("grove.outsider@example.test")

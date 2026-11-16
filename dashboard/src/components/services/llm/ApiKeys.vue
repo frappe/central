@@ -376,6 +376,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 				v-if="canManage"
 				label="Create key"
 				icon-left="lucide-plus"
+				:disabled="ai?.key_handover_pending"
 				@click="openCreate"
 			/>
 		</div>

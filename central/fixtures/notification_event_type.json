@@ -718,5 +718,23 @@
   "in_app_body": "{{ team_name }} is active again, and its members can open it.\n\nServers that were stopped stay stopped. Start them from Frappe Cloud when you need them. Rotate the key of each storage bucket to get a key that works.",
   "is_critical": 0,
   "reportable_by": "None"
+ },
+ {
+  "action_label": "Create key",
+  "action_route": "/llm",
+  "category": "Trial",
+  "create_in_app": 1,
+  "direct_recipients": "None",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "modified": "2026-11-17 00:00:00",
+  "required_cap": "service:view",
+  "event_type": "ai_key_handover_failed",
+  "name": "ai_key_handover_failed",
+  "severity": "Error",
+  "in_app_title": "Your trial's LLM key will stop working",
+  "in_app_body": "We could not move the LLM API key of {{ reference_title or \"your trial site\" }} to your team, so it is being revoked and the site will stop reaching the models with it.\n\nCreate a new key on the LLM page to keep using them.",
+  "is_critical": 1,
+  "reportable_by": "None"
  }
 ]

@@ -55,16 +55,18 @@ const enableAI = async (): Promise<void> => {
 			<Tooltip
 				v-if="canManageServices"
 				:text="
-					keys?.atKeyLimit
-						? `Your plan allows ${ai.spend?.max_keys} live keys. Revoke one to create another.`
-						: ''
+					ai.key_handover_pending
+						? `Your trial's API key is being moved to this team. You can create keys once that is done.`
+						: keys?.atKeyLimit
+							? `Your plan allows ${ai.spend?.max_keys} live keys. Revoke one to create another.`
+							: ''
 				"
 			>
 				<Button
 					variant="solid"
 					icon-left="lucide-plus"
 					label="Create key"
-					:disabled="keys?.atKeyLimit"
+					:disabled="ai.key_handover_pending || keys?.atKeyLimit"
 					@click="keys?.openCreate()"
 				/>
 			</Tooltip>
@@ -98,6 +100,13 @@ const enableAI = async (): Promise<void> => {
 			/>
 
 			<template v-else-if="ai?.enabled" :key="activeTeam">
+				<Alert
+					v-if="ai.key_handover_pending"
+					theme="amber"
+					title="Your trial's API key is being moved to this team"
+					description="It keeps working meanwhile. You can create keys once that is done, usually within a few minutes."
+				/>
+
 				<Summary
 					:can-manage="canManageServices"
 					@create="keys?.openCreate()"
