@@ -595,7 +595,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 			<div class="space-y-4">
 				<TextInput
 					v-model="newLabel"
-					label="Label"
+					label="Title"
 					required
 					placeholder="e.g. n8n prod"
 					description="A name to recognise this key by. New keys can take a few minutes to start working."
@@ -616,7 +616,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					label="Cap (USD)"
 					required
 					placeholder="e.g. 10"
-					description="What this key may spend each month, in whole dollars."
+					description="What this key may spend each month."
 					@keyup.enter="create"
 				/>
 			</div>
