@@ -135,6 +135,7 @@ def _seconds_columns(stage: str, prefix: str) -> list[dict]:
 			"fieldname": f"{prefix}{key}_seconds",
 			"fieldtype": "Float",
 			"width": 140,
+			"slow_seconds": SLOW_SECONDS,
 		}
 		for label, key in ((_("Median"), "median"), (_("p95"), "p95"), (_("Worst"), "worst"))
 	]

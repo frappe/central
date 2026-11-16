@@ -23,30 +23,23 @@ frappe.query_reports["Webhook Lag"] = {
 		},
 	],
 	// Problems stand out: a failed event is red, a late, slow or repeated one amber.
+	// A time is a problem over the column's slow_seconds, which the report sets.
+	problemColors: {
+		failed: "red",
+		delivered_late: "orange",
+		slow: "orange",
+		repeat_deliveries: "orange",
+		delivery_p95_seconds: "orange",
+		delivery_worst_seconds: "orange",
+		p95_seconds: "orange",
+		worst_seconds: "orange",
+	},
 	formatter(value, row, column, data, default_formatter) {
 		const text = default_formatter(value, row, column, data);
-		if (!data || !(value > 0)) return text;
-		const color = webhookLagColor(column.fieldname, value);
-		return color
+		const color = this.problemColors[column.fieldname];
+		const isProblem = data && color && value > (column.slow_seconds ?? 0);
+		return isProblem
 			? `<span class="indicator-pill ${color}">${text}</span>`
 			: text;
 	},
 };
-
-// Seconds over a minute, as the report counts a late or slow event.
-const SLOW_SECONDS = 60;
-const COUNT_COLORS = {
-	failed: "red",
-	delivered_late: "orange",
-	slow: "orange",
-	repeat_deliveries: "orange",
-};
-
-function webhookLagColor(fieldname, value) {
-	if (COUNT_COLORS[fieldname]) return COUNT_COLORS[fieldname];
-	const isSecondsOverLimit =
-		fieldname.endsWith("_seconds") &&
-		!fieldname.includes("median") &&
-		value > SLOW_SECONDS;
-	return isSecondsOverLimit ? "orange" : null;
-}
