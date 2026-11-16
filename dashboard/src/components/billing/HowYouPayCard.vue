@@ -5,7 +5,6 @@ import { API, method } from '@/api/methods'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import CollectionModeDialog from '@/components/billing/CollectionModeDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
-import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
@@ -17,7 +16,6 @@ import type { CollectionStatus } from '@/types/billing'
 // member who can manage billing may change it; everyone else reads it.
 const { activeTeam } = useSession()
 const { canManageBilling } = useCapabilities()
-const { complete: isSetupComplete } = useBillingSetup()
 const { methods } = useBillingOverview()
 
 const status = useCall<CollectionStatus, { team: string }>({
@@ -27,16 +25,16 @@ const status = useCall<CollectionStatus, { team: string }>({
 	refetch: true,
 })
 whenTeamReady(() => status.reload())
-// The method charged first follows the order on the Payment methods card.
+// The method charged first follows the order on the Payment methods card, so
+// refetch only when the first method changes, not on the first load.
 watch(
-	() => methods.data,
-	() => status.reload(),
+	() => (methods.data ? (methods.data[0]?.name ?? null) : undefined),
+	(_first, previous) => {
+		if (previous !== undefined) status.reload()
+	},
 )
 
 const s = computed(() => status.data)
-const canChange = computed(
-	() => canManageBilling.value && isSetupComplete.value,
-)
 const choosing = ref(false)
 
 const heading = computed(() => {
@@ -80,7 +78,7 @@ const limitLine = computed(() => {
 	<BillingCard :title="__('How you pay')" flat>
 		<template #action>
 			<Button
-				v-if="canChange && s"
+				v-if="canManageBilling && s"
 				size="sm"
 				:label="s.action_required ? __('Choose how to pay') : __('Change')"
 				@click="choosing = true"
