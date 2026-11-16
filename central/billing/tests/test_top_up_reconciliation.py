@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+from unittest.mock import patch
+
 import frappe
 
 from central.billing.payments import reconciliation
@@ -68,13 +70,12 @@ class TestTopUpReconciliation(ReconTestBase):
 		from central.billing.gateways.base import GatewayTimeout
 
 		order = self._order("pi_outage", hours_old=0.25)
-		logs = frappe.db.count("Error Log")
-		with gateway_status("succeeded") as adapter:
+		with gateway_status("succeeded") as adapter, patch("frappe.log_error") as log_error:
 			adapter.find_order_payment.side_effect = GatewayTimeout("gateway down")
 			reconciliation.reconcile_recent_top_up_orders()
 
 		self.assertEqual(frappe.db.get_value("Top-up Order", order, "status"), "Created")
-		self.assertEqual(frappe.db.count("Error Log"), logs)
+		log_error.assert_not_called()
 
 	def test_an_unpaid_top_up_expires(self):
 		order = self._order("pi_never", hours_old=8 * 24)
