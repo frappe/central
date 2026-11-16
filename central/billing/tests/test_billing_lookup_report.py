@@ -5,9 +5,18 @@ import frappe
 
 from central.billing.report.billing_lookup import billing_lookup
 from central.billing.states import record_team_event
-from central.billing.tests.utils import BillingTestCase, complete_billing_profile, ensure_team, make_user
+from central.billing.tests.utils import (
+	BillingTestCase,
+	add_segment,
+	complete_billing_profile,
+	ensure_team,
+	make_plan,
+	make_user,
+	seed_running_resource,
+)
 
 TEAM = "team-billing-lookup"
+PLAN = "bundle-billing-lookup"
 
 
 class TestBillingLookupReport(BillingTestCase):
@@ -50,6 +59,40 @@ class TestBillingLookupReport(BillingTestCase):
 			record_team_event(TEAM, "Invoice Failed", "Invoice", reason=f"run {n}", outcome="Failed")
 		_columns, rows, *_ = billing_lookup.execute({"team": TEAM})
 		self.assertEqual(len(rows), billing_lookup.EVENT_LIMIT)
+
+	def test_an_event_says_what_happened_to_its_money(self):
+		record_team_event(TEAM, "Invoice Paid", "Invoice", amount=500, outcome="Success")
+		record_team_event(TEAM, "Invoice Credited Somewhere", "Invoice", amount=10, outcome="Success")
+		record_team_event(TEAM, "Subscription Created", "Subscription", outcome="Success")
+		rows = {r.event_type: r for r in self._rows(billing_lookup.EVENTS)}
+		self.assertEqual(rows["Invoice Paid"].money_meaning, "Paid to us")
+		self.assertTrue(rows["Invoice Credited Somewhere"].money_unexplained)
+		self.assertIsNone(rows["Subscription Created"].amount)
+		self.assertIsNone(rows["Subscription Created"].money_meaning)
+
+	def test_subscriptions_show_their_monthly_cost_and_a_total(self):
+		make_plan(PLAN)
+		seed_running_resource(TEAM, "srv-lookup-a", "ap-south-1", PLAN, rate=1000)
+		seed_running_resource(TEAM, "srv-lookup-b", "ap-south-1", PLAN, rate=2500)
+		rows = self._rows(billing_lookup.SUBSCRIPTIONS)
+		self.assertEqual(sorted(r["monthly_cost"] for r in rows if not r.get("is_total")), [1000, 2500])
+		self.assertEqual([r["monthly_cost"] for r in rows if r.get("is_total")], [3500])
+		self.assertEqual(self._card("Monthly Cost (INR)")["value"], 3500)
+
+	def test_a_plan_change_is_named_an_upgrade_or_a_downgrade(self):
+		make_plan(PLAN)
+		sub = seed_running_resource(TEAM, "srv-lookup-c", "ap-south-1", PLAN, rate=1000)
+		add_segment(sub, "Plan Changed", 1800, "2026-07-01 00:00:00", plan=PLAN)
+		add_segment(sub, "Plan Changed", 1200, "2026-08-01 00:00:00", plan=PLAN)
+		add_segment(sub, "Cancelled", 0, "2026-09-01 00:00:00")
+		rows = self._rows(billing_lookup.CHANGES)
+		self.assertEqual(
+			[(r.effect, r.cost_change) for r in rows],
+			[("Billing stopped", -1200), ("Downgrade", -600), ("Upgrade", 800), ("Billing started", 1000)],
+		)
+
+	def _rows(self, view):
+		return billing_lookup.execute({"team": TEAM, "view": view})[1]
 
 	def _card(self, label):
 		summary = billing_lookup.execute({"team": TEAM})[4]
