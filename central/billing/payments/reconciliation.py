@@ -59,7 +59,8 @@ TOP_UP_EXPIRES_HOURS = 7 * 24
 # A top-up whose callback was lost is checked every few minutes while it is recent, so a
 # late webhook does not keep a paying customer waiting for the hourly sweep.
 RECENT_TOP_UP_HOURS = 2
-RECENT_TOP_UP_MINUTES = 5
+# A recent top-up is left this long for its callback or webhook before it is checked.
+RECENT_GRACE_MINUTES = 5
 # A gateway forgets an idempotency key after about a day. Inside that window, re-sending
 # a charge is deduped by the gateway; outside it, the same request would be a second one.
 KEY_REPLAY_HOURS = 24
@@ -284,47 +285,38 @@ def reconcile_top_up_orders(now=None) -> list[dict]:
 	"""Credit top-ups whose payment landed but whose callback and webhook were both lost,
 	and expire the ones nobody paid."""
 	now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
-	orders = frappe.get_all(
-		"Top-up Order",
-		filters={
-			"status": "Created",
-			"gateway_order_id": ["is", "set"],
-			"creation": ["<=", frappe.utils.add_to_date(now, minutes=-GRACE_MINUTES)],
-		},
-		pluck="name",
+	return _reconcile_top_ups(
+		"Top-up reconciliation",
+		_reconcile_top_up_order,
+		now,
+		since=None,
+		until=frappe.utils.add_to_date(now, minutes=-GRACE_MINUTES),
 	)
-	results = each_isolated(
-		"Top-up reconciliation", "Top-up Order", orders, lambda name: _reconcile_top_up_order(name, now)
-	)
-	return [result for result in results if result]
 
 
 def reconcile_recent_top_up_orders(now=None) -> list[dict]:
-	"""Every 5 minutes: credit a top-up of the last 2 hours whose payment landed but whose
-	callback and webhook have not. Older ones are left to the hourly sweep."""
+	"""Credit recent top-ups whose payment landed before their callback or webhook."""
 	now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
-	orders = frappe.get_all(
-		"Top-up Order",
-		filters=[
-			["status", "=", "Created"],
-			["gateway_order_id", "is", "set"],
-			[
-				"creation",
-				"between",
-				[
-					frappe.utils.add_to_date(now, hours=-RECENT_TOP_UP_HOURS),
-					frappe.utils.add_to_date(now, minutes=-RECENT_TOP_UP_MINUTES),
-				],
-			],
-		],
-		pluck="name",
-	)
-	results = each_isolated(
+	return _reconcile_top_ups(
 		"Recent top-up reconciliation",
-		"Top-up Order",
-		orders,
-		lambda name: _reconcile_top_up_order(name, now),
+		_reconcile_top_up_order,
+		now,
+		since=frappe.utils.add_to_date(now, hours=-RECENT_TOP_UP_HOURS),
+		until=frappe.utils.add_to_date(now, minutes=-RECENT_GRACE_MINUTES),
 	)
+
+
+def _reconcile_top_ups(job: str, work, now, since, until) -> list[dict]:
+	"""Run `work` on each unpaid top-up order created in the window."""
+	filters = [
+		["status", "=", "Created"],
+		["gateway_order_id", "is", "set"],
+		["creation", "<=", until],
+	]
+	if since:
+		filters.append(["creation", ">=", since])
+	orders = frappe.get_all("Top-up Order", filters=filters, pluck="name")
+	results = each_isolated(job, "Top-up Order", orders, lambda name: work(name, now))
 	return [result for result in results if result]
 
 
