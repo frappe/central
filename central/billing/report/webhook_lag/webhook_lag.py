@@ -190,5 +190,5 @@ def _count_indicator(label: str, value: int, problem_color: str) -> dict:
 def _seconds_indicator(label: str, value: float | None) -> dict:
 	summary = {"label": label, "value": value, "datatype": "Float"}
 	if value is not None:
-		summary["indicator"] = "green" if value <= SLOW_SECONDS else "red"
+		summary["indicator"] = "green" if value <= SLOW_SECONDS else "orange"
 	return summary

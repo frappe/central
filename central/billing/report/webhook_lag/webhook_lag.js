@@ -48,5 +48,5 @@ function webhookLagColor(fieldname, value) {
 		fieldname.endsWith("_seconds") &&
 		!fieldname.includes("median") &&
 		value > SLOW_SECONDS;
-	return isSecondsOverLimit ? "red" : null;
+	return isSecondsOverLimit ? "orange" : null;
 }
