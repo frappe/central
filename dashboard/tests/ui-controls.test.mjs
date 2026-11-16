@@ -122,6 +122,7 @@ function mount(component, props) {
 const InviteRows = loadSource('../src/components/team/InviteRows.vue', {
 	'frappe-ui': ui,
 	'@/composables/useBulkInvite': { ALL_RESOURCES: '*', MAX_INVITATIONS: 20 },
+	'@/components/common/DialogScrollList.vue': stub('DialogScrollList'),
 }).default
 
 test('the only invitation row cannot be removed, and removing added rows preserves its input', async () => {

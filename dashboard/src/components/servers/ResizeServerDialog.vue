@@ -10,6 +10,7 @@ import {
 	Tabs,
 } from 'frappe-ui'
 import { computed, ref, toRef } from 'vue'
+import DialogScrollList from '@/components/common/DialogScrollList.vue'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
 import TrialUpgradePanel from '@/components/servers/TrialUpgradePanel.vue'
 import { useResizeServer } from '@/composables/useResizeServer'
@@ -161,7 +162,7 @@ function getConvertedPlanTitle(plan: string): string {
 			>
 				{{ __("This server can't be resized right now.") }}
 			</p>
-			<div v-else class="space-y-4">
+			<div v-else class="flex max-h-[calc(100vh-14rem)] flex-col gap-4">
 				<Alert
 					v-if="convertedPlan"
 					theme="green"
@@ -184,7 +185,12 @@ function getConvertedPlanTitle(plan: string): string {
 				<p class="text-p-sm text-ink-gray-7">
 					{{ __('Choose a new CPU and memory size. You can also increase storage, but you cannot reduce it later.') }}
 				</p>
-				<RadioGroup v-model="computeOnly" :label="__('Storage')" padded>
+				<RadioGroup v-model="computeOnly" padded>
+					<template #label>
+						<span class="text-sm-medium text-ink-gray-9"
+							>{{ __('Storage') }}</span
+						>
+					</template>
 					<Radio
 						:value="true"
 						:label="__('Keep current {0} GB disk size', [formatGb(currentDisk)])"
@@ -203,40 +209,42 @@ function getConvertedPlanTitle(plan: string): string {
 
 				<Tabs v-if="hasTabs" v-model="activeTab" :tabs="classTabs">
 					<template #tab-panel="{ tab }">
-						<PlanGroup
-							class="pt-4"
-							:omit-disk="computeOnly"
-							:min-disk="computeOnly ? undefined : currentDisk"
-							:current-disk="currentDisk"
-							:current-plan="currentPlanKey"
-							:presets="groups[tab.value] ?? []"
-							:profile="designableProfile(String(tab.value))"
-							:rate-card="rateCard"
-							:available="available ?? 0"
-							:currency="currency ?? 'USD'"
-							:capacity="capacity"
-							:initial="initialFor(designableProfile(String(tab.value)))"
-							v-model:selected-plan="selectedPlan"
-							v-model:composed-config="composedConfig"
-						/>
+						<DialogScrollList class="mt-4">
+							<PlanGroup
+								:omit-disk="computeOnly"
+								:min-disk="computeOnly ? undefined : currentDisk"
+								:current-disk="currentDisk"
+								:current-plan="currentPlanKey"
+								:presets="groups[tab.value] ?? []"
+								:profile="designableProfile(String(tab.value))"
+								:rate-card="rateCard"
+								:available="available ?? 0"
+								:currency="currency ?? 'USD'"
+								:capacity="capacity"
+								:initial="initialFor(designableProfile(String(tab.value)))"
+								v-model:selected-plan="selectedPlan"
+								v-model:composed-config="composedConfig"
+							/>
+						</DialogScrollList>
 					</template>
 				</Tabs>
-				<PlanGroup
-					v-else
-					:omit-disk="computeOnly"
-					:min-disk="computeOnly ? undefined : currentDisk"
-					:current-disk="currentDisk"
-					:current-plan="currentPlanKey"
-					:presets="flatPresets"
-					:profile="flatProfile"
-					:rate-card="rateCard"
-					:available="available ?? 0"
-					:currency="currency ?? 'USD'"
-					:capacity="capacity"
-					:initial="initialFor(flatProfile)"
-					v-model:selected-plan="selectedPlan"
-					v-model:composed-config="composedConfig"
-				/>
+				<DialogScrollList v-else fill>
+					<PlanGroup
+						:omit-disk="computeOnly"
+						:min-disk="computeOnly ? undefined : currentDisk"
+						:current-disk="currentDisk"
+						:current-plan="currentPlanKey"
+						:presets="flatPresets"
+						:profile="flatProfile"
+						:rate-card="rateCard"
+						:available="available ?? 0"
+						:currency="currency ?? 'USD'"
+						:capacity="capacity"
+						:initial="initialFor(flatProfile)"
+						v-model:selected-plan="selectedPlan"
+						v-model:composed-config="composedConfig"
+					/>
+				</DialogScrollList>
 				<Alert
 					v-if="selectionError"
 					theme="red"
