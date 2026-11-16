@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { Alert, Button } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import Table from '@/components/common/Table.vue'
 import FirewallRulesetDialog from '@/components/servers/firewall/FirewallRulesetDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useFirewallAddressNames } from '@/composables/useFirewallAddressNames'
 import { useFirewallRulesets } from '@/composables/useFirewallRulesets'
-import { useWireGuardDevices } from '@/composables/useWireGuardDevices'
 import { getErrorMessage, successToast } from '@/lib/feedback'
-import { toCidr } from '@/lib/firewall'
 import { __ } from '@/lib/translate'
 import type { FirewallRuleset } from '@/types/firewallRulesets'
 
@@ -20,13 +19,8 @@ const COLUMNS = [
 ]
 
 const { rulesets, loading, error, reload, save, remove } = useFirewallRulesets()
-const { canManageNetwork, canManageWireGuard } = useCapabilities()
-const { devices } = useWireGuardDevices(canManageWireGuard)
-const deviceNames = computed<Record<string, string>>(() =>
-	Object.fromEntries(
-		devices.value.map((device) => [toCidr(device.address), device.title]),
-	),
-)
+const { canManageNetwork } = useCapabilities()
+const { names: addressNames } = useFirewallAddressNames()
 
 const editing = ref(false)
 const selected = ref<FirewallRuleset | null>(null)
@@ -154,7 +148,7 @@ const getActions = (ruleset: FirewallRuleset) =>
 		<FirewallRulesetDialog
 			v-model="editing"
 			:ruleset="selected"
-			:names="deviceNames"
+			:names="addressNames"
 			:save="save"
 			@saved="successToast(__('Ruleset saved'))"
 		/>

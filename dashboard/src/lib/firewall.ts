@@ -36,7 +36,7 @@ export const SERVICES: FirewallService[] = [
 	{ label: 'MariaDB', protocol: 'tcp', ports: '3306' },
 	{ label: 'PostgreSQL', protocol: 'tcp', ports: '5432' },
 	{ label: 'Redis', protocol: 'tcp', ports: '6379' },
-	{ label: 'Ping', protocol: 'icmp', ports: '' },
+	{ label: 'ICMP (Ping)', protocol: 'icmp', ports: '' },
 	{ label: 'Custom TCP', protocol: 'tcp', ports: null },
 	{ label: 'Custom UDP', protocol: 'udp', ports: null },
 	{ label: 'All traffic', protocol: 'any', ports: '' },

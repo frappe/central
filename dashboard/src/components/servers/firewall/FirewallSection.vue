@@ -8,12 +8,11 @@ import SettingsSection from '@/components/common/SettingsSection.vue'
 import ApplyRulesetDialog from '@/components/servers/firewall/ApplyRulesetDialog.vue'
 import FirewallRulesEditor from '@/components/servers/firewall/FirewallRulesEditor.vue'
 import FirewallRulesTable from '@/components/servers/firewall/FirewallRulesTable.vue'
-import { useCapabilities } from '@/composables/useCapabilities'
+import { useFirewallAddressNames } from '@/composables/useFirewallAddressNames'
 import { useFirewallRulesets } from '@/composables/useFirewallRulesets'
 import { useServerFirewall } from '@/composables/useServerFirewall'
 import { settingsOpen } from '@/composables/useSettings'
 import { useUndoHistory } from '@/composables/useUndoHistory'
-import { useWireGuardDevices } from '@/composables/useWireGuardDevices'
 import { getErrorMessage, reportError, successToast } from '@/lib/feedback'
 import {
 	type Firewall,
@@ -24,7 +23,6 @@ import {
 	isSameRule,
 	isSameRules,
 	PRESETS,
-	toCidr,
 } from '@/lib/firewall'
 import { isMac } from '@/lib/platform'
 import { __ } from '@/lib/translate'
@@ -227,15 +225,10 @@ const statusText = computed(() => {
 	return `${pendingChanges.value} unsaved ${pendingChanges.value === 1 ? 'change' : 'changes'}`
 })
 
-const { canManageWireGuard } = useCapabilities()
-const { devices } = useWireGuardDevices(canManageWireGuard)
-const deviceNames = computed<Record<string, string>>(() =>
-	Object.fromEntries(
-		devices.value
-			.filter((device) => device.region === props.region)
-			.map((device) => [toCidr(device.address), device.title]),
-	),
-)
+const { names: addressNames } = useFirewallAddressNames({
+	region: () => props.region,
+	resourceId: () => props.resourceId,
+})
 
 const { rulesets, apply, reload: reloadRulesets } = useFirewallRulesets()
 // Rulesets are managed in Settings, so the list is read again when Settings closes.
@@ -345,7 +338,7 @@ async function useBuiltInRules(rules: FirewallRules): Promise<void> {
 
 				<FirewallRulesTable
 					:rules="draft"
-					:names="deviceNames"
+					:names="addressNames"
 					:sources="attachedRulesets"
 				/>
 			</template>
@@ -354,7 +347,7 @@ async function useBuiltInRules(rules: FirewallRules): Promise<void> {
 				v-else
 				:rules="draft"
 				:disabled="!canEdit || isSaving"
-				:names="deviceNames"
+				:names="addressNames"
 				:revision="revision"
 				@update="editRules"
 				@invalid="hasIncomplete = $event"
@@ -431,7 +424,7 @@ async function useBuiltInRules(rules: FirewallRules): Promise<void> {
 			v-model="isApplyingRuleset"
 			:rulesets="rulesets"
 			:applied="attached"
-			:names="deviceNames"
+			:names="addressNames"
 			:firewall="saved"
 			:apply="applyRulesets"
 			@preset="useBuiltInRules"
