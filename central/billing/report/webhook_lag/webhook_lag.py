@@ -72,8 +72,8 @@ def _by_gateway_and_day(events: list[dict]) -> list[dict]:
 
 
 def _row(events: list[dict]) -> dict:
-	delivery = _stats(map(_delivery_seconds, events))
-	processing = _stats(map(_lag_seconds, events))
+	delivery = _stats(events, _delivery_seconds)
+	processing = _stats(events, _lag_seconds)
 	return {
 		"events": len(events),
 		**{f"delivery_{key}_seconds": delivery[key] for key in ("median", "p95", "worst")},
@@ -85,19 +85,19 @@ def _row(events: list[dict]) -> dict:
 	}
 
 
-def _stats(seconds) -> dict:
-	"""Median, p95, worst and the count over the threshold, of the times that are known."""
-	ordered = sorted(value for value in seconds if value is not None)
+def _stats(events: list[dict], seconds_of) -> dict:
+	"""Median, p95, worst and the count over the threshold, of the times that are known.
+	With no known time the median, p95 and worst are blank, not zero."""
+	ordered = sorted(value for value in (seconds_of(e) for e in events) if value is not None)
+	over = sum(1 for value in ordered if value > SLOW_SECONDS)
+	if not ordered:
+		return {"median": None, "p95": None, "worst": None, "over": over}
 	return {
 		"median": flt(_percentile(ordered, 0.5), 2),
 		"p95": flt(_percentile(ordered, 0.95), 2),
-		"worst": flt(ordered[-1] if ordered else 0, 2),
-		"over": _count_over(ordered),
+		"worst": flt(ordered[-1], 2),
+		"over": over,
 	}
-
-
-def _count_over(seconds: list[float]) -> int:
-	return sum(1 for value in seconds if value > SLOW_SECONDS)
 
 
 def _percentile(ordered: list[float], fraction: float) -> float:
@@ -156,8 +156,11 @@ def _chart(rows: list[dict]) -> dict | None:
 		"data": {
 			"labels": [str(r["day"]) for r in ordered],
 			"datasets": [
-				{"name": _("Delivery p95 seconds"), "values": [r["delivery_p95_seconds"] for r in ordered]},
-				{"name": _("Processing p95 seconds"), "values": [r["p95_seconds"] for r in ordered]},
+				{
+					"name": _("Delivery p95 seconds"),
+					"values": [r["delivery_p95_seconds"] or 0 for r in ordered],
+				},
+				{"name": _("Processing p95 seconds"), "values": [r["p95_seconds"] or 0 for r in ordered]},
 			],
 		},
 		"type": "line",
@@ -184,10 +187,8 @@ def _count_indicator(label: str, value: int, problem_color: str) -> dict:
 	}
 
 
-def _seconds_indicator(label: str, value: float) -> dict:
-	return {
-		"label": label,
-		"value": value,
-		"datatype": "Float",
-		"indicator": "green" if value <= SLOW_SECONDS else "red",
-	}
+def _seconds_indicator(label: str, value: float | None) -> dict:
+	summary = {"label": label, "value": value, "datatype": "Float"}
+	if value is not None:
+		summary["indicator"] = "green" if value <= SLOW_SECONDS else "red"
+	return summary

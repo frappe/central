@@ -80,6 +80,17 @@ class TestWebhookLag(BillingTestCase):
 		self.assertEqual(rows[0]["delivered_late"], 1)
 		self.assertEqual(rows[0]["slow"], 0)
 
+	def test_unknown_delivery_times_are_blank_not_zero(self):
+		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:01")
+		_columns, rows, _msg, _chart, summary = webhook_lag.execute(
+			{"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)
+		self.assertIsNone(rows[0]["delivery_median_seconds"])
+		self.assertIsNone(rows[0]["delivery_worst_seconds"])
+		delivery_p95 = next(s for s in summary if s["label"] == "p95 Delivery (s)")
+		self.assertIsNone(delivery_p95["value"])
+		self.assertNotIn("indicator", delivery_p95)
+
 	def test_failed_events_and_repeat_deliveries_are_counted(self):
 		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:01", deliveries=3)
 		self._webhook("2026-06-10 10:05:00", None, status="Failed")
