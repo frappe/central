@@ -1,7 +1,7 @@
 # Copyright (c) 2026, frappe and Contributors
 # See license.txt
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -118,7 +118,13 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		}
 		self.machine.get_specs = DeployMachine.get_specs
 		patch.object(DeployRequest, "wait_for_virtual_machine").start()
-		self.get_file = patch(f"{module}.GitHubDeployApp.get_file", return_value=None).start()
+		# The repository holds a Dockerfile and, unless a test sets one, no deploy config.
+		self.root = [{"name": "Dockerfile", "type": "file"}]
+		patch(f"{module}.GitHubDeployApp.list_root", side_effect=lambda *args: self.root).start()
+		self.files = {}
+		self.get_file = patch(
+			f"{module}.GitHubDeployApp.get_file", side_effect=lambda *args: self.files.get(args[3])
+		).start()
 		patch.object(DeployRequest, "get_build_payload", return_value={"commit": "a" * 40}).start()
 		self.agent = patch.object(DeployRequest, "get_agent").start().return_value
 		self.agent.start_build.return_value = {"build_id": "build-1"}
@@ -144,6 +150,15 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		DeployRequest.queue(self.app.name, "b" * 40)
 		self.machine.get.assert_called_once()
 
+	def test_a_commit_without_a_dockerfile_fails_before_a_vm_is_touched(self):
+		self.root = [{"name": "README.md", "type": "file"}]
+		request = DeployRequest.queue(self.app.name, "a" * 40)
+
+		status, error = frappe.db.get_value("Deploy Request", request.name, ["status", "error"])
+		self.assertEqual(status, "Failed")
+		self.assertIn("Add a Dockerfile", error)
+		self.find_or_create.assert_not_called()
+
 	def test_a_commit_without_a_config_deploys_at_the_default_size(self):
 		self.agent.get_build.return_value = {"status": "succeeded"}
 		request = DeployRequest.queue(self.app.name, "a" * 40)
@@ -152,11 +167,13 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 			frappe.db.get_value("Deploy Request", request.name, ["cpu_millicores", "memory_mib", "disk_mib"]),
 			(2000, 4096, 20480),
 		)
-		self.assertEqual(self.get_file.call_args.args[3:], ("frappe_cloud_deploy.toml", "a" * 40))
+		self.assertIn(
+			call("101", "11", "octo/app", "frappe_cloud_deploy.toml", "a" * 40), self.get_file.call_args_list
+		)
 
 	def test_the_size_in_the_commits_config_is_saved_on_the_request(self):
 		self.agent.get_build.return_value = {"status": "succeeded"}
-		self.get_file.return_value = "[machine]\ncpu_millicores = 4000\nmemory_mib = 8192\n"
+		self.files["frappe_cloud_deploy.toml"] = "[machine]\ncpu_millicores = 4000\nmemory_mib = 8192\n"
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 
 		self.assertEqual(
@@ -165,7 +182,7 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		)
 
 	def test_a_config_with_an_unknown_machine_key_fails_the_deploy(self):
-		self.get_file.return_value = '[machine]\nteam = "someone-else"\n'
+		self.files["frappe_cloud_deploy.toml"] = '[machine]\nteam = "someone-else"\n'
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 
 		self.assertEqual(frappe.db.get_value("Deploy Request", request.name, "status"), "Failed")

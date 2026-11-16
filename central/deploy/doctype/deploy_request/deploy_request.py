@@ -13,7 +13,7 @@ from frappe.utils import now_datetime, time_diff_in_seconds
 from redis.exceptions import LockError
 
 from central.deploy.agent import DeployAgent, DeployAgentError
-from central.deploy.config import CONFIG_FILE, MACHINE_LIMITS, get_machine_specs
+from central.deploy.config import CONFIG_FILE, MACHINE_LIMITS, find_containerfile, get_machine_specs
 from central.deploy.github import GitHubDeployApp
 from central.deploy.virtual_machine import DeployMachine
 from central.integrations import servers
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 	from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 
 # A newer push replaces a request in these states. A release is never interrupted.
-SUPERSEDABLE_STATES = ("Queued", "Provisioning", "Building")
+SUPERSEDABLE_STATES = ("Queued", "Validating", "Provisioning", "Building")
 # Long enough for Atlas to answer one create; another worker skips the app meanwhile.
 VM_LOCK_SECONDS = 5 * 60
 
@@ -55,7 +55,14 @@ class DeployRequest(PipelineBuilder):
 		error: DF.SmallText | None
 		memory_mib: DF.Int
 		status: DF.Literal[
-			"Queued", "Provisioning", "Building", "Releasing", "Succeeded", "Failed", "Superseded"
+			"Queued",
+			"Validating",
+			"Provisioning",
+			"Building",
+			"Releasing",
+			"Succeeded",
+			"Failed",
+			"Superseded",
 		]
 		team: DF.Link
 	# end: auto-generated types
@@ -93,6 +100,7 @@ class DeployRequest(PipelineBuilder):
 	@flow
 	def start_deploy(self):
 		"""Size the VM from the commit's config, get or create it, then build the commit on it."""
+		self.ensure_dockerfile()
 		self.check_machine_specs()
 		machine = self.get_virtual_machine()
 		if not machine["is_new"]:
@@ -100,6 +108,19 @@ class DeployRequest(PipelineBuilder):
 		self.wait_for_virtual_machine(machine["name"])
 		self.ping_deploy_agent(machine["name"])
 		self.enqueue_deploy_on_agent(machine["name"])
+
+	@task
+	def ensure_dockerfile(self) -> str:
+		"""Fail early when the commit has no Containerfile or Dockerfile Buildah would find, since the build agent can't
+		generate one yet. Returns its exact name."""
+		self.set_status("Validating")
+		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
+		installation_id = frappe.db.get_value(
+			"GitHub Deploy App Installation", app.installation, "installation_id"
+		)
+		# One listing of the root, so case and the file's type are read from GitHub, not guessed.
+		root = GitHubDeployApp().list_root(installation_id, app.repository_id, app.repository, self.commit)
+		return find_containerfile(root)
 
 	@task
 	def check_machine_specs(self) -> None:
