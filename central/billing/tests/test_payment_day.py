@@ -209,6 +209,20 @@ class TestPaymentReminder(test_emandate.EmandateTestBase):
 		self.assertTrue(frappe.db.get_value("Invoice", name, "payment_reminder_sent_at"))
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 0)
 
+	def test_a_team_that_pays_by_hand_is_reminded_to_pay_it(self):
+		name = self._invoice_due_on("2026-06-10")
+		test_emandate._set_mode(TEAM, "Manual Checkout")
+
+		payment_notices.send_payment_reminder(name, frappe.utils.get_datetime("2026-06-09 00:30:00"))
+
+		messages = frappe.get_all(
+			"Billing Notification Log",
+			filters={"team": TEAM, "event_type": "Payment Reminder"},
+			pluck="message",
+		)
+		self.assertEqual(len(messages), 1)
+		self.assertIn("Pay it yourself", messages[0])
+
 	def test_an_invoice_settled_or_charged_after_selection_gets_no_reminder(self):
 		now = frappe.utils.get_datetime("2026-06-09 00:30:00")
 		name = self._invoice_due_on("2026-06-10")

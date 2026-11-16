@@ -169,7 +169,9 @@ class TestPaymentScheduledOnAMandate(test_emandate.EmandateTestBase):
 		# A team that pays by hand gets no top-up ask: the reminder names no method.
 		frappe.db.set_value("Billing Profile", test_emandate.TEAM, "collection_mode", "Manual Checkout")
 		context = payment_notices.get_payment_context(invoice)
-		self.assertEqual((context["method"], context["over_limit"]), (None, True))
+		self.assertEqual(
+			(context["method"], context["pays_by_hand"], context["over_limit"]), (None, True, False)
+		)
 		self.assertTrue(payment_notices.send_payment_reminder(invoice.name, now).get("reminded"))
 
 
@@ -199,6 +201,15 @@ class TestPaymentDateChanged(IntegrationTestCase):
 		self.assertEqual(len(logs), 1)
 		self.assertIn("5th", logs[0].message)
 		self.assertIn("5 December 2026", logs[0].message)
+
+	def test_a_team_that_pays_by_hand_is_told_invoices_are_due(self):
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Manual Checkout")
+		with self.freeze_time("2026-11-05 10:00:00"):
+			self._save_day(5)
+
+		message = _logs("Payment Date Changed")[0].message
+		self.assertIn("Pay each one", message)
+		self.assertNotIn("We'll charge", message)
 
 	def test_an_issued_invoice_keeps_its_payment_date(self):
 		invoice = frappe.get_doc(
