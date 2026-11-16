@@ -48,7 +48,7 @@ website_user_home_page = "dashboard"
 # Apps
 # ------------------
 
-# required_apps = []
+required_apps = ["cloudtoolkit"]
 
 add_to_apps_screen = [
 	{

@@ -6,11 +6,11 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.infrastructure.doctype.deploy_app.deploy_app import DeployApp
-from central.infrastructure.doctype.github_connection.test_github_connection import make_team
-from central.infrastructure.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
+from central.deploy.doctype.deploy_app.deploy_app import DeployApp
+from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
 	make_installation,
 )
+from central.infrastructure.doctype.github_connection.test_github_connection import make_team
 from central.tests.test_iam import ensure_user
 
 REPOSITORY = {"repository_id": "11", "full_name": "octo/app", "default_branch": "main"}
@@ -23,7 +23,7 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 		self.team = make_team("Deploy App Team", owner)
 		self.installation = make_installation(self.team)
 
-		app = patch("central.infrastructure.doctype.deploy_app.deploy_app.GitHubDeployApp").start()
+		app = patch("central.deploy.doctype.deploy_app.deploy_app.GitHubDeployApp").start()
 		self.addCleanup(patch.stopall)
 		app.return_value.get_installation_repositories.return_value = [REPOSITORY]
 		app.return_value.has_branch.side_effect = lambda *args: args[-1] in ("main", "staging")
@@ -52,7 +52,8 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 		with self.assertRaises(frappe.DoesNotExistError):
 			DeployApp.add(self.team, "octo/other")
 
-		self.installation.db_set("status", "Disabled")
+		self.installation.status = "Disabled"
+		self.installation.save()
 		with self.assertRaises(frappe.DoesNotExistError):
 			DeployApp.add(self.team, "octo/app")
 
@@ -63,5 +64,6 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 		self.assertEqual(DeployApp.get_for_push("101", "11", "feature"), [])
 		self.assertEqual(DeployApp.get_for_push("202", "11", "main"), [])
 
-		self.installation.db_set("status", "Disabled")
+		self.installation.status = "Disabled"
+		self.installation.save()
 		self.assertEqual(DeployApp.get_for_push("101", "11", "main"), [])

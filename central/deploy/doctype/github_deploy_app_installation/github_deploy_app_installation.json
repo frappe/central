@@ -24,7 +24,7 @@
  "links": [],
  "modified": "2026-11-14 00:00:00.000000",
  "modified_by": "Administrator",
- "module": "Infrastructure",
+ "module": "Deploy",
  "name": "GitHub Deploy App Installation",
  "naming_rule": "Random",
  "owner": "Administrator",

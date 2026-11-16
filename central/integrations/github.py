@@ -201,13 +201,6 @@ class GitHubApp:
 		return response.json()
 
 
-class GitHubDeployApp(GitHubApp):
-	"""The App push-to-deploy installs on user repositories, kept apart from Pilot's read-only App."""
-
-	settings_prefix = "github_deploy_"
-	callback_method = "central.api.integrations.github_deploy.oauth_callback"
-
-
 def repository_summary(repository: dict) -> dict:
 	"""The same shape Pilot's own GitHub provider returns."""
 	return {

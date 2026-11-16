@@ -10,8 +10,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.deploy.github import GitHubDeployApp
 from central.iam import can
-from central.integrations.github import GitHubDeployApp
 
 STATE_TTL_SECONDS = 60 * 60
 

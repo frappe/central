@@ -11,23 +11,26 @@
   "column_break_deploy_app",
   "team",
   "installation",
-  "repository_id"
+  "repository_id",
+  "machine_section",
+  "region",
+  "virtual_machine"
  ],
  "fields": [
   {
+   "description": "owner/name on GitHub.",
    "fieldname": "repository",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Repository",
-   "description": "owner/name on GitHub.",
    "reqd": 1
   },
   {
+   "description": "A push to this branch deploys the app.",
    "fieldname": "branch",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Branch",
-   "description": "A push to this branch deploys the app.",
    "reqd": 1
   },
   {
@@ -61,19 +64,44 @@
    "reqd": 1
   },
   {
+   "description": "GitHub's ID, which stays the same when the repository is renamed or transferred.",
    "fieldname": "repository_id",
    "fieldtype": "Data",
    "label": "Repository ID",
-   "description": "GitHub's ID, which stays the same when the repository is renamed or transferred.",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "fieldname": "machine_section",
+   "fieldtype": "Section Break",
+   "label": "Machine"
+  },
+  {
+   "description": "Where the app's VM runs.",
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "label": "Region",
+   "options": "Region"
+  },
+  {
+   "fieldname": "virtual_machine",
+   "fieldtype": "Link",
+   "label": "Virtual Machine",
+   "options": "Virtual Machine",
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "index_web_pages_for_search": 0,
- "links": [],
- "modified": "2026-11-15 12:00:00.000000",
+ "links": [
+  {
+   "link_doctype": "Deploy Request",
+   "link_fieldname": "deploy_app"
+  }
+ ],
+ "modified": "2026-11-16 12:00:00.000000",
  "modified_by": "Administrator",
- "module": "Infrastructure",
+ "module": "Deploy",
  "name": "Deploy App",
  "naming_rule": "Random",
  "owner": "Administrator",

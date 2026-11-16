@@ -1,0 +1,177 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-15 20:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "deploy_app",
+  "commit",
+  "status",
+  "column_break_deploy_request",
+  "team",
+  "delivery",
+  "agent_build_id",
+  "machine_section",
+  "cpu_millicores",
+  "memory_mib",
+  "disk_mib",
+  "error_section",
+  "error"
+ ],
+ "fields": [
+  {
+   "fieldname": "deploy_app",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Deploy App",
+   "options": "Deploy App",
+   "reqd": 1
+  },
+  {
+   "description": "The pushed commit this request deploys.",
+   "fieldname": "commit",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Commit",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "default": "Queued",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Queued\nProvisioning\nBuilding\nReleasing\nSucceeded\nFailed\nSuperseded",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_deploy_request",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The X-GitHub-Delivery of the push, for tracing.",
+   "fieldname": "delivery",
+   "fieldtype": "Data",
+   "label": "GitHub Delivery",
+   "read_only": 1
+  },
+  {
+   "description": "The build's ID on the deploy agent, used to poll and cancel it.",
+   "fieldname": "agent_build_id",
+   "fieldtype": "Data",
+   "label": "Agent Build ID",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "error_section",
+   "fieldtype": "Section Break",
+   "label": "Error"
+  },
+  {
+   "description": "What the user sees when the deploy failed.",
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Error",
+   "read_only": 1
+  },
+  {
+   "description": "The VM size this deploy runs on, from the commit's frappe_cloud_deploy.toml or the defaults.",
+   "fieldname": "machine_section",
+   "fieldtype": "Section Break",
+   "label": "Machine"
+  },
+  {
+   "default": "2000",
+   "fieldname": "cpu_millicores",
+   "fieldtype": "Int",
+   "label": "CPU (millicores)",
+   "read_only": 1
+  },
+  {
+   "default": "4096",
+   "fieldname": "memory_mib",
+   "fieldtype": "Int",
+   "label": "Memory (MiB)",
+   "read_only": 1
+  },
+  {
+   "default": "20480",
+   "fieldname": "disk_mib",
+   "fieldtype": "Int",
+   "label": "Disk (MiB)",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-16 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Deploy",
+ "name": "Deploy Request",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "commit",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Gray",
+   "title": "Queued"
+  },
+  {
+   "color": "Blue",
+   "title": "Provisioning"
+  },
+  {
+   "color": "Blue",
+   "title": "Building"
+  },
+  {
+   "color": "Orange",
+   "title": "Releasing"
+  },
+  {
+   "color": "Green",
+   "title": "Succeeded"
+  },
+  {
+   "color": "Red",
+   "title": "Failed"
+  },
+  {
+   "color": "Gray",
+   "title": "Superseded"
+  }
+ ],
+ "title_field": "commit",
+ "track_changes": 1
+}

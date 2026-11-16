@@ -3,11 +3,12 @@ import json
 import frappe
 from frappe import _
 
-from central.infrastructure.doctype.deploy_app.deploy_app import DeployApp
-from central.infrastructure.doctype.github_deploy_app_installation.github_deploy_app_installation import (
+from central.deploy.doctype.deploy_app.deploy_app import DeployApp
+from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
+from central.deploy.doctype.github_deploy_app_installation.github_deploy_app_installation import (
 	GitHubDeployAppInstallation,
 )
-from central.integrations.github import GitHubDeployApp
+from central.deploy.github import GitHubDeployApp
 
 DELIVERY_TTL_SECONDS = 24 * 60 * 60
 BRANCH_REF_PREFIX = "refs/heads/"
@@ -37,7 +38,7 @@ def oauth_callback(
 # nosemgrep: guest-whitelisted-method -- the HMAC signature authenticates GitHub.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def webhook() -> None:
-	"""Events of the deploy App. Each delivery is handled once; a push logs the apps it would deploy."""
+	"""Events of the deploy App. Each delivery is handled once; a push queues a deploy of each matching app."""
 	body = frappe.request.get_data()
 	if not GitHubDeployApp().is_valid_webhook_signature(
 		body, frappe.get_request_header("X-Hub-Signature-256")
@@ -54,18 +55,9 @@ def webhook() -> None:
 
 	event = frappe.get_request_header("X-GitHub-Event")
 	payload = json.loads(body)
-	frappe.logger("github_deploy").info(
-		{
-			"delivery": delivery,
-			"event": event,
-			"action": payload.get("action"),
-			"installation_id": payload.get("installation", {}).get("id"),
-			"repository": payload.get("repository", {}).get("full_name"),
-			"ref": payload.get("ref"),
-			"after": payload.get("after"),
-			"deploy_apps": get_deploy_apps(payload) if event == "push" else [],
-		}
-	)
+	if event == "push":
+		for app in get_deploy_apps(payload):
+			DeployRequest.queue(app, payload["after"], delivery)
 
 
 def get_deploy_apps(push: dict) -> list[str]:
