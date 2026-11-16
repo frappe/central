@@ -13,25 +13,13 @@ from central.billing.payments.webhooks import process_webhook
 from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import run_enqueued_inline
+from central.billing.tests.utils import processing_jobs, run_enqueued_inline, run_repeat_counts
 
 EVENT_ID = "evt_webhook_500"
 PAYLOAD = (
 	b'{"id":"' + EVENT_ID.encode() + b'","type":"payment_intent.succeeded","data":{"object":{"id":"pi_x"}}}'
 )
 HEADERS = {"Stripe-Signature": "t=1,v1=deadbeef"}
-PROCESS_JOB = "central.billing.payments.webhooks.handle_webhook_event"
-COUNT_JOB = "central.billing.payments.webhooks.count_repeat_delivery"
-
-
-def processing_jobs(enqueue) -> int:
-	return sum(1 for call in enqueue.call_args_list if call.args[0] == PROCESS_JOB)
-
-
-def run_repeat_counts(method, **kwargs):
-	"""Run the repeat-count job inline and leave the processing job queued."""
-	if method == COUNT_JOB:
-		run_enqueued_inline(method, **kwargs)
 
 
 @contextmanager
