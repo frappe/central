@@ -21,6 +21,10 @@
   "signup_app",
   "frappe_version",
   "landing_route",
+  "connector_section",
+  "connector_route",
+  "column_break_connector",
+  "connector_hosts",
   "trial_section",
   "trial_days",
   "column_break_trial",
@@ -114,6 +118,29 @@
    "label": "Landing Route"
   },
   {
+   "collapsible": 1,
+   "description": "A sign in from an AI app such as ChatGPT or Claude, which returns to the app once the site is open.",
+   "fieldname": "connector_section",
+   "fieldtype": "Section Break",
+   "label": "AI Connector"
+  },
+  {
+   "description": "The page on the site that sends the user back to the AI app, such as /api/method/crm.api.connector.return_to_connector. Leave empty to turn off connector sign in.",
+   "fieldname": "connector_route",
+   "fieldtype": "Data",
+   "label": "Connector Route"
+  },
+  {
+   "fieldname": "column_break_connector",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The hosts a connector sign in can return to, one on each line, such as connect.example.com.",
+   "fieldname": "connector_hosts",
+   "fieldtype": "Small Text",
+   "label": "Connector Hosts"
+  },
+  {
    "fieldname": "trial_section",
    "fieldtype": "Section Break",
    "label": "Trial"
@@ -186,7 +213,7 @@
  "index_web_pages_for_search": 1,
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-11-04 14:00:00.000000",
+ "modified": "2026-11-16 12:00:00.000000",
  "modified_by": "prathamesh@frappe.io",
  "module": "Signups",
  "name": "Product",
