@@ -8,6 +8,7 @@ import type {
 } from '@/components/onboarding/steps'
 import { type StepStatus, useOnboarding } from '@/composables/useOnboarding'
 import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 
 // The dialog orders the steps, moves between them, and records each answer. Every
 // step saves its own work. It cannot be dismissed: the owner finishes or skips it.
@@ -91,6 +92,8 @@ async function finish(): Promise<void> {
 	open.value = false
 	await router.push('/servers')
 }
+
+const finishStepErrorTitle = __("Couldn't finish this step")
 </script>
 
 <template>
@@ -110,7 +113,13 @@ async function finish(): Promise<void> {
 			/>
 		</div>
 
-		<Alert v-if="error" class="mb-4" theme="red" :title="error" />
+		<Alert
+			v-if="error"
+			class="mb-4"
+			theme="red"
+			:title="finishStepErrorTitle"
+			:description="error"
+		/>
 
 		<Transition
 			mode="out-in"
@@ -142,7 +151,7 @@ async function finish(): Promise<void> {
 					v-if="canGoBack"
 					variant="ghost"
 					icon-left="lucide-arrow-left"
-					label="Back"
+					:label="__('Back')"
 					:disabled="busy || stepHandle?.saving"
 					@click="goBack"
 				/>
@@ -151,13 +160,13 @@ async function finish(): Promise<void> {
 				<div class="flex flex-col-reverse gap-2 sm:flex-row">
 					<Button
 						v-if="canSkip"
-						:label="isAnswered ? 'Next' : 'Skip'"
+						:label="isAnswered ? __('Next') : __('Skip')"
 						:disabled="busy || stepHandle?.saving"
 						@click="advance('Skipped')"
 					/>
 					<Button
 						variant="solid"
-						:label="stepHandle?.submitLabel ?? 'Continue'"
+						:label="stepHandle?.submitLabel ?? __('Continue')"
 						:loading="busy || stepHandle?.saving"
 						:disabled="!stepHandle?.canSubmit"
 						@click="runPrimary"

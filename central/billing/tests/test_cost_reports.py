@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import frappe
 
+from central.billing.report._economics import BilledMonth
 from central.billing.report._telemetry import Telemetry
 from central.billing.report.allocation_vs_usage import allocation_vs_usage
 from central.billing.report.bare_metal_capacity import bare_metal_capacity
@@ -14,7 +15,7 @@ from central.billing.report.service_profitability import service_profitability
 from central.billing.report.stranded_capacity import stranded_capacity
 from central.billing.report.vm_packing_matrix import vm_packing_matrix
 from central.billing.tests.test_unit_economics import REGION, make_metal_server, seed_fleet
-from central.billing.tests.utils import BillingTestCase
+from central.billing.tests.utils import BillingTestCase, complete_billing_profile, ensure_team
 
 HOST = "host-1"
 
@@ -22,6 +23,23 @@ HOST = "host-1"
 def line(team, service, amount, cost=0.0, **values):
 	base = {"quantity": 0, "days": 0, "hours": 0, "vcpus": 0, "unit": None}
 	return frappe._dict(base, team=team, service=service, revenue_inr=amount, cost_inr=cost, **values)
+
+
+def invoice(team, item, amount, status="Paid"):
+	frappe.get_doc(
+		{
+			"doctype": "Invoice",
+			"team": team,
+			"invoice_type": "Billable",
+			"status": status,
+			"period_start": "2026-10-01",
+			"period_end": "2026-10-31",
+			"currency": "INR",
+			"subtotal": amount,
+			"total": amount,
+			"items": [{**item, "amount": amount}],
+		}
+	).insert(ignore_permissions=True)
 
 
 def no_telemetry():
@@ -54,6 +72,22 @@ class TestMoneyReports(BillingTestCase):
 		self.assertEqual((rows[0]["customers"], rows[0]["usage"]), (2, 2000))
 		self.assertEqual((rows[0]["revenue_per_unit"], rows[0]["cost_per_unit"]), (0.5, 0.2))
 		self.assertEqual(rows[0]["margin"], 60)
+
+	def test_an_internal_teams_invoice_earns_nothing_but_still_costs(self):
+		team = "team-cost-internal"
+		ensure_team(team)
+		complete_billing_profile(team)
+		frappe.db.set_value("Billing Profile", team, "is_internal", 1)
+		if not frappe.db.exists("Resource Type", "Cost Test Tokens"):
+			frappe.get_doc({"doctype": "Resource Type", "resource_type_name": "Cost Test Tokens"}).insert()
+		frappe.db.set_value("Resource Type", "Cost Test Tokens", "cost_per_unit_inr", 0.5)
+		invoice(team, {"resource_type": "Cost Test Tokens", "quantity": 100}, 300, status="Outstanding")
+		filters = {"month": "2026-10-01", "team": team}
+
+		[only] = BilledMonth(filters).lines
+		self.assertEqual((only.revenue_inr, only.cost_inr), (0.0, 50))
+		_, rows, *_ = service_profitability.execute(filters)
+		self.assertEqual((rows[0]["revenue"], rows[0]["cost"]), (0, 50))
 
 
 class TestCapacityReports(BillingTestCase):
@@ -142,6 +176,16 @@ class TestCapacityReports(BillingTestCase):
 		self.assertEqual(row["purchase_price"], 120000)
 		self.assertGreater(row["running_cost"], 0)
 		self.assertIsNone(row["payback_months"])  # it has earned nothing, so it never pays back
+
+	def test_an_internal_teams_paid_invoice_earns_the_machine_nothing(self):
+		frappe.db.set_value("Virtual Machine", "ue-internal", "atlas_host_id", HOST)
+		invoice("team-ue-paid", {"subscription_resource": "ue-paid"}, 3000)
+		invoice("team-ue-internal", {"subscription_resource": "ue-internal"}, 5000)
+
+		_, rows, *_ = bare_metal_roi.execute({"region": REGION})
+		row = next(row for row in rows if row["metal_server"] == "ue-metal-1")
+
+		self.assertEqual(row["earned"], 3000)
 
 
 class TestTelemetry(BillingTestCase):

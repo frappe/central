@@ -124,6 +124,7 @@ class ChargeTestBase(IntegrationTestCase):
 					"team": TEAM,
 					"subscription": self.sub,
 					"status": "Outstanding",
+					"payment_date": f"2026-{month + 1:02d}-01",
 					"due_date": "2026-12-31",
 					"period_start": f"2026-{month:02d}-01",
 					"period_end": f"2026-{month:02d}-{last_day}",

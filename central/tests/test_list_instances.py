@@ -100,13 +100,15 @@ class TestListInstances(IntegrationTestCase):
 				"memory_megabytes": 4096,
 				"disk_gigabytes": 40,
 				"frappe_version": "v15",
+				"image_offering": "ubuntu",
 			}
 		).insert(ignore_permissions=True)
 		frappe.set_user(self.owner)
 		servers = registry(team=self.team.name)["servers"]
 
 		self.assertEqual(len(servers), 1)
-		for field in ("name", "resource_id", "plan", "status", "region"):
+		for field in ("name", "resource_id", "plan", "status", "region", "has_wireguard_access"):
 			self.assertIn(field, servers[0])
 		self.assertEqual(servers[0].name, servers[0].resource_id)
 		self.assertEqual(servers[0].frappe_version, "v15")
+		self.assertEqual(servers[0].image_title, frappe.db.get_value("Image Offering", "ubuntu", "title"))

@@ -12,7 +12,8 @@ An image is the disk that a new server starts from. It decides what is installed
 | Image | The server starts with | Use it for |
 | --- | --- | --- |
 | **Frappe** | Ubuntu 24.04, [Pilot](/pilot/), and a bench. Some builds also have a site. | Frappe apps such as ERPNext, Helpdesk, and Raven. |
-| **Ubuntu** | A clean Ubuntu installation. | Anything else: a database, a CI runner, an API, or a tool your team uses. |
+| **Apps** | Ubuntu and one service, such as Redis or MariaDB, set up at first boot. | A database, a cache, or monitoring, ready to use. See [Apps](/apps/). |
+| **Ubuntu** | A clean Ubuntu installation. | Anything else: a CI runner, an API, or a tool your team uses. |
 
 Each image has builds. A build is one version of the image, such as **Version 16** with the date it was built. The **New server** page selects the newest build for you. Select an older build only when you need that exact version.
 
@@ -46,6 +47,10 @@ Atlas keeps the image and makes it available to every host in the region. This i
 
 Atlas builds the Ubuntu images from Ubuntu releases. It adds the parts a server needs to start in the region, so the server reads its network settings and your [SSH keys](/servers/access) when it boots. Nothing else is installed.
 
+## How an app image is built
+
+Cargo builds each app from its folder in the [one-click templates](https://github.com/frappe/one-click-templates) repository. It installs the service on a temporary build machine, saves the disk as an image, and deletes the machine. The image holds no password. The server creates its passwords at its first boot. See [First boot](/apps/#first-boot).
+
 ## Images and regions
 
 An image belongs to one region. A server starts only from an image in its own region. The **New server** page shows the builds of the region that you select.
@@ -53,6 +58,7 @@ An image belongs to one region. A server starts only from an image in its own re
 ## See also
 
 - [Create a server](/servers/create)
+- [Apps](/apps/)
 - [How Frappe Cloud works](/get-started/how-it-works)
 - [What Pilot is](/pilot/)
 - [Snapshots](/servers/snapshots)

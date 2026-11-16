@@ -7,6 +7,8 @@ from itertools import pairwise
 import frappe
 from frappe import _
 
+from central.central.doctype.activity_event.activity_event import ActivityEvent
+from central.central.doctype.activity_event.tracked import CONSOLE
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone, build_envelope
 from central.iam import can_on_any_server
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
@@ -266,11 +268,14 @@ def get_console_url(server: VirtualMachine, mode: ConsoleMode) -> str:
 		frappe.throw(_("Start the server before you open its console."))
 
 	try:
-		return get_client(server).get_console_url(server.atlas_vm_id, mode=mode)
+		url = get_client(server).get_console_url(server.atlas_vm_id, mode=mode)
 	except AtlasRejected:
 		if mode != "ssh":
 			raise
 		frappe.throw(_("SSH did not start on this server. Open the serial console (TTY) instead."))
+
+	ActivityEvent.record(server, f"server.{mode}_console_opened", CONSOLE)
+	return url
 
 
 def refresh_server(name: str) -> None:

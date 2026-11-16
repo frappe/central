@@ -4,8 +4,11 @@
 
 import frappe
 
+from central.billing import settings
+from central.billing.doctype.billing_profile.billing_profile import get_payment_date
 from central.billing.projection import engine
 from central.billing.projection.basis import ESTIMATED, MEASURED
+from central.billing.revenue.dunning import get_suspension_date_after
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
@@ -168,7 +171,7 @@ class TestTheCalendar(ProjectionTestBase):
 		cal = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")["calendar"]
 
 		self.assertEqual(cal["if_paid_on_time"][0]["stage"], "Settled")
-		self.assertEqual(cal["if_paid_on_time"][0]["date"], cal["due_on"])
+		self.assertEqual(cal["if_paid_on_time"][0]["date"], str(get_payment_date(TEAM, "2026-10-01")))
 
 		stages = [s["stage"] for s in cal["if_never_paid"]]
 		self.assertIn("Retry", stages)
@@ -176,13 +179,25 @@ class TestTheCalendar(ProjectionTestBase):
 		self.assertIn("Suspend", stages)
 		self.assertIn("Terminate", stages)
 
-	def test_the_ladder_is_dated_from_the_due_date(self):
+	def test_the_ladder_is_dated_from_the_payment_date(self):
 		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
 		frappe.db.commit()
-		cal = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")["calendar"]
-		suspend = next(s for s in cal["if_never_paid"] if s["stage"] == "Suspend")
-		expected = frappe.utils.add_days(cal["due_on"], suspend["day"])
-		self.assertEqual(suspend["date"], str(expected))
+		ladder = {"dunning_retry_interval_days": 2, "invoice_due_days": 7, "suspension_day": 15}
+		with settings.overridden(**ladder, terminate_after_days=10):
+			cal = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")["calendar"]
+
+		dated = [(s["stage"], s["date"]) for s in cal["if_never_paid"]]
+		self.assertEqual(
+			dated,
+			[
+				("Retry", "2026-10-03"),
+				("Retry", "2026-10-05"),
+				("Retry", "2026-10-07"),
+				("Overdue", "2026-10-07"),
+				("Suspend", "2026-10-15"),
+				("Terminate", "2026-10-25"),
+			],
+		)
 
 
 class TestInvoicesAlreadyInFlight(ProjectionTestBase):
@@ -200,8 +215,10 @@ class TestInvoicesAlreadyInFlight(ProjectionTestBase):
 					"subtotal": 5000,
 					"total": 5000,
 					"expected_collection": 5000,
+					"payment_date": due,
 					"due_date": due,
 					"dunning_starts_on": dunning_starts_on,
+					"suspends_on": get_suspension_date_after(due, due),
 				}
 			)
 			.insert(ignore_permissions=True)

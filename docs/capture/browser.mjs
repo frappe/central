@@ -1,5 +1,6 @@
 import { chromium } from '@playwright/test'
 import { atlasFixtures, pilotRoutes } from './fixtures.mjs'
+import { serviceFixtures } from './services.mjs'
 
 export const BASE_URL = process.env.DOCS_DEMO_URL || 'http://docs.localhost:8010'
 export const PILOT_URL = process.env.DOCS_PILOT_URL || 'http://localhost:7003'
@@ -64,9 +65,9 @@ export async function openApp(theme, { app = 'console', scale = 2, motion = fals
 	return { browser, context, page }
 }
 
-/** The console reads that need a live region answer from fixtures. The v2 API wraps the answer as `data`. */
+/** The console reads that need a live region or a remote service answer from fixtures. The v2 API wraps the answer as `data`. */
 async function answerFromFixtures(context) {
-	for (const [method, answer] of Object.entries(atlasFixtures())) {
+	for (const [method, answer] of Object.entries({ ...atlasFixtures(), ...serviceFixtures() })) {
 		await context.route(
 			(url) => url.pathname.endsWith(`/method/${method}`),
 			(route) => {

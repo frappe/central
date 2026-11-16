@@ -30,6 +30,18 @@ export default [
 		target: section('Firewall'),
 		setup: (page) => page.locator(section('Firewall')).evaluate((element) => element.scrollIntoView({ block: 'start' })),
 	},
+	{
+		name: 'servers/apply-ruleset',
+		path: serverPath('erp-production', 'networking'),
+		target: '[role=dialog]',
+		async setup(page) {
+			await page.getByRole('button', { name: 'Apply ruleset' }).click()
+			await page.getByRole('dialog').waitFor()
+			await page.getByRole('checkbox', { name: 'Use Base' }).click()
+		},
+	},
+	{ name: 'servers/firewall-rulesets', path: '/settings/firewall-rulesets' },
+	{ name: 'servers/activity', path: serverPath('erp-production', 'activity') },
 	{ name: 'servers/access', path: serverPath('erp-production', 'access') },
 	{ name: 'servers/ssh-keys', path: '/settings/ssh-keys' },
 	{ name: 'servers/snapshots', path: '/servers/snapshots' },

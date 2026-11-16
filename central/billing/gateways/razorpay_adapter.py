@@ -19,13 +19,14 @@ from central.billing.gateways.base import (
 	RefundResult,
 	VerifiedPayment,
 	WebhookNotFound,
+	event_time,
 	header_value,
 	token_check,
 )
 from central.billing.gateways.razorpay_recurring import recurring_charge, recurring_result, refused
-
-# Razorpay raises these for transient/server failures; a refused request is BadRequestError.
-_TRANSIENT = (razorpay.errors.GatewayError, razorpay.errors.ServerError, requests.exceptions.RequestException)
+from central.billing.gateways.razorpay_setup import TRANSIENT as _TRANSIENT
+from central.billing.gateways.razorpay_setup import RazorpaySetup
+from central.billing.gateways.razorpay_setup import order_payments as _order_payments
 
 # The events the webhook spine consumes (see webhooks.handle_webhook_event).
 RAZORPAY_WEBHOOK_EVENTS = (
@@ -47,7 +48,7 @@ def _entity_ids(entity: dict) -> set[str]:
 	return {entity[field] for field in fields if isinstance(entity.get(field), str) and entity[field]}
 
 
-class RazorpayAdapter(GatewayAdapter):
+class RazorpayAdapter(RazorpaySetup, GatewayAdapter):
 	# common_site_config.json overrides for live keys (see GatewayAdapter.get_credential).
 	conf_keys: ClassVar[dict[str, str]] = {
 		"api_key": "razorpay_key_id",
@@ -270,7 +271,8 @@ class RazorpayAdapter(GatewayAdapter):
 
 	def parse_webhook_event(self, payload: dict, headers: dict | None = None) -> NormalisedEvent:
 		"""The dedupe id is built from the signed body. Razorpay's X-Razorpay-Event-Id
-		header is outside the signature, so a replayed body could carry a new one."""
+		header is outside the signature, so a replayed body could carry a new one; it is
+		kept only to find the delivery in Razorpay's webhook logs."""
 		entities = payload.get("payload") or {}
 		entity_ids = ":".join(
 			f"{kind}={(entities[kind].get('entity') or {}).get('id')}" for kind in sorted(entities)
@@ -279,6 +281,8 @@ class RazorpayAdapter(GatewayAdapter):
 			gateway_event_id=f"{payload.get('event')}:{payload.get('created_at')}:{entity_ids}"[:140],
 			event_type=payload.get("event"),
 			payload=payload,
+			occurred_at=event_time(payload.get("created_at")),
+			delivery_id=header_value(headers, "X-Razorpay-Event-Id"),
 		)
 
 	def get_transaction_status(self, gateway_txn_id: str) -> str:
@@ -455,10 +459,6 @@ def _verified(payment: dict) -> VerifiedPayment:
 		currency=(payment.get("currency") or "").upper(),
 		order_id=payment.get("order_id"),
 	)
-
-
-def _order_payments(client, order_id: str) -> list[dict]:
-	return (client.order.payments(order_id) or {}).get("items") or []
 
 
 def _settled_or_live(payments: list[dict]) -> PaymentResult | None:

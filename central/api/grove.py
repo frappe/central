@@ -44,7 +44,9 @@ def datum_token(region: str, resource_id: str) -> dict:
 	never write as one of Central's servers. Grove mints it inside the job that writes it to the
 	box and asks again with a day of its life left."""
 	if not resource_id.startswith(RESOURCE_PREFIX):
-		frappe.throw(_("A Grove resource id starts with {0}.").format(RESOURCE_PREFIX), frappe.ValidationError)
+		frappe.throw(
+			_("A Grove resource id starts with {0}.").format(RESOURCE_PREFIX), frappe.ValidationError
+		)
 
 	region_id = frappe.get_doc("Region", region).get_atlas_region_id()
 

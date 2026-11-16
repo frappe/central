@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
+from frappe import _
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, StringConstraints, model_validator
 
 from central.billing.catalog.rate_card import COMPONENT_UNITS
@@ -30,7 +31,7 @@ class ResourceQuantity(BaseModel):
 		# The server shape is read from these units, so they must match.
 		unit = COMPONENT_UNITS.get(self.resource_type)
 		if unit and self.unit != unit:
-			raise ValueError("The unit must match the selected resource type.")
+			raise ValueError(_("The unit must match the selected resource type."))
 
 		return self
 
@@ -57,7 +58,8 @@ class CreateServerInput(BaseModel):
 	is_firewall_enabled: bool = False
 	# Cloud-init reads the script as sent, so keep its whitespace.
 	user_data: Annotated[str, StringConstraints(strip_whitespace=False)] = ""
-	# The answers to an app's inputs. Its Cargo turns them into the user data.
+	# The answers to an app's inputs, as `AppAnswers`. Central turns them into the user data, and
+	# routes a `site_name` answer to the server.
 	app_inputs: dict[str, str] = Field(default_factory=dict, max_length=20)
 
 
@@ -89,6 +91,8 @@ class ServerCreation(BaseModel):
 	is_firewall_enabled: bool = False
 	user_data: str = ""
 	image_tags: dict[str, str]
+	# The https guide of an app server, from its template.
+	documentation_url: str | None = None
 	site: SiteCreation | None = None
 	cpu_millicores: int = Field(ge=100, le=32000)
 	memory_mib: PositiveInt
@@ -133,21 +137,23 @@ class FirewallRule(BaseModel):
 	@model_validator(mode="after")
 	def validate_rule(self):
 		if self.ports and self.protocol not in ("tcp", "udp"):
-			raise ValueError("Ports apply only to TCP and UDP rules.")
+			raise ValueError(_("Ports apply only to TCP and UDP rules."))
 
 		match = PORTS.fullmatch(self.ports) if self.ports else None
 		if self.ports and not match:
-			raise ValueError("Enter one port, such as 8000, or one range, such as 8000-8100.")
+			raise ValueError(_("Enter one port, such as 8000, or one range, such as 8000-8100."))
 		if match and not int(match[1]) <= int(match[2] or match[1]) <= 65535:
-			raise ValueError("Ports go from 1 to 65535, with the smaller number first.")
+			raise ValueError(_("Ports go from 1 to 65535, with the smaller number first."))
 
 		for cidr in self.cidrs:
 			try:
 				network = ipaddress.ip_network(cidr)
 			except ValueError:
-				raise ValueError(f"{cidr} is not an IP address range, such as 198.51.100.0/24.") from None
+				raise ValueError(
+					_("{0} is not an IP address range, such as 198.51.100.0/24.").format(cidr)
+				) from None
 			if str(network) != cidr:
-				raise ValueError(f"Write {cidr} as {network}.")
+				raise ValueError(_("Write {0} as {1}.").format(cidr, network))
 
 		return self
 
@@ -164,14 +170,50 @@ class FirewallChange(BaseModel):
 	@model_validator(mode="after")
 	def validate_unique_rules(self):
 		if self.enabled is None and self.inbound is None and self.outbound is None:
-			raise ValueError("Send the firewall state or a rule list to change.")
+			raise ValueError(_("Send the firewall state or a rule list to change."))
 
 		for rules in (self.inbound or [], self.outbound or []):
 			keys = [(rule.protocol, rule.ports, tuple(sorted(rule.cidrs))) for rule in rules]
 			if len(keys) != len(set(keys)):
-				raise ValueError("Each rule can appear only once.")
+				raise ValueError(_("Each rule can appear only once."))
 
 		return self
+
+
+class AppInput(TypedDict):
+	"""One entry of `inputs` in an app's template.yaml, as Cargo sends it."""
+
+	name: str
+	label: NotRequired[str]
+	type: NotRequired[Literal["string", "email", "domain", "password"]]
+	required: NotRequired[bool]
+	max_length: NotRequired[int]
+	pattern: NotRequired[str]
+	description: NotRequired[str]
+
+
+class AppMinimumSize(TypedDict):
+	cpu_millicores: int
+	memory_mib: int
+	disk_mib: int
+
+
+class AppPort(TypedDict):
+	port: int
+	protocol: Literal["tcp", "udp"]
+
+
+class AppRequirements(TypedDict):
+	"""What Cargo's `get_one_click_image_requirements` returns for an app."""
+
+	inputs: list[AppInput]
+	minimum_size: AppMinimumSize
+	ports: list[AppPort]
+	documentation: NotRequired[str | None]
+
+
+# The customer's answer to each app input, by input name.
+AppAnswers = dict[str, str]
 
 
 class ActionStatus(TypedDict):

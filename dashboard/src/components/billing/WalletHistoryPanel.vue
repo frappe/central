@@ -9,6 +9,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { infoToast } from '@/lib/feedback'
 import { money, signedMoney } from '@/lib/format'
 import { downloadReceipt } from '@/lib/invoicePdf'
+import { __ } from '@/lib/translate'
 import type { CreditLedgerEntry } from '@/types/billing'
 
 // Wallet history — a docked side panel (like the invoice detail tray), opened
@@ -33,6 +34,13 @@ function onAutoRecharge(): void {
 const showTopup = ref(false)
 function onAddCredit(): void {
 	if (requireSetup()) showTopup.value = true
+}
+
+function gstPaid(entry: CreditLedgerEntry): string {
+	const amount = money(entry.tax_amount, entry.currency || currency.value)
+	return entry.tax_label
+		? __('GST paid: {0} ({1})', [amount, entry.tax_label])
+		: __('GST paid: {0}', [amount])
 }
 
 function isCredit(entry: CreditLedgerEntry): boolean {
@@ -96,9 +104,7 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 						</p>
 						<p class="text-p-sm text-ink-gray-5">
 							{{ e.created_at }}
-							<span v-if="Number(e.tax_amount)">
-								· GST {{ money(e.tax_amount, e.currency || currency) }} paid
-							</span>
+							<span v-if="Number(e.tax_amount)"> · {{ gstPaid(e) }}</span>
 						</p>
 					</div>
 					<span

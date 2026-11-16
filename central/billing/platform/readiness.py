@@ -291,19 +291,17 @@ def check_subscriptions_name_a_known_region() -> list[Violation]:
 
 
 def check_running_servers_are_billed() -> list[Violation]:
-	"""A running server has an active subscription, unless it is a free trial."""
+	"""A running server has an open billing segment, unless it is a free trial."""
 	from central.signups.trial import is_billing_deferred
 
-	billed = set(
-		frappe.get_all("Subscription", filters={"enabled": 1, "server_id": ["is", "set"]}, pluck="server_id")
-	)
+	billed = {segment.server_id for segment in active_segments({"server_id": ["is", "set"]})}
 	return [
 		Violation(
 			check="S2",
 			team=vm.team,
 			subject_doctype="Virtual Machine",
 			subject=vm.name,
-			detail="Running with no active subscription, so nothing bills it.",
+			detail="Running with no open billing period, so nothing bills it.",
 		)
 		for vm in frappe.get_all("Virtual Machine", filters={"status": "Running"}, fields=["name", "team"])
 		if vm.name not in billed and not is_billing_deferred(vm.name)
@@ -311,26 +309,19 @@ def check_running_servers_are_billed() -> list[Violation]:
 
 
 def check_terminated_servers_stop_billing() -> list[Violation]:
-	"""A terminated server's subscription is closed."""
-	subscription = frappe.qb.DocType("Subscription")
-	machine = frappe.qb.DocType("Virtual Machine")
-	rows = (
-		frappe.qb.from_(subscription)
-		.join(machine)
-		.on(machine.name == subscription.server_id)
-		.select(subscription.name, subscription.team)
-		.where((subscription.enabled == 1) & (machine.status == "Terminated"))
-		.run(as_dict=True)
-	)
+	"""A terminated server's subscription has no open billing segment, whatever `enabled` says."""
+	terminated = frappe.get_all("Virtual Machine", filters={"status": "Terminated"}, pluck="name")
+	if not terminated:
+		return []
 	return [
 		Violation(
 			check="S3",
-			team=row.team,
+			team=segment.team,
 			subject_doctype="Subscription",
-			subject=row.name,
-			detail="Still active on a terminated server, so it keeps billing.",
+			subject=segment.subscription,
+			detail="Still billing on a terminated server.",
 		)
-		for row in rows
+		for segment in active_segments({"server_id": ["in", terminated]})
 	]
 
 
@@ -520,18 +511,24 @@ def check_teams_were_invoiced() -> list[Violation]:
 
 
 def check_billed_teams_have_a_tax_profile() -> list[Violation]:
-	"""A team with no Tax Profile is invoiced with no tax, so it is named before its invoice goes out."""
+	"""A billed Indian team with no Tax Profile pays default GST, so an operator checks it for SEZ or TDS."""
 	billed = set(frappe.get_all("Subscription", filters={"enabled": 1}, pluck="team", distinct=True))
 	missing = billed - set(frappe.get_all("Tax Profile", pluck="team")) - _internal_teams()
+	indian = frappe.get_all(
+		"Billing Profile",
+		filters={"name": ["in", list(missing) or [""]]},
+		or_filters={"country": INDIA, "currency": "INR"},
+		pluck="name",
+	)
 	return [
 		Violation(
 			check="B8",
 			team=team,
 			subject_doctype="Team",
 			subject=team,
-			detail="This team has no Tax Profile, so its invoices carry no tax.",
+			detail="This Indian team has no Tax Profile. Its invoices take GST at the default rate.",
 		)
-		for team in sorted(missing)
+		for team in sorted(indian)
 	]
 
 
@@ -619,7 +616,7 @@ CHECKS = {
 	"T3": ("Tier changes are recorded", check_tier_changes_are_recorded),
 	"B6": ("The run invoiced every team it could", check_teams_were_invoiced),
 	"B7": ("Operator alerts have a destination", check_operator_alerts_have_a_destination),
-	"B8": ("Billed teams have a Tax Profile", check_billed_teams_have_a_tax_profile),
+	"B8": ("Billed Indian teams have a Tax Profile", check_billed_teams_have_a_tax_profile),
 	"S1": ("Running subscriptions are priced", check_subscriptions_are_priced),
 	"S2": ("Running servers are billed", check_running_servers_are_billed),
 	"S3": ("Terminated servers stop billing", check_terminated_servers_stop_billing),

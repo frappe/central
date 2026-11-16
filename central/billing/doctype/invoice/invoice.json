@@ -15,7 +15,9 @@
   "period_start",
   "period_end",
   "due_date",
+  "payment_date",
   "dunning_starts_on",
+  "suspends_on",
   "hold_reason",
   "period_key",
   "section_break_items",
@@ -30,6 +32,8 @@
   "output_tax_amount",
   "zero_rating_reason",
   "customer_gstin",
+  "gst_state",
+  "gst_state_recorded",
   "total",
   "column_break_totals",
   "tds_applicable",
@@ -54,7 +58,8 @@
   "erpnext_sync_error",
   "pdf_url",
   "predebit_notified_at",
-  "predebit_charge_after"
+  "predebit_charge_after",
+  "payment_reminder_sent_at"
  ],
  "fields": [
   {
@@ -103,11 +108,25 @@
    "label": "Due Date"
   },
   {
+   "description": "The day the remainder after credits is charged to the payment method. Set from the team's payment day when the invoice opens.",
+   "fieldname": "payment_date",
+   "fieldtype": "Date",
+   "label": "Payment Date",
+   "read_only": 1
+  },
+  {
    "fieldname": "dunning_starts_on",
    "fieldtype": "Date",
    "label": "Dunning Starts On",
    "read_only": 1,
-   "description": "When the retry ladder may begin. Starts at the due date, and is pushed forward whenever a collection attempt fails on our side — so a billing-run backlog never costs the customer their grace period."
+   "description": "The day the retry ladder counts from. It starts at the payment date. It moves forward when a collection attempt fails on our side, so a billing-run backlog never costs the customer their retries."
+  },
+  {
+   "fieldname": "suspends_on",
+   "fieldtype": "Date",
+   "label": "Suspends On",
+   "read_only": 1,
+   "description": "The day the team is suspended if this invoice stays unpaid. Set when the invoice opens, from the Suspension Day in Billing Settings. It moves forward with Dunning Starts On."
   },
   {
    "description": "Why this draft is waiting instead of being issued. Cleared when it opens.",
@@ -198,6 +217,23 @@
    "fieldname": "customer_gstin",
    "fieldtype": "Data",
    "label": "Customer GSTIN",
+   "read_only": 1
+  },
+  {
+   "description": "The team's billing state when this invoice was issued. Its GST is filed and labelled with this state, so a later change to the team's state does not change it.",
+   "fieldname": "gst_state",
+   "fieldtype": "Data",
+   "label": "GST State",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Set when the GST state is recorded. A recorded blank state means the team had no state when the invoice was issued.",
+   "fieldname": "gst_state_recorded",
+   "fieldtype": "Check",
+   "label": "GST State Recorded",
+   "no_copy": 1,
    "read_only": 1
   },
   {
@@ -365,6 +401,13 @@
    "label": "Pre-debit Charge After",
    "read_only": 1,
    "description": "Earliest time the e-mandate off-session debit may run (notify + 24h)."
+  },
+  {
+   "fieldname": "payment_reminder_sent_at",
+   "fieldtype": "Datetime",
+   "label": "Payment Reminder Sent At",
+   "read_only": 1,
+   "description": "When the team was told that this invoice is charged the next day. A rail that sends a pre-debit notice gets no reminder."
   }
  ],
  "index_web_pages_for_search": 1,
@@ -380,7 +423,7 @@
    "link_fieldname": "invoice"
   }
  ],
- "modified": "2026-10-25 12:00:00.000000",
+ "modified": "2026-11-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice",

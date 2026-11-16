@@ -16,6 +16,7 @@ import { billingPeriod, shortDate } from '@/lib/date'
 import { money } from '@/lib/format'
 import { downloadInvoice } from '@/lib/invoicePdf'
 import { invoiceTheme } from '@/lib/status'
+import { __ } from '@/lib/translate'
 import type { InvoiceSummary } from '@/types/billing'
 
 // Billing › Invoices (#70) — list (left) + docked 24rem receipt panel (right)
@@ -52,6 +53,15 @@ const {
 	reload: reloadDetail,
 	eventDetail,
 } = useInvoiceDetail()
+
+// The invoice's own GST ("IGST 18%", "No GST (SEZ)"), so an issued invoice keeps its tax.
+const taxLineLabel = computed(() => {
+	const invoice = detail.data
+	if (!invoice) return ''
+	if (invoice.tax_label) return invoice.tax_label
+	if (!invoice.output_tax_rate) return invoice.output_tax_type || __('Tax')
+	return `${invoice.output_tax_type || __('Tax')} ${invoice.output_tax_rate}%`
+})
 
 // Activity is folded away by default — for a settled invoice the log is
 // reference, not news. Fold it again when switching invoices.
@@ -248,24 +258,16 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 							</dd>
 						</div>
 						<div
-							v-if="detail.data.output_tax_amount"
+							v-if="detail.data.output_tax_amount || detail.data.tax_label"
 							class="flex justify-between gap-3"
 						>
-							<dt class="text-ink-gray-5">
-								{{ detail.data.output_tax_type || 'Tax' }}
-								<template v-if="detail.data.output_tax_rate">
-									({{ detail.data.output_tax_rate }}%)</template
-								>
-							</dt>
+							<dt class="text-ink-gray-5">{{ taxLineLabel }}</dt>
 							<dd class="tabular-nums text-ink-gray-8">
 								{{ money(detail.data.output_tax_amount, detail.data.currency) }}
 							</dd>
 						</div>
-						<p
-							v-if="detail.data.zero_rating_reason"
-							class="text-p-sm text-ink-gray-5"
-						>
-							{{ detail.data.zero_rating_reason }}
+						<p v-if="detail.data.tax_reason" class="text-p-sm text-ink-gray-5">
+							{{ detail.data.tax_reason }}
 						</p>
 						<div
 							v-if="detail.data.credit_applied"
@@ -280,7 +282,9 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 							v-if="detail.data.advance_tax_applied"
 							class="flex justify-between gap-3"
 						>
-							<dt class="text-ink-green-5">GST paid with top-ups</dt>
+							<dt class="text-ink-green-5">
+								{{ __('{0} paid with top-ups', [detail.data.tax_label || __('GST')]) }}
+							</dt>
 							<dd class="tabular-nums text-ink-green-5">
 								−{{ money(detail.data.advance_tax_applied, detail.data.currency) }}
 							</dd>

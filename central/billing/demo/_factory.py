@@ -598,7 +598,7 @@ def _gateway_customer(team, gateway, customer_id):
 
 def _failed_attempt(team, invoice, pm, gateway, retry, when=None):
 	when = when or frappe.utils.now_datetime()
-	frappe.get_doc(
+	attempt = frappe.get_doc(
 		{
 			"doctype": "Payment Attempt",
 			"invoice": invoice,
@@ -615,6 +615,8 @@ def _failed_attempt(team, invoice, pm, gateway, retry, when=None):
 			"completed_at": when,
 		}
 	).insert(ignore_permissions=True)
+	# Dunning dates its retries from when an attempt was made, so the trail is backdated too.
+	frappe.db.set_value("Payment Attempt", attempt.name, "creation", when, update_modified=False)
 
 
 def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency, base=None):
@@ -704,13 +706,10 @@ def arm_emandate(team):
 	)
 	if not open_inv:
 		return
-	st = collection_mode.evaluate(
-		team,
-		projected_amount=frappe.utils.flt(open_inv.expected_collection),
-		reason="invoice_over_threshold",
-	)
-	if not st["action_required"]:
+	if collection_mode.is_within_off_session_limit(team, open_inv.expected_collection, open_inv.name):
 		emandate.schedule_predebit(open_inv.name)
+	else:
+		collection_mode.trip_off_session_debit(team, "invoice_over_threshold", open_inv.name)
 
 
 # --- helpers ----------------------------------------------------------------

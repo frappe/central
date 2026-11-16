@@ -11,6 +11,7 @@ from central.sso import central_url, mint_cargo_token
 
 if TYPE_CHECKING:
 	from central.infrastructure.doctype.region.region import Region
+	from central.server_models import AppRequirements
 
 PING_PATH = "/api/method/ping"
 CONFIGURE_WEBHOOKS_PATH = "/api/method/cargo.api.webhooks.configure"
@@ -69,33 +70,9 @@ class CargoClient:
 		"""The one-click images this region's Cargo has built, newest per application."""
 		return self._get_one_click("get_supported_one_click_images")
 
-	def get_app_requirements(self, application: str) -> dict:
+	def get_app_requirements(self, application: str) -> AppRequirements:
 		"""The inputs, smallest machine and ports one app needs."""
 		return self._get_one_click("get_one_click_image_requirements", application=application)
-
-	def get_app_user_data(self, application: str, inputs: dict[str, str]) -> str:
-		"""Cloud-init user data carrying the answers to one app's inputs. Cargo checks each
-		answer, so a rejected one comes back as its message."""
-		try:
-			response = requests.post(
-				f"{self._base_url()}{ONE_CLICK_API_PATH}.get_one_click_image_user_data",
-				headers=self._one_click_headers(),
-				json={"application": application, "inputs": inputs},
-				timeout=(5, 20),
-				allow_redirects=False,
-			)
-		except requests.RequestException:
-			frappe.throw(_("Cargo could not be reached for the app's settings."), CargoConnectionError)
-
-		if response.status_code == 417:
-			frappe.throw(_("Check the app settings: {0}").format(_cargo_message(response)))
-		if response.status_code != 200:
-			frappe.throw(
-				_("Cargo could not prepare the app (HTTP {0}).").format(response.status_code),
-				CargoConnectionError,
-			)
-
-		return response.json()["message"]
 
 	def _one_click_headers(self) -> dict[str, str]:
 		return {
@@ -125,14 +102,3 @@ class CargoClient:
 
 	def _base_url(self) -> str:
 		return self.instance.get_cargo_url()
-
-
-def _cargo_message(response: requests.Response) -> str:
-	"""The message Cargo threw for a request it found invalid."""
-	try:
-		messages = frappe.parse_json(response.json()["_server_messages"])
-		message = frappe.parse_json(messages[-1])["message"]
-	except (ValueError, KeyError, IndexError, TypeError):
-		return _("Cargo gave no reason.")
-
-	return frappe.utils.strip_html(message) if isinstance(message, str) else _("Cargo gave no reason.")

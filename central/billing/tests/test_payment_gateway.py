@@ -326,8 +326,9 @@ class TestReregisterWebhook(IntegrationTestCase):
 		self.assertEqual(self.doc.get_password("webhook_secret"), "whsec_new")
 
 	def test_a_skipped_registration_keeps_the_current_endpoint(self):
-		# The test site is *.local, which no gateway can reach, so registration is skipped.
-		result = self.doc.revalidate_and_register_webhook()
+		# No gateway can reach a *.local site, so registration is skipped.
+		with patch(f"{_CONTROLLER}.get_url", return_value="http://central.local"):
+			result = self.doc.revalidate_and_register_webhook()
 
 		self.assertFalse(result["registered"])
 		self.register.assert_not_called()

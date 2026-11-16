@@ -24,6 +24,7 @@ from central.billing.gateways.base import (
 	RefundResult,
 	VerifiedPayment,
 	WebhookNotFound,
+	event_time,
 	header_value,
 )
 
@@ -454,6 +455,7 @@ class StripeAdapter(GatewayAdapter):
 			gateway_event_id=payload.get("id"),
 			event_type=payload.get("type"),
 			payload=payload,
+			occurred_at=event_time(payload.get("created")),
 		)
 
 	def get_transaction_status(self, gateway_txn_id: str) -> str:
@@ -628,6 +630,43 @@ class StripeAdapter(GatewayAdapter):
 			"fingerprint": card.get("fingerprint"),
 		}
 
+	def cancel_setup(self, setup_reference: str) -> str:
+		"""Cancel a SetupIntent (`seti_`) or expire a setup Checkout Session (`cs_`)."""
+		self._configure()
+		if setup_reference.startswith("cs_"):
+			return _expire_session(setup_reference, self._options())
+		return _cancel_intent(stripe.SetupIntent, setup_reference, "setup_intent", self._options())
+
+	def cancel_order(self, order_id: str) -> str:
+		"""Cancel a top-up PaymentIntent (`pi_`) or expire a top-up Checkout Session (`cs_`)."""
+		self._configure()
+		if order_id.startswith("cs_"):
+			return _expire_session(order_id, self._options())
+		return _cancel_intent(stripe.PaymentIntent, order_id, "payment_intent", self._options())
+
+	def read_finished_setup(self, setup_reference: str) -> dict:
+		"""The card a SetupIntent or setup Checkout Session saved, or `{}`. Read only.
+		A setup Stripe no longer has saved nothing."""
+		with _stripe_errors():
+			try:
+				card = self.read_saved_card(setup_reference)
+			except stripe.error.InvalidRequestError as e:
+				if not _is_missing_object(e):
+					raise
+				return {}
+		return card if card.get("payment_method") else {}
+
+	def remove_saved_method(self, method_id: str, customer_reference: str | None = None) -> None:
+		"""Detach the card from its customer. A mandate on the card ends with it. A card
+		Stripe no longer has, or one already detached, counts as removed."""
+		self._configure()
+		with _stripe_errors():
+			try:
+				stripe.PaymentMethod.detach(method_id, **self._options())
+			except stripe.error.InvalidRequestError as e:
+				if not (_is_missing_object(e) or _is_not_attached(e)):
+					raise
+
 	def create_customer(self, team) -> str:
 		self._configure()
 		# Team.owner_user is a Link to User, whose name IS the email address.
@@ -704,6 +743,40 @@ def _unfinished_setup(intent: dict) -> dict:
 		return {}
 
 	return {"setup_error": {"failure_code": error.get("code"), "decline_code": error.get("decline_code")}}
+
+
+def _cancel_intent(resource, intent_id: str, kind: str, options: dict) -> str:
+	"""Stripe refuses to cancel an intent that succeeded, is processing or is already
+	cancelled. That refusal names the intent's status, which is returned instead."""
+	with _stripe_errors():
+		try:
+			return _to_dict(resource.cancel(intent_id, cancellation_reason="abandoned", **options)).get(
+				"status"
+			)
+		except stripe.error.InvalidRequestError as e:
+			error = (getattr(e, "json_body", None) or {}).get("error") or {}
+			if error.get("code") != f"{kind}_unexpected_state":
+				raise
+			return (error.get(kind) or {}).get("status") or "unknown"
+
+
+def _expire_session(session_id: str, options: dict) -> str:
+	"""Stripe expires only an open Checkout Session; a completed or expired one is left as it is."""
+	with _stripe_errors():
+		try:
+			return _to_dict(stripe.checkout.Session.expire(session_id, **options)).get("status")
+		except stripe.error.InvalidRequestError:
+			return "not_open"
+
+
+def _is_missing_object(error: stripe.error.InvalidRequestError) -> bool:
+	"""True when Stripe has no object with the id asked for."""
+	return getattr(error, "code", None) == "resource_missing" or getattr(error, "http_status", None) == 404
+
+
+def _is_not_attached(error: stripe.error.InvalidRequestError) -> bool:
+	"""True when Stripe refuses a detach because the card is attached to no customer."""
+	return "not attached" in str(getattr(error, "user_message", None) or error).lower()
 
 
 @contextmanager

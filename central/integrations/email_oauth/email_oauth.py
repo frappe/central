@@ -143,6 +143,6 @@ def get_provider(provider: str) -> "EmailOAuthProvider":
 	"""The enabled record for `provider`; an enabled one always has a client ID and secret."""
 	config = frappe.db.exists(PROVIDER, provider) and frappe.get_cached_doc(PROVIDER, provider)
 	if not (config and config.enabled):
-		# nosemgrep: frappe-missing-translate-function-python -- a code the site matches on, never shown
+		# nosemgrep: frappe-missing-translate-function-python, central-untranslated-message -- a code the site matches on, never shown
 		frappe.throw(PROVIDER_UNAVAILABLE)
 	return config

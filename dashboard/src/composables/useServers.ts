@@ -58,6 +58,9 @@ export type VirtualMachineRow = Pick<
 	ServerAccess & {
 		pending_action?: string | null
 		plan_title?: string | null
+		image_title?: string | null
+		image_description?: string | null
+		has_wireguard_access?: 0 | 1
 		/** The server's Pilot audience, which a link from that Pilot names it by. */
 		pilot_audience?: string | null
 	}

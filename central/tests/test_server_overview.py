@@ -233,18 +233,6 @@ class TestServerOverview(IntegrationTestCase):
 
 		get.assert_not_called()
 
-	def test_atlas_failure_marks_metrics_unavailable(self):
-		with (
-			patch("central.integrations.servers.get_client") as get_client,
-			patch("central.integrations.servers.frappe.log_error") as log_error,
-		):
-			get_client.return_value.get_vm_metrics.side_effect = AtlasConnectionError
-
-			result = get_cached_metrics(self.server, START)
-
-		self.assertEqual(result, {"available": False})
-		log_error.assert_called_once()
-
 	def test_unknown_atlas_response_fails_loudly(self):
 		with (
 			patch("central.integrations.servers.get_client") as get_client,

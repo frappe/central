@@ -152,11 +152,20 @@ class TestEmailOAuth(IntegrationTestCase):
 	def test_get_active_providers_lists_only_the_enabled_ones(self):
 		frappe.db.set_value(PROVIDER, {"name": ("!=", "microsoft")}, "enabled", 0)
 		self.as_pilot("/api/method/central.api.email_oauth.get_active_providers")
-		self.assertEqual(get_active_providers(), ["microsoft"])
+		self.assertEqual(get_active_providers(), {"microsoft": None})
 
 		self.microsoft.reload().update({"enabled": 0}).save()
 
-		self.assertEqual(get_active_providers(), [])
+		self.assertEqual(get_active_providers(), {})
+
+	def test_get_active_providers_sends_only_googles_client_id(self):
+		frappe.db.set_value(PROVIDER, {"name": ("not in", ["microsoft", "google"])}, "enabled", 0)
+		saved = frappe.db.get_value(PROVIDER, "google", ["enabled", "client_id"], as_dict=True)
+		self.addCleanup(frappe.db.set_value, PROVIDER, "google", saved)
+		frappe.db.set_value(PROVIDER, "google", {"enabled": 1, "client_id": "google-client-id"})
+		self.as_pilot("/api/method/central.api.email_oauth.get_active_providers")
+
+		self.assertEqual(get_active_providers(), {"google": "google-client-id", "microsoft": None})
 
 	# Email OAuth Provider
 

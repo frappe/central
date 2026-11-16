@@ -13,6 +13,7 @@ import PlanGroup from '@/components/servers/PlanGroup.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerNetworkOptions from '@/components/servers/ServerNetworkOptions.vue'
 import ServerSummary from '@/components/servers/ServerSummary.vue'
+import SpendingLimitNotice from '@/components/servers/SpendingLimitNotice.vue'
 import SSHKeysField from '@/components/servers/SSHKeysField.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useServerCreation } from '@/composables/useServerCreation'
@@ -93,6 +94,7 @@ const {
 	submitting,
 	submitError,
 } = useServerCreation()
+
 const paymentFlow = ref<InstanceType<typeof PaymentMethodFlow> | null>(null)
 
 const { setBreadcrumbs } = useBreadcrumbs()
@@ -376,31 +378,12 @@ watch(
 							"
 						/>
 
-						<div
-							v-else-if="bracketExhausted"
-							class="rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
-						>
-							<p class="text-p-sm-medium text-ink-gray-8">
-								You've reached your spending limit
-							</p>
-							<p class="mt-1 text-p-sm text-ink-gray-5">
-								No plans fit your remaining spending limit in this region.
-								Remove a server to free some up, or
-								<ContactSupportLink
-									:context="{ Topic: 'Higher spending limit' }"
-								/>
-								to raise your limit.
-							</p>
-						</div>
-
-						<p v-else-if="nothingToShow" class="text-p-sm text-ink-gray-5">
-							No plans are available for this region within your current
-							spending limit. Select another region, or
-							<ContactSupportLink
-								:context="{ Topic: 'Higher spending limit' }"
-							/>
-							to review your limit.
-						</p>
+						<SpendingLimitNotice
+							v-else-if="bracketExhausted || nothingToShow"
+							:exhausted="bracketExhausted"
+							:available="available"
+							:currency="currency"
+						/>
 
 						<Tabs v-else-if="hasTabs" v-model="activeTab" :tabs="classTabs">
 							<template #tab-panel="{ tab }">

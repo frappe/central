@@ -1,11 +1,16 @@
 import { computed, onScopeDispose, type Ref, ref, watch } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useFleetRows } from '@/composables/useFleetRows'
+import {
+	type FleetView,
+	fleetViewChoice,
+} from '@/composables/useFleetViewChoice'
 import { useRegions } from '@/composables/useRegions'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useSession } from '@/composables/useSession'
 import {
 	flagEmoji,
+	hasCrowdedRegion,
 	hasMapCoords,
 	type MapPin,
 	type RegionSpot,
@@ -197,6 +202,17 @@ export function useServerFleet() {
 		localStorage.getItem(MAP_VIEW_KEY) === 'world' ? 'world' : 'fleet',
 	)
 	watch(mapView, (view) => localStorage.setItem(MAP_VIEW_KEY, view))
+
+	const fleetView = computed({
+		get: (): FleetView => {
+			if (fleetViewChoice.value !== 'auto') return fleetViewChoice.value
+
+			return hasCrowdedRegion(rows.value) ? 'list' : 'map'
+		},
+		set: (view: FleetView) => {
+			fleetViewChoice.value = view
+		},
+	})
 	const frame = computed(() =>
 		(hasMapViewChoice.value && mapView.value === 'fleet'
 			? usedRegions.value
@@ -212,6 +228,7 @@ export function useServerFleet() {
 		settledIds,
 		frame,
 		mapView,
+		fleetView,
 		hasMapViewChoice,
 		query,
 		statusFilter,

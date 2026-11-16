@@ -12,3 +12,5 @@ class WebhookEvent(Document):
 def on_doctype_update():
 	frappe.db.add_index("Webhook Event", ["payment_attempt"])
 	frappe.db.add_index("Webhook Event", ["payment_method"])
+	# The telemetry gauges read waiting and failed events each minute.
+	frappe.db.add_index("Webhook Event", ["status", "modified"])

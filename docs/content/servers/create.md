@@ -17,8 +17,8 @@ This page shows how to create a server from an image. To create a server from a 
 
 1. Go to **Servers**. Click **New server**.
 2. Type a **Name**, such as `pos-mumbai`.
-3. Under **Image**, select **Frappe** or **Ubuntu**. See [Images](/servers/#images).
-4. Select an **Image build**.
+3. Under **Image**, select **Frappe**, **Apps**, or **Ubuntu**. See [Images](/servers/#images).
+4. Select an **Image build**. For **Apps**, select the **App** and fill in its settings. See [Apps](/apps/).
 5. In **SSH keys**, select the keys that can sign in to the server.
 6. Under **Network**, set the address and firewall switches. See [Network options](#network-options).
 7. Under **Region**, select a region. You can also click the region on the map.

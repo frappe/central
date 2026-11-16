@@ -239,12 +239,16 @@ function getSupportItems(
 	server: VirtualMachineRow,
 	site: string | null | undefined,
 ): DropdownOption[] {
-	const reference = server.title
-		? `${server.title} (${server.resource_id})`
-		: server.resource_id
 	const option = useSupport().getContactSupportOption({
-		Server: reference,
 		Site: site,
+		server: {
+			name: server.name,
+			resource_id: server.resource_id,
+			title: server.title,
+			region: server.region,
+			plan: server.plan,
+			status: server.status,
+		},
 	})
 	return option ? [option] : []
 }

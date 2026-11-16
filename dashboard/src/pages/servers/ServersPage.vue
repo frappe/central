@@ -3,15 +3,18 @@ import { Alert, Button, Spinner, TabButtons } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import TranslatedText from '@/components/common/TranslatedText.vue'
 import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerFilters from '@/components/servers/ServerFilters.vue'
 import ServerListPanel from '@/components/servers/ServerListPanel.vue'
+import ServerListView from '@/components/servers/ServerListView.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
 import TakeSnapshotDialog from '@/components/snapshots/TakeSnapshotDialog.vue'
 import { useFleetCommands } from '@/composables/useFleetCommands'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { useServerFleet } from '@/composables/useServerFleet'
 import { useServerLink } from '@/composables/useServerLink'
 import { useServerNavigation } from '@/composables/useServerNavigation'
@@ -19,6 +22,7 @@ import { useServers } from '@/composables/useServers'
 import { getServerActions, type ServerActions } from '@/lib/capabilities'
 import { infoToast } from '@/lib/feedback'
 import { canChange } from '@/lib/status'
+import { __ } from '@/lib/translate'
 
 const router = useRouter()
 const route = useRoute()
@@ -48,20 +52,35 @@ const {
 	spots,
 	frame,
 	mapView,
+	fleetView,
 	hasMapViewChoice,
 	settledIds,
 	servers,
 	loaded,
 } = useServerFleet()
 
+const isMobile = useIsMobile()
+const FLEET_VIEW_OPTIONS = computed(() =>
+	[
+		{ label: __('Map'), value: 'map', icon: 'lucide-map' },
+		{ label: __('List'), value: 'list', icon: 'lucide-list' },
+	].map(({ icon, ...option }) =>
+		isMobile.value ? { ...option, icon } : { ...option, iconLeft: icon },
+	),
+)
+
 const MAP_VIEW_OPTIONS = [
-	{ label: 'My regions', value: 'fleet' },
-	{ label: 'World', value: 'world' },
+	{ label: __('My regions'), value: 'fleet' },
+	{ label: __('World'), value: 'world' },
 ]
 const { refreshing, stale, busy, opening, openConsole } = useServers()
 
 // With no servers yet the map names each region, so the empty map invites a choice.
 const isFleetEmpty = computed(() => !loading.value && !rows.value.length)
+
+const isListView = computed(
+	() => fleetView.value === 'list' && !isFleetEmpty.value,
+)
 
 const hoverId = ref<string | null>(null)
 const { showServer, openServer, openResource, openById, openBench, openSite } =
@@ -119,26 +138,49 @@ useServerLink(
 		overview: showServer,
 		resize: (server) => {
 			if (!canChange(server))
-				infoToast("This server can't be resized right now.")
+				infoToast(__("This server can't be resized right now."))
 			else if (!getServerActions(server, teamActions.value).resize)
-				infoToast("You can't resize this server.")
+				infoToast(__("You can't resize this server."))
 			else openResize(server)
 		},
 		'open-bench': (server) => {
 			if (!getServerActions(server, teamActions.value).open)
-				infoToast("You can't open this server.")
+				infoToast(__("You can't open this server."))
 			else void openBench(server, { inPlace: true })
+		},
+		// An app's "End subscription" lands here, so its customer meets one server, not the list.
+		terminate: (server) => {
+			if (!getServerActions(server, teamActions.value).terminate)
+				infoToast(__("You can't terminate this server."))
+			else pendingTerminate.value = server
 		},
 	},
 )
+
+const loadServersErrorTitle = __("Couldn't load your servers")
 </script>
 
 <template>
 	<div class="flex h-full flex-col">
 		<Teleport defer to="#header-actions">
+			<TabButtons
+				v-if="activeTeam && !isFleetEmpty"
+				v-model="fleetView"
+				size="sm"
+				:aria-label="__('Servers view')"
+				:options="FLEET_VIEW_OPTIONS"
+			/>
+
 			<Button
-				v-if="activeTeam"
-				label="Refresh"
+				v-if="activeTeam && isMobile"
+				icon="lucide-refresh-cw"
+				:label="__('Refresh')"
+				:loading="refreshing"
+				@click="refresh"
+			/>
+			<Button
+				v-else-if="activeTeam"
+				:label="__('Refresh')"
 				icon-left="lucide-refresh-cw"
 				:loading="refreshing"
 				@click="refresh"
@@ -147,14 +189,42 @@ useServerLink(
 			<Button
 				v-if="activeTeam && canCreateServer && !isFleetEmpty"
 				variant="solid"
-				label="New server"
+				:label="__('New server')"
 				icon-left="lucide-plus"
 				@click="$router.push('/servers/new')"
 			/>
 		</Teleport>
 
 		<!-- The list stays in view on the right. Below lg, it stacks over a short map. -->
-		<div class="flex min-h-0 flex-1 flex-col lg:flex-row-reverse">
+		<div
+			v-if="isListView"
+			class="flex min-h-0 w-full flex-1 flex-col p-3 md:p-4"
+		>
+			<ServerListView
+				:rows="rows"
+				:can-open="canOpenConsole"
+				:can-power="canPowerServer"
+				:can-resize="canResizeServer"
+				:can-terminate="canTerminateServer"
+				:can-snapshot="canSnapshotServer"
+				:can-open-console="canOpenConsole"
+				:busy="busy"
+				:opening="opening"
+				@open-row="openResource"
+				@overview="showServer"
+				@open="openServer"
+				@pilot="openBench"
+				@start="start"
+				@stop="stop"
+				@restart="pendingRestart = $event"
+				@resize="openResize"
+				@snapshot="pendingSnapshot = $event"
+				@console="openConsole"
+				@terminate="pendingTerminate = $event"
+			/>
+		</div>
+
+		<div v-else class="flex min-h-0 flex-1 flex-col lg:flex-row-reverse">
 			<ServerListPanel
 				class="vt-server-list min-h-0 flex-1 overflow-hidden border-b border-outline-gray-1 lg:w-96 lg:flex-none lg:border-b-0 lg:border-l"
 				v-model:query="q"
@@ -262,7 +332,7 @@ useServerLink(
 					<TabButtons
 						v-model="mapView"
 						variant="ghost"
-						aria-label="Map view"
+						:aria-label="__('Map view')"
 						:options="MAP_VIEW_OPTIONS"
 					/>
 				</div>
@@ -281,9 +351,9 @@ useServerLink(
 					<Alert
 						class="pointer-events-auto w-full max-w-md shadow-lg"
 						theme="red"
-						title="Couldn't load your servers"
+						:title="loadServersErrorTitle"
 						:description="error"
-						:primary-action="{ label: 'Retry', onClick: reload }"
+						:primary-action="{ label: __('Retry'), onClick: reload }"
 					/>
 				</div>
 			</div>
@@ -291,16 +361,21 @@ useServerLink(
 
 		<ConfirmDialog
 			v-model:target="pendingRestart"
-			title="Restart server"
-			confirm-label="Restart"
+			:title="__('Restart server')"
+			:confirm-label="__('Restart')"
 			:loading="busy === pendingRestart?.resource_id"
 			@confirm="confirmRestart"
 		>
 			<p class="text-p-base text-ink-gray-7">
-				Restart
-				<span class="text-p-base-semibold text-ink-gray-9"
-					>{{ pendingRestart?.title || pendingRestart?.resource_id }}</span
-				>? It will be unavailable for a moment.
+				<TranslatedText
+					:text="__('Restart {0}? It will be unavailable for a moment.')"
+				>
+					<template #0>
+						<span class="text-p-base-semibold text-ink-gray-9"
+							>{{ pendingRestart?.title || pendingRestart?.resource_id }}</span
+						>
+					</template>
+				</TranslatedText>
 			</p>
 		</ConfirmDialog>
 

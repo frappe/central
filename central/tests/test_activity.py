@@ -106,6 +106,40 @@ class TestActivity(IntegrationTestCase):
 		event = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"][0]
 		self.assertEqual((event["actor"]["label"], event["sentence"]), ("", "{resource} was renamed"))
 
+	def test_a_region_report_names_who_initiated_it(self):
+		snapshot = frappe.get_doc(
+			{
+				"doctype": "VM Snapshot",
+				"title": "Before upgrade",
+				"team": self.team.name,
+				"server": self.server.name,
+				"snapshot_type": "Manual",
+				"requested_by": self.admin,
+			}
+		).insert()
+		snapshot.status = "Available"
+		snapshot.save(ignore_version=False)
+
+		frappe.set_user(self.viewer)
+		event = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"][0]
+		self.assertEqual(event["event"], "snapshot.available")
+		self.assertEqual(event["initiator"]["label"], "activity.admin")
+
+	def test_an_operator_reads_as_frappe_cloud_to_customers_only(self):
+		operator = ensure_user("activity.operator@example.test")
+		frappe.get_doc("User", operator).add_roles("System Manager")
+		frappe.set_user(operator)
+		self._rename_server("Renamed by support")
+
+		frappe.set_user(self.admin)
+		event = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"][0]
+		self.assertEqual(event["actor"]["label"], "Frappe Cloud")
+		self.assertIsNone(event["initiator"])
+
+		frappe.set_user(operator)
+		event = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"][0]
+		self.assertEqual(event["actor"]["label"], "activity.operator")
+
 	def test_a_guest_session_names_the_person_on_the_record(self):
 		# An older sign-up created the team before its owner had a session.
 		team = frappe.get_doc({"doctype": "Team", "name": "TEAM-GUEST", "owner_user": self.admin})

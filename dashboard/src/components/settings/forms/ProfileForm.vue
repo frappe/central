@@ -7,6 +7,7 @@ import { useMyProfile } from '@/composables/useMyProfile'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
+import { __ } from '@/lib/translate'
 
 // The signed-in user's own profile: photo and display name. Chrome-free
 // on purpose: the settings dialog wraps it in a panel, mobile renders it as a
@@ -40,7 +41,7 @@ async function onSave(): Promise<void> {
 	try {
 		await submitOrThrow(saveCall, { full_name: name.value.trim() })
 		await Promise.all([reloadProfile(), reloadMembers()])
-		successToast('Name updated')
+		successToast(__('Name updated'))
 	} catch (e) {
 		nameError.value = getErrorMessage(e, "Your name couldn't be updated.")
 	} finally {
@@ -55,19 +56,28 @@ async function onPhotoChange(fileUrl: string | null): Promise<void> {
 	try {
 		await setPhoto(fileUrl)
 		await reloadMembers()
-		successToast(fileUrl ? 'Photo updated' : 'Photo removed')
+		successToast(fileUrl ? __('Photo updated') : __('Photo removed'))
 	} catch (e) {
 		photoError.value = getErrorMessage(e, "Your photo couldn't be updated.")
 	}
 }
+
+const updatePhotoErrorTitle = __("Couldn't update your photo")
+const updateNameErrorTitle = __("Couldn't update your name")
 </script>
 
 <template>
 	<div class="mt-6 space-y-6">
 		<div v-if="profile">
-			<Alert v-if="photoError" class="mb-3" theme="red" :title="photoError" />
+			<Alert
+				v-if="photoError"
+				class="mb-3"
+				theme="red"
+				:title="updatePhotoErrorTitle"
+				:description="photoError"
+			/>
 			<ImageUpload
-				label="Photo"
+				:label="__('Photo')"
 				:name="name.trim() || profile.full_name || profile.user"
 				:image="profile.user_image"
 				:attach-to="{
@@ -80,25 +90,35 @@ async function onPhotoChange(fileUrl: string | null): Promise<void> {
 			/>
 		</div>
 
-		<Alert v-if="nameError" class="mb-3" theme="red" :title="nameError" />
+		<Alert
+			v-if="nameError"
+			class="mb-3"
+			theme="red"
+			:title="updateNameErrorTitle"
+			:description="nameError"
+		/>
 		<div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
 			<div class="flex min-w-0 items-end gap-2">
 				<TextInput
 					v-model="name"
 					v-focus
-					label="Full name"
+					:label="__('Full name')"
 					class="min-w-0 flex-1"
 					@keydown.enter="onSave"
 				/>
 				<Button
 					v-if="changed"
 					variant="solid"
-					label="Save"
+					:label="__('Save')"
 					:loading="saving"
 					@click="onSave"
 				/>
 			</div>
-			<TextInput :model-value="profile?.user ?? ''" label="Email" disabled />
+			<TextInput
+				:model-value="profile?.user ?? ''"
+				:label="__('Email')"
+				disabled
+			/>
 		</div>
 	</div>
 </template>

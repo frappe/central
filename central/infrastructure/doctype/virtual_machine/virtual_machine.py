@@ -10,7 +10,9 @@ from requests import RequestException
 
 from central.iam import can, user_has_operator_bypass
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.region.region import Region
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.integrations.images import APP_PURPOSE
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.sso import mint_bench_login
 from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
@@ -41,16 +43,22 @@ class VirtualMachine(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		from central.infrastructure.doctype.server_firewall_ruleset.server_firewall_ruleset import (
+			ServerFirewallRuleset,
+		)
 		from central.infrastructure.doctype.server_ssh_key.server_ssh_key import ServerSSHKey
 
 		admin_domain_diagnostic: DF.Code | None
 		admin_domain_error: DF.SmallText | None
 		admin_domain_task: DF.Data | None
+		application: DF.Data | None
 		atlas_image_id: DF.Data | None
 		atlas_host_id: DF.Data | None
 		atlas_vm_id: DF.Data | None
 		disk_gigabytes: DF.Float
+		documentation_url: DF.Data | None
 		firewall_rules: DF.JSON | None
+		firewall_rulesets: DF.Table[ServerFirewallRuleset]
 		frappe_version: DF.Data | None
 		gateway_url: DF.Data | None
 		has_ipv4_internet: DF.Check
@@ -117,6 +125,10 @@ class VirtualMachine(Document):
 				"disk_gigabytes": mebibytes_to_gigabytes(configuration.disk_mib),
 				"frappe_version": configuration.image_tags.get("frappe_version"),
 				"has_site": configuration.image_tags.get("has_site") == "1",
+				"application": configuration.image_tags.get("application")
+				if configuration.image_tags.get("purpose") == APP_PURPOSE
+				else None,
+				"documentation_url": configuration.documentation_url,
 				"ssh_keys": [{"team_ssh_key": key} for key in configuration.ssh_key_ids],
 				"has_public_ipv6": configuration.has_public_ipv6,
 				"is_firewall_enabled": configuration.is_firewall_enabled,
@@ -149,6 +161,10 @@ class VirtualMachine(Document):
 
 		if self.has_value_changed("status") and self.status == "Failed":
 			self.queue_status_notification("server_failed")
+
+		previous = self.get_doc_before_save()
+		if self.ipv6_address and not (previous and previous.ipv6_address):
+			self.route_app_subdomain_once_addressable()
 
 		if self.has_value_changed("status") and self.status == "Terminated":
 			self.close_trial()
@@ -244,7 +260,9 @@ class VirtualMachine(Document):
 			self.disable_active_subscription()
 
 	def ensure_subscription_enabled(self):
-		"""Create the subscription if missing, else enable it if disabled. A free trial has none."""
+		"""Create the subscription if missing, else enable it if disabled. A free trial has none,
+		and a paused one stays disabled until the customer resumes it."""
+		from central.billing.catalog.subscriptions import is_billing_paused
 		from central.signups.trial import is_billing_deferred
 
 		if is_billing_deferred(self.name):
@@ -255,7 +273,7 @@ class VirtualMachine(Document):
 		)
 		if existing:
 			sub = frappe.get_doc("Subscription", existing)
-			if not sub.enabled:
+			if not sub.enabled and not is_billing_paused(sub.name):
 				sub.enable()
 			if sub.plan != self.plan:
 				sub.plan = self.plan
@@ -286,17 +304,13 @@ class VirtualMachine(Document):
 			public_ips.close_public_ipv4_subscription(subscription)
 
 	def disable_active_subscription(self):
-		"""Cancel and disable the team's active subscription for this terminated server.
+		"""Cancel and disable this terminated server's subscription, running or paused.
 		The Cancelled change closes the billing segment, so the estimate stops counting the server and
 		its headroom is freed. It is safe to repeat."""
-		existing = frappe.db.get_value(
-			"Subscription", {"team": self.team, "server_id": self.name, "enabled": 1}, "name"
-		)
-		if existing:
-			from central.billing.catalog.subscriptions import cancel_subscription
+		from central.billing.catalog.subscriptions import end_subscription, uncancelled_subscriptions
 
-			cancel_subscription(existing)
-			frappe.get_doc("Subscription", existing).disable()
+		for name in uncancelled_subscriptions({"team": self.team, "server_id": self.name}):
+			end_subscription(name)
 
 	# Central owns this record. Provisioning opens it, and the fields below are the only
 	# ones a region reports back. Identity, title, plan, image and billing links are
@@ -343,6 +357,44 @@ class VirtualMachine(Document):
 			doc.publish_state_change()
 
 		return True
+
+	def route_app_subdomain_once_addressable(self) -> None:
+		"""Route the site name chosen for an app server once, when it first gets an address, the
+		way a Pilot server's Site routes its own name. A job keeps a refused route from failing
+		the state report."""
+		if self.has_site:
+			return
+
+		subdomain = frappe.db.get_value(
+			"Resource Action", {"server": self.name, "action": "create"}, "subdomain"
+		)
+		if not subdomain:
+			return
+
+		frappe.enqueue_doc(
+			self.doctype,
+			self.name,
+			"route_app_subdomain",
+			queue="short",
+			enqueue_after_commit=True,
+			domain=f"{subdomain}.{Region.get_zone(self.region)}",
+		)
+
+	def route_app_subdomain(self, domain: str) -> None:
+		if frappe.db.exists("Site Domain", domain):
+			return
+
+		route = frappe.get_doc(
+			{
+				"doctype": "Site Domain",
+				"domain": domain,
+				"team": self.team,
+				"server": self.name,
+				"region": self.region,
+			}
+		)
+		# The system routes the name the customer chose at creation; no user acts here.
+		route.insert(ignore_permissions=True)
 
 	@frappe.whitelist(methods=["POST"])
 	def remove_routes(self) -> None:
@@ -477,7 +529,44 @@ class VirtualMachine(Document):
 		from central.integrations.servers import update_firewall
 
 		self.require_live()
+		if self.firewall_rulesets and (change.inbound is not None or change.outbound is not None):
+			frappe.throw(
+				_(
+					"This server uses a firewall ruleset. Edit the ruleset, or detach it to change the rules here."
+				)
+			)
+
 		update_firewall(self, change)
+
+	def set_firewall_rulesets(self, rulesets: list[str]) -> None:
+		"""Use these team rulesets together and turn the firewall on. With none, keep the rules
+		as the server's own."""
+		from central.infrastructure.doctype.firewall_ruleset.firewall_ruleset import get_merged_firewall
+		from central.integrations.servers import update_firewall
+
+		self.require_live()
+		rulesets = list(dict.fromkeys(rulesets))
+		owned = frappe.get_all(
+			"Firewall Ruleset", filters={"team": self.team, "name": ["in", rulesets]}, pluck="name"
+		)
+		if len(owned) != len(rulesets):
+			frappe.throw(_("A ruleset does not belong to the team."), frappe.PermissionError)
+
+		if rulesets:
+			update_firewall(self, get_merged_firewall(rulesets).model_copy(update={"enabled": True}))
+			# The region's report was saved on a fresh copy of this server.
+			self.reload()
+
+		self.set("firewall_rulesets", [{"firewall_ruleset": name} for name in rulesets])
+		# Customers cannot write a Virtual Machine; the route checks server:network.
+		self.save(ignore_permissions=True)
+
+	def sync_firewall_rulesets(self) -> None:
+		"""Send the rules of this server's rulesets to the region again, after one of them changed."""
+		from central.infrastructure.doctype.firewall_ruleset.firewall_ruleset import get_merged_firewall
+		from central.integrations.servers import update_firewall
+
+		update_firewall(self, get_merged_firewall([row.firewall_ruleset for row in self.firewall_rulesets]))
 
 	def require_live(self) -> None:
 		if self.status == "Terminated":

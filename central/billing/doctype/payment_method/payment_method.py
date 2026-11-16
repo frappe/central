@@ -5,17 +5,12 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.billing.payments import collection_mode, decline
+from central.billing.payments import decline
 
 
 class PaymentMethod(Document):
 	def validate(self):
 		self._reject_duplicate_card()
-
-	def on_update(self):
-		before = self.get_doc_before_save()
-		if self.status == "Active" and before and before.status != "Active":
-			collection_mode.start_auto_charge(self.team)
 
 	def _reject_duplicate_card(self):
 		"""A team can't register the same card twice. Using one card as both the
@@ -53,12 +48,14 @@ class PaymentMethod(Document):
 		self.update(decline.failure_fields(failure))
 
 	def get_confirmation(self) -> dict:
-		"""What a confirm route answers. A failed method says why, in words for the customer."""
+		"""What a confirm route answers. A failed or expired setup says why, in words for the customer."""
 		result = {"payment_method": self.name, "status": self.status}
 		if self.status == "Failed":
 			result["message"] = decline.method_failure_message(
 				self.failure_code, self.decline_code, self.method_type
 			)
+		elif is_expired_setup(self):
+			result["message"] = _("This setup expired. Start again to add it.")
 		return result
 
 
@@ -69,8 +66,20 @@ def held_method_filters() -> dict:
 	return {"status": ["!=", "Cancelled"], "gateway_method_id": ["is", "set"]}
 
 
+def is_expired_setup(method) -> bool:
+	"""True for a setup that expired before it was ever validated."""
+	return method.status == "Expired" and not method.validated_at
+
+
+def without_expired_setups(rows: list) -> list:
+	"""The rows, less the setups that expired before they were ever validated."""
+	return [row for row in rows if not is_expired_setup(row)]
+
+
 def on_doctype_update() -> None:
 	# The billing run, its dashboards and the money reports filter on these.
 	frappe.db.add_index("Payment Method", ["team", "status"])
 	# A failed hosted card setup webhook finds its card by this.
 	frappe.db.add_index("Payment Method", ["setup_intent_id"])
+	# The wait after failed setups reads a user's own methods.
+	frappe.db.add_index("Payment Method", ["owner"])

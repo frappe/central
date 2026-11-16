@@ -1,4 +1,20 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { SidebarSection } from '../node_modules/frappe-ui/vitepress/index.node'
+
+const appsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../content/apps')
+
+/** One item per app guide that scripts/sync-apps.mjs copied, the overview first. */
+function getAppItems() {
+	const pages = readdirSync(appsDir).filter((file) => file.endsWith('.md') && file !== 'index.md')
+	const items = pages.sort().map((file) => ({
+		text: readFileSync(path.join(appsDir, file), 'utf8').match(/^title: (.+)$/m)![1],
+		link: `/apps/${file.replace(/\.md$/, '')}`,
+	}))
+
+	return [{ text: 'Apps', link: '/apps/' }, ...items]
+}
 
 export const sidebar: SidebarSection[] = [
 	{
@@ -6,6 +22,7 @@ export const sidebar: SidebarSection[] = [
 		items: [
 			{ text: 'Overview', link: '/' },
 			{ text: 'Quick start', link: '/get-started/quick-start' },
+			{ text: 'Migrate from Frappe Cloud Classic', link: '/migrate/classic' },
 			{ text: 'How Frappe Cloud works', link: '/get-started/how-it-works' },
 			{ text: 'Tour the console', link: '/get-started/console' },
 		],
@@ -22,8 +39,13 @@ export const sidebar: SidebarSection[] = [
 			{ text: 'Networking and firewall', link: '/servers/networking' },
 			{ text: 'WireGuard VPN', link: '/servers/wireguard' },
 			{ text: 'Snapshots', link: '/servers/snapshots' },
+			{ text: 'Activity', link: '/servers/activity' },
 			{ text: 'Resize, stop, and terminate', link: '/servers/lifecycle' },
 		],
+	},
+	{
+		text: 'Apps',
+		items: getAppItems(),
 	},
 	{
 		text: 'Pilot',
@@ -32,12 +54,20 @@ export const sidebar: SidebarSection[] = [
 			{ text: 'Benches', link: '/pilot/benches' },
 			{ text: 'Sites', link: '/pilot/sites' },
 			{ text: 'Apps', link: '/pilot/apps' },
+			{ text: 'Connect GitHub', link: '/pilot/github' },
 			{ text: 'Domains and SSL', link: '/pilot/domains' },
 			{ text: 'Backups and restore', link: '/pilot/backups' },
 			{ text: 'Database access', link: '/pilot/database' },
 			{ text: 'Updates and migrations', link: '/pilot/updates' },
 			{ text: 'Logs and tasks', link: '/pilot/logs' },
 			{ text: 'SSH keys and code editor', link: '/pilot/tools' },
+		],
+	},
+	{
+		text: 'Services',
+		items: [
+			{ text: 'Object Storage', link: '/services/object-storage' },
+			{ text: 'LLM', link: '/services/llm' },
 		],
 	},
 	{
@@ -66,6 +96,9 @@ export const sidebar: SidebarSection[] = [
 	},
 	{
 		text: 'Help',
-		items: [{ text: 'Troubleshooting', link: '/help/troubleshooting' }],
+		items: [
+			{ text: 'Contact support', link: '/help/support' },
+			{ text: 'Troubleshooting', link: '/help/troubleshooting' },
+		],
 	},
 ]

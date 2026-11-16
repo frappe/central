@@ -41,6 +41,7 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 		display_name: DF.Data | None
 		frappemail_service: DF.Link | None
 		has_wireguard_gateway: DF.Check
+		is_central_telemetry_region: DF.Check
 		last_synced_at: DF.Datetime | None
 		latitude: DF.Float
 		longitude: DF.Float
@@ -63,6 +64,21 @@ class Region(AtlasConnectionMixin, CargoConnectionMixin, Document):
 	def validate(self) -> None:
 		self.validate_atlas_connection()
 		self.validate_cargo_connection()
+		self.validate_central_telemetry_region()
+
+	def validate_central_telemetry_region(self) -> None:
+		"""Central sends its telemetry to one Datum, so only one region can take it."""
+		if not self.is_central_telemetry_region:
+			return
+
+		other = frappe.db.get_value(
+			"Region", {"is_central_telemetry_region": 1, "name": ("!=", self.name)}, "name"
+		)
+		if other:
+			frappe.throw(
+				_("Region {0} already takes the Central telemetry. Clear it there first.").format(other),
+				frappe.ValidationError,
+			)
 
 	def on_update(self) -> None:
 		from central.infrastructure.doctype.blocked_domain.blocked_domain import seed_for_zone

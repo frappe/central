@@ -116,17 +116,20 @@ def storage_regions() -> dict[str, str]:
 @pilot_credential_auth
 def datum_token() -> dict:
 	"""The JWT this Pilot presents to Datum for metrics and logs.
-	It expires, so the Pilot fetches it again on a 401. It is refused until Atlas binds the
-	Virtual Machine, because rows without a resource ID cannot be attributed."""
+	It expires, so the Pilot fetches it again on a 401. The resource ID is the Atlas name of the
+	Virtual Machine, the ID that Atlas lists to Beacon, so it is refused until Atlas binds the VM."""
 	from central.sso import DATUM_TTL, mint_datum_token
 
 	credential: PilotCredential = frappe.local.pilot_credential
 	region = get_pilot_region(credential)
+	atlas_vm_id = frappe.db.get_value("Virtual Machine", credential.server, "atlas_vm_id")
+	if not atlas_vm_id:
+		frappe.throw(_("Atlas has not bound the virtual machine of this pilot yet."), frappe.ValidationError)
 
 	return {
-		"token": mint_datum_token(region_id_of(region), credential.server),
+		"token": mint_datum_token(region_id_of(region), atlas_vm_id),
 		"expires_in": DATUM_TTL,
-		"resource_id": credential.server,
+		"resource_id": atlas_vm_id,
 		"endpoint": get_telemetry_base_url(region),
 	}
 

@@ -20,6 +20,7 @@ import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage } from '@/lib/feedback'
 import { money } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { PaymentInstrument, PaymentMethodOptions } from '@/types/billing'
 
 const open = defineModel<boolean>({ default: false })
@@ -231,12 +232,14 @@ watch(open, (isOpen) => {
 	selected.value = null
 	dialogError.value = ''
 })
+
+const addPaymentMethodErrorTitle = __("Couldn't add the payment method")
 </script>
 
 <template>
 	<Dialog
 		v-model:open="open"
-		title="Add payment method"
+		:title="__('Add payment method')"
 		:dismissible="!stripeSubmitting"
 		:show-close-button="!stripeSubmitting"
 		@after-leave="destroyStripe"
@@ -246,14 +249,15 @@ watch(open, (isOpen) => {
 				v-if="paymentError"
 				class="mb-4"
 				theme="red"
-				:title="paymentError"
+				:title="addPaymentMethodErrorTitle"
+				:description="paymentError"
 			/>
 			<LoadingText v-if="options.loading && !options.data" :lines="3" />
 
 			<!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
 			<div v-else-if="stripeMode" class="space-y-3">
 				<p v-if="stripeLoading" class="text-p-sm text-ink-gray-6">
-					Loading secure card field…
+					{{ __('Loading secure card field…') }}
 				</p>
 				<div
 					ref="cardEl"
@@ -261,13 +265,10 @@ watch(open, (isOpen) => {
 				/>
 				<p class="text-p-sm text-ink-gray-6">
 					<template v-if="stripeSubmitting">
-						Validating your card with a small temporary charge that's refunded
-						right away. This can take a few seconds, so please don't close this
-						window.
+						{{ __("Validating your card with a small temporary charge that's refunded right away. This can take a few seconds, so please don't close this window.") }}
 					</template>
 					<template v-else>
-						Card details are entered on Stripe's secure field. We never see your
-						card number.
+						{{ __("Card details are entered on Stripe's secure field. We never see your card number.") }}
 					</template>
 				</p>
 			</div>
@@ -279,13 +280,13 @@ watch(open, (isOpen) => {
 						aria-hidden="true"
 					/>
 					<p class="text-p-sm text-ink-gray-6">
-						Authorised on your bank's page. We never see your
-						{{ hasUpi ? 'card or UPI' : 'card' }}
-						details.
+						{{ hasUpi
+								? __("Authorised on your bank's page. We never see your card or UPI details.")
+								: __("Authorised on your bank's page. We never see your card details.") }}
 					</p>
 				</div>
 
-				<div aria-label="Payment method" class="space-y-2.5">
+				<div :aria-label="__('Payment method')" class="space-y-2.5">
 					<button
 						v-for="tile in tiles"
 						:key="tile.instrument"
@@ -340,9 +341,9 @@ watch(open, (isOpen) => {
 				>
 					<TextInput
 						v-model="phone"
-						label="Phone number"
-						placeholder="Mobile number"
-						description="A phone number is required to set up automatic card payments. It will be saved to your billing profile."
+						:label="__('Phone number')"
+						:placeholder="__('Mobile number')"
+						:description="__('A phone number is required to set up automatic card payments. It will be saved to your billing profile.')"
 					/>
 				</div>
 
@@ -352,14 +353,16 @@ watch(open, (isOpen) => {
 						aria-hidden="true"
 					/>
 					<p class="text-p-sm text-ink-gray-6">
-						Amex and Diners can't be auto-charged. Add credit instead.
+						{{ __("Amex and Diners can't be auto-charged. Add credit instead.") }}
 					</p>
 				</div>
 			</div>
 
 			<div v-else class="space-y-3">
-				<p class="text-p-sm text-ink-gray-6">Couldn't load payment options.</p>
-				<Button label="Retry" @click="options.reload()" />
+				<p class="text-p-sm text-ink-gray-6">
+					{{ __("Couldn't load payment options.") }}
+				</p>
+				<Button :label="__('Retry')" @click="options.reload()" />
 			</div>
 		</template>
 
@@ -367,13 +370,13 @@ watch(open, (isOpen) => {
 			<div v-if="stripeMode" class="flex justify-end gap-2">
 				<Button
 					variant="outline"
-					label="Cancel"
+					:label="__('Cancel')"
 					:disabled="stripeSubmitting"
 					@click="cancelStripe"
 				/>
 				<Button
 					variant="solid"
-					:label="stripeSubmitting ? 'Validating…' : 'Add card'"
+					:label="stripeSubmitting ? __('Validating…') : __('Add card')"
 					:loading="stripeSubmitting"
 					:disabled="!stripeComplete"
 					@click="submitStripe"
@@ -382,14 +385,14 @@ watch(open, (isOpen) => {
 			<div v-else class="flex items-center gap-2">
 				<Button
 					v-if="options.data?.note"
-					label="Add credit"
+					:label="__('Add credit')"
 					@click="goToTopup"
 				/>
 				<div class="flex-1" />
-				<Button variant="outline" label="Cancel" @click="open = false" />
+				<Button variant="outline" :label="__('Cancel')" @click="open = false" />
 				<Button
 					variant="solid"
-					label="Continue"
+					:label="__('Continue')"
 					:loading="loading"
 					:disabled="!canContinue"
 					@click="onContinue"

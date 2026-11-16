@@ -9,12 +9,29 @@ interface; adding a gateway is one subclass passing the shared contract suite.
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import ClassVar
 
 import frappe
 from frappe import _
 
 from central.billing.payments.decline import Failure
+
+
+def event_time(value) -> datetime | None:
+	"""A gateway's event timestamp, Unix seconds or ISO 8601, as a naive system-time datetime."""
+	if not value:
+		return None
+	try:
+		moment = (
+			datetime.fromtimestamp(int(value), tz=UTC)
+			if str(value).isdigit()
+			else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+		)
+	except ValueError:
+		return None
+	utc = moment.astimezone(UTC).replace(tzinfo=None)
+	return frappe.utils.convert_utc_to_system_timezone(utc).replace(tzinfo=None)
 
 
 def header_value(headers: dict, name: str):
@@ -107,6 +124,10 @@ class NormalisedEvent:
 	gateway_event_id: str
 	event_type: str
 	payload: dict = field(default_factory=dict)
+	# When the gateway raised the event, so a late delivery can be measured.
+	occurred_at: datetime | None = None
+	# The gateway's id for this delivery, when it is not the event id. For tracing only.
+	delivery_id: str | None = None
 
 
 class GatewayError(Exception):
@@ -176,8 +197,7 @@ class GatewayAdapter(ABC):
 			return False
 		from central.billing.gateways import capabilities
 
-		ceiling = capabilities.silent_charge_ceiling(self.gateway.name, currency)
-		return ceiling is None or frappe.utils.flt(amount) <= ceiling
+		return capabilities.is_within_silent_ceiling(self.gateway.name, currency, amount)
 
 	def __init__(self, gateway):
 		self.gateway = gateway
@@ -302,6 +322,16 @@ class GatewayAdapter(ABC):
 		after the session is confirmed paid (see get_checkout_session)."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support create_checkout_session")
 
+	def cancel_setup(self, setup_reference: str) -> str:
+		"""Close an unfinished payment method setup, so no card can be tried on it. Returns the
+		status after the call: "canceled" or "expired" when closed, else the status the
+		gateway kept because the setup finished or is processing."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support cancel_setup")
+
+	def cancel_order(self, order_id: str) -> str:
+		"""Close an unpaid top-up order, as `cancel_setup` closes a setup."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support cancel_order")
+
 	def get_checkout_session(self, session_id: str) -> dict:
 		"""Retrieve a hosted-checkout session to confirm it was paid (server-side)."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support get_checkout_session")
@@ -340,6 +370,16 @@ class GatewayAdapter(ABC):
 		fingerprint, the gateway's id for the card or account across customers. A setup
 		the bank refused gives only `setup_error`, with its failure_code and decline_code."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support read_saved_card")
+
+	def read_finished_setup(self, setup_reference: str) -> dict:
+		"""What a finished setup saved, read without changing anything, or `{}` while it is
+		not finished. Keys: payment_method (None when the gateway makes it only on
+		confirm), customer, and `payment` when the setup took an authorisation payment."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support read_finished_setup")
+
+	def remove_saved_method(self, method_id: str, customer_reference: str | None = None) -> None:
+		"""Remove a saved card or token at the gateway, so it can never be charged."""
+		raise GatewayUnsupported(f"{type(self).__name__} does not support remove_saved_method")
 
 	def verify_payment(self, payment_id: str) -> VerifiedPayment:
 		"""Read one payment back from the gateway (server-side)."""

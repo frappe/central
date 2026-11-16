@@ -184,6 +184,12 @@ router.beforeResolve((to, from) => {
 		ROUTE_TRANSITIONS[`${String(from.name)}>${String(to.name)}`]
 	if (!document.startViewTransition || !transition) return
 
+	if (
+		transition === 'server-create' &&
+		!document.querySelector('.vt-server-map')
+	)
+		return
+
 	const root = document.documentElement
 	root.dataset.routeTransition = transition
 	return new Promise<void>((resolve) => {

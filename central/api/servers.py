@@ -63,6 +63,7 @@ def registry(team: str | None = None) -> dict:
 			"image_offering",
 			"gateway_url",
 			"state_observed_at",
+			"has_wireguard_access",
 		],
 		order_by="region asc, resource_id asc",
 		limit_page_length=0,
@@ -74,8 +75,15 @@ def registry(team: str | None = None) -> dict:
 	audiences = _pilot_audiences(team)
 	locked = get_locked_servers(team)
 	plan_titles = _plan_titles({server["plan"] for server in servers if server["plan"]})
+	images = {
+		image.name: image
+		for image in frappe.get_all("Image Offering", fields=["name", "title", "description"])
+	}
 	for server in servers:
+		image = images.get(server["image_offering"], {})
 		server["plan_title"] = plan_titles.get(server["plan"])
+		server["image_title"] = image.get("title")
+		server["image_description"] = image.get("description")
 		server["pending_action"] = pending.get(server["resource_id"])
 		server["pilot_audience"] = audiences.get(server["name"])
 		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
@@ -156,6 +164,13 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			frappe.DoesNotExistError,
 		)
 
+	firewall_rulesets = frappe.get_all(
+		"Server Firewall Ruleset",
+		filters={"parent": row.resource_id, "parenttype": "Virtual Machine"},
+		pluck="firewall_ruleset",
+		order_by="idx asc",
+	)
+
 	server = frappe._dict(
 		{
 			"resource_id": row.resource_id,
@@ -166,6 +181,8 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"plan": row.plan,
 			"frappe_version": row.frappe_version,
 			"image_offering": row.image_offering,
+			"application": row.application,
+			"documentation_url": row.documentation_url,
 			"vcpus": row.vcpus,
 			"memory_megabytes": row.memory_megabytes,
 			"disk_gigabytes": row.disk_gigabytes,
@@ -174,6 +191,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"public_ipv6": row.public_ipv6,
 			"has_public_ipv6": row.has_public_ipv6,
 			"is_firewall_enabled": row.is_firewall_enabled,
+			"firewall_rulesets": firewall_rulesets,
 			"is_termination_protected": row.is_termination_protected,
 			"has_ipv4_internet": row.has_ipv4_internet,
 			"has_wireguard_access": row.has_wireguard_access,
@@ -351,6 +369,8 @@ def _overview_server_row(resource_id: str, team: str):
 			server.plan,
 			server.frappe_version,
 			server.image_offering,
+			server.application,
+			server.documentation_url,
 			server.vcpus,
 			server.memory_megabytes,
 			server.disk_gigabytes,
@@ -695,7 +715,14 @@ def _validate_firewall_change(firewall: dict | str) -> FirewallChange:
 	try:
 		return FirewallChange.model_validate(frappe.parse_json(firewall))
 	except ValidationError as error:
-		frappe.throw(error.errors(include_input=False)[0]["msg"].removeprefix("Value error, "))
+		detail = error.errors(include_input=False)[0]
+		# Only our own validators raise a translated sentence; Pydantic's type errors are English.
+		if detail["type"] != "value_error":
+			field = ".".join(str(part) for part in detail["loc"])
+			if not field:
+				frappe.throw(_("Check the firewall rules and try again."))
+			frappe.throw(_("Check {0} in the firewall rules and try again.").format(field))
+		frappe.throw(detail["msg"].removeprefix("Value error, "))
 
 
 def _update_one_firewall(team: str, resource_id: str, change: FirewallChange) -> str | None:
