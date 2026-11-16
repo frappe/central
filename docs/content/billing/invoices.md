@@ -60,7 +60,7 @@ The PDF is ready only after the invoice is issued. Until then, the download icon
 
 ## Pay an outstanding invoice
 
-Frappe Cloud tries to collect each invoice automatically. Pay by hand when an issued invoice is still `Outstanding` or `Overdue`, for example after a card is declined. You can pay an `Outstanding` invoice only after it has a due date.
+When you pay automatically, Frappe Cloud tries to collect each invoice. When you pay each invoice yourself, pay each issued invoice here. Also pay by hand when an issued invoice is still `Outstanding` or `Overdue`, for example after a card is declined. You can pay an `Outstanding` invoice only after it has a due date.
 
 1. Go to **Billing > Invoices**.
 2. Click the `Outstanding` or `Overdue` invoice.
@@ -72,7 +72,7 @@ When an invoice is unpaid, **Billing > Overview** shows a banner with the amount
 
 ## When a payment fails
 
-Frappe Cloud charges an invoice on its payment date. When the charge fails, Frappe Cloud tries again every 2 days until the invoice due date, and sends a notification with the reason. When no retry fits before the due date, Frappe Cloud tries once more 24 hours after the failed charge. After the last retry, the invoice becomes `Overdue`. While your bank has not confirmed a charge, the invoice does not become `Overdue`, and the billing summary shows **Payment in progress**. On the day before the suspension date, every unpaid invoice becomes `Overdue` and you get a notification, also when your bank has not confirmed a charge yet. If the invoice stays unpaid, Frappe Cloud stops the team's servers on the 15th of the month. The data on the servers is kept. When you pay the invoice, Frappe Cloud starts the servers again.
+When you pay automatically, Frappe Cloud charges an invoice on its payment date. When you pay each invoice yourself, Frappe Cloud does not charge or retry it. When the charge fails, Frappe Cloud tries again every 2 days until the invoice due date, and sends a notification with the reason. When no retry fits before the due date, Frappe Cloud tries once more 24 hours after the failed charge. After the last retry, the invoice becomes `Overdue`. While your bank has not confirmed a charge, the invoice does not become `Overdue`, and the billing summary shows **Payment in progress**. On the day before the suspension date, every unpaid invoice becomes `Overdue` and you get a notification, also when your bank has not confirmed a charge yet. If the invoice stays unpaid, Frappe Cloud stops the team's servers on the 15th of the month. The data on the servers is kept. When you pay the invoice, Frappe Cloud starts the servers again.
 
 An invoice is issued on the 1st and is due on the 8th, or on the payment date when that is later:
 

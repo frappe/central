@@ -1,6 +1,6 @@
 # Payment methods
 
-Add a card so that Frappe Cloud can collect each invoice automatically. You can add more than one payment method and set the order in which they are charged.
+Add a card so that Frappe Cloud can collect each invoice automatically. You can add more than one payment method and set the order in which they are charged. When you pay each invoice yourself, your payment methods are not charged automatically. See [How you pay](#how-you-pay).
 
 ::: info
 You need the Owner, Admin, or Billing role to add, order, or remove payment methods.
@@ -92,8 +92,8 @@ Invoices then use your other methods, if any. With no payment method and no cred
 
 | Label | Meaning |
 | --- | --- |
-| **Primary** | Charged first after credits. |
-| **Fallback 1**, **Fallback 2** | Charged in this order when the methods above fail. |
+| **Primary** | Charged first after credits, when you pay automatically. |
+| **Fallback 1**, **Fallback 2** | Charged in this order when the methods above fail, when you pay automatically. |
 | **Re-auth needed** | The mandate's maximum is below your spend limit plus GST. It is still charged, up to that maximum. Authorise it again to cover larger bills. |
 | Any other status | The method is not active and is not charged. |
 
