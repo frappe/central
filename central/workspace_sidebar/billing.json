@@ -250,18 +250,6 @@
    "type": "Link"
   },
   {
-   "child": 1,
-   "collapsible": 1,
-   "indent": 0,
-   "keep_closed": 0,
-   "label": "Entitlement Token",
-   "link_to": "Entitlement Token",
-   "link_type": "DocType",
-   "open_in_new_tab": 0,
-   "show_arrow": 0,
-   "type": "Link"
-  },
-  {
    "child": 0,
    "collapsible": 1,
    "icon": "receipt-text",
@@ -1139,7 +1127,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-11-03 00:00:00.000000",
+ "modified": "2026-11-16 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing",
