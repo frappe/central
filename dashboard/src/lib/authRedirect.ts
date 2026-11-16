@@ -12,7 +12,10 @@ export function signInDestination(query: LocationQuery): string {
 	if (requested) return requested
 	const product = queryString(query.product)
 	if (!product) return DEFAULT_DASHBOARD
-	return `${PRODUCT_ONBOARDING}?${new URLSearchParams({ product })}`
+	const returnTo = queryString(query.return_to)
+	const onboarding = new URLSearchParams({ product })
+	if (returnTo) onboarding.set('return_to', returnTo)
+	return `${PRODUCT_ONBOARDING}?${onboarding}`
 }
 
 /** The product onboarding route when sign-in lands there, so the console carries on in place. */
@@ -21,13 +24,14 @@ export function productOnboarding(
 ): { path: string; query: LocationQueryRaw } | null {
 	const product = queryString(query.product)
 	if (!product || queryString(query['redirect-to'])) return null
-	return { path: '/onboarding/site', query: { product } }
+	return { path: '/onboarding/site', query: carriedQuery(query) }
 }
 
-/** The intent that must survive every step between the auth pages. */
+/** The intent that must survive every step between the auth pages. `return_to` is the AI app
+ * a connector sign in goes back to, which Central checks against the product's hosts. */
 export function carriedQuery(query: LocationQuery): LocationQueryRaw {
 	const carried: LocationQueryRaw = {}
-	for (const key of ['product', 'redirect-to']) {
+	for (const key of ['product', 'redirect-to', 'return_to']) {
 		const value = queryString(query[key])
 		if (value) carried[key] = value
 	}
