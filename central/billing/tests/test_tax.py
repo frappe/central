@@ -148,6 +148,7 @@ class TestTaxLabel(TaxTestBase):
 			patch("central.billing.ingester.gst.company_state_code", return_value="27")
 		)
 		self.enterContext(patch("central.billing.ingester.connection.enabled", return_value=True))
+		self.enterContext(patch.dict(frappe.conf, {"erpnext_url": "https://erp.invalid"}))
 		self.enterContext(
 			patch(
 				"central.billing.ingester.gst.accounting_settings",
