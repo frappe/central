@@ -1,8 +1,14 @@
 import { dayjsLocal } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { API } from '@/api/methods'
 import { useTrialOnboarding } from '@/composables/useTrialOnboarding'
-import { frappeErrorMessage, methodUrl, postFrappe } from '@/lib/auth'
+import {
+	frappeErrorMessage,
+	methodUrl,
+	postFrappe,
+	queryString,
+} from '@/lib/auth'
 import type {
 	SetupPhase,
 	TrialOnboardingStatus,
@@ -28,6 +34,7 @@ const SIGN_IN_FAILED =
 /** Follows a new trial site until it answers, then signs the customer in and leaves. */
 export function useSiteSetup() {
 	const { readStatus } = useTrialOnboarding()
+	const route = useRoute()
 	const status = ref<TrialOnboardingStatus | null>(null)
 	const error = ref('')
 	const loginUrl = ref<string | null>(null)
@@ -90,9 +97,13 @@ export function useSiteSetup() {
 	// briefly, so only that state is retried without starting the rename.
 	async function claim() {
 		try {
+			// A connector sign in can return to a site that is already claimed.
 			const claimed = await postFrappe<TrialSiteState>(
-				methodUrl(API.claimSite),
-				{ name: site.value!.name },
+				methodUrl(site.value!.claimed ? API.loginSite : API.claimSite),
+				{
+					name: site.value!.name,
+					return_to: queryString(route.query.return_to) || undefined,
+				},
 			)
 			if (claimed.login_pending) return retryClaim()
 			if (!claimed.login_url) return failSignIn(SIGN_IN_FAILED)
