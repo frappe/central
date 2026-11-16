@@ -83,10 +83,9 @@ def notify_payment_date_changed(profile) -> None:
 		return
 
 	from central.billing.doctype.billing_profile.billing_profile import get_payment_date
-
-	next_month = frappe.utils.add_months(frappe.utils.get_first_day(frappe.utils.nowdate()), 1)
 	from central.billing.payments import collection_mode
 
+	next_month = frappe.utils.add_months(frappe.utils.get_first_day(frappe.utils.nowdate()), 1)
 	context = {
 		"payment_day": get_ordinal(profile.payment_day),
 		"pays_by_hand": not collection_mode.is_debit_allowed(profile.team),
@@ -309,7 +308,7 @@ def get_payment_context(invoice) -> dict:
 	from central.billing.payments import collection, collection_mode
 
 	pays_by_hand = not collection_mode.is_debit_allowed(invoice.team)
-	method = _get_charging_method(invoice)
+	method = None if pays_by_hand else _get_charging_method(invoice)
 	return {
 		"amount": frappe.utils.fmt_money(invoice.expected_collection, currency=invoice.currency),
 		"tax_note": tax.TaxNames(invoice.team).note(invoice),
