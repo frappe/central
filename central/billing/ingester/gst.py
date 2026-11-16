@@ -129,6 +129,7 @@ def cached_company_state_code() -> str | None:
 
 
 def company_gstin() -> str:
+	"""The company's GSTIN from its address, or blank while no company address is set."""
 	address = connection.fetch("Address", accounting_settings().company_address) or {}
 	return address.get("gstin") or ""
 
@@ -138,7 +139,7 @@ def company_state_code() -> str:
 
 
 def _read_company_state_code() -> str | None:
-	if not connection.enabled() or frappe.cache.get_value(MISSED_COMPANY_STATE_KEY, use_local_cache=False):
+	if not _is_company_readable() or frappe.cache.get_value(MISSED_COMPANY_STATE_KEY, use_local_cache=False):
 		return None
 	try:
 		return company_state_code() or None
@@ -175,3 +176,8 @@ def _is_zero_rated_sez(team: str) -> bool:
 		as_dict=True,
 	)
 	return bool(profile) and tax.has_zero_rating(profile, gst_status.standing(team))
+
+
+def _is_company_readable() -> bool:
+	"""Whether the accounting system can be asked for the company's address at all."""
+	return connection.is_configured() and bool(accounting_settings().company_address)
