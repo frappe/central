@@ -94,7 +94,7 @@ A trial server usually sleeps when idle, and Atlas does not stop a sleeping VM. 
 |---|---|---|
 | Start | `install_trial_app(product, team)` | Central reads the site's apps from Pilot. When the site has the app, it returns `success` and no task. Otherwise Pilot queues the install, and Central adds a comment on the Site with the Pilot task. |
 | Progress | `get_trial_app_install(site, task_id, product, team)`, a POST every 3 seconds | Returns `status` (queued, running, success, failed, or unreachable when the site did not answer this time), `queue_position` and `started_at`. |
-| Open | `login_site(name, product)` | Signs in on the Product's Landing Route. |
+| Open | `login_site(name, product, return_to)` | Signs in on the Product's Landing Route, or on its Connector Route for an [AI connector sign in](doctype/product/SPEC.md#ai-connector-sign-in). |
 
 | Failure | Customer sees | Operator sees |
 |---|---|---|
