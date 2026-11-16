@@ -14,6 +14,7 @@ import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
 import TakeSnapshotDialog from '@/components/snapshots/TakeSnapshotDialog.vue'
 import { useFleetCommands } from '@/composables/useFleetCommands'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { useServerFleet } from '@/composables/useServerFleet'
 import { useServerLink } from '@/composables/useServerLink'
 import { useServerNavigation } from '@/composables/useServerNavigation'
@@ -58,10 +59,15 @@ const {
 	loaded,
 } = useServerFleet()
 
-const FLEET_VIEW_OPTIONS = [
-	{ label: __('Map'), value: 'map', iconLeft: 'lucide-map' },
-	{ label: __('List'), value: 'list', iconLeft: 'lucide-list' },
-]
+const isMobile = useIsMobile()
+const FLEET_VIEW_OPTIONS = computed(() =>
+	[
+		{ label: __('Map'), value: 'map', icon: 'lucide-map' },
+		{ label: __('List'), value: 'list', icon: 'lucide-list' },
+	].map(({ icon, ...option }) =>
+		isMobile.value ? { ...option, icon } : { ...option, iconLeft: icon },
+	),
+)
 
 const MAP_VIEW_OPTIONS = [
 	{ label: __('My regions'), value: 'fleet' },
@@ -166,7 +172,14 @@ const loadServersErrorTitle = __("Couldn't load your servers")
 			/>
 
 			<Button
-				v-if="activeTeam"
+				v-if="activeTeam && isMobile"
+				icon="lucide-refresh-cw"
+				:label="__('Refresh')"
+				:loading="refreshing"
+				@click="refresh"
+			/>
+			<Button
+				v-else-if="activeTeam"
 				:label="__('Refresh')"
 				icon-left="lucide-refresh-cw"
 				:loading="refreshing"

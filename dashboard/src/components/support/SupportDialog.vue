@@ -137,7 +137,7 @@ watch(
 <template>
 	<Dialog v-model="open" size="xl" :dismissible="!creating">
 		<template #title>
-			<div class="flex items-center justify-between gap-2">
+			<div class="flex items-center justify-between gap-2 pr-2">
 				<div class="flex items-center gap-1.5">
 					<Button
 						v-if="stage !== startStage"

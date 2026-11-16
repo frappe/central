@@ -11,7 +11,7 @@ const initialSearch =
 	<div class="h-full overflow-y-auto">
 		<SnapshotsPanel
 			:initial-search="initialSearch"
-			class="mx-auto w-full max-w-5xl px-6 py-8"
+			class="mx-auto w-full max-w-5xl px-6 pb-8 pt-3 md:pt-4 lg:pt-8"
 		/>
 	</div>
 </template>

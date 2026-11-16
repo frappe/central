@@ -71,7 +71,7 @@ const enableAI = async (): Promise<void> => {
 		</Teleport>
 
 		<div
-			class="mx-auto flex w-full max-w-5xl flex-col gap-4 px-3 pb-24 pt-3 md:gap-5 md:px-6 md:pt-7"
+			class="mx-auto flex w-full max-w-5xl flex-col gap-4 px-3 pb-24 pt-3 md:gap-5 md:px-6 md:pt-4 lg:pt-8"
 		>
 			<template v-if="aiLoading && !ai">
 				<Skeleton class="h-56 rounded-6" />

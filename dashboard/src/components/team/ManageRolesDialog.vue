@@ -2,6 +2,7 @@
 import { Alert, Avatar, Button, Dialog, Select, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import DialogScrollList from '@/components/common/DialogScrollList.vue'
 import { useRegions } from '@/composables/useRegions'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
@@ -161,7 +162,7 @@ const updateAccessErrorTitle = __("Couldn't update access")
 		:actions="dialogOptions.actions"
 	>
 		<template #default>
-			<div class="space-y-4">
+			<div class="flex max-h-[calc(100vh-14rem)] flex-col gap-4">
 				<Alert
 					v-if="formError"
 					theme="red"
@@ -196,36 +197,38 @@ const updateAccessErrorTitle = __("Couldn't update access")
 					:title="__('A role on all resources already covers the rest')"
 				/>
 
-				<div class="space-y-2">
-					<div
-						v-for="(row, index) in rows"
-						:key="index"
-						class="flex items-center gap-2"
-						:class="{ 'opacity-50': dominatingIndex !== -1 && index !== dominatingIndex }"
-					>
-						<Select
-							v-model="row.role"
-							:options="roleOptions"
-							:placeholder="__('Choose a role')"
-							class="min-w-0 flex-1"
-						/>
-						<span class="shrink-0 text-p-sm text-ink-gray-5"
-							>{{ __('on') }}</span
+				<DialogScrollList fill>
+					<div class="space-y-2">
+						<div
+							v-for="(row, index) in rows"
+							:key="index"
+							class="flex items-center gap-2"
+							:class="{ 'opacity-50': dominatingIndex !== -1 && index !== dominatingIndex }"
 						>
-						<Select
-							:model-value="resourceKey(row.resource_type, row.resource_name)"
-							:options="resourceOptions"
-							class="min-w-0 flex-1"
-							@update:model-value="applyResourceKey(row, $event as string)"
-						/>
-						<Button
-							variant="ghost"
-							icon="lucide-x"
-							:label="__('Remove role')"
-							@click="removeRow(index)"
-						/>
+							<Select
+								v-model="row.role"
+								:options="roleOptions"
+								:placeholder="__('Choose a role')"
+								class="min-w-0 flex-1"
+							/>
+							<span class="shrink-0 text-p-sm text-ink-gray-5"
+								>{{ __('on') }}</span
+							>
+							<Select
+								:model-value="resourceKey(row.resource_type, row.resource_name)"
+								:options="resourceOptions"
+								class="min-w-0 flex-1"
+								@update:model-value="applyResourceKey(row, $event as string)"
+							/>
+							<Button
+								variant="ghost"
+								icon="lucide-x"
+								:label="__('Remove role')"
+								@click="removeRow(index)"
+							/>
+						</div>
 					</div>
-				</div>
+				</DialogScrollList>
 			</div>
 		</template>
 	</Dialog>

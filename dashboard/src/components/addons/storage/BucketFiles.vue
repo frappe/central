@@ -289,7 +289,7 @@ const confirmDelete = async (rows: FileRow[]): Promise<void> => {
 		<ul
 			v-if="uploads.length"
 			aria-label="Uploads"
-			class="flex flex-col divide-y divide-outline-gray-1 rounded-lg border border-outline-gray-2"
+			class="flex flex-col divide-y divide-outline-gray-1 rounded-6 border border-outline-gray-2"
 		>
 			<li
 				v-for="entry in uploads"

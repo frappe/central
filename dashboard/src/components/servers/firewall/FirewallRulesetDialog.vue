@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Alert, Button, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
+import DialogScrollList from '@/components/common/DialogScrollList.vue'
 import FirewallRulesEditor from '@/components/servers/firewall/FirewallRulesEditor.vue'
 import { getErrorMessage } from '@/lib/feedback'
 import { type FirewallRules, getRulesError, PRESETS } from '@/lib/firewall'
@@ -68,7 +69,7 @@ async function submit(): Promise<void> {
 		:title="ruleset ? __('Edit ruleset') : __('New ruleset')"
 		size="3xl"
 	>
-		<div class="flex flex-col gap-5">
+		<div class="flex h-[min(35rem,calc(100vh-9rem))] flex-col gap-5">
 			<p v-if="ruleset?.server_count" class="text-p-sm text-ink-gray-6">
 				{{ __('Saving changes the firewall of every server that uses this ruleset.') }}
 			</p>
@@ -84,14 +85,16 @@ async function submit(): Promise<void> {
 				:label="__('Name')"
 				:placeholder="__('Web servers')"
 			/>
-			<FirewallRulesEditor
-				:rules="rules"
-				:disabled="busy"
-				:names="names"
-				:revision="revision"
-				@update="rules = $event"
-				@invalid="hasIncomplete = $event"
-			/>
+			<DialogScrollList class="flex-1" fill>
+				<FirewallRulesEditor
+					:rules="rules"
+					:disabled="busy"
+					:names="names"
+					:revision="revision"
+					@update="rules = $event"
+					@invalid="hasIncomplete = $event"
+				/>
+			</DialogScrollList>
 			<p v-if="problem" class="text-p-sm text-ink-red-6" role="alert">
 				{{ problem }}
 			</p>

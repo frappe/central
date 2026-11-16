@@ -5,6 +5,7 @@ import {
 	Checkbox,
 	Dialog,
 	LoadingText,
+	ScrollArea,
 	TextInput,
 } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
@@ -144,26 +145,29 @@ const loadPermissionsErrorTitle = __("Couldn't load the permissions")
 					<p v-else-if="!groups.length" class="text-p-sm text-ink-gray-6">
 						{{ __('No permissions are available. Contact your administrator.') }}
 					</p>
-					<div
+					<ScrollArea
 						v-else
-						class="-mr-4 max-h-[50vh] space-y-4 overflow-y-auto pr-4 sm:-mr-6 sm:pr-6"
+						class="-mr-4 sm:-mr-6"
+						viewport-class="max-h-[50vh] pr-4 sm:pr-6"
 					>
-						<section v-for="group in groups" :key="group.label">
-							<h4 class="mb-2 text-xs-medium uppercase text-ink-gray-4">
-								{{ group.label }}
-							</h4>
-							<ul class="space-y-2.5">
-								<li v-for="cap in group.caps" :key="cap.name">
-									<Checkbox
-										:label="capabilityLabel(cap)"
-										:disabled="creating"
-										:model-value="picked.includes(cap.name)"
-										@update:model-value="toggle(cap.name, Boolean($event))"
-									/>
-								</li>
-							</ul>
-						</section>
-					</div>
+						<div class="space-y-4">
+							<section v-for="group in groups" :key="group.label">
+								<h4 class="mb-2 text-xs-medium uppercase text-ink-gray-4">
+									{{ group.label }}
+								</h4>
+								<ul class="space-y-2.5">
+									<li v-for="cap in group.caps" :key="cap.name">
+										<Checkbox
+											:label="capabilityLabel(cap)"
+											:disabled="creating"
+											:model-value="picked.includes(cap.name)"
+											@update:model-value="toggle(cap.name, Boolean($event))"
+										/>
+									</li>
+								</ul>
+							</section>
+						</div>
+					</ScrollArea>
 				</div>
 			</div>
 		</template>

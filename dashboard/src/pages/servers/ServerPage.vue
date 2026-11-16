@@ -252,7 +252,7 @@ watch(
 		style="scrollbar-gutter: stable"
 	>
 		<div
-			class="mx-auto w-full max-w-5xl p-3 md:p-4 xl:pt-8"
+			class="mx-auto w-full max-w-5xl p-3 md:p-4 lg:pt-8"
 			:class="{ 'lg:flex lg:h-full lg:min-h-0 lg:flex-col': activeTab === 'overview' }"
 		>
 			<div v-if="!loaded && !fleetError" class="space-y-6" aria-busy="true">
