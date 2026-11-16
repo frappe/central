@@ -83,11 +83,11 @@ function toggle() {
 			</div>
 
 			<div class="min-w-0 flex-1">
-				<p class="text-base text-ink-gray-6">
+				<p class="text-sm text-ink-gray-6">
 					<template v-for="(part, index) in parts" :key="index">
 						<span
 							v-if="part.role === 'actor'"
-							class="text-base-medium text-ink-gray-9"
+							class="text-sm-medium text-ink-gray-9"
 						>
 							{{ part.text }}
 						</span>
