@@ -24,6 +24,7 @@ frappe.query_reports["Webhook Lag"] = {
 	],
 	problemColors: {
 		failed: "red",
+		waiting: "orange",
 		delivered_late: "orange",
 		slow: "orange",
 		repeat_deliveries: "orange",

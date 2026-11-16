@@ -122,18 +122,15 @@ class TestWebhookLag(BillingTestCase):
 		)[3]
 		self.assertIsNone(chart)
 
-	def test_an_unprocessed_webhook_has_no_lag_to_report(self):
-		frappe.get_doc(
-			{
-				"doctype": "Webhook Event",
-				"gateway": self.gateway,
-				"gateway_event_id": frappe.generate_hash(length=10),
-				"event_type": "payment_intent.succeeded",
-				"status": "Received",
-			}
-		).insert(ignore_permissions=True)
-		_columns, rows, _msg, _chart, _summary = webhook_lag.execute({"gateway": self.gateway})
-		self.assertEqual(rows, [])
+	def test_a_late_event_still_waiting_counts_its_delivery_but_no_processing(self):
+		self._webhook("2026-06-10 10:00:00", None, occurred="2026-06-10 09:00:00", status="Received")
+		_columns, rows, _msg, _chart, _summary = webhook_lag.execute(
+			{"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)
+		self.assertEqual(rows[0]["waiting"], 1)
+		self.assertEqual(rows[0]["delivered_late"], 1)
+		self.assertEqual(rows[0]["delivery_worst_seconds"], 3600.0)
+		self.assertIsNone(rows[0]["worst_seconds"])
 
 
 class TestDunningRecovery(BillingTestCase):

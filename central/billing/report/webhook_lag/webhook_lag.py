@@ -8,8 +8,6 @@ from frappe.utils import flt
 
 # Above this, a payment is late enough that a customer could notice.
 SLOW_SECONDS = 60
-# Events we have finished with. A Received event is still waiting for its job.
-FINISHED = ("Processed", "Failed", "Ignored")
 
 
 def execute(filters: dict | None = None):
@@ -20,7 +18,7 @@ def execute(filters: dict | None = None):
 
 
 def _events(filters: dict) -> list[dict]:
-	conditions = {"status": ["in", FINISHED]}
+	conditions = {}
 	if filters.get("gateway"):
 		conditions["gateway"] = filters["gateway"]
 	if filters.get("from_date"):
@@ -75,9 +73,14 @@ def _row(events: list[dict]) -> dict:
 		"delivered_late": delivery["over"],
 		**{f"{key}_seconds": processing[key] for key in ("median", "p95", "worst")},
 		"slow": processing["over"],
-		"failed": sum(1 for e in events if e.status == "Failed"),
+		"failed": _count_status(events, "Failed"),
+		"waiting": _count_status(events, "Received"),
 		"repeat_deliveries": sum(max((e.deliveries or 1) - 1, 0) for e in events),
 	}
+
+
+def _count_status(events: list[dict], status: str) -> int:
+	return sum(1 for e in events if e.status == status)
 
 
 def _stats(events: list[dict], seconds_of) -> dict:
@@ -120,6 +123,7 @@ def _columns() -> list[dict]:
 		*_seconds_columns(_("Processing"), ""),
 		{"label": _("Slow"), "fieldname": "slow", "fieldtype": "Int", "width": 80},
 		{"label": _("Failed"), "fieldname": "failed", "fieldtype": "Int", "width": 80},
+		{"label": _("Waiting"), "fieldname": "waiting", "fieldtype": "Int", "width": 80},
 	]
 
 
@@ -138,9 +142,9 @@ def _seconds_columns(stage: str, prefix: str) -> list[dict]:
 
 def _message(rows: list[dict]) -> str | None:
 	if not rows:
-		return _("No finished webhooks in this window.")
+		return _("No webhooks in this window.")
 	return _(
-		"Delivery runs from the gateway raising the event to our receiving it, and processing from receipt to the end of processing. Late and Slow count events over {0}s. Repeat deliveries count the gateway sending an event again."
+		"Delivery runs from the gateway raising the event to our receiving it, and processing from receipt to the end of processing. Late and Slow count events over {0}s. Repeat deliveries count the gateway sending an event again. Waiting counts events not processed yet."
 	).format(SLOW_SECONDS)
 
 
@@ -168,6 +172,7 @@ def _summary(events: list[dict]) -> list[dict]:
 		_seconds_indicator(_("p95 Processing (s)"), row["p95_seconds"]),
 		_count_indicator(_("Delivered Late"), row["delivered_late"], "orange"),
 		_count_indicator(_("Failed"), row["failed"], "red"),
+		_count_indicator(_("Waiting"), row["waiting"], "orange"),
 	]
 
 
