@@ -170,9 +170,18 @@ def _summary(events: list[dict]) -> list[dict]:
 		{"label": _("Events"), "value": row["events"], "datatype": "Int"},
 		_seconds_indicator(_("p95 Delivery (s)"), row["delivery_p95_seconds"]),
 		_seconds_indicator(_("p95 Processing (s)"), row["p95_seconds"]),
-		{"label": _("Delivered Late"), "value": row["delivered_late"], "datatype": "Int"},
-		{"label": _("Failed"), "value": row["failed"], "datatype": "Int"},
+		_count_indicator(_("Delivered Late"), row["delivered_late"], "orange"),
+		_count_indicator(_("Failed"), row["failed"], "red"),
 	]
+
+
+def _count_indicator(label: str, value: int, problem_color: str) -> dict:
+	return {
+		"label": label,
+		"value": value,
+		"datatype": "Int",
+		"indicator": problem_color if value else "green",
+	}
 
 
 def _seconds_indicator(label: str, value: float) -> dict:

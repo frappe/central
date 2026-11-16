@@ -22,4 +22,31 @@ frappe.query_reports["Webhook Lag"] = {
 			options: "Payment Gateway",
 		},
 	],
+	// Problems stand out: a failed event is red, a late, slow or repeated one amber.
+	formatter(value, row, column, data, default_formatter) {
+		const text = default_formatter(value, row, column, data);
+		if (!data || !(value > 0)) return text;
+		const color = webhookLagColor(column.fieldname, value);
+		return color
+			? `<span class="indicator-pill ${color}">${text}</span>`
+			: text;
+	},
 };
+
+// Seconds over a minute, as the report counts a late or slow event.
+const SLOW_SECONDS = 60;
+const COUNT_COLORS = {
+	failed: "red",
+	delivered_late: "orange",
+	slow: "orange",
+	repeat_deliveries: "orange",
+};
+
+function webhookLagColor(fieldname, value) {
+	if (COUNT_COLORS[fieldname]) return COUNT_COLORS[fieldname];
+	const isSecondsOverLimit =
+		fieldname.endsWith("_seconds") &&
+		!fieldname.includes("median") &&
+		value > SLOW_SECONDS;
+	return isSecondsOverLimit ? "red" : null;
+}
