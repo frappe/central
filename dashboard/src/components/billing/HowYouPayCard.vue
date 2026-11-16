@@ -23,10 +23,13 @@ const status = useCall<CollectionStatus, { team: string }>({
 	refetch: true,
 })
 whenTeamReady(() => status.reload())
-// The method charged first follows the order on the Payment methods card, so
-// refetch only when the first method changes, not on the first load.
+// The method charged first follows the order and status of the saved methods, so
+// refetch when either changes, not on the first load.
 watch(
-	() => (methods.data ? (methods.data[0]?.name ?? null) : undefined),
+	() =>
+		methods.data
+			? methods.data.map((m) => `${m.name}:${m.status}`).join(',')
+			: undefined,
 	(_first, previous) => {
 		if (previous !== undefined) status.reload()
 	},
@@ -61,7 +64,7 @@ const sentence = computed(() => {
 		)
 	if (!st.charged_method)
 		return __(
-			'Your wallet pays first. No card or UPI is saved, so you pay the rest of each invoice yourself.',
+			'Your wallet pays first. No active card or UPI: add one, or add credit, to pay the rest.',
 		)
 	return __('Your wallet pays first. When it is short, we charge {0}.', [
 		st.charged_method,
