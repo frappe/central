@@ -241,14 +241,10 @@ def status(team: str) -> dict:
 
 def _first_method_label(team: str) -> str | None:
 	"""The method charged first when the wallet is short, as the Payments page names it."""
-	first = frappe.db.get_value(
-		"Payment Method",
-		{"team": team, "status": "Active"},
-		["display_label", "method_type"],
-		order_by="priority asc, creation asc",
-		as_dict=True,
-	)
-	return (first.display_label or first.method_type) if first else None
+	from central.billing.payments import collection
+
+	methods = collection.ordered_methods(team)
+	return (methods[0].display_label or methods[0].method_type) if methods else None
 
 
 def shown_limit(team: str, reason: str | None) -> float | None:

@@ -37,7 +37,7 @@ def ordered_methods(team: str) -> list:
 		"Payment Method",
 		filters={"team": team, "status": "Active"},
 		order_by="priority asc, creation asc",
-		fields=["name", "gateway", "priority", "mandate_max_amount"],
+		fields=["name", "gateway", "priority", "mandate_max_amount", "display_label", "method_type"],
 	)
 
 
