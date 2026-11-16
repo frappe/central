@@ -180,13 +180,13 @@ def collect_invoice(invoice: str, new_round: bool = False, now: datetime | str |
 	inv = frappe.get_doc("Invoice", invoice)
 	if is_internal_team(inv.team):
 		return {"collected": False, "reason": "internal_team"}
-	# A team that pays by hand, or is asked to choose, is never charged off-session,
-	# even when a pre-debit notice went out before it switched.
-	if not collection_mode.is_debit_allowed(inv.team):
-		return {"collected": False, "reason": "debit_held"}
 	earlier = attempts_of(invoice) if new_round else None
 	skipped = set()
 	while True:
+		# A team that pays by hand, or is asked to choose, is never charged off-session: not
+		# after a notice it switched past, nor after a failed mandate paused it mid-run.
+		if not collection_mode.is_debit_allowed(inv.team):
+			return {"collected": False, "reason": "debit_held"}
 		outcome = _charge_next_method(inv, earlier, skipped, now)
 		if outcome is not None:
 			return outcome

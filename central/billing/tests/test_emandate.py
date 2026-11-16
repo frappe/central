@@ -202,6 +202,43 @@ class TestEmandatePredebit(EmandateTestBase):
 		adapter.charge.assert_not_called()
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 0)
 
+	def test_a_backup_method_is_not_charged_once_a_mandate_failure_pauses_the_team(self):
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+		from central.billing.payments import collection
+
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": self.gw,
+				"method_type": "UPI Autopay",
+				"status": "Active",
+				"gateway_method_id": "tok_backup",
+				"gateway_customer_id": "cus",
+				"mandate_max_amount": 200000,
+				"mandate_currency": "INR",
+				"validated_at": frappe.utils.now_datetime(),
+			}
+		).insert(ignore_permissions=True)
+		inv = self._invoice(5000)
+		emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")  # window opens 06-11 09:00
+
+		adapter = MagicMock()
+		adapter.prepare_charge.return_value = None
+		adapter.charge.return_value = PaymentResult(
+			success=False,
+			status="Failed",
+			failure_code="payment_intent_mandate_invalid",
+			failure_reason="mandate invalid",
+		)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			collection.collect_on_payment_date(now="2026-06-11 10:00:00")
+
+		adapter.charge.assert_called_once()
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Action Required")
+
 	def test_an_exhausted_mandate_is_asked_for_another_method_once(self):
 		from unittest.mock import MagicMock, patch
 
