@@ -43,7 +43,8 @@ class GitHubDeployApp(GitHubApp):
 			frappe.throw(_("{0} is larger than {1} bytes.").format(path, MAX_FILE_BYTES))
 		return response.content.decode()
 
-	def get_deploy_context(
-		self, installation_id: str, repository_id: str, full_name: str, path: str, ref: str
-	):
-		"""Return the full context being passed for clone on the VM these are just instruction sets to pass to actual VM."""
+	def list_root(self, installation_id: str, repository_id: str, full_name: str, ref: str) -> list[dict]:
+		"""The entries at the root of the repository at `ref`, each with its exact `name` and `type`."""
+		token = self.create_installation_token(installation_id, repository_id)["token"]
+		url = f"{API_URL}/repos/{full_name}/contents?{urllib.parse.urlencode({'ref': ref})}"
+		return self._request("GET", url, token=token)

@@ -1,7 +1,7 @@
 import frappe
 from frappe.tests import UnitTestCase
 
-from central.deploy.config import get_machine_specs
+from central.deploy.config import find_containerfile, get_machine_specs
 
 
 class UnitTestDeployConfig(UnitTestCase):
@@ -27,3 +27,22 @@ class UnitTestDeployConfig(UnitTestCase):
 		):
 			with self.subTest(config=config), self.assertRaises(frappe.ValidationError):
 				get_machine_specs(config)
+
+	def test_the_build_file_is_found_the_way_buildah_finds_it(self):
+		def entry(name: str, type: str = "file") -> dict:
+			return {"name": name, "type": type}
+
+		self.assertEqual(find_containerfile([entry("Dockerfile"), entry("Containerfile")]), "Containerfile")
+		self.assertEqual(find_containerfile([entry("README.md"), entry("Dockerfile")]), "Dockerfile")
+		for root in (
+			[entry("README.md")],
+			[entry("dockerfile")],
+			[entry("DockerFile")],
+			[entry("containerfile")],
+			[entry("Dockerfile", "dir")],
+			[entry("Dockerfile", "symlink")],
+			[entry("Containerfile", "symlink"), entry("Dockerfile")],
+			[entry("Dockerfile.prod")],
+		):
+			with self.subTest(root=root), self.assertRaises(frappe.ValidationError):
+				find_containerfile(root)
