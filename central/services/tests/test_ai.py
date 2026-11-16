@@ -3,7 +3,7 @@
 
 import json
 from contextlib import contextmanager
-from unittest.mock import PropertyMock, patch
+from unittest.mock import DEFAULT, PropertyMock, patch
 
 import frappe
 import requests
@@ -58,6 +58,7 @@ EMPTY_USAGE = {
 	"model_summary": [],
 	"daily_summary": [],
 }
+FIGURES = {"spend": {"suspended": False}, "keys": [], "usage": EMPTY_USAGE}
 
 
 @contextmanager
@@ -251,6 +252,8 @@ class TestAI(IntegrationTestCase):
 		)
 		settings.save()
 		frappe.db.delete("Team Service", {"add_on_service": "ai"})
+		# Every change first reads whether the team's keys are paused: not, unless a test says so.
+		self.enterContext(patch.object(GroveClient, "get_figures", return_value=FIGURES))
 		self.addCleanup(frappe.set_user, "Administrator")
 		# Saving the settings creates the webhook; the rollback drops it but not the cached list.
 		self.addCleanup(frappe.client_cache.delete_value, "webhooks")
@@ -415,11 +418,9 @@ class TestAI(IntegrationTestCase):
 			{"doctype": "AI Trial Key", "grove_key": "k-moving", "team": self.team, "status": "Converting"}
 		).insert(ignore_permissions=True)
 		self.addCleanup(frappe.db.delete, "AI Trial Key", {"name": moving.name})
-		figures = {"spend": {}, "keys": [], "usage": EMPTY_USAGE}
 		with (
 			patch.object(GroveClient, "provision_key", return_value=MINTED) as provision_key,
 			patch.object(GroveClient, "list_models", return_value=MODELS),
-			patch.object(GroveClient, "get_figures", return_value=figures),
 			patch.object(GroveClient, "list_geographies", return_value=GEOGRAPHIES),
 		):
 			self.assertTrue(api.get_ai(self.team)["key_handover_pending"])
@@ -431,6 +432,28 @@ class TestAI(IntegrationTestCase):
 			self.assertFalse(api.get_ai(self.team)["key_handover_pending"])
 			api.create_api_key(self.team, "app", "eu", "5")
 		provision_key.assert_called_once()
+
+	def test_a_team_whose_keys_are_paused_reads_and_changes_nothing(self):
+		self.enabled()
+		paused = {**FIGURES, "spend": {"suspended": True}, "keys": [LISTED]}
+		changes = ("provision_key", "update_caps", "revoke_key", "update_team")
+		with (
+			patch.object(GroveClient, "get_figures", return_value=paused),
+			patch.object(GroveClient, "list_geographies", return_value=GEOGRAPHIES),
+			patch.multiple(GroveClient, **{name: DEFAULT for name in changes}) as grove,
+		):
+			for change in (
+				lambda: api.create_api_key(self.team, "app", "eu", "5"),
+				lambda: api.set_api_key_caps(self.team, {"k1": "8"}),
+				lambda: api.revoke_api_key(self.team, "k1"),
+				lambda: api.set_prompt_logging(False, self.team),
+			):
+				with self.assertRaisesRegex(frappe.ValidationError, "team is suspended"):
+					change()
+			self.assertTrue(api.get_ai(self.team)["spend"]["suspended"])
+			self.assertEqual(len(api.list_api_keys(self.team)), 1)
+		for name in changes:
+			grove[name].assert_not_called()
 
 	def test_prompt_logging_is_set_at_grove_by_a_service_manager_only(self):
 		self.enabled()

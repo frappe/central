@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Alert, Button, Dialog, Skeleton, TabButtons, Tooltip } from 'frappe-ui'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import CopyableValue from '@/components/common/CopyableValue.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import AISettings from '@/components/services/llm/AISettings.vue'
@@ -22,6 +22,10 @@ const { ai, aiLoading, aiError, reloadAI, enable, minted, dismissMinted } =
 useBreadcrumbs().setBreadcrumbs([{ label: 'LLM' }])
 
 const keys = ref<InstanceType<typeof ApiKeys>>()
+
+// A team whose keys are paused reads everything and changes nothing; the server refuses too.
+const suspended = computed(() => !!ai.value?.spend?.suspended)
+const canChange = computed(() => canManageServices.value && !suspended.value)
 
 const TABS = [
 	{ label: 'Usage', value: 'usage', glyph: 'lucide-chart-column' },
@@ -55,18 +59,20 @@ const enableAI = async (): Promise<void> => {
 			<Tooltip
 				v-if="canManageServices"
 				:text="
-					ai.key_handover_pending
-						? `Your trial's API key is being moved to this team. You can create keys once that is done.`
-						: keys?.atKeyLimit
-							? `Your plan allows ${ai.spend?.max_keys} live keys. Revoke one to create another.`
-							: ''
+					suspended
+						? 'This team is suspended. Nothing can be changed until that is lifted.'
+						: ai.key_handover_pending
+							? `Your trial's API key is being moved to this team. You can create keys once that is done.`
+							: keys?.atKeyLimit
+								? `Your plan allows ${ai.spend?.max_keys} live keys. Revoke one to create another.`
+								: ''
 				"
 			>
 				<Button
 					variant="solid"
 					icon-left="lucide-plus"
 					label="Create key"
-					:disabled="ai.key_handover_pending || keys?.atKeyLimit"
+					:disabled="suspended || ai.key_handover_pending || keys?.atKeyLimit"
 					@click="keys?.openCreate()"
 				/>
 			</Tooltip>
@@ -101,14 +107,20 @@ const enableAI = async (): Promise<void> => {
 
 			<template v-else-if="ai?.enabled" :key="activeTeam">
 				<Alert
-					v-if="ai.key_handover_pending"
+					v-if="suspended"
+					theme="red"
+					title="This team is suspended"
+					description="Every API key is refused, and keys, caps and settings can't be changed, until the suspension is lifted."
+				/>
+				<Alert
+					v-else-if="ai.key_handover_pending"
 					theme="amber"
 					title="Your trial's API key is being moved to this team"
 					description="It keeps working meanwhile. You can create keys once that is done, usually within a few minutes."
 				/>
 
 				<Summary
-					:can-manage="canManageServices"
+					:can-manage="canChange"
 					@create="keys?.openCreate()"
 					@quickstart="keys?.openHelp()"
 				/>
@@ -126,7 +138,7 @@ const enableAI = async (): Promise<void> => {
 				<div v-show="tab === 'keys'" class="contents">
 					<ApiKeys
 						ref="keys"
-						:can-manage="canManageServices"
+						:can-manage="canChange"
 						:active="tab === 'keys'"
 					/>
 				</div>

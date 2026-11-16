@@ -70,7 +70,7 @@ def create_api_key(
 	"""Mint a key for the team in `geography` with `cap` whole USD to spend a month, and return
 	its secret. This is the only time it is shown. `models` is what it may call, for the quickstart.
 	Refused while a converted trial's key is on its way to the team."""
-	require_ai(team)
+	require_not_suspended(team)
 	if AITrialKey.is_handover_pending(team):
 		frappe.throw(_("Your trial's API key is being moved to this team. Try again in a few minutes."))
 	label = (label or "").strip()
@@ -105,7 +105,7 @@ def set_api_key_caps(team: str | None = None, caps: dict[str, int] | None = None
 	"""Set the monthly caps of several of the team's keys in one go, {key: whole USD}. Grove
 	saves all or none: it refuses caps that add up past the tier's spend limit, and another
 	team's key."""
-	require_ai(team)
+	require_not_suspended(team)
 	rows = GroveClient.from_settings().update_caps(
 		team, {key: whole_dollars(cap) for key, cap in (caps or {}).items()}
 	)
@@ -128,7 +128,7 @@ def whole_dollars(cap: int | float | str | None) -> int:
 def set_prompt_logging(enabled: bool, team: str | None = None) -> dict:
 	"""Whether the gateways store the prompts and outputs of the team's keys, for a short time,
 	so support can look into a request. Grove holds the setting; Central keeps no copy."""
-	require_ai(team)
+	require_not_suspended(team)
 	updated = GroveClient.from_settings().update_team(team, log_payloads=enabled)
 	return {"log_payloads": bool(updated["log_payloads"])}
 
@@ -155,7 +155,7 @@ def get_models(team: str | None = None, geography: str | None = None) -> list[di
 @require_capability("service:manage", MANAGE_DENIED)
 def revoke_api_key(team: str | None = None, key: str | None = None) -> dict:
 	"""Revoke one of the team's keys. Grove refuses another team's key."""
-	require_ai(team)
+	require_not_suspended(team)
 	GroveClient.from_settings().revoke_key(team, key)
 
 	return {"name": key}
@@ -173,6 +173,15 @@ def get_usage(team: str | None = None, period: str = "Last 7 Days", key: str | N
 def require_ai(team: str) -> None:
 	if not ai.get_ai_service(team):
 		frappe.throw(_("AI is not enabled for this team. Ask a team admin to enable it on the LLM page."))
+
+
+def require_not_suspended(team: str) -> None:
+	"""Refuse a change while the team's keys are paused at Grove, by Central's suspension or a
+	hold of Grove's own: a key minted, a cap set, a key revoked, a setting changed. Reads and
+	Refresh usage stay open. Grove holds the flag; Central's own calls there are not gated."""
+	require_ai(team)
+	if GroveClient.from_settings().get_figures(team)["spend"]["suspended"]:
+		frappe.throw(_("This team is suspended. Nothing can be changed until that is lifted."))
 
 
 def get_key_hash(team: str, key: str) -> str:

@@ -345,14 +345,6 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 			</div>
 		</Teleport>
 
-		<Alert
-			v-if="spend?.suspended"
-			class="mb-4"
-			theme="red"
-			title="Keys are paused"
-			description="An invoice is unpaid. Every key is refused until it is settled."
-		/>
-
 		<LoadingText v-if="apiKeysLoading && !apiKeys.length" :lines="3" />
 
 		<div
