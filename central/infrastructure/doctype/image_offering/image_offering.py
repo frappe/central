@@ -26,6 +26,7 @@ class ImageOffering(Document):
 		description: DF.SmallText | None
 		display_order: DF.Int
 		enabled: DF.Check
+		hidden_tags: DF.Table[ImageOfferingTag]
 		logo: DF.AttachImage | None
 		minimum_memory_mib: DF.Int
 		offering_key: DF.Data
@@ -89,6 +90,10 @@ class ImageOffering(Document):
 
 		return tags
 
+	def is_image_hidden(self, image_tags: dict[str, str]) -> bool:
+		"""An image is hidden from the Server picker when any hidden tag matches it."""
+		return any(image_tags.get(row.key) == row.value for row in self.hidden_tags)
+
 	@frappe.whitelist(methods=["POST"])
 	def preview_images(self, region: str, offset: int = 0) -> dict:
 		"""1. Require operator write access before previewing regional System images."""
@@ -96,7 +101,11 @@ class ImageOffering(Document):
 
 		self.check_permission("write")
 
-		return preview_images(self.name, region, offset)
+		page = preview_images(self.name, region, offset)
+		for image in page["items"]:
+			image["hidden"] = self.is_image_hidden(image["tags"])
+
+		return page
 
 
 def on_doctype_update() -> None:

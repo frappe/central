@@ -63,8 +63,11 @@ def list_images(
 	instance.ensure_accepts_new_servers()
 
 	client = AtlasClient.for_team(instance, team)
+	page = client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
+	if flow == "Server":
+		page["items"] = [image for image in page["items"] if not document.is_image_hidden(image["tags"])]
 
-	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
+	return page
 
 
 def list_apps(team: str, region: str) -> list[dict]:
@@ -133,7 +136,7 @@ def selected_image(
 
 	client = AtlasClient.for_team(instance, team, capability)
 	image = client.read_system_image(client.get_image(image_id), document.get_image_tags())
-	if not image["enabled"] or image["status"] != "available":
+	if not image["enabled"] or image["status"] != "available" or document.is_image_hidden(image["tags"]):
 		frappe.throw(_("This image is no longer available. Select another image."))
 
 	return image
