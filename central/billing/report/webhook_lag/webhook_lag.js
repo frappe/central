@@ -22,8 +22,6 @@ frappe.query_reports["Webhook Lag"] = {
 			options: "Payment Gateway",
 		},
 	],
-	// Problems stand out: a failed event is red, a late, slow or repeated one amber.
-	// A time is a problem over the column's slow_seconds, which the report sets.
 	problemColors: {
 		failed: "red",
 		delivered_late: "orange",

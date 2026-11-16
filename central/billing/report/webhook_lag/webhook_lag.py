@@ -1,11 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""How late gateway webhooks reach us, and how long we take to act on them.
-
-A webhook settles an invoice or a top-up when the checkout callback did not, so lag here
-is lag on a customer's payment showing as paid. Delivery delay runs from the gateway
-raising the event to our receiving it; processing lag from receiving it to finishing.
-"""
+"""How late gateway webhooks reach us, and how long we take to act on them."""
 
 import frappe
 from frappe import _

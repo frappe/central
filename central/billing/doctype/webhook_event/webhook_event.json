@@ -77,7 +77,8 @@
    "fieldtype": "Datetime",
    "label": "Raised by Gateway At",
    "read_only": 1,
-   "description": "When the gateway raised the event. Created On is when we received it."
+   "description": "When the gateway raised the event. Created On is when we received it.",
+   "in_list_view": 1
   },
   {
    "fieldname": "delivery_id",
@@ -129,7 +130,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-16 18:00:00.000000",
+ "modified": "2026-11-16 16:02:29.380250",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Webhook Event",
