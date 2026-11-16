@@ -423,6 +423,23 @@ class TestTopUpReconciliation(ReconTestBase):
 		self.assertTrue(frappe.db.get_value("Top-up Order", short, "failure_reason"))
 		self.assertEqual(frappe.db.get_value("Top-up Order", paid, "status"), "Credited")
 
+	def test_a_recent_paid_top_up_is_credited_within_minutes(self):
+		from central.billing.gateways.base import VerifiedPayment
+
+		recent = self._order("pi_recent", hours_old=0.25)
+		just_made = self._order("pi_just_made", hours_old=0.01)
+		older = self._order("pi_older", hours_old=3)
+		with gateway_status("succeeded") as adapter:
+			adapter.find_order_payment.side_effect = lambda order_id: VerifiedPayment(
+				order_id, True, 700, "INR", order_id=order_id
+			)
+			reconciliation.reconcile_recent_top_up_orders()
+
+		self.assertEqual(frappe.db.get_value("Top-up Order", recent, "status"), "Credited")
+		# The checkout callback still has a few minutes, and older orders wait for the hourly sweep.
+		self.assertEqual(frappe.db.get_value("Top-up Order", just_made, "status"), "Created")
+		self.assertEqual(frappe.db.get_value("Top-up Order", older, "status"), "Created")
+
 	def test_an_unpaid_top_up_expires(self):
 		order = self._order("pi_never", hours_old=8 * 24)
 		with gateway_status("requires_payment_method") as adapter:

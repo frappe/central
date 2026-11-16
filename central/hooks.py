@@ -282,6 +282,7 @@ scheduler_events = {
 		"0 9 * * *": ["central.billing.payments.top_up_reminders.run_top_up_reminders"],
 		# Retry proxy routes that failed or never ran, up to the attempt limit.
 		"*/5 * * * *": [
+			"central.billing.payments.reconciliation.reconcile_recent_top_up_orders",
 			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",
 			"central.infrastructure.doctype.site.site.record_ready_sites",
 			"central.infrastructure.doctype.site.site.poll_site_renames",
