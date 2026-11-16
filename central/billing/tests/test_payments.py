@@ -229,7 +229,7 @@ class TestDefaultAndDelete(CardTestBase):
 		complete_billing_profile(TEAM, currency="USD")
 		self.add_active_card()
 		second = self.add_active_card(last4="5555")
-		for mode in ("Prepaid", "Manual Checkout"):
+		for mode in ("Prepaid", "Auto Charge", "Manual Checkout"):
 			frappe.db.set_value("Billing Profile", TEAM, "collection_mode", mode)
 			payments.set_default_payment_method(second)
 			self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), mode)

@@ -144,6 +144,11 @@ class TestCollectionMode(IntegrationTestCase):
 
 	def test_status_names_the_method_charged_first(self):
 		self.assertEqual(collection_mode.status(TEAM)["charged_method"], "UPI Autopay")
+		frappe.db.set_value("Payment Method", {"team": TEAM}, "priority", 5)
+		self._activate_method("tok_charged_first")
+		first = frappe.db.get_value("Payment Method", {"gateway_method_id": "tok_charged_first"})
+		frappe.db.set_value("Payment Method", first, {"priority": 1, "display_label": "UPI ····first"})
+		self.assertEqual(collection_mode.status(TEAM)["charged_method"], "UPI ····first")
 		frappe.db.delete("Payment Method", {"team": TEAM})
 		self.assertIsNone(collection_mode.status(TEAM)["charged_method"])
 
