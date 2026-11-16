@@ -16,7 +16,7 @@ from central.billing import authz
 from central.billing.payments.webhooks import process_webhook
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import make_billing_team, make_custom_role_team, make_user
+from central.billing.tests.utils import make_billing_team, make_custom_role_team, make_user, processing_jobs
 
 FLOOD_EVENT = "evt_flood_1"
 FLOOD_PAYLOAD = (
@@ -162,7 +162,7 @@ class TestWebhookHardening(IntegrationTestCase):
 			process_webhook("Stripe", FLOOD_PAYLOAD, dict({"Stripe-Signature": "x"}))
 			process_webhook("Stripe", FLOOD_PAYLOAD, dict({"Stripe-Signature": "x"}))  # replay
 		self.assertEqual(self._count(), 1)  # one row
-		self.assertEqual(enqueue.call_count, 1)  # one job — replay had no side effect
+		self.assertEqual(processing_jobs(enqueue), 1)  # one processing job; the replay is only counted
 
 	def test_concurrent_flood_stores_exactly_one(self):
 		def deliver(_i):

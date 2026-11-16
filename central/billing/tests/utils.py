@@ -659,3 +659,18 @@ def stripe_intent(txn_id, event_type="payment_intent.succeeded", **fields):
 		"currency": (attempt.currency or "INR").lower(),
 		**fields,
 	}
+
+
+WEBHOOK_PROCESS_JOB = "central.billing.payments.webhooks.handle_webhook_event"
+WEBHOOK_COUNT_JOB = "central.billing.payments.webhooks.count_repeat_delivery"
+
+
+def processing_jobs(enqueue) -> int:
+	"""How many webhook processing jobs a patched `frappe.enqueue` was asked for."""
+	return sum(1 for call in enqueue.call_args_list if call.args[0] == WEBHOOK_PROCESS_JOB)
+
+
+def run_repeat_counts(method, **kwargs):
+	"""Run the repeat-count job inline and leave the processing job queued."""
+	if method == WEBHOOK_COUNT_JOB:
+		run_enqueued_inline(method, **kwargs)

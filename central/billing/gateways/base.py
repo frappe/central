@@ -9,12 +9,29 @@ interface; adding a gateway is one subclass passing the shared contract suite.
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import ClassVar
 
 import frappe
 from frappe import _
 
 from central.billing.payments.decline import Failure
+
+
+def event_time(value) -> datetime | None:
+	"""A gateway's event timestamp, Unix seconds or ISO 8601, as a naive system-time datetime."""
+	if not value:
+		return None
+	try:
+		moment = (
+			datetime.fromtimestamp(int(value), tz=UTC)
+			if str(value).isdigit()
+			else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+		)
+	except ValueError:
+		return None
+	utc = moment.astimezone(UTC).replace(tzinfo=None)
+	return frappe.utils.convert_utc_to_system_timezone(utc).replace(tzinfo=None)
 
 
 def header_value(headers: dict, name: str):
@@ -107,6 +124,10 @@ class NormalisedEvent:
 	gateway_event_id: str
 	event_type: str
 	payload: dict = field(default_factory=dict)
+	# When the gateway raised the event, so a late delivery can be measured.
+	occurred_at: datetime | None = None
+	# The gateway's id for this delivery, when it is not the event id. For tracing only.
+	delivery_id: str | None = None
 
 
 class GatewayError(Exception):

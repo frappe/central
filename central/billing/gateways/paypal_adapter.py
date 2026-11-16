@@ -20,6 +20,7 @@ from central.billing.gateways.base import (
 	PaymentResult,
 	RefundResult,
 	VerifiedPayment,
+	event_time,
 	header_value,
 	token_check,
 )
@@ -188,12 +189,9 @@ class PayPalAdapter(PayPalSetup, GatewayAdapter):
 			return False
 
 	def parse_webhook_event(self, payload: dict, headers: dict | None = None) -> NormalisedEvent:
-		"""PayPal carries the event id + type in the body."""
-		return NormalisedEvent(
-			gateway_event_id=payload.get("id"),
-			event_type=payload.get("event_type"),
-			payload=payload,
-		)
+		"""PayPal carries the event id, type and time in the body."""
+		occurred_at = event_time(payload.get("create_time"))
+		return NormalisedEvent(payload.get("id"), payload.get("event_type"), payload, occurred_at)
 
 	def get_transaction_status(self, gateway_txn_id: str) -> str:
 		return self._get_capture(gateway_txn_id).get("status")

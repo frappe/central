@@ -56,6 +56,11 @@ ALERT_AFTER_HOURS = 24
 CHECKOUT_OPEN_HOURS = 24
 # A top-up nobody paid within this long is expired, so it stops being asked about.
 TOP_UP_EXPIRES_HOURS = 7 * 24
+# A top-up whose callback was lost is checked every few minutes while it is recent, so a
+# late webhook does not keep a paying customer waiting for the hourly sweep.
+RECENT_TOP_UP_HOURS = 2
+# A recent top-up is left this long for its callback or webhook before it is checked.
+RECENT_GRACE_MINUTES = 5
 # A gateway forgets an idempotency key after about a day. Inside that window, re-sending
 # a charge is deduped by the gateway; outside it, the same request would be a second one.
 KEY_REPLAY_HOURS = 24
@@ -280,19 +285,51 @@ def reconcile_top_up_orders(now=None) -> list[dict]:
 	"""Credit top-ups whose payment landed but whose callback and webhook were both lost,
 	and expire the ones nobody paid."""
 	now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
-	orders = frappe.get_all(
-		"Top-up Order",
-		filters={
-			"status": "Created",
-			"gateway_order_id": ["is", "set"],
-			"creation": ["<=", frappe.utils.add_to_date(now, minutes=-GRACE_MINUTES)],
-		},
-		pluck="name",
+	return _reconcile_top_ups(
+		"Top-up reconciliation",
+		_reconcile_top_up_order,
+		now,
+		since=None,
+		until=frappe.utils.add_to_date(now, minutes=-GRACE_MINUTES),
 	)
-	results = each_isolated(
-		"Top-up reconciliation", "Top-up Order", orders, lambda name: _reconcile_top_up_order(name, now)
+
+
+def reconcile_recent_top_up_orders(now=None) -> list[dict]:
+	"""Credit recent top-ups whose payment landed before their callback or webhook."""
+	now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
+	return _reconcile_top_ups(
+		"Recent top-up reconciliation",
+		_reconcile_recent_top_up_order,
+		now,
+		since=frappe.utils.add_to_date(now, hours=-RECENT_TOP_UP_HOURS),
+		until=frappe.utils.add_to_date(now, minutes=-RECENT_GRACE_MINUTES),
 	)
+
+
+def _reconcile_top_ups(job: str, work, now, since, until) -> list[dict]:
+	"""Run `work` on each unpaid top-up order created in the window."""
+	filters = [
+		["status", "=", "Created"],
+		["gateway_order_id", "is", "set"],
+		["creation", "<=", until],
+	]
+	if since:
+		filters.append(["creation", ">=", since])
+	orders = frappe.get_all("Top-up Order", filters=filters, pluck="name")
+	results = each_isolated(job, "Top-up Order", orders, lambda name: work(name, now))
 	return [result for result in results if result]
+
+
+def _reconcile_recent_top_up_order(name: str, now) -> dict | None:
+	"""A gateway error is left to the next run, so an outage does not log one error per order."""
+	from central.billing.gateways.base import GatewayError
+
+	order = frappe.get_doc("Top-up Order", name)
+	try:
+		payment = _find_order_payment(order.gateway, order.gateway_order_id)
+	except GatewayError:
+		return None
+	return _credit_top_up(order, payment) if payment else None
 
 
 def _reconcile_top_up_order(name: str, now) -> dict | None:
