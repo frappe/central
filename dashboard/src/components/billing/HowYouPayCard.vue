@@ -12,8 +12,6 @@ import { limitText } from '@/lib/collectionText'
 import { __ } from '@/lib/translate'
 import type { CollectionStatus } from '@/types/billing'
 
-// Shows how the team pays and what happens when the wallet runs short. Only a
-// member who can manage billing may change it; everyone else reads it.
 const { activeTeam } = useSession()
 const { canManageBilling } = useCapabilities()
 const { methods } = useBillingOverview()

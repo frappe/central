@@ -8,8 +8,6 @@ import { getErrorMessage, successToast } from '@/lib/feedback'
 import { __ } from '@/lib/translate'
 import type { CollectionStatus } from '@/types/billing'
 
-// The one place a customer picks how they pay. Prepaid and Auto Charge collect the
-// same way, so they are one choice; picking it stores Prepaid.
 const props = defineProps<{ status: CollectionStatus }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ changed: [] }>()
@@ -17,6 +15,7 @@ const emit = defineEmits<{ changed: [] }>()
 const { activeTeam } = useSession()
 
 type Choice = 'Automatic' | 'Manual'
+// Prepaid and Auto Charge collect the same way, so the one automatic choice stores Prepaid.
 const MODE_OF_CHOICE: Record<Choice, string> = {
 	Automatic: 'Prepaid',
 	Manual: 'Manual Checkout',
