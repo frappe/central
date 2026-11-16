@@ -195,6 +195,11 @@ def choose(team: str, mode: str) -> dict:
 				_("Add a card or UPI mandate before switching to automatic payments."),
 				frappe.ValidationError,
 			)
+	elif mode == "Manual Checkout" and not is_manual_checkout_offered(team):
+		frappe.throw(
+			_("Paying each invoice yourself is available only for INR billing."),
+			frappe.ValidationError,
+		)
 	elif mode not in CUSTOMER_CHOOSABLE:
 		frappe.throw(
 			_("Pick one of {0}.").format(", ".join(CUSTOMER_CHOOSABLE + RETURNABLE)),
@@ -205,6 +210,11 @@ def choose(team: str, mode: str) -> dict:
 	profile.collection_action_reason = None
 	profile.save(ignore_permissions=True)
 	return status(team)
+
+
+def is_manual_checkout_offered(team: str) -> bool:
+	"""Paying by hand exists for the INR off-session limit, so only INR teams may pick it."""
+	return frappe.db.get_value("Billing Profile", team, "currency") == "INR"
 
 
 def _has_chargeable_method(team: str) -> bool:
@@ -235,6 +245,7 @@ def status(team: str) -> dict:
 		"choices": list(CUSTOMER_CHOOSABLE),
 		"can_return_to_auto": _has_chargeable_method(team),
 		"choice": CHOICE_OF_MODE.get(mode),
+		"manual_offered": is_manual_checkout_offered(team),
 		"charged_method": _first_method_label(team),
 	}
 

@@ -152,6 +152,18 @@ class TestCollectionMode(IntegrationTestCase):
 		frappe.db.delete("Payment Method", {"team": TEAM})
 		self.assertIsNone(collection_mode.status(TEAM)["charged_method"])
 
+	def test_only_an_inr_team_may_pay_each_invoice_by_hand(self):
+		self.assertTrue(collection_mode.status(TEAM)["manual_offered"])
+		usd_team = "team-collection-usd"
+		ensure_team(usd_team)
+		complete_billing_profile(usd_team, currency="USD")
+		self.assertFalse(collection_mode.status(usd_team)["manual_offered"])
+		with self.assertRaises(frappe.ValidationError):
+			collection_mode.choose(usd_team, "Manual Checkout")
+		self.assertNotEqual(
+			frappe.db.get_value("Billing Profile", usd_team, "collection_mode"), "Manual Checkout"
+		)
+
 	def test_returning_to_auto_needs_something_to_charge(self):
 		"""Auto Charge means "we debit something". Without a method it is a mode whose
 		first invoice would discover the gap for the customer."""
