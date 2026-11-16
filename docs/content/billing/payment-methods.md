@@ -27,9 +27,9 @@ While your wallet has a balance, the wallet is the primary and every card is a f
 The **How you pay** card on **Billing > Payments** shows how your invoices are paid. Your wallet always pays first. Then:
 
 - **You pay automatically**: when your wallet is short, Frappe Cloud charges your **Primary** payment method. In INR, your card or UPI pays only amounts up to its limit, at most ₹15,000. With no payment method saved, you pay the rest of each invoice yourself.
-- **You pay each invoice yourself**: Frappe Cloud emails you each invoice, and you pay what your wallet does not cover. Your payment methods are not charged automatically.
+- **You pay each invoice yourself**: INR billing only. Frappe Cloud emails you each invoice, and you pay what your wallet does not cover. Your payment methods are not charged automatically, even for a debit you were notified of before you switched.
 
-To change it, click **Change**, select **Pay automatically** or **Pay each invoice yourself**, and click **Confirm**. The change applies to every unpaid invoice, from its next payment. Only the Owner, Admin, or Billing role sees **Change**. Making a payment method **Primary**, or adding one, does not change how you pay.
+Teams billed in INR can change it. Click **Change**, select **Pay automatically** or **Pay each invoice yourself**, and click **Confirm**. The change applies to every unpaid invoice, from its next payment. Only the Owner, Admin, or Billing role sees **Change**. Making a payment method **Primary**, or adding one, does not change how you pay.
 
 When **Automatic payments are paused** shows, an INR bill was more than your card or UPI can pay automatically, or your mandate stopped working. Click **Choose how to pay**. Your services keep running.
 

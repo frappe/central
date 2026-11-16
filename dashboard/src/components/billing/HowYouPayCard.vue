@@ -78,7 +78,7 @@ const limitLine = computed(() => {
 	<BillingCard :title="__('How you pay')" flat>
 		<template #action>
 			<Button
-				v-if="canManageBilling && s"
+				v-if="canManageBilling && s && (s.manual_offered || s.choice !== 'Automatic')"
 				size="sm"
 				:label="s.action_required ? __('Choose how to pay') : __('Change')"
 				@click="choosing = true"

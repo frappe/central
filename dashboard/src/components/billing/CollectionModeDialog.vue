@@ -62,24 +62,27 @@ const automaticBlurb = computed(() => {
 	])
 })
 
-const options = computed(() => [
-	{
-		key: 'Automatic' as Choice,
-		icon: 'lucide-wallet',
-		title: __('Pay automatically'),
-		blurb: automaticBlurb.value,
-		fit: __('Best for hands-off, predictable spending.'),
-	},
-	{
-		key: 'Manual' as Choice,
-		icon: 'lucide-receipt',
-		title: __('Pay each invoice yourself'),
-		blurb: __(
-			'Your wallet pays first. We email you each invoice, and you pay the rest yourself, any amount.',
-		),
-		fit: __('Best if your usage varies a lot month to month.'),
-	},
-])
+// Paying by hand exists for the INR limit, so other teams see only the automatic choice.
+const options = computed(() =>
+	[
+		{
+			key: 'Automatic' as Choice,
+			icon: 'lucide-wallet',
+			title: __('Pay automatically'),
+			blurb: automaticBlurb.value,
+			fit: __('Best for hands-off, predictable spending.'),
+		},
+		{
+			key: 'Manual' as Choice,
+			icon: 'lucide-receipt',
+			title: __('Pay each invoice yourself'),
+			blurb: __(
+				'Your wallet pays first. We email you each invoice, and you pay the rest yourself, any amount.',
+			),
+			fit: __('Best if your usage varies a lot month to month.'),
+		},
+	].filter((o) => o.key === 'Automatic' || props.status.manual_offered),
+)
 
 const setMode = useCall<unknown, { team: string; mode: string }>({
 	url: method(API.setCollectionMode),
@@ -123,7 +126,7 @@ async function save(): Promise<void> {
 				:title="__('Couldn\'t change how you pay')"
 				:description="formError"
 			/>
-			<div class="grid gap-3 sm:grid-cols-2">
+			<div class="grid gap-3" :class="{ 'sm:grid-cols-2': options.length > 1 }">
 				<button
 					v-for="o in options"
 					:key="o.key"

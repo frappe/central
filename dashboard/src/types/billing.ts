@@ -507,6 +507,8 @@ export interface CollectionStatus {
 	choice: 'Automatic' | 'Manual' | null
 	/** The method charged first when the wallet is short; null when none is saved. */
 	charged_method: string | null
+	/** Whether the team may pick "Pay each invoice yourself" (INR only). */
+	manual_offered: boolean
 	reason: string | null
 	/** Most the team's card or UPI may be charged automatically; null when nothing caps it. */
 	threshold: number | null
