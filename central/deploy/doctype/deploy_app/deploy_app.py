@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hmac
 from typing import TYPE_CHECKING
 
 import frappe
@@ -28,6 +29,7 @@ class DeployApp(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		agent_token: DF.Password | None
 		branch: DF.Data
 		installation: DF.Link
 		region: DF.Link | None
@@ -37,6 +39,21 @@ class DeployApp(Document):
 		team: DF.Link
 		virtual_machine: DF.Link | None
 	# end: auto-generated types
+
+	def before_insert(self):
+		self.agent_token = frappe.generate_hash(length=32)
+
+	@staticmethod
+	def get_for_agent(credential: str) -> DeployApp:
+		"""The app whose deploy agent sent `credential`, written `<app>:<token>`."""
+		name, _separator, token = credential.partition(":")
+		if name and token and frappe.db.exists("Deploy App", name):
+			app: DeployApp = frappe.get_doc("Deploy App", name)
+			expected = app.get_password("agent_token", raise_exception=False)
+			if expected and hmac.compare_digest(expected, token):
+				return app
+
+		frappe.throw(_("This deploy agent token is not valid."), frappe.AuthenticationError)
 
 	@staticmethod
 	def add(installation: GitHubDeployAppInstallation, found: dict, branch: str | None = None) -> DeployApp:

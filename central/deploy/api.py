@@ -12,6 +12,10 @@ from central.deploy.github import GitHubDeployApp
 
 DELIVERY_TTL_SECONDS = 24 * 60 * 60
 BRANCH_REF_PREFIX = "refs/heads/"
+AGENT_TOKEN_HEADER = "X-Deploy-Agent-Token"
+BUILD_REPORT_STATES = ("Running", "Succeeded", "Failed")
+# The end of the build output Central keeps; the full log stays on the VM.
+BUILD_LOG_CHARACTERS = 20_000
 
 
 # nosemgrep: guest-whitelisted-method -- the state binds the callback to the user who started it.
@@ -69,3 +73,44 @@ def get_deploy_apps(push: dict) -> list[str]:
 	return DeployApp.get_for_push(
 		str(push["installation"]["id"]), str(push["repository"]["id"]), ref.removeprefix(BRANCH_REF_PREFIX)
 	)
+
+
+# nosemgrep: guest-whitelisted-method -- the app's agent token authenticates the deploy agent.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def claim_build() -> dict | None:
+	"""The app's newest build no agent has taken yet, for the deploy agent on the app's VM."""
+	app = DeployApp.get_for_agent(frappe.get_request_header(AGENT_TOKEN_HEADER) or "")
+	name = frappe.db.get_value(
+		"Deploy Request",
+		{"deploy_app": app.name, "status": "Building", "build_status": ["is", "not set"]},
+		order_by="creation desc",
+	)
+	if not name:
+		return None
+
+	request: DeployRequest = frappe.get_doc("Deploy Request", name, for_update=True)
+	request.build_status = "Running"
+	# The agent claims the team's build; no Desk user owns it.
+	request.save(ignore_permissions=True)
+	return request.get_build_payload()
+
+
+# nosemgrep: guest-whitelisted-method -- the app's agent token authenticates the deploy agent.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def report_build(deploy_request: str, status: str, log: str = "") -> dict:
+	"""Save what the agent says about a build it claimed. `cancel` tells it a newer push replaced the build."""
+	app = DeployApp.get_for_agent(frappe.get_request_header(AGENT_TOKEN_HEADER) or "")
+	if status not in BUILD_REPORT_STATES:
+		frappe.throw(_("Unknown build status {0}.").format(status))
+
+	request: DeployRequest = frappe.get_doc("Deploy Request", deploy_request, for_update=True)
+	if request.deploy_app != app.name:
+		frappe.throw(_("This build belongs to another app."), frappe.PermissionError)
+	if request.status != "Building":
+		return {"cancel": True}
+
+	request.build_status = status
+	request.build_log = log[-BUILD_LOG_CHARACTERS:]
+	# The agent reports on the team's build; no Desk user owns it.
+	request.save(ignore_permissions=True)
+	return {"cancel": False}

@@ -19,8 +19,6 @@ ENROLL_SCOPE = "enroll"
 DATUM_SCOPE = "datum"
 DATUM_ACCESS = ["write"]  # datum serves no reads at all; every caller is a producer
 ATLAS_TOKEN_TTL = 5 * 60
-DEPLOY_AGENT_TTL = 5 * 60  # Central mints a fresh bearer for every call to a deploy agent
-DEPLOY_AGENT_SCOPE = "deploy"
 
 
 def mint_atlas_token(region_id: int) -> str:
@@ -106,11 +104,6 @@ def mint_bench_login(audience: str) -> str:
 def mint_bench_api_token(audience: str) -> str:
 	"""The bearer Central presents on a server-to-server call to a bench."""
 	return _mint(audience, "bench", BENCH_API_TTL, {"sub": "admin"})
-
-
-def mint_deploy_agent_token(server: str) -> str:
-	"""The bearer Central presents to the deploy agent on `server`. The agent checks `aud` and `scope`."""
-	return _mint(server, DEPLOY_AGENT_SCOPE, DEPLOY_AGENT_TTL)
 
 
 def mint_site_login(audience: str, site: str, user: str | None = None, full_name: str | None = None) -> str:

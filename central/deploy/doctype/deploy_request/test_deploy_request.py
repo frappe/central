@@ -7,8 +7,11 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 
-from central.deploy.agent import DeployAgentError
-from central.deploy.doctype.deploy_request.deploy_request import DeployRequest, DeploySupersededError
+from central.deploy.doctype.deploy_request.deploy_request import (
+	DeployRequest,
+	DeploySupersededError,
+	DeployTimeoutError,
+)
 from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
 	make_installation,
 )
@@ -72,10 +75,12 @@ class IntegrationTestDeployRequest(IntegrationTestCase):
 		self.assertEqual(self.get_status(succeeded), "Succeeded")
 
 		failed = DeployRequest.queue(self.app.name, "b" * 40)
-		failed.on_pipeline_failure(MagicMock(pipeline_traceback="Traceback\nDeployAgentError: agent is down"))
+		failed.on_pipeline_failure(
+			MagicMock(pipeline_traceback="Traceback\nDeployBuildError: The build failed.")
+		)
 		self.assertEqual(
 			frappe.db.get_value("Deploy Request", failed.name, ["status", "error"]),
-			("Failed", "DeployAgentError: agent is down"),
+			("Failed", "DeployBuildError: The build failed."),
 		)
 
 	def test_a_superseded_deploy_stays_superseded_when_its_pipeline_fails(self):
@@ -87,7 +92,7 @@ class IntegrationTestDeployRequest(IntegrationTestCase):
 
 
 class IntegrationTestDeployPipeline(IntegrationTestCase):
-	"""A push runs as a pipeline: VM, agent health, then one build."""
+	"""A push runs as a pipeline: VM, then a build the deploy agent reports on."""
 
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -117,7 +122,9 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 			"disk": {"size_mib": 20480},
 		}
 		self.machine.get_specs = DeployMachine.get_specs
-		patch.object(DeployRequest, "wait_for_virtual_machine").start()
+		# The deploy agent reports while the VM step runs; None leaves the build unclaimed.
+		self.build_status = "Succeeded"
+		patch.object(DeployRequest, "wait_for_virtual_machine", side_effect=self.report_build).start()
 		# The repository holds a Dockerfile and, unless a test sets one, no deploy config.
 		self.root = [{"name": "Dockerfile", "type": "file"}]
 		patch(f"{module}.GitHubDeployApp.list_root", side_effect=lambda *args: self.root).start()
@@ -125,24 +132,24 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		self.get_file = patch(
 			f"{module}.GitHubDeployApp.get_file", side_effect=lambda *args: self.files.get(args[3])
 		).start()
-		patch.object(DeployRequest, "get_build_payload", return_value={"commit": "a" * 40}).start()
-		self.agent = patch.object(DeployRequest, "get_agent").start().return_value
-		self.agent.start_build.return_value = {"build_id": "build-1"}
 		self.addCleanup(patch.stopall)
 
-	def test_a_successful_build_succeeds_the_deploy(self):
-		self.agent.get_build.return_value = {"status": "succeeded"}
-		request = DeployRequest.queue(self.app.name, "a" * 40)
+	def report_build(self, virtual_machine: str) -> None:
+		if self.build_status:
+			doc = frappe.get_last_doc("Deploy Request", filters={"deploy_app": self.app.name})
+			doc.build_status = self.build_status
+			doc.save()
 
-		self.assertEqual(
-			frappe.db.get_value("Deploy Request", request.name, ["status", "agent_build_id"]),
-			("Succeeded", "build-1"),
-		)
-		self.agent.get_health.assert_called_once()
-		self.agent.start_build.assert_called_once_with({"commit": "a" * 40})
+	def test_a_successful_build_succeeds_the_deploy(self):
+		request = DeployRequest.queue(self.app.name, "a" * 40)
+		self.assertEqual(frappe.db.get_value("Deploy Request", request.name, "status"), "Succeeded")
+
+	def test_a_build_no_agent_finished_keeps_the_deploy_building(self):
+		self.build_status = None
+		request = DeployRequest.queue(self.app.name, "a" * 40)
+		self.assertEqual(frappe.db.get_value("Deploy Request", request.name, "status"), "Building")
 
 	def test_only_a_reused_vm_is_resized(self):
-		self.agent.get_build.return_value = {"status": "succeeded"}
 		DeployRequest.queue(self.app.name, "a" * 40)
 		self.machine.get.assert_not_called()
 
@@ -160,7 +167,6 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		self.find_or_create.assert_not_called()
 
 	def test_a_commit_without_a_config_deploys_at_the_default_size(self):
-		self.agent.get_build.return_value = {"status": "succeeded"}
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 
 		self.assertEqual(
@@ -172,7 +178,6 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		)
 
 	def test_the_size_in_the_commits_config_is_saved_on_the_request(self):
-		self.agent.get_build.return_value = {"status": "succeeded"}
 		self.files["frappe_cloud_deploy.toml"] = "[machine]\ncpu_millicores = 4000\nmemory_mib = 8192\n"
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 
@@ -186,16 +191,15 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 
 		self.assertEqual(frappe.db.get_value("Deploy Request", request.name, "status"), "Failed")
-		self.agent.start_build.assert_not_called()
+		self.find_or_create.assert_not_called()
 
-	def test_a_failed_build_fails_the_deploy_with_the_agents_reason(self):
-		self.agent.get_build.return_value = {"status": "failed", "error": "Build ran out of memory."}
+	def test_a_failed_build_fails_the_deploy(self):
+		self.build_status = "Failed"
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 
-		self.assertEqual(
-			frappe.db.get_value("Deploy Request", request.name, ["status", "error"]),
-			("Failed", "central.deploy.agent.DeployAgentError: Build ran out of memory."),
-		)
+		status, error = frappe.db.get_value("Deploy Request", request.name, ["status", "error"])
+		self.assertEqual(status, "Failed")
+		self.assertIn("DeployBuildError: The build failed. See its log.", error)
 
 
 class IntegrationTestDeployWait(IntegrationTestCase):
@@ -219,7 +223,7 @@ class IntegrationTestDeployWait(IntegrationTestCase):
 		self.request.creation = add_to_date(now_datetime(), hours=-1)
 
 	def run_wait_after(self, seconds: int) -> MagicMock:
-		"""Call `wait` as the agent ping step would, `seconds` after that step started."""
+		"""Call `wait` as the build step would, `seconds` after that step started."""
 		with (
 			patch("cloudtoolkit.pipeline.doctype.pipeline.pipeline.enqueue_pipeline"),
 			patch("cloudtoolkit.pipeline.doctype.pipeline_task.pipeline_task.enqueue_task"),
@@ -237,8 +241,8 @@ class IntegrationTestDeployWait(IntegrationTestCase):
 				{
 					"doctype": "Pipeline Task",
 					"pipeline": pipeline.name,
-					"method_name": "ping_deploy_agent",
-					"method_title": "Ping Deploy Agent",
+					"method_name": "wait_for_build",
+					"method_title": "Wait For Build",
 					"signature": frappe.generate_hash(length=16),
 				}
 			).insert(ignore_permissions=True)
@@ -249,12 +253,12 @@ class IntegrationTestDeployWait(IntegrationTestCase):
 			patch("central.deploy.doctype.deploy_request.deploy_request.now_datetime", return_value=later),
 			patch.object(DeployRequest, "defer_current_task") as defer,
 		):
-			self.request.wait("Agent not answering.", for_=300)
+			self.request.wait("Build not finished.", for_=300)
 		return defer
 
 	def test_a_step_that_just_started_waits_although_the_deploy_is_old(self):
-		self.run_wait_after(10).assert_called_once_with("Agent not answering.")
+		self.run_wait_after(10).assert_called_once_with("Build not finished.")
 
 	def test_a_step_that_waited_too_long_fails(self):
-		with self.assertRaises(DeployAgentError):
+		with self.assertRaises(DeployTimeoutError):
 			self.run_wait_after(400)

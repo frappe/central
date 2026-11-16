@@ -11,13 +11,14 @@
   "column_break_deploy_request",
   "team",
   "delivery",
-  "agent_build_id",
+  "build_status",
   "machine_section",
   "cpu_millicores",
   "memory_mib",
   "disk_mib",
   "error_section",
-  "error"
+  "error",
+  "build_log"
  ],
  "fields": [
   {
@@ -70,10 +71,11 @@
    "read_only": 1
   },
   {
-   "description": "The build's ID on the deploy agent, used to poll and cancel it.",
-   "fieldname": "agent_build_id",
-   "fieldtype": "Data",
-   "label": "Agent Build ID",
+   "description": "What the deploy agent last reported. Empty until the agent takes the build.",
+   "fieldname": "build_status",
+   "fieldtype": "Select",
+   "label": "Build Status",
+   "options": "\nRunning\nSucceeded\nFailed",
    "read_only": 1
   },
   {
@@ -87,6 +89,13 @@
    "fieldname": "error",
    "fieldtype": "Small Text",
    "label": "Error",
+   "read_only": 1
+  },
+  {
+   "description": "The end of the build's output, as the deploy agent last sent it.",
+   "fieldname": "build_log",
+   "fieldtype": "Code",
+   "label": "Build Log",
    "read_only": 1
   },
   {
