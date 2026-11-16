@@ -300,15 +300,18 @@ def get_payment_context(invoice) -> dict:
 	"""The amount, the tax it includes, the payment date and the method a payment notice names.
 
 	`over_limit` is set when the team has methods but none may take the amount off-session,
-	so the notice asks for a payment by hand instead of naming a method."""
-	from central.billing.payments import collection
+	so the notice asks for a payment by hand instead of naming a method. `pays_by_hand` is set
+	for a team whose methods are never charged off-session, so no method is named."""
+	from central.billing.payments import collection, collection_mode
 
-	method = _get_charging_method(invoice)
+	pays_by_hand = not collection_mode.is_debit_allowed(invoice.team)
+	method = None if pays_by_hand else _get_charging_method(invoice)
 	return {
 		"amount": frappe.utils.fmt_money(invoice.expected_collection, currency=invoice.currency),
 		"tax_note": tax.TaxNames(invoice.team).note(invoice),
 		"payment_date": format_date(invoice.payment_date),
 		"method": _get_method_label(method),
+		"pays_by_hand": pays_by_hand,
 		"over_limit": not method and bool(collection.get_methods_left(invoice.team, invoice.name)),
 	}
 

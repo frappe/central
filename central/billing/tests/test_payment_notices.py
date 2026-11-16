@@ -87,6 +87,17 @@ class TestPaymentScheduled(IntegrationTestCase):
 
 		self.assertEqual(len(_scheduled(TEAM)), 1)
 
+	def test_a_team_that_pays_by_hand_is_not_told_its_card_is_charged(self):
+		give_team_a_card(TEAM)
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Manual Checkout")
+		invoice = _draft(TEAM)
+
+		self._open(invoice)
+
+		message = _scheduled(TEAM)[0].message
+		self.assertIn("Pay it yourself", message)
+		self.assertNotIn("We'll charge", message)
+
 	def test_a_team_without_a_method_is_asked_to_add_one(self):
 		complete_billing_profile(TEAM, currency="USD")
 		frappe.db.set_value("Billing Profile", TEAM, "payment_day", 5)
