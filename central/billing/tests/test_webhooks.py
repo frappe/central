@@ -20,6 +20,18 @@ PAYLOAD = (
 	b'{"id":"' + EVENT_ID.encode() + b'","type":"payment_intent.succeeded","data":{"object":{"id":"pi_x"}}}'
 )
 HEADERS = {"Stripe-Signature": "t=1,v1=deadbeef"}
+PROCESS_JOB = "central.billing.payments.webhooks.handle_webhook_event"
+COUNT_JOB = "central.billing.payments.webhooks.count_repeat_delivery"
+
+
+def processing_jobs(enqueue) -> int:
+	return sum(1 for call in enqueue.call_args_list if call.args[0] == PROCESS_JOB)
+
+
+def run_repeat_counts(method, **kwargs):
+	"""Run the repeat-count job inline and leave the processing job queued."""
+	if method == COUNT_JOB:
+		run_enqueued_inline(method, **kwargs)
 
 
 @contextmanager
@@ -75,7 +87,7 @@ class TestStripeWebhookReceiver(IntegrationTestCase):
 
 		self.assertEqual(frappe.local.response.http_status_code, 200)
 		self.assertEqual(self._events(), 1)  # no duplicate
-		self.assertEqual(enqueue.call_count, 1)  # no second job
+		self.assertEqual(processing_jobs(enqueue), 1)  # no second job
 
 
 R_PAYLOAD = (
@@ -141,16 +153,38 @@ class TestRazorpayWebhookReceiver(IntegrationTestCase):
 		self.assertEqual(event.occurred_at, raised.replace(tzinfo=None))
 		self.assertEqual(event.deliveries, 1)
 
+	def _deliveries(self):
+		return frappe.db.get_value("Webhook Event", {"gateway_event_id": R_EVENT_ID}, "deliveries")
+
 	def test_a_repeat_delivery_is_counted_on_the_event(self):
-		with razorpay_signature(valid=True), patch("frappe.enqueue") as enqueue:
+		with (
+			razorpay_signature(valid=True),
+			patch("frappe.enqueue", side_effect=run_repeat_counts) as enqueue,
+		):
 			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
 			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
 			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
 
-		self.assertEqual(
-			frappe.db.get_value("Webhook Event", {"gateway_event_id": R_EVENT_ID}, "deliveries"), 3
-		)
-		self.assertEqual(enqueue.call_count, 1)
+		self.assertEqual(self._deliveries(), 3)
+		self.assertEqual(processing_jobs(enqueue), 1)
+
+	def test_a_repeat_that_loses_the_insert_race_is_counted(self):
+		exists = frappe.db.exists
+
+		def not_stored_yet(doctype, *args, **kwargs):
+			return False if doctype == "Webhook Event" else exists(doctype, *args, **kwargs)
+
+		with (
+			razorpay_signature(valid=True),
+			patch("frappe.enqueue", side_effect=run_repeat_counts) as enqueue,
+		):
+			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+			with patch.object(frappe.db, "exists", side_effect=not_stored_yet):
+				process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+
+		self.assertEqual(self._events(), 1)
+		self.assertEqual(self._deliveries(), 2)
+		self.assertEqual(processing_jobs(enqueue), 1)
 
 	def test_invalid_signature_returns_400_with_zero_db_writes(self):
 		with razorpay_signature(valid=False), patch("frappe.enqueue") as enqueue:
