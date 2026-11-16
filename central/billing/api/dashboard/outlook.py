@@ -87,6 +87,7 @@ def get_next_payment(team: str | None = None) -> dict:
 	invoice = owed[0] if owed else None
 	amount, period_end, bill = _amount_due(team, invoice, today)
 
+	debit_held = not collection_mode.is_debit_allowed(team)
 	charge_on = _scheduled_charge_on(team, owed, today)
 	missed = _missed_payment(team, invoice, today)
 	blockers = _blockers(team, amount, currency, missed["next_retry_on"] or charge_on, today)
@@ -98,11 +99,11 @@ def get_next_payment(team: str | None = None) -> dict:
 		"invoice": invoice.name if invoice else None,
 		"period_end": str(period_end) if period_end else None,
 		"collection_mode": frappe.db.get_value("Billing Profile", team, "collection_mode"),
-		"debit_held": not collection_mode.is_debit_allowed(team),
+		"debit_held": debit_held,
 		"method": _charging_method(team, amount, invoice.name if invoice else None),
 		# Empty blockers is not a promise the charge succeeds — only that nothing in
 		# the data decides otherwise. The UI says "we'll charge", never "it will work".
-		"will_auto_charge": not blockers,
+		"will_auto_charge": not (blockers or debit_held),
 		"blockers": blockers,
 		**missed,
 	}
