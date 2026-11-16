@@ -178,7 +178,11 @@ const showTopup = ref(false)
 <template>
 	<BillingCard
 		title="Payment methods"
-		description="Invoices use credits first, then payment methods in the order shown."
+		:description="
+			__(
+				'Invoices use credits first. When you pay automatically, payment methods are charged in the order shown.',
+			)
+		"
 		flat
 	>
 		<div v-if="loading" class="flex flex-col gap-2.5">

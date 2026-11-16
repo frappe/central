@@ -24,7 +24,7 @@
 	"src/components/billing/PayingForPanel.vue": 1,
 	"src/components/billing/PayingForTable.vue": 12,
 	"src/components/billing/PaymentMethodRowActions.vue": 5,
-	"src/components/billing/PaymentMethodsCard.vue": 15,
+	"src/components/billing/PaymentMethodsCard.vue": 14,
 	"src/components/billing/ProjectRowActions.vue": 5,
 	"src/components/billing/ProjectsPanel.vue": 2,
 	"src/components/billing/RefundsCard.vue": 4,

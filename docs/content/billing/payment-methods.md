@@ -17,7 +17,7 @@ The **Payment methods** card on **Billing > Payments** lists your prepaid credit
 <Screenshot name="billing/payment-methods" alt="The Payment methods card with prepaid credits, a Visa card marked Primary, and Add another card" />
 
 - An invoice uses your prepaid credits first.
-- Then Frappe Cloud charges the payment method marked **Primary**.
+- When you pay automatically, Frappe Cloud then charges the payment method marked **Primary**. See [How you pay](#how-you-pay).
 - When a charge fails, the next method, marked **Fallback 1**, **Fallback 2**, and so on, is charged.
 
 While your wallet has a balance, the wallet is the primary and every card is a fallback.
