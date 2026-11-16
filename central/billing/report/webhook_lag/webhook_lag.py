@@ -1,18 +1,20 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""How long a gateway webhook waits before we act on it.
+"""How late gateway webhooks reach us, and how long we take to act on them.
 
-A webhook is the only thing that settles an invoice, so lag here is lag on every
-customer's payment showing as paid. Measured from the moment we received the event to
-the moment we finished processing it.
+A webhook settles an invoice or a top-up when the checkout callback did not, so lag here
+is lag on a customer's payment showing as paid. Delivery delay runs from the gateway
+raising the event to our receiving it; processing lag from receiving it to finishing.
 """
 
 import frappe
 from frappe import _
 from frappe.utils import flt
 
-# Above this, settlement is late enough that a customer could notice.
+# Above this, a payment is late enough that a customer could notice.
 SLOW_SECONDS = 60
+# Events we have finished with. A Received event is still waiting for its job.
+FINISHED = ("Processed", "Failed", "Ignored")
 
 
 def execute(filters: dict | None = None):
@@ -23,7 +25,7 @@ def execute(filters: dict | None = None):
 
 
 def _events(filters: dict) -> list[dict]:
-	conditions = {"processed_at": ["is", "set"]}
+	conditions = {"status": ["in", FINISHED]}
 	if filters.get("gateway"):
 		conditions["gateway"] = filters["gateway"]
 	if filters.get("from_date"):
@@ -37,35 +39,65 @@ def _events(filters: dict) -> list[dict]:
 	return frappe.get_all(
 		"Webhook Event",
 		filters=conditions,
-		fields=["gateway", "creation", "processed_at", "status"],
+		fields=["gateway", "creation", "processed_at", "occurred_at", "status", "deliveries"],
 		limit_page_length=0,
 	)
 
 
-def _lag_seconds(event) -> float:
+def _lag_seconds(event) -> float | None:
+	"""Receipt to the end of processing; None for an event that failed before finishing."""
+	if not event.processed_at:
+		return None
 	return frappe.utils.time_diff_in_seconds(event.processed_at, event.creation)
 
 
-def _by_gateway_and_day(events: list[dict]) -> list[dict]:
-	buckets: dict[tuple, list[float]] = {}
-	for e in events:
-		buckets.setdefault((e.gateway, frappe.utils.getdate(e.creation)), []).append(_lag_seconds(e))
+def _delivery_seconds(event) -> float | None:
+	"""The gateway raising the event to our receiving it; None when the gateway gave no time.
+	A small clock difference between the gateway and us is read as no delay."""
+	if not event.occurred_at:
+		return None
+	return max(frappe.utils.time_diff_in_seconds(event.creation, event.occurred_at), 0.0)
 
-	rows = []
-	for (gateway, day), lags in sorted(buckets.items(), key=lambda kv: (kv[0][1], kv[0][0]), reverse=True):
-		ordered = sorted(lags)
-		rows.append(
-			{
-				"day": day,
-				"gateway": gateway,
-				"events": len(ordered),
-				"median_seconds": flt(_percentile(ordered, 0.5), 2),
-				"p95_seconds": flt(_percentile(ordered, 0.95), 2),
-				"worst_seconds": flt(ordered[-1], 2),
-				"slow": sum(1 for lag in ordered if lag > SLOW_SECONDS),
-			}
+
+def _by_gateway_and_day(events: list[dict]) -> list[dict]:
+	buckets: dict[tuple, list[dict]] = {}
+	for e in events:
+		buckets.setdefault((e.gateway, frappe.utils.getdate(e.creation)), []).append(e)
+	return [
+		{"day": day, "gateway": gateway, **_row(group)}
+		for (gateway, day), group in sorted(
+			buckets.items(), key=lambda kv: (kv[0][1], kv[0][0]), reverse=True
 		)
-	return rows
+	]
+
+
+def _row(events: list[dict]) -> dict:
+	delivery = _stats(map(_delivery_seconds, events))
+	processing = _stats(map(_lag_seconds, events))
+	return {
+		"events": len(events),
+		**{f"delivery_{key}_seconds": delivery[key] for key in ("median", "p95", "worst")},
+		"delivered_late": delivery["over"],
+		**{f"{key}_seconds": processing[key] for key in ("median", "p95", "worst")},
+		"slow": processing["over"],
+		"failed": sum(1 for e in events if e.status == "Failed"),
+		"repeat_deliveries": sum(max((e.deliveries or 1) - 1, 0) for e in events),
+	}
+
+
+def _stats(seconds) -> dict:
+	"""Median, p95, worst and the count over the threshold, of the times that are known."""
+	ordered = sorted(value for value in seconds if value is not None)
+	return {
+		"median": flt(_percentile(ordered, 0.5), 2),
+		"p95": flt(_percentile(ordered, 0.95), 2),
+		"worst": flt(ordered[-1] if ordered else 0, 2),
+		"over": _count_over(ordered),
+	}
+
+
+def _count_over(seconds: list[float]) -> int:
+	return sum(1 for value in seconds if value > SLOW_SECONDS)
 
 
 def _percentile(ordered: list[float], fraction: float) -> float:
@@ -84,22 +116,36 @@ def _columns() -> list[dict]:
 			"fieldname": "gateway",
 			"fieldtype": "Link",
 			"options": "Payment Gateway",
-			"width": 160,
+			"width": 140,
 		},
-		{"label": _("Events"), "fieldname": "events", "fieldtype": "Int", "width": 90},
-		{"label": _("Median (s)"), "fieldname": "median_seconds", "fieldtype": "Float", "width": 110},
-		{"label": _("p95 (s)"), "fieldname": "p95_seconds", "fieldtype": "Float", "width": 110},
-		{"label": _("Worst (s)"), "fieldname": "worst_seconds", "fieldtype": "Float", "width": 110},
-		{"label": _("Slow"), "fieldname": "slow", "fieldtype": "Int", "width": 90},
+		{"label": _("Events"), "fieldname": "events", "fieldtype": "Int", "width": 80},
+		*_seconds_columns(_("Delivery"), "delivery_"),
+		{"label": _("Delivered Late"), "fieldname": "delivered_late", "fieldtype": "Int", "width": 120},
+		{"label": _("Repeat Deliveries"), "fieldname": "repeat_deliveries", "fieldtype": "Int", "width": 130},
+		*_seconds_columns(_("Processing"), ""),
+		{"label": _("Slow"), "fieldname": "slow", "fieldtype": "Int", "width": 80},
+		{"label": _("Failed"), "fieldname": "failed", "fieldtype": "Int", "width": 80},
+	]
+
+
+def _seconds_columns(stage: str, prefix: str) -> list[dict]:
+	return [
+		{
+			"label": _("{0} {1} (s)").format(stage, label),
+			"fieldname": f"{prefix}{key}_seconds",
+			"fieldtype": "Float",
+			"width": 140,
+		}
+		for label, key in ((_("Median"), "median"), (_("p95"), "p95"), (_("Worst"), "worst"))
 	]
 
 
 def _message(rows: list[dict]) -> str | None:
 	if not rows:
-		return _("No processed webhooks in this window.")
-	return _("Lag is measured from receipt to the end of processing. 'Slow' counts events over {0}s.").format(
-		SLOW_SECONDS
-	)
+		return _("No finished webhooks in this window.")
+	return _(
+		"Delivery runs from the gateway raising the event to our receiving it, and processing from receipt to the end of processing. Late and Slow count events over {0}s. Repeat deliveries count the gateway sending an event again."
+	).format(SLOW_SECONDS)
 
 
 def _chart(rows: list[dict]) -> dict | None:
@@ -109,22 +155,30 @@ def _chart(rows: list[dict]) -> dict | None:
 	return {
 		"data": {
 			"labels": [str(r["day"]) for r in ordered],
-			"datasets": [{"name": _("p95 seconds"), "values": [r["p95_seconds"] for r in ordered]}],
+			"datasets": [
+				{"name": _("Delivery p95 seconds"), "values": [r["delivery_p95_seconds"] for r in ordered]},
+				{"name": _("Processing p95 seconds"), "values": [r["p95_seconds"] for r in ordered]},
+			],
 		},
 		"type": "line",
 	}
 
 
 def _summary(events: list[dict]) -> list[dict]:
-	lags = sorted(_lag_seconds(e) for e in events)
-	p95 = _percentile(lags, 0.95)
+	row = _row(events)
 	return [
-		{"label": _("Events"), "value": len(lags), "datatype": "Int"},
-		{
-			"label": _("p95 Lag (s)"),
-			"value": flt(p95, 2),
-			"datatype": "Float",
-			"indicator": "green" if p95 <= SLOW_SECONDS else "red",
-		},
-		{"label": _("Slow Events"), "value": sum(1 for lag in lags if lag > SLOW_SECONDS), "datatype": "Int"},
+		{"label": _("Events"), "value": row["events"], "datatype": "Int"},
+		_seconds_indicator(_("p95 Delivery (s)"), row["delivery_p95_seconds"]),
+		_seconds_indicator(_("p95 Processing (s)"), row["p95_seconds"]),
+		{"label": _("Delivered Late"), "value": row["delivered_late"], "datatype": "Int"},
+		{"label": _("Failed"), "value": row["failed"], "datatype": "Int"},
 	]
+
+
+def _seconds_indicator(label: str, value: float) -> dict:
+	return {
+		"label": label,
+		"value": value,
+		"datatype": "Float",
+		"indicator": "green" if value <= SLOW_SECONDS else "red",
+	}
