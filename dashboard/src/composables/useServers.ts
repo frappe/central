@@ -57,6 +57,8 @@ export type VirtualMachineRow = Pick<
 > &
 	ServerAccess & {
 		pending_action?: string | null
+		/** The current step of a resize in flight. */
+		resize_step?: string | null
 		plan_title?: string | null
 		image_title?: string | null
 		image_description?: string | null

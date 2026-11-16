@@ -247,6 +247,7 @@ export const MultiSelect: Component
 export const Radio: Component
 export const RadioGroup: Component
 export const Popover: Component
+export const Progress: Component
 export const ScrollArea: Component
 export const Select: Component
 export const SettingsBody: Component

@@ -143,7 +143,10 @@ export function clamp(value: number, min: number, max: number): number {
  *  unit is driven from the Disk resource's unit on the rate card (single-sourced, #89);
  *  "SSD" stays a literal (storage is single-type today). Defaults to 'GB' when the rate
  *  card isn't loaded yet. */
-export function configSpecs(config: ComposedConfig, diskUnit = 'GB'): string {
+export function configSpecs(
+	config: Pick<ComposedConfig, 'vcpus' | 'memory_gb' | 'disk_gb'>,
+	diskUnit = 'GB',
+): string {
 	return `${formatVcpu(config.vcpus)} vCPU · ${formatMemory(gigabytesToMegabytes(config.memory_gb))} RAM · ${formatGb(config.disk_gb)} ${diskUnit} SSD`
 }
 
