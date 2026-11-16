@@ -15,6 +15,7 @@ from central.infrastructure.doctype.github_connection.test_github_connection imp
 from central.tests.test_iam import ensure_user
 
 INSTALLATION = {"installation_id": "101", "account": "octo", "account_type": "Organization"}
+REPOSITORY = {"repository_id": "11", "full_name": "octo/app", "default_branch": "main", "is_admin": True}
 
 
 def make_installation(team: str, installation_id: str = "101") -> Document:
@@ -42,9 +43,13 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 		).start()
 		self.addCleanup(patch.stopall)
 		app.return_value.get_user_installations.return_value = [INSTALLATION]
+		self.repositories = app.return_value.get_user_repositories
+		self.repositories.return_value = [REPOSITORY]
+		branches = patch("central.deploy.doctype.deploy_app.deploy_app.GitHubDeployApp").start()
+		branches.return_value.has_branch.return_value = True
 
 	def start(self) -> str:
-		return GitHubDeployAppInstallation.start(self.team, self.owner)
+		return GitHubDeployAppInstallation.start(self.team, self.owner, "Octo/App")
 
 	def test_a_team_links_an_installation_once(self):
 		make_installation(self.team)
@@ -62,8 +67,10 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 		self.assertTrue(GitHubDeployAppInstallation.is_verified(state, self.owner))
 		self.assertFalse(frappe.db.exists("GitHub Deploy App Installation", {"team": self.team}))
 
-		installation = GitHubDeployAppInstallation.complete(state, self.owner)
+		app = GitHubDeployAppInstallation.complete(state, self.owner)
+		installation = frappe.get_doc("GitHub Deploy App Installation", app.installation)
 		self.assertEqual((installation.team, installation.account), (self.team, "octo"))
+		self.assertEqual((app.team, app.repository, app.branch), (self.team, "octo/app", "main"))
 		with self.assertRaises(frappe.DoesNotExistError):
 			GitHubDeployAppInstallation.complete(state, self.owner)
 
@@ -94,4 +101,19 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 
 	def test_a_user_without_deploy_access_cannot_start(self):
 		with self.assertRaises(frappe.PermissionError):
-			GitHubDeployAppInstallation.start(self.team, self.outsider)
+			GitHubDeployAppInstallation.start(self.team, self.outsider, "octo/app")
+
+	def test_a_repository_the_user_cannot_access_is_refused(self):
+		# The installation covers the repository, but this user's own list doesn't.
+		self.repositories.return_value = [{**REPOSITORY, "full_name": "octo/docs"}]
+		state = self.start()
+		with self.assertRaises(frappe.PermissionError):
+			GitHubDeployAppInstallation.verify(state, "code", "101", self.owner)
+		self.assertFalse(GitHubDeployAppInstallation.is_verified(state, self.owner))
+
+	def test_a_user_who_is_not_admin_on_the_repository_is_refused(self):
+		self.repositories.return_value = [{**REPOSITORY, "is_admin": False}]
+		state = self.start()
+		with self.assertRaises(frappe.PermissionError):
+			GitHubDeployAppInstallation.verify(state, "code", "101", self.owner)
+		self.assertFalse(frappe.db.exists("Deploy App", {"team": self.team}))

@@ -3,11 +3,18 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
 
 from central.deploy.github import GitHubDeployApp
+
+if TYPE_CHECKING:
+	from central.deploy.doctype.github_deploy_app_installation.github_deploy_app_installation import (
+		GitHubDeployAppInstallation,
+	)
 
 
 class DeployApp(Document):
@@ -32,10 +39,11 @@ class DeployApp(Document):
 	# end: auto-generated types
 
 	@staticmethod
-	def add(team: str, repository: str, branch: str | None = None) -> DeployApp:
-		"""Deploy `repository` (owner/name) from `branch`, or from its default branch when none is given."""
+	def add(installation: GitHubDeployAppInstallation, found: dict, branch: str | None = None) -> DeployApp:
+		"""Deploy a repository the installation lists, from `branch` or else its default branch.
+		The caller has checked that the user adding it is admin on the repository."""
 		app = GitHubDeployApp()
-		installation, found = find_repository(app, team, repository)
+		team = installation.team
 		branch = branch or found["default_branch"]
 		if not app.has_branch(
 			installation.installation_id, found["repository_id"], found["full_name"], branch
@@ -83,23 +91,6 @@ class DeployApp(Document):
 			},
 			pluck="name",
 		)
-
-
-def find_repository(app: GitHubDeployApp, team: str, repository: str) -> tuple[Document, dict]:
-	"""The team's active installation that can access `repository`, and the repository as GitHub lists it."""
-	names = frappe.get_all(
-		"GitHub Deploy App Installation", filters={"team": team, "status": "Active"}, pluck="name"
-	)
-	for name in names:
-		installation = frappe.get_doc("GitHub Deploy App Installation", name)
-		for found in app.get_installation_repositories(installation.installation_id):
-			if found["full_name"].lower() == repository.lower():
-				return installation, found
-
-	frappe.throw(
-		_("Install the GitHub App on {0} and connect it to this team first.").format(repository),
-		frappe.DoesNotExistError,
-	)
 
 
 def on_doctype_update() -> None:

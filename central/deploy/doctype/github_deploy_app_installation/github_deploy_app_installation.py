@@ -10,6 +10,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.deploy.doctype.deploy_app.deploy_app import DeployApp
 from central.deploy.github import GitHubDeployApp
 from central.iam import can
 
@@ -35,30 +36,50 @@ class GitHubDeployAppInstallation(Document):
 	# end: auto-generated types
 
 	@staticmethod
-	def start(team: str, user: str) -> str:
-		"""A new attempt to link an installation to `team`. Its state lets only `user` finish it."""
+	def start(team: str, user: str, repository: str, branch: str | None = None) -> str:
+		"""A new attempt to deploy `repository` (owner/name) for `team`. Its state lets only `user` finish it."""
 		require_deploy_access(user, team)
 		state = secrets.token_urlsafe(24)
-		save_attempt(state, {"team": team, "user": user})
+		save_attempt(state, {"team": team, "user": user, "repository": repository, "branch": branch})
 		return state
 
 	@staticmethod
 	def verify(state: str, code: str, installation_id: str, user: str) -> None:
-		"""Keep the installation GitHub returned to, once the user's token proves they can access it.
-		Only Redis is written: GitHub returns with a GET, which Frappe rolls back, so `complete` saves it."""
+		"""Keep the installation GitHub returned to, once the user's token proves they can access it and
+		are admin on the repository. Only Redis is written: GitHub returns with a GET, which Frappe
+		rolls back, so `complete` saves it."""
 		attempt = load_attempt(state, user)
 		require_deploy_access(user, attempt["team"])
 
 		# The installation ID in the callback URL is user input; GitHub's own list is the proof.
 		app = GitHubDeployApp()
-		installations = app.get_user_installations(app.exchange_code(code))
+		user_token = app.exchange_code(code)
+		installations = app.get_user_installations(user_token)
 		installation = next(
 			(item for item in installations if item["installation_id"] == installation_id), None
 		)
 		if not installation:
 			frappe.throw(_("You can't access this GitHub installation."), frappe.PermissionError)
 
+		# The user's own list, not the installation's: it has only the repositories this user can access.
+		repositories = app.get_user_repositories(user_token, installation_id)
+		repository = next(
+			(item for item in repositories if item["full_name"].lower() == attempt["repository"].lower()),
+			None,
+		)
+		if not repository:
+			frappe.throw(
+				_("You can't access {0} through this installation.").format(attempt["repository"]),
+				frappe.PermissionError,
+			)
+		if not repository["is_admin"]:
+			frappe.throw(
+				_("Only an admin of {0} can deploy it.").format(repository["full_name"]),
+				frappe.PermissionError,
+			)
+
 		attempt["installation"] = installation
+		attempt["found_repository"] = repository
 		save_attempt(state, attempt)
 
 	@staticmethod
@@ -67,15 +88,16 @@ class GitHubDeployAppInstallation(Document):
 		return "installation" in load_attempt(state, user)
 
 	@staticmethod
-	def complete(state: str, user: str) -> GitHubDeployAppInstallation:
-		"""Save the verified installation for the attempt's team. The attempt works only once."""
+	def complete(state: str, user: str) -> DeployApp:
+		"""Link the verified installation to the attempt's team and deploy its repository. The attempt works only once."""
 		attempt = load_attempt(state, user)
 		if not attempt.get("installation"):
 			frappe.throw(_("Install the GitHub App first."), frappe.PermissionError)
 		require_deploy_access(user, attempt["team"])
 
 		frappe.cache.delete_value(state_key(state))
-		return GitHubDeployAppInstallation.link(attempt["team"], attempt["installation"])
+		installation = GitHubDeployAppInstallation.link(attempt["team"], attempt["installation"])
+		return DeployApp.add(installation, attempt["found_repository"], attempt["branch"])
 
 	@staticmethod
 	def link(team: str, installation: dict) -> GitHubDeployAppInstallation:
