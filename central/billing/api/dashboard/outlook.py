@@ -77,6 +77,8 @@ def get_next_payment(team: str | None = None) -> dict:
 	of an owed invoice, else the running cycle's. When the oldest owed invoice's own
 	payment date has passed, its place on the dunning ladder is reported beside it.
 	"""
+	from central.billing.payments import collection_mode
+
 	team = _resolve_team(team)
 	currency = _team_currency(team)
 	today = frappe.utils.getdate()
@@ -96,6 +98,7 @@ def get_next_payment(team: str | None = None) -> dict:
 		"invoice": invoice.name if invoice else None,
 		"period_end": str(period_end) if period_end else None,
 		"collection_mode": frappe.db.get_value("Billing Profile", team, "collection_mode"),
+		"debit_held": not collection_mode.is_debit_allowed(team),
 		"method": _charging_method(team, amount, invoice.name if invoice else None),
 		# Empty blockers is not a promise the charge succeeds — only that nothing in
 		# the data decides otherwise. The UI says "we'll charge", never "it will work".

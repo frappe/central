@@ -214,16 +214,19 @@ class TestNextPayment(OverviewBase):
 
 		self.assertNotIn("over_silent_threshold", [b["code"] for b in out["blockers"]])
 
-	def test_a_team_that_pays_by_hand_is_not_shown_a_card_to_charge(self):
+	def test_a_held_team_is_not_shown_a_card_to_charge(self):
 		complete_billing_profile(TEAM, currency="INR")
-		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Manual Checkout")
 		self._card()
 		self._provision(rate=3000)
+		for mode in ("Manual Checkout", "Action Required"):
+			with self.subTest(mode=mode):
+				frappe.db.set_value("Billing Profile", TEAM, "collection_mode", mode)
 
-		out = dashboard.get_next_payment(TEAM)
+				out = dashboard.get_next_payment(TEAM)
 
-		self.assertIsNone(out["method"])
-		self.assertFalse(out["will_auto_charge"])
+				self.assertIsNone(out["method"])
+				self.assertTrue(out["debit_held"])
+				self.assertFalse(out["will_auto_charge"])
 
 	def _card(self):
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway

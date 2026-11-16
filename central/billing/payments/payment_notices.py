@@ -308,7 +308,7 @@ def get_payment_context(invoice) -> dict:
 	from central.billing.payments import collection, collection_mode
 
 	pays_by_hand = not collection_mode.is_debit_allowed(invoice.team)
-	method = None if pays_by_hand else _get_charging_method(invoice)
+	method = _get_charging_method(invoice)
 	return {
 		"amount": frappe.utils.fmt_money(invoice.expected_collection, currency=invoice.currency),
 		"tax_note": tax.TaxNames(invoice.team).note(invoice),

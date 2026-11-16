@@ -109,6 +109,8 @@ export interface NextPayment {
 	method: ChargingMethod | null
 	/** Empty blockers is not a promise of success — only that nothing decides otherwise. */
 	will_auto_charge: boolean
+	/** The team pays by hand or is asked to choose: nothing is charged automatically. */
+	debit_held: boolean
 	blockers: PaymentBlocker[]
 	/**
 	 * Set once the open invoice is charged or its payment date has passed. At most one is set,
