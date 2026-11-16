@@ -91,6 +91,22 @@ class TestImageOfferings(IntegrationTestCase):
 		self.set_page([self.image(enabled=False)])
 		self.assertEqual(self.discover()["items"], [])
 
+	def test_hidden_tags_hide_images_from_server_flow_only(self):
+		self.offering.append("hidden_tags", {"key": "frappe_version", "value": "version-16"})
+		self.offering.save()
+		nightly = self.image(id="pilot-nightly", tags={"purpose": "pilot", "frappe_version": "develop"})
+		self.set_page([self.image(), nightly])
+
+		self.assertEqual([image["id"] for image in self.discover()["items"]], ["pilot-nightly"])
+		self.assertEqual(len(self.discover(flow="Signup")["items"]), 2)
+		self.assertTrue(self.offering.preview_images(self.instance.name)["items"][0]["hidden"])
+
+		with (
+			patch("central.integrations.atlas.AtlasClient.get_image", return_value=self.image()),
+			self.assertRaises(frappe.ValidationError),
+		):
+			selected_image(self.team.name, self.instance.name, self.offering.name, "pilot-16")
+
 	def test_private_or_mismatched_images_fail_closed(self):
 		for values in ({"image_type": "machine"}, {"tags": {"purpose": "base"}}, {"tags": []}):
 			self.set_page([self.image(**values)])
