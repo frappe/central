@@ -142,7 +142,8 @@ def _event_catalog(user: str, team: str) -> list[dict]:
 	allowed = _held_capabilities(user, team, events)
 	by_category = {category: [] for category in CATEGORIES}
 	for event in events:
-		by_category[event.category].append(_catalog_entry(event, allowed))
+		if _is_receivable(event, allowed):
+			by_category[event.category].append(_catalog_entry(event))
 	return [
 		{"category": category, "label": _(category), "events": by_category[category]}
 		for category in CATEGORIES
@@ -159,19 +160,19 @@ def _held_capabilities(user: str, team: str, events: list[frappe._dict]) -> dict
 	return {capability: can_on_any_server(user, team, capability) for capability in capabilities}
 
 
-def _catalog_entry(event: frappe._dict, allowed: dict[str, bool]) -> dict:
-	can_receive = (
-		not event.required_cap or event.direct_recipients == "Affected User" or allowed[event.required_cap]
-	)
+def _is_receivable(event: frappe._dict, allowed: dict[str, bool]) -> bool:
+	return not event.required_cap or event.direct_recipients == "Affected User" or allowed[event.required_cap]
+
+
+def _catalog_entry(event: frappe._dict) -> dict:
 	title = _(event.in_app_title)
 	if "{{" in title or "{%" in title:
-		title = frappe.unscrub(event.event_type)
+		title = event.event_type.replace("_", " ").capitalize()
 	return {
 		"event_type": event.event_type,
 		"title": title,
 		"severity": event.severity,
 		"is_critical": event.is_critical,
-		"can_receive": int(can_receive),
 	}
 
 
