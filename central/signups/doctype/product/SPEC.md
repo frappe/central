@@ -25,6 +25,7 @@ System Managers, Staff Viewers, and Product Operators create and edit products i
 | Trial Deletion Days | Days a stopped trial site is kept before its server is terminated. 0 uses Central Settings, Trial Deletion Days. |
 | Use Product Branding in Emails | Off uses Frappe Cloud's logo and name in emails. On uses the product's Logo and Title. See [Emails](#emails). |
 | Email Notes | One extra paragraph for each lifecycle email about a site of this product. See [Emails](#emails). |
+| Reply-To Address | The address that gets replies to emails about a site of this product, such as an inbox that the sales CRM reads. Empty keeps the sender address. See [Emails](#emails). |
 | Hide Plan Specs | Hides the vCPU, memory and disk line under each plan on a site of this product. See [Plans](#plans). |
 | Plan Notes | A short tag for each plan, which the site's plan list shows on a site of this product. See [Plans](#plans). |
 
@@ -82,7 +83,7 @@ A Product Operator does not get Region, Image Offering, Site, Team or billing re
 
 ## Emails
 
-Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#operation). A product changes them in three ways.
+Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#operation). A product changes them in four ways.
 
 **Branding.** With **Use Product Branding in Emails** on, the email header shows the product's Logo and Title instead of Frappe Cloud's. The code email also names the product, such as "123456 is your Raven signup code". The lifecycle emails of the product's sites use the same header. The logo must be a public file, because an email client loads it without a session. The footer still says that the person is a member of a Frappe Cloud team.
 
@@ -98,6 +99,8 @@ Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#ope
 | `trial_deleted` | No action link. |
 
 **Email Notes.** Each row adds text under the standard text of one email, only for sites of this product. Separate paragraphs with a blank line. Use it for product advice, such as what to do first. Central keeps the standard text, the dates and the button, so a note cannot change the trial terms.
+
+**Replies.** With a **Reply-To Address**, every email about a site of this product sets that address as Reply-To. A customer who replies to a trial email then reaches the product team, for example an inbox that the CRM reads to create a lead. The sender stays notifications@frappecloud.com. **Send Test Email** uses the same Reply-To.
 
 | Email | Example note for Raven |
 |---|---|

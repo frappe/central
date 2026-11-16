@@ -371,11 +371,11 @@ def send_notification_emails(recipients: list[str], event_type: str, ctx: dict, 
 	for language, users in recipients_by_language.items():
 		with print_language(language):
 			event = get_event_type(event_type)
-			subject, body = _notification_email(event, ctx, message)
+			subject, body, reply_to = _notification_email(event, ctx, message)
 
 		for user in users:
 			try:
-				frappe.sendmail(recipients=[user], subject=subject, message=body)
+				frappe.sendmail(recipients=[user], subject=subject, message=body, reply_to=reply_to)
 			except Exception:
 				# Delivery is best effort, but a failure must leave an error log.
 				frappe.log_error(title=f"Notification email send failed: {event.name} -> {user}")
@@ -421,8 +421,9 @@ def _is_emailed_instantly(preference: dict | None, event: frappe._dict) -> bool:
 	)
 
 
-def _notification_email(event, ctx, message=None) -> tuple[str, str]:
-	"""Subject and HTML body, with the branding and notes of the Site's product."""
+def _notification_email(event, ctx, message=None) -> tuple[str, str, str | None]:
+	"""Subject, HTML body and reply-to address, with the branding, notes and reply-to of the
+	Site's product."""
 	from central.signups.doctype.product.product import GETTING_STARTED_EMAILS, get_email_product
 
 	# The email uses the same sentence as the in-app notification.
@@ -434,7 +435,8 @@ def _notification_email(event, ctx, message=None) -> tuple[str, str]:
 		landing_route = product.landing_route if product else None
 		extras["site_url"] = site.routed_url + (landing_route or "")
 
-	return render_notification_email(event, ctx, extras)
+	subject, body = render_notification_email(event, ctx, extras)
+	return subject, body, product.reply_to if product else None
 
 
 def render_notification_email(event, ctx: dict, extras: dict) -> tuple[str, str]:
