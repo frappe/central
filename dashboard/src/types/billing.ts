@@ -503,6 +503,10 @@ export interface CollectionStatus {
 	/** Networks no rail will auto-charge — shown before the customer picks how to pay. */
 	mandate_gap_note?: string | null
 	action_required: boolean
+	/** "Automatic" (Prepaid or Auto Charge) or "Manual"; null while Action Required. */
+	choice: 'Automatic' | 'Manual' | null
+	/** The method charged first when the wallet is short; null when none is saved. */
+	charged_method: string | null
 	reason: string | null
 	/** Most the team's card or UPI may be charged automatically; null when nothing caps it. */
 	threshold: number | null

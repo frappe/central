@@ -13,6 +13,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { getErrorMessage, reportError, successToast } from '@/lib/feedback'
 import { money } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { PaymentMethod } from '@/types/billing'
 
 // Payment methods — one ordered list of the ways an invoice gets settled. Each row
@@ -117,7 +118,11 @@ async function makeDefault(pm: PaymentMethod): Promise<void> {
 	try {
 		await setDefault.submit({ payment_method: pm.name })
 		if (setDefault.error) throw setDefault.error
-		successToast(`${pm.display_label || pm.method_type} is charged first`)
+		successToast(
+			__('{0} is charged first when your wallet is short', [
+				pm.display_label || pm.method_type,
+			]),
+		)
 		reloadMethods()
 	} catch (e) {
 		reportError(e)
