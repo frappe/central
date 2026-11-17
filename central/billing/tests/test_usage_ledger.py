@@ -91,6 +91,30 @@ class TestUsageLedger(IntegrationTestCase):
 		[day] = self.days()
 		self.assertEqual(day.quantity, 50)
 
+	def test_a_line_that_loses_the_insert_race_still_lands(self):
+		self.read("2026-06-01", 10)
+		existing = usage_ledger._existing_days
+		calls = []
+
+		def missed_first(rows):
+			calls.append(rows)
+			return {} if len(calls) == 1 else existing(rows)
+
+		with patch.object(usage_ledger, "_existing_days", side_effect=missed_first):
+			self.read("2026-06-01", 40)
+		self.assertEqual([d.quantity for d in self.days()], [40])
+
+	def test_a_stale_read_never_lowers_a_peak(self):
+		self.read("2026-06-01", 50)
+		existing = usage_ledger._existing_days
+
+		def stale(rows):
+			return {key: frappe._dict(row, quantity=10) for key, row in existing(rows).items()}
+
+		with patch.object(usage_ledger, "_existing_days", side_effect=stale):
+			self.read("2026-06-01", 30)
+		self.assertEqual([d.quantity for d in self.days()], [50])
+
 	def test_a_rerun_writes_no_second_row(self):
 		self.read("2026-06-01", 30)
 		self.read("2026-06-01", 30)

@@ -39,7 +39,7 @@ _INSERT_FIELDS = (
 
 
 def write_days(rows: list[dict]) -> int:
-	"""Store each line as its subject's row for that UTC day, and return how many rows changed.
+	"""Store each line as its subject's row for that UTC day, and return how many lines it wrote.
 
 	A new day is inserted. An existing day takes the line only when it is a real reading over an
 	estimate, a higher Level peak, or a newer Sum total. A billed day is never changed.
@@ -47,16 +47,14 @@ def write_days(rows: list[dict]) -> int:
 	rows = _merged(rows)
 	if not rows:
 		return 0
-	existing = _existing_days(rows)
 	now = frappe.utils.now_datetime()
-	fresh, changed = [], []
-	for row in rows:
-		current = existing.get(_key(row))
-		if current is None:
-			fresh.append(row)
-		elif is_newer(current, row):
-			changed.append((current.name, row))
+	existing = _existing_days(rows)
+	fresh = [row for row in rows if _key(row) not in existing]
 	_insert(fresh, now)
+	if fresh:
+		# A concurrent writer may have inserted one of these days first; the line then updates its row.
+		existing.update(_existing_days(fresh))
+	changed = [(existing[_key(row)].name, row) for row in rows if is_newer(existing[_key(row)], row)]
 	for name, row in changed:
 		_update(name, row, now)
 	return len(fresh) + len(changed)
@@ -207,12 +205,17 @@ def _insert(rows: list[dict], now) -> None:
 		)
 		for row in rows
 	]
-	# A day another worker inserted a moment ago is skipped here; its next report updates it.
+	# A day another worker inserted a moment ago is skipped here and updated after.
 	frappe.db.bulk_insert(DOCTYPE, list(_INSERT_FIELDS), values, ignore_duplicates=True)
 
 
 def _update(name: str, row: dict, now) -> None:
+	"""Apply a newer line. The guard is in the WHERE, so a concurrent writer can never lower a day."""
 	day = frappe.qb.DocType(DOCTYPE)
+	if row["aggregation"] == LEVEL:
+		newer_than_stored = day.quantity < row["quantity"]
+	else:
+		newer_than_stored = day.as_of < row["as_of"]
 	(
 		frappe.qb.update(day)
 		.set(day.quantity, row["quantity"])
@@ -221,5 +224,5 @@ def _update(name: str, row: dict, now) -> None:
 		.set(day.estimated, 0)
 		.set(day.landed_at, now)
 		.set(day.modified, now)
-		.where((day.name == name) & day.invoice.isnull())
+		.where((day.name == name) & day.invoice.isnull() & ((day.estimated == 1) | newer_than_stored))
 	).run()
