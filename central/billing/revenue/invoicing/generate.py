@@ -340,9 +340,11 @@ def is_below_minimum(payload: dict) -> bool:
 
 
 def _forgive(team: str, period_end, payload: dict) -> None:
-	"""Write off a month below the minimum. No invoice is made, and the amount stays on record."""
+	"""Skip the invoice of a month below the minimum. The amount stays on record."""
+	# Only fixed charges are lost: the month's usage days stay unbilled and carry to the next invoice.
 	reason = (
-		f"{payload['currency']} {payload['total']} is below the minimum invoice amount and was written off."
+		f"{payload['currency']} {payload['total']} is below the minimum invoice amount. "
+		"Its fixed charges were written off; its usage carries to the next invoice."
 	)
 	if has_same_outcome(team, period_end, BELOW_MINIMUM, reason):
 		return
