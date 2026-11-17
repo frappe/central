@@ -7,10 +7,8 @@ from frappe.model.document import Document
 
 from central.billing.catalog.subscriptions import end_subscription, provision_service_subscription
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
-from central.services.doctype.service.service import STORAGE_SERVICE
+from central.services.doctype.service.service import AI_SERVICE, STORAGE_SERVICE
 from central.services.doctype.service_detail.service_detail import ServiceDetail
-
-AI_SERVICE = "ai"
 
 
 class TeamService(Document):

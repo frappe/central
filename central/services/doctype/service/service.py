@@ -6,6 +6,8 @@ from frappe import _
 from frappe.model.document import Document
 
 STORAGE_SERVICE = "storage"
+AI_SERVICE = "ai"
+STORAGE_METER = "bytes_stored"
 BYTES_PER_GB = 1_000_000_000
 
 # Seeded disabled: an operator turns a service on once it holds the secret it signs with.
@@ -17,7 +19,7 @@ SERVICES = (
 		"central_reads": 1,
 		"meters": [
 			{
-				"meter_key": "bytes_stored",
+				"meter_key": STORAGE_METER,
 				"aggregation": "Level",
 				"resource_type": "Storage",
 				"unit": "GB",

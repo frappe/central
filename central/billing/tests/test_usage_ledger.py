@@ -11,6 +11,7 @@ from central.billing.platform import invariants, readiness
 from central.billing.revenue import storage_bridge, usage_ledger, usage_recount
 from central.billing.revenue.invoicing.generate import generate_team_invoice, team_clusters
 from central.billing.revenue.invoicing.lifecycle import cancel_invoice, reissue_invoice
+from central.billing.revenue.metering import ingest_rollup
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	_clear_metered_plans,
@@ -239,6 +240,32 @@ class TestUsageLedger(IntegrationTestCase):
 		frappe.db.set_value("Usage Day", {"team": TEAM, "day": "2025-03-01"}, "invoice", "INV-OLD")
 		usage_ledger.prune_old_days("2026-06-15")
 		self.assertEqual([str(d.day) for d in self.days()], ["2025-03-02"])
+
+	def test_the_deploy_carries_only_the_days_before_the_first_reading(self):
+		from central.patches.v0_0 import start_usage_day_ledger as patch_module
+
+		service_subject = frappe.db.get_value("Subscription", self.subscription, "service_subject")
+		ingest_rollup(
+			{
+				"idempotency_key": f"old-storage::{service_subject}",
+				"resource_id": service_subject,
+				"resource_type": "Storage",
+				"meter_type": "Gauge",
+				"team": TEAM,
+				"cluster": CLUSTER,
+				"currency": "INR",
+				"period_start": "2026-06-01",
+				"period_end": "2026-06-30",
+				"quantity": 10,  # GiB-month over the 5 days the old job read
+				"unit": "GB",
+				"sequence": 5,
+			}
+		)
+		with patch.object(patch_module, "utc_today", return_value=frappe.utils.getdate("2026-06-04")):
+			patch_module._carry_this_month()
+		days = self.days()
+		self.assertEqual([str(d.day) for d in days], ["2026-06-01", "2026-06-02", "2026-06-03"])
+		self.assertAlmostEqual(days[0].quantity, 60 * 1024**3 / GB, places=4)
 
 	def test_a_service_region_counts_as_a_team_cluster(self):
 		self.assertIn(CLUSTER, team_clusters(TEAM))
