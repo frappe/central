@@ -27,10 +27,12 @@ const state = reactive<SetupState>({
 	loading: false,
 	team: undefined,
 })
-let inflight: Promise<void> | null = null
-// The team of the latest request. An older request that ends later must not
-// overwrite the newer team's profile.
-let latestKey: string | undefined
+// One request at a time; a cache hit or a request for another team replaces it.
+let inflight: { key: string; promise: Promise<BillingProfile | null> } | null =
+	null
+// The latest request. Only it may write state, so an older reply that ends
+// later never overwrites the profile of the team now shown.
+let latestToken = 0
 
 export function billingSetupState(): SetupState {
 	return state
@@ -43,37 +45,46 @@ export async function fetchBillingSetup(
 	{ force = false }: { force?: boolean } = {},
 ): Promise<BillingProfile | null> {
 	const key = team || ''
-	if (!force && state.team === key && state.data != null) return state.data
-	if (force || state.team !== key) inflight = null
-	if (!inflight) {
-		latestKey = key
-		inflight = (async () => {
-			state.loading = true
-			try {
-				const base = method(API.billingProfile)
-				const url = key ? `${base}?team=${encodeURIComponent(key)}` : base
-				const r = await fetch(url, {
-					credentials: 'same-origin',
-					headers: { Accept: 'application/json' },
-				})
-				const j = r.ok ? await r.json() : null
-				if (key !== latestKey) return
-				state.data = j ? (j.data ?? j.message ?? j) : null
-				state.team = key
-			} catch {
-				if (key !== latestKey) return
-				state.data = null // fail-open: the guard won't trap anyone if this errors
-				state.team = key
-			} finally {
-				if (key === latestKey) {
-					state.loading = false
-					inflight = null
-				}
-			}
-		})()
+	const cached = state.team === key && state.data != null
+	if (!force && inflight?.key !== key && cached) {
+		// The cache hit is now the latest request: drop the other team's fetch.
+		latestToken++
+		inflight = null
+		state.loading = false
+		return state.data
 	}
-	await inflight
+	if (force || inflight?.key !== key) {
+		inflight = { key, promise: loadBillingSetup(key, ++latestToken) }
+	}
+	await inflight.promise
 	return state.data
+}
+
+async function loadBillingSetup(
+	key: string,
+	token: number,
+): Promise<BillingProfile | null> {
+	state.loading = true
+	let data: BillingProfile | null = null
+	try {
+		const base = method(API.billingProfile)
+		const url = key ? `${base}?team=${encodeURIComponent(key)}` : base
+		const r = await fetch(url, {
+			credentials: 'same-origin',
+			headers: { Accept: 'application/json' },
+		})
+		const j = r.ok ? await r.json() : null
+		data = j ? (j.data ?? j.message ?? j) : null
+	} catch {
+		data = null // fail-open: the guard won't trap anyone if this errors
+	}
+	if (token === latestToken) {
+		state.data = data
+		state.team = key
+		state.loading = false
+		inflight = null
+	}
+	return data
 }
 
 export function invalidateBillingSetup(): void {
