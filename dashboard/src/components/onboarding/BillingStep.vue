@@ -4,6 +4,7 @@ import BillingCountryField from '@/components/billing/BillingCountryField.vue'
 import PaymentMethodFlow from '@/components/billing/PaymentMethodFlow.vue'
 import TrialBillingBanner from '@/components/billing/TrialBillingBanner.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { cardCheckText } from '@/lib/collectionText'
 import { money } from '@/lib/format'
 import type { WelcomeCredit } from '@/types/billing'
 
@@ -45,7 +46,7 @@ const steps = computed(() => [
 	{
 		icon: 'lucide-credit-card',
 		title: 'A small check charge, refunded',
-		text: 'We check a card with a small charge (₹0.50 or $0.50) and refund it straight away. Indian cards set up for auto-pay and UPI are not charged.',
+		text: cardCheckText,
 	},
 	{
 		icon: 'lucide-wallet',

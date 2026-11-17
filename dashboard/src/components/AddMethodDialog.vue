@@ -18,6 +18,7 @@ import { useAddStripeCard } from '@/composables/useAddStripeCard'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
+import { cardCheckText } from '@/lib/collectionText'
 import { getErrorMessage } from '@/lib/feedback'
 import { money } from '@/lib/format'
 import { __ } from '@/lib/translate'
@@ -257,7 +258,7 @@ const addPaymentMethodErrorTitle = __("Couldn't add the payment method")
 			<!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
 			<div v-else-if="stripeMode" class="space-y-3">
 				<p class="text-p-sm text-ink-gray-6">
-					{{ __('We check a card with a small charge (₹0.50 or $0.50) and refund it straight away. Indian cards set up for auto-pay and UPI are not charged.') }}
+					{{ cardCheckText }}
 				</p>
 				<p v-if="stripeLoading" class="text-p-sm text-ink-gray-6">
 					{{ __('Loading secure card field…') }}

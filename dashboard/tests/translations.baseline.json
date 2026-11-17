@@ -52,7 +52,7 @@
 	"src/components/navigation/Sidebar.vue": 2,
 	"src/components/navigation/list.ts": 11,
 	"src/components/notifications/NotificationsPanel.vue": 21,
-	"src/components/onboarding/BillingStep.vue": 14,
+	"src/components/onboarding/BillingStep.vue": 13,
 	"src/components/onboarding/OpenTrialCard.vue": 21,
 	"src/components/onboarding/SetupJourney.vue": 5,
 	"src/components/onboarding/StartStep.vue": 3,
