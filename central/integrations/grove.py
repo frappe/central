@@ -114,10 +114,10 @@ class GroveClient:
 	def revoke_key(self, team: str, key: str) -> None:
 		self.call("grove.api.keys.revoke_key", team=team, key=key)
 
-	def revoke_keys(self, team: str, keys: list[str]) -> list[str]:
-		"""Revoke several keys in one call; Grove refuses it whole for a key the team does not hold.
-		→ the names revoked."""
-		return self.call("grove.api.keys.revoke_keys", team=team, keys=keys) or []
+	def archive_team(self, team: str) -> list[str]:
+		"""Tell Grove that `team` is closing: Grove revokes every live key, suspended or not. → the
+		names revoked."""
+		return self.call("grove.api.teams.archive_team", team=team) or []
 
 	def transfer_key(self, team: str, key: str, to_team: str, title: str) -> dict:
 		"""Hand a key of `team` to `to_team`, titled `title`: the same credential, the trial's rules

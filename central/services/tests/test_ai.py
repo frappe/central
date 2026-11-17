@@ -132,6 +132,10 @@ class TestGroveClientCalls(IntegrationTestCase):
 			self.client.revoke_key("TEAM-1", "k1")
 		self.assertEqual(sent(post), ("grove.api.keys.revoke_key", {"team": "TEAM-1", "key": "k1"}))
 
+		with grove_replies(["k1"]) as post:
+			self.client.archive_team("TEAM-1")
+		self.assertEqual(sent(post), ("grove.api.teams.archive_team", {"team": "TEAM-1"}))
+
 	def test_models_geographies_spend_and_usage_name_the_team(self):
 		calls = [
 			(
@@ -367,7 +371,7 @@ class TestAI(IntegrationTestCase):
 			patch.object(GroveClient, "provision_key", return_value=MINTED),
 			patch.object(GroveClient, "list_models", side_effect=GroveUnavailable),
 		):
-			created = api.create_api_key(self.team, "app", "eu", "5")
+			created = api.create_api_key("app", "eu", "5", self.team)
 		self.assertEqual((created["api_key"], created["models"]), (MINTED["api_key"], []))
 		self.assertNotIn("Grove", str(frappe.local.message_log), "the swallowed refusal leaves no message")
 
@@ -377,7 +381,7 @@ class TestAI(IntegrationTestCase):
 			patch.object(GroveClient, "provision_key", return_value=MINTED) as provision_key,
 			patch.object(GroveClient, "list_models", return_value=MODELS) as list_models,
 		):
-			created = api.create_api_key(self.team, " app ", "eu", "5")
+			created = api.create_api_key(" app ", "eu", "5", self.team)
 			# A cap is whole dollars, and label, geography and cap are all asked: refused here, before Grove.
 			for label, geography, cap in [
 				("app", "eu", "2.5"),
@@ -390,7 +394,7 @@ class TestAI(IntegrationTestCase):
 					self.subTest(label=label, geography=geography, cap=cap),
 					self.assertRaises(frappe.ValidationError),
 				):
-					api.create_api_key(self.team, label, geography, cap)
+					api.create_api_key(label, geography, cap, self.team)
 		provision_key.assert_called_once_with(self.team, "app", "eu", 5)
 		list_models.assert_called_once_with(team=self.team, geography="eu")
 		self.assertEqual(
@@ -417,6 +421,29 @@ class TestAI(IntegrationTestCase):
 		with patch.object(GroveClient, "revoke_key") as revoke_key:
 			api.revoke_api_key(self.team, "k1")
 		revoke_key.assert_called_once_with(self.team, "k1")
+
+	def test_no_key_is_minted_while_a_trials_key_is_on_its_way_to_the_team(self):
+		self.enabled()
+		moving = frappe.get_doc(
+			{"doctype": "AI Trial Key", "grove_key": "k-moving", "team": self.team, "status": "Converting"}
+		).insert(ignore_permissions=True)
+		self.addCleanup(frappe.db.delete, "AI Trial Key", {"name": moving.name})
+		figures = {"spend": {}, "keys": [], "usage": EMPTY_USAGE}
+		with (
+			patch.object(GroveClient, "provision_key", return_value=MINTED) as provision_key,
+			patch.object(GroveClient, "list_models", return_value=MODELS),
+			patch.object(GroveClient, "get_figures", return_value=figures),
+			patch.object(GroveClient, "list_geographies", return_value=GEOGRAPHIES),
+		):
+			self.assertTrue(api.get_ai(self.team)["key_handover_pending"])
+			with self.assertRaisesRegex(frappe.ValidationError, "being moved to this team"):
+				api.create_api_key("app", "eu", "5", self.team)
+			provision_key.assert_not_called()
+
+			moving.db_set("status", "Converted")
+			self.assertFalse(api.get_ai(self.team)["key_handover_pending"])
+			api.create_api_key("app", "eu", "5", self.team)
+		provision_key.assert_called_once()
 
 	def test_prompt_logging_is_set_at_grove_by_a_service_manager_only(self):
 		self.enabled()

@@ -13,6 +13,7 @@ from frappe.utils import add_to_date, cint, flt, now_datetime
 from frappe.utils.password import remove_encrypted_password
 
 from central.integrations.grove import GroveClient
+from central.notification.engine import queue_event
 
 if TYPE_CHECKING:
 	from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
@@ -166,6 +167,12 @@ class AITrialKey(Document):
 		)
 		return True
 
+	@classmethod
+	def is_handover_pending(cls, team: str) -> bool:
+		"""Whether a converted trial's key is still on its way to `team`. No key is minted for the
+		team meanwhile, so none takes the slot, the room or the title the hand-over needs."""
+		return bool(frappe.db.exists("AI Trial Key", {"team": team, "status": "Converting"}))
+
 	def convert_at_grove(self) -> None:
 		"""Hand the key to the team whose trial converted: AI on for the team, which registers it at
 		Grove, then Grove moves the key, titled by the site. Safe to repeat: Grove answers a key the
@@ -205,12 +212,16 @@ class AITrialKey(Document):
 	def note_failed_attempt(self, answer: str) -> None:
 		"""At the last attempt the record stops: Conversion Failed, with Grove's last answer as
 		`last_error`, and the key is revoked — the trial team's no longer, never the customer's.
-		`revoked` says when that landed; the status keeps the failure."""
+		`revoked` says when that landed; the status keeps the failure. The team is told once, here,
+		that the key will stop working and it creates its own."""
 		attempts = cint(self.attempts) + 1
 		if attempts < MAX_TRANSFER_ATTEMPTS:
 			self.db_set({"status": "Converting", "attempts": attempts, "last_error": answer})
 			return
 		self.db_set({"status": "Conversion Failed", "attempts": attempts, "last_error": answer})
+		site = self.converted_site()
+		reference = {"reference_doctype": "Site", "reference_name": site.name} if site else {}
+		queue_event(self.team, "ai_key_handover_failed", **reference)
 		frappe.enqueue(
 			"central.services.doctype.ai_trial_key.ai_trial_key.revoke_trial_key",
 			name=self.name,

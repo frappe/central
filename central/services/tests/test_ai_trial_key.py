@@ -348,7 +348,12 @@ class TestAITrialKey(IntegrationTestCase):
 		key, name = self.converting()
 		self.grove.transfer_key.side_effect = Exception("Grove is down")
 		site, enable = self.handing_over()
-		with site, enable, patch(f"{MODULE}.frappe.log_error") as log_error:
+		with (
+			site,
+			enable,
+			patch(f"{MODULE}.frappe.log_error") as log_error,
+			patch(f"{MODULE}.queue_event") as queue_event,
+		):
 			ai_trial_key.convert_trial_key(name)
 			key.reload()
 			self.assertEqual((key.status, key.attempts, key.last_error), ("Converting", 1, "Grove is down"))
@@ -357,11 +362,19 @@ class TestAITrialKey(IntegrationTestCase):
 			self.age(key)
 			ai_trial_key.retry_stale()
 			self.assertEqual((key.reload().status, key.attempts), ("Converting", 2))
+			queue_event.assert_not_called()
 			self.age(key)
 			with patch(f"{MODULE}.frappe.enqueue") as enqueue:
 				ai_trial_key.retry_stale()
 		self.assertEqual((key.reload().status, key.attempts, key.revoked), ("Conversion Failed", 3, 0))
 		self.assertEqual((log_error.call_count, key.last_error), (3, "Grove is down"))
+		# The team is told once, at the give-up: it creates its own key.
+		queue_event.assert_called_once_with(
+			"TEAM-00001",
+			"ai_key_handover_failed",
+			reference_doctype="Site",
+			reference_name="trial.example.test",
+		)
 		# The failure queues the revoke; a refused one keeps Grove's answer and waits its hour; the
 		# status keeps the failure.
 		self.grove.revoke_key.side_effect = Exception("Grove is still down")

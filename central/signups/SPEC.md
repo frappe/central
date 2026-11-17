@@ -61,6 +61,7 @@ The `Trial` class in `central/signups/trial.py` owns these states. Every change 
 | `trial_deletion_soon` | Trial Notice Days before Trial Deletes On |
 | `trial_deleted` | When the server is terminated. Its button opens the signup page of the same product. |
 | `trial_converted` | When a payment method converts the trial |
+| `ai_key_handover_failed` | When the converted trial's AI key could not be handed to the team and is revoked. Its button opens the LLM page, where the team creates its own. |
 
 The `trial_expiring`, `trial_ended` and `trial_deletion_soon` emails link to the server's Upgrade dialog (`/servers/<server>?action=resize`). That dialog adds a payment method and, for an Ended trial, keeps the site. A payment method added on Billing does not keep an Ended trial.
 
