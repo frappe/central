@@ -636,6 +636,11 @@ class TestMonthlyBillingRun(BillingTestBase):
 
 		self.assertEqual(frappe.db.count("Invoice", {"team": TEAM, "period_end": "2026-06-30"}), 1)
 
+	def test_run_records_the_billing_run_of_the_month(self):
+		frappe.db.delete("Billing Run", {"period_end": "2026-06-30"})
+		invoicing.run_monthly_billing(today="2026-07-01")
+		self.assertTrue(frappe.db.exists("Billing Run", "2026-06-30"))
+
 
 class TestFanOutRun(IntegrationTestCase):
 	"""The monthly run as an orchestrator: paged, fanned out, failure-isolated."""
