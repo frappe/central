@@ -5,6 +5,8 @@ import re
 
 import frappe
 from frappe import _
+from frappe.utils import now_datetime
+from rq import Retry
 
 from central.iam import can, get_active_team_member_users, user_has_operator_bypass
 from central.integrations.helpdesk import HelpdeskClient
@@ -59,6 +61,9 @@ MAXIMUM_SUBJECT_LENGTH = 140
 
 SERVER_FIELDS = ("name", "resource_id", "atlas_vm_id", "title", "region", "status", "plan")
 SITE_FIELDS = ("name", "subdomain", "server")
+
+# Passes a sync makes while the team keeps changing, so a member edit is never left out.
+SYNC_ATTEMPTS = 3
 
 
 TEAM_CONTEXT_FORMAT = "<hr><p><strong>Context</strong><br>Team: {0}<br>"
@@ -152,8 +157,15 @@ def get_customer_contacts(team: str) -> list[dict]:
 
 
 def sync_helpdesk_customer(team: str) -> None:
-	"""Copy `team` and its Active members to Helpdesk as a customer and its contacts."""
-	HelpdeskClient.from_settings().sync_customer(team, get_customer_contacts(team))
+	"""Copy `team` and its Active members to Helpdesk as a customer and its contacts.
+	A change that lands while this runs is copied by one more pass."""
+	client = HelpdeskClient.from_settings()
+	for _attempt in range(SYNC_ATTEMPTS):
+		started = now_datetime()
+		client.sync_customer(team, get_customer_contacts(team))
+		modified = frappe.db.get_value("Team", team, "modified")
+		if not modified or modified <= started:
+			return
 
 
 def ensure_helpdesk_customer(team: str) -> None:
@@ -173,6 +185,7 @@ def enqueue_helpdesk_customer_sync(team: str) -> None:
 		enqueue_after_commit=True,
 		job_id=f"helpdesk_customer::{team}",
 		deduplicate=True,
+		rq_retry=Retry(max=3, interval=[30, 120, 600]),
 	)
 
 
