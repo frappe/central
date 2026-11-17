@@ -546,16 +546,8 @@ def check_billing_run_is_moving() -> list[Violation]:
 	from central.billing.revenue.invoicing.run import billing_period
 
 	_, period_end = billing_period()
-	had_billing = frappe.db.exists("Subscription", {"start_date": ["<=", period_end]})
-	if had_billing and not frappe.db.exists("Billing Run", str(period_end)):
-		return [
-			Violation(
-				check="B5",
-				subject_doctype="Billing Run",
-				subject=str(period_end),
-				detail="The monthly billing run for this month has not started.",
-			)
-		]
+	if not_started := _unstarted_run(period_end):
+		return not_started
 
 	run = frappe.db.get_value(
 		"Billing Run", str(period_end), ["teams", "drafted", "started_at"], as_dict=True
@@ -590,6 +582,23 @@ def check_billing_run_is_moving() -> list[Violation]:
 			subject=str(period_end),
 			detail=f"{waiting} draft invoice(s) waited over {STALLED_HOURS} hours to be collected. Check the billing workers and the Error Log.",
 			actual=waiting,
+		)
+	]
+
+
+def _unstarted_run(period_end) -> list[Violation]:
+	"""The closed month had billing, its draft tick has fired, and its run has no record."""
+	from central.billing.revenue.invoicing.run import has_draft_tick_passed
+
+	had_billing = frappe.db.exists("Subscription", {"start_date": ["<=", period_end]})
+	if not had_billing or not has_draft_tick_passed() or frappe.db.exists("Billing Run", str(period_end)):
+		return []
+	return [
+		Violation(
+			check="B5",
+			subject_doctype="Billing Run",
+			subject=str(period_end),
+			detail="The monthly billing run for this month has not started.",
 		)
 	]
 

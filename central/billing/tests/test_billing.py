@@ -759,6 +759,17 @@ class TestFanOutRun(IntegrationTestCase):
 			inv = frappe.get_doc("Invoice", {"team": team, "period_end": "2026-06-30"})
 			self.assertTrue(inv.due_date or inv.status != "Outstanding")
 
+	def test_a_sweep_before_the_draft_tick_does_not_stop_the_draft(self):
+		from central.billing.tests.utils import run_enqueued_inline
+
+		frappe.db.delete("Billing Run", {"period_end": "2026-06-30"})
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.collect_due_invoices(today="2026-07-01")
+			run.draft_monthly_invoices(today="2026-07-01")
+
+		for team in self.TEAMS:
+			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
+
 	def test_collection_tick_alone_settles_nothing(self):
 		# Order matters: the collect tick only ever touches drafts that already exist,
 		# so firing it before drafting is a no-op rather than a half-billed month.

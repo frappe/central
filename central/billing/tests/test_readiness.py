@@ -181,6 +181,17 @@ class TestReadiness(IntegrationTestCase):
 		self.assertEqual(len(found), 1)
 		self.assertIn("has not started", found[0].detail)
 
+	def test_a_run_is_not_missing_before_the_draft_tick_on_the_first(self):
+		from central.billing.revenue.invoicing.run import billing_period
+
+		frappe.db.delete("Billing Run", {"period_end": billing_period("2026-07-01")[1]})
+		frappe.db.set_value("Subscription", self.subscription, "start_date", "2020-01-01")
+		with (
+			patch("frappe.utils.nowdate", return_value="2026-07-01"),
+			patch("frappe.utils.now_datetime", return_value=frappe.utils.get_datetime("2026-07-01 07:00")),
+		):
+			self.assertFalse(_found_run("B5"))
+
 	def test_a_run_that_drafted_nothing_for_hours_is_found(self):
 		from central.billing.revenue.invoicing.run import billing_period
 

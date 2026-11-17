@@ -44,6 +44,9 @@ COLLECT_PAGE_SIZE = 100
 BILLING_QUEUE = "billing"
 
 
+# The hour on the 1st, in system time, that the draft tick runs at. It matches the cron in hooks.
+DRAFT_HOUR = 8
+
 # Every unit failure is logged under this one title, so an operator (and
 # `billing_run_status`) can count a run's casualties with a single filter.
 BILLING_RUN_FAILURE = "Billing Run Failure"
@@ -540,14 +543,27 @@ def collect_due_invoices(today=None) -> dict:
 	metrics.emit("billing.run_status", **status)
 	# Only claim to be collecting when something is owed, so a period that finished
 	# does not flip Complete -> Collecting -> Complete on every later sweep.
-	snapshot(status, "Collecting" if status["pending_collection"] else None)
+	_snapshot_started(status, "Collecting" if status["pending_collection"] else None)
 	fanned = open_drafts(period_end, enqueue=True)
 	metrics.emit("billing.collect_tick", period_end=str(period_end), pages=len(fanned))
 	# Re-derived after the sweep has been handed out: nothing owed means the period is done.
 	done = billing_run_status(today)
 	is_done = not done["pending_collection"] and not done["failures"]
-	snapshot(done, "Complete" if is_done else None)
+	_snapshot_started(done, "Complete" if is_done else None)
 	return {"period_end": str(period_end), "pages": len(fanned)}
+
+
+def _snapshot_started(status: dict, to_state: str | None) -> None:
+	"""Update the period's run only once the draft tick has started it."""
+	# A sweep before the draft tick would complete an empty run, and the draft could not reopen it.
+	if frappe.db.exists("Billing Run", status["period_end"]):
+		snapshot(status, to_state)
+
+
+def has_draft_tick_passed(now=None) -> bool:
+	"""Whether this month's draft tick has fired."""
+	now = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
+	return now.day > 1 or now.hour >= DRAFT_HOUR
 
 
 def billing_run_status(today=None) -> dict:
