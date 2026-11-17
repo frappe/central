@@ -35,7 +35,6 @@ const save = useCall<unknown, Record<string, unknown>>({
 const country = ref(profile.value?.country ?? '')
 const error = ref('')
 
-// True once the shown country is saved, or there was nothing to save.
 async function saveCountry(value: string): Promise<boolean> {
 	if (!value || value === profile.value?.country) return true
 	error.value = ''
