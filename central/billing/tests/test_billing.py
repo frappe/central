@@ -641,6 +641,19 @@ class TestMonthlyBillingRun(BillingTestBase):
 		invoicing.run_monthly_billing(today="2026-07-01")
 		self.assertTrue(frappe.db.exists("Billing Run", "2026-06-30"))
 
+	def test_a_rerun_after_collection_keeps_the_run_state(self):
+		from central.billing.tests.utils import run_enqueued_inline
+
+		frappe.db.delete("Billing Run", {"period_end": "2026-06-30"})
+		invoicing.run_monthly_billing(today="2026-07-01")
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.collect_due_invoices(today="2026-07-01")
+		collected = frappe.db.get_value("Billing Run", "2026-06-30", "status")
+		self.assertNotEqual(collected, "Drafting")
+
+		invoicing.run_monthly_billing(today="2026-07-01")
+		self.assertEqual(frappe.db.get_value("Billing Run", "2026-06-30", "status"), collected)
+
 
 class TestFanOutRun(IntegrationTestCase):
 	"""The monthly run as an orchestrator: paged, fanned out, failure-isolated."""

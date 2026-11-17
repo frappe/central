@@ -619,7 +619,8 @@ def run_monthly_billing(today=None) -> dict:
 	"""Bill the just-closed month end-to-end in one job, for a small site or a test."""
 	settle_internal_teams()
 	period_start, period_end = billing_period(today)
-	snapshot(billing_run_status(today), "Drafting")
+	# A new run starts as Drafting; a rerun after collection keeps the state it reached.
+	snapshot(billing_run_status(today))
 	drafted = generate_draft_invoices(period_start, period_end)
 	opened = open_drafts(period_end)
 	return {
