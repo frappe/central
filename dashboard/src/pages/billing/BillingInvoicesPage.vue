@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Badge, Button, LoadingText, Spinner, TabButtons } from 'frappe-ui'
+import {
+	Alert,
+	Badge,
+	Button,
+	LoadingText,
+	Spinner,
+	TabButtons,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import InvoiceListView from '@/components/billing/InvoiceListView.vue'
@@ -34,6 +41,7 @@ const viewOptions = [
 const {
 	invoices,
 	loading: invoicesLoading,
+	error: invoicesError,
 	reload: reloadInvoices,
 } = useInvoices()
 
@@ -154,8 +162,15 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 					:options="viewOptions"
 				/>
 
+				<Alert
+					v-if="view === 'invoices' && invoicesError"
+					theme="red"
+					:title="__('Couldn\'t load your invoices')"
+					:description="__('Retry, or contact support if this keeps happening.')"
+					:primary-action="{ label: __('Retry'), onClick: reloadInvoices }"
+				/>
 				<InvoiceListView
-					v-if="view === 'invoices'"
+					v-else-if="view === 'invoices'"
 					:invoices="invoices"
 					:loading="invoicesLoading && !invoices.length"
 					:active-name="selected?.name"
@@ -163,7 +178,7 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 				/>
 
 				<StatementCard
-					v-else
+					v-if="view !== 'invoices'"
 					:statement="reports.statement.data ?? null"
 					:loading="reports.statementLoading.value"
 					:export-url="reports.exportUrl('statement')"
