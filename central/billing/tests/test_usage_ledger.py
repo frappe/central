@@ -10,7 +10,7 @@ from central.billing.catalog.subscriptions import provision_service_subscription
 from central.billing.platform import invariants, readiness
 from central.billing.revenue import storage_bridge, usage_ledger, usage_recount
 from central.billing.revenue.invoicing.generate import generate_team_invoice, team_clusters
-from central.billing.revenue.invoicing.lifecycle import cancel_invoice
+from central.billing.revenue.invoicing.lifecycle import cancel_invoice, reissue_invoice
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	_clear_metered_plans,
@@ -150,12 +150,51 @@ class TestUsageLedger(IntegrationTestCase):
 		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
 		self.assertAlmostEqual(self.rollup("2026-07-01").quantity, 1.0)  # 30 / 30 days of June
 
-	def test_a_cancelled_invoice_gives_back_what_it_billed(self):
+	def storage_billed(self, invoice: str) -> float:
+		return sum(
+			frappe.get_all(
+				"Invoice Line Item", filters={"parent": invoice, "resource_type": "Storage"}, pluck="amount"
+			)
+		)
+
+	def test_a_reissue_bills_the_days_of_the_cancelled_invoice(self):
+		self.read("2026-06-01", 30)
+		invoice = generate_team_invoice(TEAM, "2026-06-01", "2026-06-30")
+		reissued = reissue_invoice(invoice, reason="test")
+		self.assertAlmostEqual(self.storage_billed(reissued), self.storage_billed(invoice))
+		self.assertEqual({d.invoice for d in self.days()}, {reissued})
+
+	def test_a_cancel_without_reissue_keeps_its_days_billed(self):
 		self.read("2026-06-01", 30)
 		invoice = generate_team_invoice(TEAM, "2026-06-01", "2026-06-30")
 		cancel_invoice(invoice, reason="test")
-		self.assertEqual({d.invoice for d in self.days()}, {None})
-		self.assertIsNone(self.rollup("2026-06-01").invoice)
+		self.assertEqual({d.invoice for d in self.days()}, {invoice})
+		self.assertEqual(self.rollup("2026-06-01").invoice, invoice)
+
+	def test_a_month_below_the_minimum_goes_on_the_next_invoice(self):
+		self.read("2026-06-01", 30)  # 1 GB-month of June, 2 INR
+		with patch("central.billing.settings.minimum_invoice_amount", return_value=50):
+			self.assertIsNone(generate_team_invoice(TEAM, "2026-06-01", "2026-06-30"))
+			for day in range(1, 32):
+				self.read(f"2026-07-{day:02d}", 100)
+			invoice = generate_team_invoice(TEAM, "2026-07-01", "2026-07-31")
+		self.assertAlmostEqual(self.storage_billed(invoice), 202.0)
+		self.assertEqual({d.invoice for d in self.days()}, {invoice})
+
+	def test_a_day_written_while_the_invoice_drafts_stays_unbilled_and_carries(self):
+		self.read("2026-06-01", 30)
+		recount_team = usage_recount.recount_team
+
+		def recount_then_write(team, period_end):
+			counted = recount_team(team, period_end)
+			self.read("2026-06-02", 30)
+			return counted
+
+		with patch.object(usage_recount, "recount_team", side_effect=recount_then_write):
+			invoice = generate_team_invoice(TEAM, "2026-06-01", "2026-06-30")
+		self.assertAlmostEqual(self.storage_billed(invoice), 2.0)
+		self.assertEqual([d.invoice for d in self.days()], [invoice, None])
+		self.assertAlmostEqual(self.rollup("2026-07-01").quantity, 1.0)  # 30 / 30 days of June
 
 	def test_the_hourly_recount_picks_up_changed_months(self):
 		frappe.db.set_default(usage_recount.WATERMARK, "2000-01-01 00:00:00")

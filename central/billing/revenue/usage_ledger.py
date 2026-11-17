@@ -89,32 +89,18 @@ def _merged(rows: list[dict]) -> list[dict]:
 	return list(kept.values())
 
 
-def stamp_invoice(team: str, period_end, invoice: str) -> None:
-	"""Mark every unbilled day up to the period end, and every unbilled rollup in it, as billed."""
+def stamp_days(names: list[str], invoice: str) -> None:
+	"""Mark these unbilled days as billed by the invoice."""
+	if not names:
+		return
 	day = frappe.qb.DocType(DOCTYPE)
-	(
-		frappe.qb.update(day)
-		.set(day.invoice, invoice)
-		.where((day.team == team) & day.invoice.isnull() & (day.day <= period_end))
-	).run()
-	rollup = frappe.qb.DocType("Usage Rollup")
-	(
-		frappe.qb.update(rollup)
-		.set(rollup.invoice, invoice)
-		.where(
-			(rollup.team == team)
-			& rollup.invoice.isnull()
-			& rollup.superseded_by.isnull()
-			& (rollup.period_start <= period_end)
-		)
-	).run()
+	frappe.qb.update(day).set(day.invoice, invoice).where(day.name.isin(names) & day.invoice.isnull()).run()
 
 
-def release_invoice(invoice: str) -> None:
-	"""Unmark what a cancelled invoice billed, so the invoice that replaces it bills it again."""
-	for doctype in (DOCTYPE, "Usage Rollup"):
-		table = frappe.qb.DocType(doctype)
-		frappe.qb.update(table).set(table.invoice, None).where(table.invoice == invoice).run()
+def release_days(invoice: str) -> None:
+	"""Unmark the days a cancelled invoice billed."""
+	day = frappe.qb.DocType(DOCTYPE)
+	frappe.qb.update(day).set(day.invoice, None).where(day.invoice == invoice).run()
 
 
 def fill_missing_days(today=None) -> int:

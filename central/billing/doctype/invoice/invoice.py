@@ -105,15 +105,6 @@ class Invoice(Document):
 
 	def on_update(self):
 		self.restore_team_once_settled()
-		self.release_usage_once_cancelled()
-
-	def release_usage_once_cancelled(self):
-		"""A cancelled invoice gives back the usage days it billed, so its replacement bills them."""
-		if self.status != CANCELLED or not self.has_value_changed("status"):
-			return
-		from central.billing.revenue.usage_ledger import release_invoice
-
-		release_invoice(self.name)
 
 	def restore_team_once_settled(self):
 		"""When an unpaid invoice is paid or waived, a team with no other overdue invoice is

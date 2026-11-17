@@ -29,7 +29,7 @@ from central.billing.doctype.billing_run_team.billing_run_team import (
 	has_same_outcome,
 	record_outcome,
 )
-from central.billing.revenue import usage_ledger, usage_recount
+from central.billing.revenue import usage_recount
 from central.billing.revenue.invoicing.lines import compute_line_items, team_line_items
 from central.billing.states import record_team_event
 
@@ -316,8 +316,8 @@ def _generate_team_invoice(team: str, period_start, period_end):
 		record_outcome(team, period_end, INVOICED, invoice=existing)
 		return existing
 
-	# Usage months are recomputed from the days first; the invoice then marks what it billed.
-	usage_recount.recount_team(team, period_end)
+	# Usage months are recomputed from the days first; the invoice then marks exactly what it billed.
+	counted = usage_recount.recount_team(team, period_end)
 	rated = rate_team_period(team, period_start, period_end)
 	if not rated:
 		record_outcome(team, period_end, NOTHING_TO_BILL, reason="Nothing billable in this month.")
@@ -327,7 +327,7 @@ def _generate_team_invoice(team: str, period_start, period_end):
 		return None
 
 	name = _insert_invoice(rated.payload)
-	usage_ledger.stamp_invoice(team, period_end, name)
+	usage_recount.stamp_invoice(counted, name)
 	commitments.mark_breached(rated.commitment)
 	record_outcome(team, period_end, INVOICED, invoice=name)
 	record_team_event(team, "Invoice Generated", "Invoice", reason=name, amount=rated.payload["total"])
