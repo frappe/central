@@ -83,13 +83,13 @@ const detail = computed(() => {
 })
 
 // The statement holds only Billable invoices, so its open rows can stand in when
-// the invoice list has not loaded. invoiceToOpen reads a due date as "issued".
+// the invoice list has not loaded. An issued invoice always has a due date.
 const statementInvoices = computed(() =>
 	(props.statement?.rows ?? []).map((r) => ({
 		name: r.invoice,
 		status: r.status,
 		period_start: r.period_start,
-		due_date: r.is_issued ? (r.due_date ?? r.period_end) : null,
+		due_date: r.due_date,
 		invoice_type: 'Billable',
 	})),
 )
