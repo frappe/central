@@ -82,6 +82,18 @@ const detail = computed(() => {
 	return isOverdue.value ? 'Pay now to keep your servers running.' : ''
 })
 
+// The statement holds only Billable invoices, so its open rows can stand in when
+// the invoice list has not loaded. invoiceToOpen reads a due date as "issued".
+const statementInvoices = computed(() =>
+	(props.statement?.rows ?? []).map((r) => ({
+		name: r.invoice,
+		status: r.status,
+		period_start: r.period_start,
+		due_date: r.is_issued ? (r.due_date ?? r.period_end) : null,
+		invoice_type: 'Billable',
+	})),
+)
+
 const action = computed(() => ({
 	label:
 		props.attempts === null ||
@@ -91,7 +103,8 @@ const action = computed(() => ({
 			? 'View invoice'
 			: 'Pay now',
 	onClick: () => {
-		const invoice = invoiceToOpen(invoices.value)
+		const invoice =
+			invoiceToOpen(invoices.value) ?? invoiceToOpen(statementInvoices.value)
 		router.push({
 			name: 'BillingInvoices',
 			query: invoice ? { invoice } : {},
