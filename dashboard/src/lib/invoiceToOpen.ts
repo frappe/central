@@ -1,16 +1,17 @@
-import type { StatementRow } from '@/types/billing'
+import type { InvoiceSummary } from '@/types/billing'
 
 type OpenRowFields = Pick<
-	StatementRow,
-	'invoice' | 'status' | 'is_issued' | 'period_start'
+	InvoiceSummary,
+	'name' | 'status' | 'due_date' | 'period_start'
 >
 
 /** The owed invoice to show first: an overdue one, otherwise the oldest open one. */
 export function invoiceToOpen(rows: readonly OpenRowFields[]): string | null {
-	// An invoice not issued yet is still being prepared, so nothing is owed on it.
+	// An invoice gets a due date when it is issued. Before that it is still
+	// being prepared, so nothing is owed on it.
 	const open = rows.filter(
 		(row) =>
-			row.is_issued &&
+			row.due_date &&
 			(row.status === 'Outstanding' || row.status === 'Overdue'),
 	)
 	open.sort(
@@ -18,5 +19,5 @@ export function invoiceToOpen(rows: readonly OpenRowFields[]): string | null {
 			Number(b.status === 'Overdue') - Number(a.status === 'Overdue') ||
 			a.period_start.localeCompare(b.period_start),
 	)
-	return open[0]?.invoice ?? null
+	return open[0]?.name ?? null
 }

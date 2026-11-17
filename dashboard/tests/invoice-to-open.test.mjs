@@ -17,8 +17,8 @@ runInNewContext(
 )
 const { invoiceToOpen } = exports
 
-function row(invoice, status, period_start, is_issued = true) {
-	return { invoice, status, period_start, is_issued }
+function row(name, status, period_start, issued = true) {
+	return { name, status, period_start, due_date: issued ? '2026-12-01' : null }
 }
 
 test('an overdue invoice beats an older outstanding one', () => {
@@ -50,4 +50,12 @@ test('an invoice that is not issued is never chosen', () => {
 test('no open invoice gives null', () => {
 	assert.equal(invoiceToOpen([]), null)
 	assert.equal(invoiceToOpen([row('INV-PAID', 'Paid', '2026-09-01')]), null)
+})
+
+test('an owed invoice from long ago is still chosen', () => {
+	const rows = [
+		row('INV-SEP', 'Outstanding', '2026-09-01'),
+		row('INV-2024', 'Outstanding', '2024-03-01'),
+	]
+	assert.equal(invoiceToOpen(rows), 'INV-2024')
 })

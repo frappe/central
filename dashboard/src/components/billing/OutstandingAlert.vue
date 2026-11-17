@@ -2,6 +2,7 @@
 import { Button } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useInvoices } from '@/composables/useInvoices'
 import { billingPeriod } from '@/lib/date'
 import { formatDate, money, plural } from '@/lib/format'
 import { invoiceToOpen } from '@/lib/invoiceToOpen'
@@ -13,6 +14,7 @@ const props = defineProps<{
 	attempts: PaymentAttempt[] | null
 }>()
 const router = useRouter()
+const { invoices } = useInvoices()
 
 const currency = computed(() => props.statement?.currency ?? 'INR')
 const earlier = computed(() =>
@@ -89,7 +91,7 @@ const action = computed(() => ({
 			? 'View invoice'
 			: 'Pay now',
 	onClick: () => {
-		const invoice = invoiceToOpen(props.statement?.rows ?? [])
+		const invoice = invoiceToOpen(invoices.value)
 		router.push({
 			name: 'BillingInvoices',
 			query: invoice ? { invoice } : {},
