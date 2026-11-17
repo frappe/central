@@ -98,7 +98,6 @@ class TestCentralIAM(IntegrationTestCase):
 			self.assertNotIn(cap, developer_caps)
 		# Viewer can read services; Billing can configure them as well.
 		self.assertEqual(viewer_caps, {"cluster:view", "server:view", "service:view", "support:view"})
-		# Every role reaches support; seeing the whole team's tickets is for all but Viewer.
 		for caps in (owner_caps, admin_caps, developer_caps, billing_caps):
 			self.assertIn("support:manage", caps)
 		self.assertNotIn("support:manage", viewer_caps)

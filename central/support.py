@@ -136,7 +136,7 @@ def get_customer_contacts(team: str) -> list[dict]:
 	if not users:
 		return []
 
-	# Runs as the system in a background job, so the caller's User permissions must not apply.
+	# A job or a migration, so the caller's User permissions must not apply.
 	rows = frappe.get_all("User", filters={"name": ["in", users]}, fields=["name", "email", "full_name"])
 	details = {row.name: row for row in rows}
 
@@ -154,6 +154,12 @@ def get_customer_contacts(team: str) -> list[dict]:
 def sync_helpdesk_customer(team: str) -> None:
 	"""Copy `team` and its Active members to Helpdesk as a customer and its contacts."""
 	HelpdeskClient.from_settings().sync_customer(team, get_customer_contacts(team))
+
+
+def ensure_helpdesk_customer(team: str) -> None:
+	"""Create the team's customer when it is missing, so an opened ticket can name it.
+	The contacts stay with the queued sync, which a member change already starts."""
+	HelpdeskClient.from_settings().ensure_customer(team)
 
 
 def enqueue_helpdesk_customer_sync(team: str) -> None:

@@ -167,7 +167,8 @@ class TestSupportTickets(SupportTestCase):
 		self.assertEqual(kwargs["subject"], f"[Server · {SERVER_ISSUE}] Slow at noon")
 		self.assertEqual(kwargs["raised_by"], self.owner)
 		self.assertEqual(kwargs["customer"], self.team)
-		self.assertEqual(self.customer_helpdesk.sync_customer.call_args.args[0], self.team)
+		self.assertEqual(self.customer_helpdesk.ensure_customer.call_args.args[0], self.team)
+		self.customer_helpdesk.sync_customer.assert_not_called()
 		self.assertIn("It lags &lt;badly&gt;<br>since today.", kwargs["description"])
 		self.assertIn(f"Team: {self.team}<br>", kwargs["description"])
 		self.assertIn(f"User: {self.owner}<br>", kwargs["description"])
@@ -290,6 +291,17 @@ class TestSupportTickets(SupportTestCase):
 
 		enqueue.assert_called_once()
 		self.assertEqual(enqueue.call_args.args[0], "central.support.sync_helpdesk_customer")
+		self.assertEqual(enqueue.call_args.kwargs["team"], self.team)
+
+	def test_a_team_status_change_enqueues_a_sync(self):
+		self.enterContext(patch("central.support.is_helpdesk_configured", return_value=True))
+		enqueue = self.enterContext(patch("frappe.enqueue"))
+		team = frappe.get_doc("Team", self.team)
+		team.status = "Suspended"
+
+		team.save()
+
+		enqueue.assert_called_once()
 		self.assertEqual(enqueue.call_args.kwargs["team"], self.team)
 
 	def test_a_team_save_without_a_member_change_enqueues_no_sync(self):
