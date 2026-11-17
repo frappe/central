@@ -10,9 +10,9 @@ from frappe.model.naming import make_autoname
 from frappe.query_builder import Interval
 from frappe.query_builder.functions import Now
 from frappe.utils import add_to_date, cint, flt, now_datetime
-from frappe.utils.password import remove_encrypted_password
+from frappe.utils.password import get_decrypted_password, remove_encrypted_password
 
-from central.integrations.grove import GroveClient
+from central.integrations.grove import GroveClient, get_key_balance
 from central.notification.engine import queue_event
 
 if TYPE_CHECKING:
@@ -147,12 +147,12 @@ class AITrialKey(Document):
 
 	@classmethod
 	def get_server_credits(cls, server: str) -> dict | None:
-		"""The AI credit of the server's trial key, or None without a key or an answer from Grove.
-		Kept 30 minutes: Grove lands usage hourly."""
+		"""The AI credit of the server's trial key, or None without a key or an answer. Kept a
+		minute, so a busy Billing panel or an outage costs one call a minute."""
 		key = frappe.db.get_value(
 			"AI Trial Key",
 			{"server": server},
-			["name", "status", "cap", "grove_key", "team"],
+			["name", "status", "cap", "grove_key", "gateway_url", "team"],
 			as_dict=True,
 			order_by="creation desc",
 		)
@@ -163,25 +163,30 @@ class AITrialKey(Document):
 
 		if (credits := frappe.cache.get_value(credits_cache_key(key.grove_key))) is None:
 			credits = cls.read_credits(key)
-			# A failure is kept a minute, so a Grove outage slows one billing load, not each.
-			frappe.cache.set_value(
-				credits_cache_key(key.grove_key), credits, expires_in_sec=1800 if credits else 60
-			)
+			frappe.cache.set_value(credits_cache_key(key.grove_key), credits, expires_in_sec=60)
 		return credits or None
 
 	@staticmethod
 	def read_credits(key: frappe._dict) -> dict:
-		"""Grove's figures for the key, under the team that holds it. {} on any failure: billing
-		must still load."""
-		team = key.team if key.status == "Converted" else TRIAL_TEAM
+		"""During the trial, the gateway's live count under the key's own secret. Once converted,
+		Central holds no secret, so Grove's figures for the team. {} on any failure: billing must
+		still load."""
 		try:
-			spend = GroveClient.from_settings().get_key_spend(team, key.grove_key)
-			return {
-				"state": "Active",
-				"window": spend["key_cap_window"],
-				"cap": flt(spend["cap"]),
-				"spent": flt(spend["spent"]),
-			}
+			if key.status == "Converted":
+				figures = GroveClient.from_settings().get_figures(key.team, timeout=(3, 5))
+				row = next(row for row in figures["keys"] if row["name"] == key.grove_key)
+				# Grove refuses a hand-over between teams of one cap window, and the trial team's is Total.
+				return {
+					"state": "Active",
+					"window": "Monthly",
+					"cap": flt(row["cap"]),
+					"spent": flt(row["month_spent"]),
+				}
+
+			balance = get_key_balance(
+				key.gateway_url, get_decrypted_password("AI Trial Key", key.name, "api_key")
+			)
+			return {"state": "Active", "window": "Total", "cap": flt(key.cap), "spent": flt(balance["spent"])}
 		except frappe.ValidationError:
 			frappe.clear_last_message()
 		except Exception:

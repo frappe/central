@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import urlsplit
 
 import frappe
 import requests
@@ -136,11 +137,7 @@ class GroveClient:
 		gateway; a key minted there is refused), `is_default`."""
 		return self.call("grove.api.catalog.geographies") or []
 
-	def get_key_spend(self, team: str, key: str) -> dict:
-		"""One key's cap and its spend over the cap window. A short timeout: billing waits on it."""
-		return self.call("grove.api.usage.key_spend", timeout=(3, 5), team=team, key=key)
-
-	def get_figures(self, team: str) -> dict:
+	def get_figures(self, team: str, timeout: tuple[int, int] = TIMEOUT) -> dict:
 		"""What the console shows, as one entry Grove keeps until something moves it (a record lands,
 		a correction, a key or the team saved, its tier edited) and 30 minutes at most, so every
 		page shows one moment. `spend` in USD: `month_spent`, `capped` (Σ live caps) and
@@ -148,7 +145,7 @@ class GroveClient:
 		spend: what a raise is checked against) against `spend_limit`; `max_keys`; `suspended`.
 		`keys`: the team's keys, newest first, masked, each with its cap, this month's spend and effective
 		rate limits. `usage`: this month across every key, as `get_usage` answers it."""
-		return self.call("grove.api.usage.figures", team=team)
+		return self.call("grove.api.usage.figures", timeout=timeout, team=team)
 
 	def pull_usage(self, team: str) -> dict:
 		"""Ask Grove to pull the team's usage from its gateways now. Grove allows 2 an hour per
@@ -187,6 +184,19 @@ class GroveClient:
 		except (requests.ConnectionError, requests.Timeout) as e:
 			raise GroveUnavailable(_("Grove can't be reached right now.")) from e
 		return read(response)
+
+
+def get_key_balance(gateway_url: str, api_key: str) -> dict:
+	"""What a key has left of its cap and has `spent` over its window, in USD to the cent, as its
+	gateway counts it live. The key's own secret is the credential, so any holder can ask."""
+	parts = urlsplit(gateway_url)
+	response = requests.get(
+		f"{parts.scheme}://{parts.netloc}/v1/key/balance",
+		headers={"Authorization": f"Bearer {api_key}"},
+		timeout=(3, 5),
+	)
+	response.raise_for_status()
+	return response.json()
 
 
 def read(response: requests.Response) -> dict | list:
