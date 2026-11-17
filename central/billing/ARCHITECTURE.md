@@ -296,7 +296,7 @@ The team gets one `payment_method_setup_expired` notice per run, in-app and by e
 
 **The scheduled run is paged.** At 08:00 IST on the 1st, after the UTC month closes, `draft_monthly_invoices` starts the **Billing Run** row for the month and drafts the closed month as page jobs. Every hour, `collect_due_invoices` collects whatever has drafted and, once the run has started, updates its row (counts, failures, completion). A lost worker stops one page only; the next hourly sweep picks up the rest. `run_monthly_billing` starts the same Billing Run row and does both phases inline in one job; use it only for a small site or a test.
 
-The readiness check B5 flags a month with billing but no Billing Run after the draft tick has fired, and drafts that waited more than 3 hours to be collected. It feeds the hourly operator alerts.
+The readiness check B5 flags a month with billing but no Billing Run after the draft tick has fired (its time is read from the cron in `hooks.py`), and drafts that waited more than 3 hours to be collected. It feeds the hourly operator alerts.
 
 **The fan-out is two orchestrators, and neither of them does the work.** Each keyset-pages its subjects and enqueues a **page job** per slice: `draft_team_page(after, until)` / `settle_draft_page(cutoff, after, until)`, deduplicated on the slice's upper bound. A page job re-derives its slice from the bounds and works it in order. It commits after **each team / each invoice**. The page is the unit of *scheduling* and the team is still the unit of *work*, so a job killed at team 300 of 500 keeps the 299 it finished.
 

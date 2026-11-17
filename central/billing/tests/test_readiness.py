@@ -192,6 +192,13 @@ class TestReadiness(IntegrationTestCase):
 		):
 			self.assertFalse(_found_run("B5"))
 
+	def test_the_draft_tick_follows_its_schedule_in_hooks(self):
+		from central.billing.revenue.invoicing.run import has_draft_tick_passed
+
+		self.assertFalse(has_draft_tick_passed("2026-07-01 07:59"))
+		self.assertTrue(has_draft_tick_passed("2026-07-01 08:01"))
+		self.assertTrue(has_draft_tick_passed("2026-07-02 00:00"))
+
 	def test_a_run_that_drafted_nothing_for_hours_is_found(self):
 		from central.billing.revenue.invoicing.run import billing_period
 

@@ -7,10 +7,12 @@ owns everything that spans them: which teams to visit, in what order, and how th
 work is spread over workers.
 """
 
+import datetime
 import random
 import time
 
 import frappe
+from croniter import croniter
 from frappe.query_builder.functions import Count
 
 from central.billing.doctype.billing_event import billing_event
@@ -44,8 +46,7 @@ COLLECT_PAGE_SIZE = 100
 BILLING_QUEUE = "billing"
 
 
-# The hour on the 1st, in system time, that the draft tick runs at. It matches the cron in hooks.
-DRAFT_HOUR = 8
+DRAFT_TICK = "central.billing.revenue.invoicing.draft_monthly_invoices"
 
 # Every unit failure is logged under this one title, so an operator (and
 # `billing_run_status`) can count a run's casualties with a single filter.
@@ -563,7 +564,14 @@ def _snapshot_started(status: dict, to_state: str | None) -> None:
 def has_draft_tick_passed(now=None) -> bool:
 	"""Whether this month's draft tick has fired."""
 	now = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
-	return now.day > 1 or now.hour >= DRAFT_HOUR
+	# The schedule is read from hooks, so the tick's time is set in one place.
+	last_tick = croniter(_draft_tick_schedule(), now).get_prev(datetime.datetime)
+	return last_tick >= frappe.utils.get_datetime(frappe.utils.get_first_day(now))
+
+
+def _draft_tick_schedule() -> str:
+	crons = frappe.get_hooks("scheduler_events").get("cron", {})
+	return next(cron for cron, methods in crons.items() if DRAFT_TICK in methods)
 
 
 def billing_run_status(today=None) -> dict:
