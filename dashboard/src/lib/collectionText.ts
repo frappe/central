@@ -4,7 +4,7 @@ import type { CollectionStatus } from '@/types/billing'
 
 /** What adding a card costs, shown before the customer adds one. */
 export const cardCheckText = __(
-	'We check a card with a small charge (₹0.50 or $0.50) and refund it straight away. Indian cards set up for auto-pay and UPI are not charged.',
+	'We check a card with a small charge (₹0.50 or $0.50) and refund it. Indian cards set up for auto-pay and UPI are not charged.',
 )
 
 /** An amount with the tax note it includes, e.g. "₹15,000 (incl. IGST 18%)". */
