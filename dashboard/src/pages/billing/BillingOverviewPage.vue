@@ -30,7 +30,9 @@ import { sessionReady, useSession } from '@/composables/useSession'
 import { fetchBillingSetup } from '@/data/billingSetup'
 import { parseTopupAmount } from '@/lib/topupAmount'
 
-const { complete, setupDialogOpen, requireSetup } = useBillingSetup()
+const { complete, profile, setupDialogOpen, requireSetup } = useBillingSetup()
+// Until the profile loads `complete` is false, so the banner waits for it.
+const needsDetails = computed(() => !!profile.value && !complete.value)
 const { currency, reloadMoney } = useBillingOverview()
 const reports = useBillingReports()
 
@@ -141,7 +143,7 @@ watch(
 					:attempts="reports.attempts.data ?? null"
 				/>
 				<Alert
-					v-if="!complete"
+					v-if="needsDetails"
 					theme="amber"
 					title="Add your billing details"
 					description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
