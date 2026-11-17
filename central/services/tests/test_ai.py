@@ -370,7 +370,7 @@ class TestAI(IntegrationTestCase):
 			patch.object(GroveClient, "provision_key", return_value=MINTED),
 			patch.object(GroveClient, "list_models", side_effect=GroveUnavailable),
 		):
-			created = api.create_api_key(self.team, "app", "eu", "5")
+			created = api.create_api_key("app", "eu", "5", self.team)
 		self.assertEqual((created["api_key"], created["models"]), (MINTED["api_key"], []))
 		self.assertNotIn("Grove", str(frappe.local.message_log), "the swallowed refusal leaves no message")
 
@@ -380,11 +380,11 @@ class TestAI(IntegrationTestCase):
 			patch.object(GroveClient, "provision_key", return_value=MINTED) as provision_key,
 			patch.object(GroveClient, "list_models", return_value=MODELS) as list_models,
 		):
-			created = api.create_api_key(self.team, " app ", "eu", "5")
+			created = api.create_api_key(" app ", "eu", "5", self.team)
 			# A cap is whole dollars, and label, geography and cap are all asked: refused here, before Grove.
 			for label, geography, cap in [("app", "eu", "2.5"), ("", "eu", "5"), ("app", "", "5"), ("app", "eu", None), ("app", "eu", "0")]:
 				with self.subTest(label=label, geography=geography, cap=cap), self.assertRaises(frappe.ValidationError):
-					api.create_api_key(self.team, label, geography, cap)
+					api.create_api_key(label, geography, cap, self.team)
 		provision_key.assert_called_once_with(self.team, "app", "eu", 5)
 		list_models.assert_called_once_with(team=self.team, geography="eu")
 		self.assertEqual(
@@ -425,12 +425,12 @@ class TestAI(IntegrationTestCase):
 		):
 			self.assertTrue(api.get_ai(self.team)["key_handover_pending"])
 			with self.assertRaisesRegex(frappe.ValidationError, "being moved to this team"):
-				api.create_api_key(self.team, "app", "eu", "5")
+				api.create_api_key("app", "eu", "5", self.team)
 			provision_key.assert_not_called()
 
 			moving.db_set("status", "Converted")
 			self.assertFalse(api.get_ai(self.team)["key_handover_pending"])
-			api.create_api_key(self.team, "app", "eu", "5")
+			api.create_api_key("app", "eu", "5", self.team)
 		provision_key.assert_called_once()
 
 	def test_a_team_whose_keys_are_paused_reads_and_changes_nothing(self):
@@ -443,7 +443,7 @@ class TestAI(IntegrationTestCase):
 			patch.multiple(GroveClient, **{name: DEFAULT for name in changes}) as grove,
 		):
 			for change in (
-				lambda: api.create_api_key(self.team, "app", "eu", "5"),
+				lambda: api.create_api_key("app", "eu", "5", self.team),
 				lambda: api.set_api_key_caps(self.team, {"k1": "8"}),
 				lambda: api.revoke_api_key(self.team, "k1"),
 				lambda: api.set_prompt_logging(False, self.team),

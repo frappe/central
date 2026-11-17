@@ -64,16 +64,14 @@ def list_api_keys(team: str | None = None) -> list[dict]:
 
 @frappe.whitelist(methods=["POST"])
 @require_capability("service:manage", MANAGE_DENIED)
-def create_api_key(
-	team: str | None = None, label: str | None = None, geography: str | None = None, cap: int | None = None
-) -> dict:
+def create_api_key(label: str, geography: str, cap: int, team: str | None = None) -> dict:
 	"""Mint a key for the team in `geography` with `cap` whole USD to spend a month, and return
 	its secret. This is the only time it is shown. `models` is what it may call, for the quickstart.
 	Refused while a converted trial's key is on its way to the team."""
 	require_not_suspended(team)
 	if AITrialKey.is_handover_pending(team):
 		frappe.throw(_("Your trial's API key is being moved to this team. Try again in a few minutes."))
-	label = (label or "").strip()
+	label = label.strip()
 	if not label:
 		frappe.throw(_("Enter a name for the API key so you can identify it later."))
 	if not geography:

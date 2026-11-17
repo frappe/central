@@ -54,7 +54,7 @@ const apiKeysCall = useCall<AIApiKey[], { team: string }>({
 
 const createKeyCall = useCall<
 	MintedKey,
-	{ team: string; label: string; geography: string; cap?: number }
+	{ team: string; label: string; geography: string; cap: number }
 >({
 	url: method(API.createAIApiKey),
 	method: 'POST',
