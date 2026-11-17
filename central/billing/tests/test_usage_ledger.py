@@ -117,6 +117,15 @@ class TestUsageLedger(IntegrationTestCase):
 			self.read("2026-06-01", 30)
 		self.assertEqual([d.quantity for d in self.days()], [50])
 
+	def test_a_usage_day_cannot_be_changed_by_hand(self):
+		self.read("2026-06-01", 30)
+		day = frappe.get_doc("Usage Day", {"team": TEAM})
+		day.quantity = 1
+		with self.assertRaises(frappe.PermissionError):
+			day.save(ignore_permissions=True)
+		with self.assertRaises(frappe.PermissionError):
+			frappe.delete_doc("Usage Day", day.name, ignore_permissions=True)
+
 	def test_a_rerun_writes_no_second_row(self):
 		self.read("2026-06-01", 30)
 		self.read("2026-06-01", 30)

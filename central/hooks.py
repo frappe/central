@@ -221,6 +221,7 @@ doc_events = {
 			"Refund",
 			"Credit Ledger Entry",
 			"Credit Wallet",
+			"Usage Day",
 			"Usage Rollup",
 			"Webhook Event",
 			"Billing Event",
