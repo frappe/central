@@ -6,7 +6,7 @@ test.describe('Saved country in an Indian time zone', () => {
 
 	test('Shows the saved country and saves nothing on open', async ({ page, users }) => {
 		// A complete US profile: the India time-zone guess must not replace it.
-		await users.signIn({ scenario: 'ready', currency: 'USD', onboarding: 1 })
+		await users.reopenOnboarding(await users.signIn({ scenario: 'ready', currency: 'USD' }))
 		const saves: string[] = []
 		page.on('request', (request) => {
 			if (request.url().includes('save_billing_profile')) saves.push(request.url())
@@ -28,7 +28,7 @@ test.describe('Refused country save', () => {
 
 	test('A failed country save stops the payment method step', async ({ page, users }) => {
 		// A complete US profile with a Texas address: India rejects Texas as a state.
-		await users.signIn({ scenario: 'ready', currency: 'USD', onboarding: 1 })
+		await users.reopenOnboarding(await users.signIn({ scenario: 'ready', currency: 'USD' }))
 
 		await page.goto('/dashboard/servers')
 		await page.getByRole('dialog', { name: 'Invite your team' }).getByRole('button', { name: 'Skip' }).click()

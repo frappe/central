@@ -128,7 +128,8 @@ Each spec provisions its own sandbox through the test-only backend endpoints in
   they own, with its console onboarding skipped. The team is the deterministic
   `whoami` default. Scenarios:
   `profile_pending` → `ready` (complete profile) → `with_invoices`.
-  Pass `onboarding=1` to keep the onboarding steps pending, so the console opens the onboarding dialog.
+  `reopen_onboarding(team)` puts the signed-in owner's onboarding steps back to pending,
+  so the console opens the onboarding dialog (`users.reopenOnboarding(...)`).
 - `teardown(team, email)` deletes everything that spec created.
 
 The `users` fixture in `e2e/fixtures.ts` calls these for you
