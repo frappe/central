@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import datetime
+
 import frappe
 from frappe.query_builder.functions import Count
 
@@ -326,42 +328,29 @@ def check_terminated_servers_stop_billing() -> list[Violation]:
 
 
 def check_storage_usage_is_recorded() -> list[Violation]:
-	"""Every storage subscription's usage was read in the last day, so the month bills in full."""
-	from central.services.doctype.team_service.team_service import STORAGE_SERVICE
+	"""Every billed bucket has a Usage Day for the last closed UTC day, so no day is left unbilled."""
+	from central.billing.revenue.usage_ledger import utc_today
+	from central.services.doctype.service.service import STORAGE_SERVICE
 
-	today = frappe.utils.getdate()
-	if today.day == 1:
-		return []
-	billed = set(
-		frappe.get_all(
-			"Team Service",
-			filters={"add_on_service": STORAGE_SERVICE, "status": "Active", "subscription": ["is", "set"]},
-			pluck="subscription",
-		)
+	yesterday = utc_today() - datetime.timedelta(days=1)
+	buckets = frappe.get_all(
+		"Team Service",
+		filters={"add_on_service": STORAGE_SERVICE, "subscription": ["is", "set"]},
+		fields=["external_id", "team", "subscription"],
 	)
-	subjects = frappe.get_all(
-		"Subscription", filters={"name": ["in", list(billed)]}, fields=["name", "team", "service_subject"]
-	)
-	read_through = dict(
-		frappe.get_all(
-			"Usage Rollup",
-			filters={"resource_type": "Storage", "period_start": [">=", today.replace(day=1)]},
-			fields=["resource_id", "sequence"],
-			as_list=True,
-		)
+	read = set(
+		frappe.get_all("Usage Day", filters={"service": STORAGE_SERVICE, "day": yesterday}, pluck="subject")
 	)
 	return [
 		Violation(
 			check="M1",
-			team=s.team,
+			team=bucket.team,
 			subject_doctype="Subscription",
-			subject=s.name,
-			expected=today.day - 1,
-			actual=frappe.utils.cint(read_through.get(s.service_subject)),
-			detail="Storage usage has not been read for a day or more. The next reading bills the missed days at its level.",
+			subject=bucket.subscription,
+			detail=f"Bucket {bucket.external_id} has no usage for {yesterday} (UTC). The next reading or the daily estimate fills it.",
 		)
-		for s in subjects
-		if frappe.utils.cint(read_through.get(s.service_subject)) < today.day - 1
+		for bucket in buckets
+		if bucket.external_id not in read
 	]
 
 

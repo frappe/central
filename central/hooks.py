@@ -135,6 +135,7 @@ after_install = [
 	"central.infrastructure.doctype.blocked_domain.blocked_domain.seed_regional_domains",
 	"central.infrastructure.doctype.image_offering.image_offering.ensure_default_offerings",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.services.doctype.service.service.ensure_services",
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
@@ -314,12 +315,15 @@ scheduler_events = {
 		"central.billing.revenue.gst_status.run_gst_status_refresh",
 		"central.billing.ingester.customer.sync_pending_profiles",
 		"central.billing.ingester.advance.sync_pending_advances",
-		"central.billing.revenue.storage_usage.record_storage_usage",
+		"central.billing.revenue.usage_ledger.fill_missing_days",
+		"central.billing.revenue.usage_ledger.prune_old_days",
 		"central.billing.platform.invariants.run_invariant_audit",
 		"central.billing.payments.reconciliation.recheck_completed_refunds",
 	],
 	"hourly": [
 		"central.billing.revenue.invoicing.collect_due_invoices",
+		"central.billing.revenue.storage_bridge.read_storage_usage",
+		"central.billing.revenue.usage_recount.recount_changed",
 		"central.billing.payments.collection.collect_on_payment_date",
 		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
 		"central.billing.payments.reconciliation.run_reconciliation",
@@ -339,6 +343,7 @@ scheduler_events = {
 after_migrate = [
 	"central.infrastructure.doctype.blocked_domain.blocked_domain.seed_regional_domains",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.services.doctype.service.service.ensure_services",
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.gateways.setup.ensure_gateway_records",
@@ -357,6 +362,7 @@ after_migrate = [
 # fixtures depend on — and apply the money constraints — before the suite runs.
 before_tests = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.services.doctype.service.service.ensure_services",
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
