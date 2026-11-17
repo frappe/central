@@ -82,8 +82,8 @@ const detail = computed(() => {
 	return isOverdue.value ? 'Pay now to keep your servers running.' : ''
 })
 
-// The statement holds only Billable invoices, so its open rows can stand in when
-// the invoice list has not loaded. An issued invoice always has a due date.
+// The statement holds only Billable invoices. An issued invoice always has a
+// due date.
 const statementInvoices = computed(() =>
 	(props.statement?.rows ?? []).map((r) => ({
 		name: r.invoice,
@@ -94,6 +94,16 @@ const statementInvoices = computed(() =>
 	})),
 )
 
+// Both sources together, so a list out of step with the statement cannot hide
+// an overdue invoice. The statement copy wins, as it drives this banner.
+const owedInvoices = computed(() => {
+	const fromStatement = new Set(statementInvoices.value.map((r) => r.name))
+	return [
+		...statementInvoices.value,
+		...invoices.value.filter((r) => !fromStatement.has(r.name)),
+	]
+})
+
 const action = computed(() => ({
 	label:
 		props.attempts === null ||
@@ -103,8 +113,7 @@ const action = computed(() => ({
 			? 'View invoice'
 			: 'Pay now',
 	onClick: () => {
-		const invoice =
-			invoiceToOpen(invoices.value) ?? invoiceToOpen(statementInvoices.value)
+		const invoice = invoiceToOpen(owedInvoices.value)
 		router.push({
 			name: 'BillingInvoices',
 			query: invoice ? { invoice } : {},
