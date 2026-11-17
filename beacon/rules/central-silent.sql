@@ -1,4 +1,5 @@
--- title: Central silent
+-- title: Central stopped reporting
+-- description: Central sent no metrics for 5 minutes. It may be down, and all customers may be affected.
 -- severity: High
 -- resource_type: Region
 -- runbook_url: https://github.com/frappe/central/blob/develop/beacon/runbooks/central-silent.md
@@ -7,7 +8,7 @@
 -- resolve_after: 120
 -- Central sends its gauges each minute to the Datum of one region. A Central that sent them in the last 14 days and stopped for 5 minutes is down, or its scheduler, workers or Datum token broke.
 SELECT {region:String} AS resource_id, '' AS alert_key, toFloat64(dateDiff('second', last_ts, now())) AS value,
-       concat('no Central metrics for ', toString(round(value / 60)), ' min') AS detail
+       concat('no Central metrics for ', toString(round(value / 60)), ' min (limit 5 min)') AS detail
 FROM (
     SELECT max(ts) AS last_ts, count() AS samples
     FROM datum.samples

@@ -1,4 +1,5 @@
 -- title: Central API unreachable
+-- description: Beacon cannot reach the Central API. The dashboard, the CLI and Pilot fail to work.
 -- severity: High
 -- url: {central_url}/api/method/ping
 -- expected_text: pong
