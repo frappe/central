@@ -13,6 +13,7 @@ import time
 
 import frappe
 from croniter import croniter
+from frappe import _
 from frappe.query_builder.functions import Count
 
 from central.billing.doctype.billing_event import billing_event
@@ -571,7 +572,10 @@ def has_draft_tick_passed(now=None) -> bool:
 
 def _draft_tick_schedule() -> str:
 	crons = frappe.get_hooks("scheduler_events").get("cron", {})
-	return next(cron for cron, methods in crons.items() if DRAFT_TICK in methods)
+	schedule = next((cron for cron, methods in crons.items() if DRAFT_TICK in methods), None)
+	if not schedule:
+		frappe.throw(_("{0} has no cron in hooks").format(DRAFT_TICK))
+	return schedule
 
 
 def billing_run_status(today=None) -> dict:
