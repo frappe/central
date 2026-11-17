@@ -154,14 +154,9 @@ def _estimate_day(day: datetime.date) -> int:
 
 def _live_subjects(services: set) -> set:
 	"""(service, subject) of every service a team still has, suspended ones included."""
-	return {
-		(row.add_on_service, row.external_id)
-		for row in frappe.get_all(
-			"Team Service",
-			filters={"add_on_service": ["in", list(services)], "subscription": ["is", "set"]},
-			fields=["add_on_service", "external_id"],
-		)
-	}
+	from central.services.doctype.team_service.team_service import billed_subjects
+
+	return {(service, subject) for service in services for subject in billed_subjects(service)}
 
 
 def _key(row) -> tuple:

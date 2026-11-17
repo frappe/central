@@ -213,3 +213,17 @@ def on_doctype_update():
 	frappe.db.add_unique(
 		"Team Service", ["team", "bucket_name"], constraint_name="unique_team_service_bucket"
 	)
+
+
+def billed_subjects(service: str, external_ids: list[str] | None = None) -> dict:
+	"""The Team Services that bill a subscription for `service`, by subject, suspended ones included."""
+	filters = {"add_on_service": service, "subscription": ["is", "set"]}
+	if external_ids is not None:
+		filters["external_id"] = ["in", external_ids]
+	rows = frappe.get_all(
+		"Team Service",
+		filters=filters,
+		fields=["name", "external_id", "team", "subscription", "region", "creation"],
+		order_by="name asc",
+	)
+	return {row.external_id: row for row in rows}
