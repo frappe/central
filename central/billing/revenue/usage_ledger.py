@@ -5,6 +5,7 @@ import datetime
 
 import frappe
 from frappe.query_builder import Criterion
+from pypika.terms import Tuple
 
 DOCTYPE = "Usage Day"
 LEVEL = "Level"
@@ -48,7 +49,7 @@ def write_days(rows: list[dict]) -> int:
 	if fresh:
 		# A concurrent writer may have inserted one of these days first; the line then updates its row.
 		# A locking read sees that row even when it committed after this transaction's snapshot.
-		existing.update(_existing_days(fresh, for_update=True))
+		existing.update(_locked_days(fresh))
 	changed = _changed(rows, existing)
 	for name, row in changed:
 		_update(name, row, now)
@@ -168,22 +169,36 @@ def _key(row) -> tuple:
 	return (row["service"], row["subject"], row["meter"], str(frappe.utils.getdate(row["day"])))
 
 
-def _existing_days(rows: list[dict], for_update: bool = False) -> dict:
+def _existing_days(rows: list[dict]) -> dict:
 	"""The stored days for these lines, by key. One query for the whole batch."""
+	day = frappe.qb.DocType(DOCTYPE)
+	return _days_where(
+		Criterion.all(
+			[
+				day.service.isin(list({row["service"] for row in rows})),
+				day.subject.isin(list({row["subject"] for row in rows})),
+				day.day.isin(list({frappe.utils.getdate(row["day"]) for row in rows})),
+			]
+		)
+	)
+
+
+def _locked_days(rows: list[dict]) -> dict:
+	"""Lock and return the stored days for exactly these lines' keys."""
+	# Matching the whole unique key locks only these rows, never other meters or days of a subject
+	# that a billing run may be locking in the opposite order.
+	day = frappe.qb.DocType(DOCTYPE)
+	keys = Tuple(day.service, day.subject, day.meter, day.day).isin([Tuple(*_key(row)) for row in rows])
+	return _days_where(keys, for_update=True)
+
+
+def _days_where(condition, for_update: bool = False) -> dict:
 	day = frappe.qb.DocType(DOCTYPE)
 	query = (
 		frappe.qb.from_(day)
 		.select(day.name, day.service, day.subject, day.meter, day.day, day.aggregation)
 		.select(day.quantity, day.as_of, day.estimated, day.invoice)
-		.where(
-			Criterion.all(
-				[
-					day.service.isin(list({row["service"] for row in rows})),
-					day.subject.isin(list({row["subject"] for row in rows})),
-					day.day.isin(list({frappe.utils.getdate(row["day"]) for row in rows})),
-				]
-			)
-		)
+		.where(condition)
 	)
 	found = (query.for_update() if for_update else query).run(as_dict=True)
 	return {_key(row): row for row in found}
