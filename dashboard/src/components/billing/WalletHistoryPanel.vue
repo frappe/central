@@ -12,8 +12,8 @@ import { __ } from '@/lib/translate'
 import type { CreditLedgerEntry } from '@/types/billing'
 
 // Wallet history — a docked side panel (like the invoice detail tray), opened
-// from the compact Wallet card. Balance header, the credit ledger, and Add credit (TopupDialog → #67). The page owns whether it's mounted;
-// the close button clears that.
+// from the compact Wallet card. The page owns whether it's mounted; the close
+// button clears that.
 const open = defineModel<boolean>('open', { default: false })
 const { credit, ledger, currency, reloadMoney } = useBillingOverview()
 const { canManageBilling } = useCapabilities()
