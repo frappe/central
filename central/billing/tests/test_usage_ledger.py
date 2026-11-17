@@ -7,6 +7,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.catalog.subscriptions import provision_service_subscription
+from central.billing.doctype.billing_run_team.billing_run_team import INVOICED, record_outcome
 from central.billing.platform import invariants, readiness
 from central.billing.revenue import storage_bridge, usage_ledger, usage_recount
 from central.billing.revenue.invoicing.generate import generate_team_invoice, team_clusters
@@ -214,6 +215,16 @@ class TestUsageLedger(IntegrationTestCase):
 				self.read(f"2026-07-{day:02d}", 100)
 			invoice = generate_team_invoice(TEAM, "2026-07-01", "2026-07-31")
 		self.assertAlmostEqual(self.storage_billed(invoice), 202.0)
+		self.assertEqual({d.invoice for d in self.days()}, {invoice})
+
+	def test_a_late_day_of_a_month_invoiced_without_it_goes_on_the_next_invoice(self):
+		record_outcome(TEAM, "2026-06-30", INVOICED)
+		self.read("2026-06-30", 30)
+		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
+		for day in range(1, 32):
+			self.read(f"2026-07-{day:02d}", 100)
+		invoice = generate_team_invoice(TEAM, "2026-07-01", "2026-07-31")
+		self.assertAlmostEqual(self.storage_billed(invoice), 202.0)  # 1 GB-month of June, 100 of July
 		self.assertEqual({d.invoice for d in self.days()}, {invoice})
 
 	def test_a_day_written_while_the_invoice_drafts_stays_unbilled_and_carries(self):

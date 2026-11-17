@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 import frappe
 
 from central.billing.doctype.billing_profile.billing_profile import get_team_currency
-from central.billing.doctype.billing_run_team.billing_run_team import BELOW_MINIMUM, NOTHING_TO_BILL
+from central.billing.doctype.billing_run_team.billing_run_team import FAILED
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue import usage_ledger
 from central.billing.revenue.metering import ingest_rollup, live_rollup
@@ -19,8 +19,6 @@ PAGE_SIZE = 200
 # Past this many months with a billed rollup, the recount stops and logs a warning.
 MONTHS_AHEAD = 24
 _SEPARATOR = "|"
-# A month whose draft ran with no invoice is closed, so its unbilled days go on the next month.
-_CLOSED_OUTCOMES = (NOTHING_TO_BILL, BELOW_MINIMUM)
 
 
 @dataclass
@@ -193,7 +191,8 @@ def _is_billed(meter, month: datetime.date) -> bool:
 
 
 def _closed_months(meter, keep_open: datetime.date | None) -> set[datetime.date]:
-	"""Months of this subject that an invoice billed, or whose draft ran and billed nothing."""
+	"""Months of this subject that an invoice billed, or that the team's draft has run for."""
+	# Any outcome but a failure closes the month, so a day that lands after it goes on the next one.
 	billed = frappe.get_all(
 		"Usage Rollup",
 		filters={
@@ -205,7 +204,7 @@ def _closed_months(meter, keep_open: datetime.date | None) -> set[datetime.date]
 	)
 	drafted = frappe.get_all(
 		"Billing Run Team",
-		filters={"team": meter.team, "outcome": ["in", _CLOSED_OUTCOMES]},
+		filters={"team": meter.team, "outcome": ["!=", FAILED]},
 		pluck="period_end",
 	)
 	return {_month_of(on) for on in billed} | ({_month_of(on) for on in drafted} - {keep_open})
