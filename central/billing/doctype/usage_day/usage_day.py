@@ -19,3 +19,5 @@ def on_doctype_update() -> None:
 	frappe.db.add_index("Usage Day", ["invoice"])
 	frappe.db.add_index("Usage Day", ["team", "day"])
 	frappe.db.add_index("Usage Day", ["landed_at"])
+	# The daily estimate, the readiness check and the prune filter on the day alone.
+	frappe.db.add_index("Usage Day", ["day", "aggregation"])
