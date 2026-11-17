@@ -6,7 +6,7 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { getErrorMessage } from '@/lib/feedback'
+import { getErrorMessage, isAbortError } from '@/lib/feedback'
 import type { BillingGeo } from '@/types/billing'
 
 // Country alone sets the billing currency, so asking it first lets the welcome credit and
@@ -39,9 +39,11 @@ const error = ref('')
 async function saveCountry(value: string): Promise<boolean> {
 	if (!value || value === profile.value?.country) return true
 	error.value = ''
-	await save.submit({ team: activeTeam.value, country: value })
-	if (save.error) {
-		error.value = getErrorMessage(save.error, 'Could not save your country.')
+	try {
+		await save.submit({ team: activeTeam.value, country: value })
+	} catch (e) {
+		if (!isAbortError(e))
+			error.value = getErrorMessage(e, 'Could not save your country.')
 		return false
 	}
 	await refresh()
@@ -49,21 +51,31 @@ async function saveCountry(value: string): Promise<boolean> {
 	return true
 }
 
+// Continue can be pressed while a picked country is still saving; share that save
+// rather than sending the same request twice.
+let saving: Promise<boolean> | null = null
+function saveOnce(value: string): Promise<boolean> {
+	saving ??= saveCountry(value).finally(() => {
+		saving = null
+	})
+	return saving
+}
+
 function onChange(value: string): void {
 	country.value = value
-	saveCountry(value)
+	saveOnce(value)
 }
 
 // The browser's time zone is a good first guess for India, the one country with its own
 // currency. The field shows the guess; it is saved only when the user goes on.
 onMounted(() => {
-	if (country.value) return
+	if (country.value || currencyLocked.value) return
 	const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
 	if (zone === 'Asia/Kolkata' || zone === 'Asia/Calcutta')
 		country.value = 'India'
 })
 
-defineExpose({ save: () => saveCountry(country.value) })
+defineExpose({ save: () => saveOnce(country.value) })
 </script>
 
 <template>
