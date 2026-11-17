@@ -129,3 +129,21 @@ class TestServiceReports(IntegrationTestCase):
 	def test_a_time_with_no_zone_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
 			self.send([line("2026-06-20", 10)], as_of="2026-06-20T06:30:00")
+
+	def test_a_malformed_line_is_rejected_alone(self):
+		good = line("2026-06-20", 10)
+		bad = [
+			{**good, "subject": ["a-list"]},
+			{**good, "subject": {"a": "dict"}},
+			{**good, "value": -1},
+			{**good, "value": 1e300},
+			{**good, "value": 10**19},
+			{**good, "amount": 1e300},
+			{**good, "amount": "12"},
+			{**good, "currency": ["INR"]},
+			{**good, "meter": ["bytes_stored"]},
+		]
+		answer = self.send([*bad, good])
+		self.assertEqual(answer["accepted"], 1)
+		self.assertEqual(len(answer["rejected"]), len(bad))
+		self.assertEqual([q for _d, q in self.days()], [10])

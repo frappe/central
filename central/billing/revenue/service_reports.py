@@ -12,8 +12,12 @@ from frappe import _
 from frappe.utils.password import get_decrypted_password
 
 from central.billing.revenue.usage_ledger import utc_today, write_days
+from central.services.doctype.team_service.team_service import billed_subjects
 
 MAXIMUM_LINES = 1000
+# Far above any one subject's daily value in raw units, and low enough to divide safely.
+MAXIMUM_VALUE = 10**18
+MAXIMUM_CURRENCY = 10
 CLOCK_SKEW = datetime.timedelta(minutes=5)
 
 
@@ -26,15 +30,13 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 	service = verified_service(service_name, signature, raw_body)
 	report = _parsed(raw_body)
 	as_of = reported_at(report.get("as_of"))
-	subjects = _subjects(service.name, report["lines"])
+	subjects = billed_subjects(service.name, _subject_names(report["lines"]))
 
 	rows, rejected = [], []
 	for line in report["lines"]:
 		reason = line_problem(service, line, subjects)
 		if reason:
-			rejected.append(
-				{"subject": line.get("subject") if isinstance(line, dict) else None, "reason": reason}
-			)
+			rejected.append({"subject": _subject_of(line), "reason": reason})
 		else:
 			rows.append(_row(service, line, subjects[line["subject"]], as_of))
 	write_days(rows)
@@ -79,14 +81,29 @@ def line_problem(service, line, subjects: dict) -> str | None:
 	"""Why a line cannot be stored, or None."""
 	if not isinstance(line, dict):
 		return _("a line is an object")
-	if not service.get_meter(line.get("meter")):
+	if not isinstance(line.get("meter"), str) or not service.get_meter(line["meter"]):
 		return _("unknown meter")
-	if line.get("subject") not in subjects:
+	if _subject_of(line) not in subjects:
 		return _("unknown subject")
-	value = line.get("value")
-	if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
-		return _("value must be a number of at least 0")
-	return _day_problem(line.get("day"))
+	if not _is_number_in_range(line.get("value"), 0):
+		return _("value must be a number from 0 to {0}").format(MAXIMUM_VALUE)
+	return _source_problem(line) or _day_problem(line.get("day"))
+
+
+def _is_number_in_range(value, lowest: float) -> bool:
+	# NaN and infinity fail the range check too.
+	if isinstance(value, bool) or not isinstance(value, int | float):
+		return False
+	return lowest <= value <= MAXIMUM_VALUE
+
+
+def _source_problem(line: dict) -> str | None:
+	amount, currency = line.get("amount"), line.get("currency")
+	if amount is not None and not _is_number_in_range(amount, -MAXIMUM_VALUE):
+		return _("amount must be a number")
+	if currency is not None and not (isinstance(currency, str) and 0 < len(currency) <= MAXIMUM_CURRENCY):
+		return _("currency must be a currency code")
+	return None
 
 
 def _day_problem(value) -> str | None:
@@ -99,39 +116,24 @@ def _day_problem(value) -> str | None:
 	return None
 
 
-def _subjects(service_name: str, lines: list) -> dict:
-	"""The billed Team Service of each subject in the report, in one query. A service can
-	report only for subjects a team turned it on for."""
-	names = {line.get("subject") for line in lines if isinstance(line, dict)}
-	rows = frappe.get_all(
-		"Team Service",
-		filters={
-			"add_on_service": service_name,
-			"external_id": ["in", [name for name in names if isinstance(name, str)]],
-			"subscription": ["is", "set"],
-		},
-		fields=["external_id", "team", "subscription"],
+def _subject_of(line) -> str | None:
+	subject = line.get("subject") if isinstance(line, dict) else None
+	return subject if isinstance(subject, str) else None
+
+
+def _subject_names(lines: list) -> list[str]:
+	return list({subject for line in lines if (subject := _subject_of(line))})
+
+
+def _row(service, line: dict, team_service, as_of: datetime.datetime) -> dict:
+	return service.get_meter(line["meter"]).get_day_row(
+		team_service,
+		line["day"],
+		line["value"],
+		source_amount=line.get("amount"),
+		source_currency=line.get("currency"),
+		as_of=as_of,
 	)
-	return {row.external_id: row for row in rows}
-
-
-def _row(service, line: dict, owner, as_of: datetime.datetime) -> dict:
-	meter = service.get_meter(line["meter"])
-	return {
-		"service": service.name,
-		"meter": meter.meter_key,
-		"subject": line["subject"],
-		"day": line["day"],
-		"aggregation": meter.aggregation,
-		"team": owner.team,
-		"subscription": owner.subscription,
-		"resource_type": meter.resource_type,
-		"quantity": line["value"] / frappe.utils.flt(meter.unit_divisor),
-		"unit": meter.unit,
-		"source_amount": line.get("amount"),
-		"source_currency": line.get("currency"),
-		"as_of": as_of,
-	}
 
 
 def _parsed(raw_body: bytes) -> dict:
