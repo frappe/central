@@ -1,4 +1,4 @@
-# Central resource actions failing
+# Central server and site actions failing
 
 Resource Actions create, start, stop, restart, resize and terminate customer servers and sites. The alert key names the region, the resource type and the action.
 

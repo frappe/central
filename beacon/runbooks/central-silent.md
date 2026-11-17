@@ -1,4 +1,4 @@
-# Central silent
+# Central stopped reporting
 
 Central sends its gauges to the Datum of one region each minute. They stopped for 5 minutes. Central is down, or its scheduler, its workers or its Datum token broke. Beacon can also not see Central errors now.
 

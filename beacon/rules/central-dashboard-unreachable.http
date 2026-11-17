@@ -1,4 +1,5 @@
 -- title: Central dashboard unreachable
+-- description: Beacon cannot load the Central dashboard. Customers cannot sign in or manage their sites.
 -- severity: High
 -- url: {central_url}/dashboard
 -- expected_text: <title>Frappe Cloud

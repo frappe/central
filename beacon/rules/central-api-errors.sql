@@ -1,4 +1,5 @@
--- title: Central API errors
+-- title: Central API returns 5xx errors
+-- description: The Central API returns 5xx errors to many requests. Customers cannot sign in or manage their sites.
 -- severity: High
 -- resource_type: Region
 -- runbook_url: https://github.com/frappe/central/blob/develop/beacon/runbooks/central-api-errors.md
@@ -9,7 +10,7 @@
 SELECT {region:String} AS resource_id, alert_key, value, detail, severity
 FROM (
     SELECT 'all' AS alert_key, errors_10m / requests_10m AS value,
-           concat(toString(errors_10m), ' of ', toString(requests_10m), ' Central API requests failed with 5xx in 10 min') AS detail,
+           concat(toString(errors_10m), ' of ', toString(requests_10m), ' API requests failed in 10 min (limit 5%)') AS detail,
            'High' AS severity
     FROM (
         SELECT sumIf(value, ts > now() - INTERVAL 10 MINUTE AND labels['status_class'] = '5xx') AS errors_10m,
@@ -19,7 +20,7 @@ FROM (
     )
     WHERE requests_10m >= 50 AND errors_10m > 0.05 * requests_10m
     UNION ALL
-    SELECT 'hourly', errors / requests, concat(toString(errors), ' of ', toString(requests), ' Central API requests failed with 5xx in 1 h'), 'Medium'
+    SELECT 'hourly', errors / requests, concat(toString(errors), ' of ', toString(requests), ' API requests failed in 1 h (limit 1%)'), 'Medium'
     FROM (
         SELECT sumIf(value, labels['status_class'] = '5xx') AS errors, sum(value) AS requests
         FROM datum.samples_recent
@@ -27,7 +28,7 @@ FROM (
     )
     WHERE requests >= 200 AND errors > 0.01 * requests
     UNION ALL
-    SELECT concat('group:', api_group), errors / requests, concat(toString(errors), ' of ', toString(requests), ' ', api_group, ' requests failed with 5xx in 10 min'), 'Medium'
+    SELECT concat('group:', api_group), errors / requests, concat(toString(errors), ' of ', toString(requests), ' requests to ', api_group, ' failed in 10 min (limit 10%)'), 'Medium'
     FROM (
         SELECT labels['group'] AS api_group, sumIf(value, labels['status_class'] = '5xx') AS errors, sum(value) AS requests
         FROM datum.samples_recent
