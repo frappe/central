@@ -494,7 +494,7 @@ def billing_period(today=None) -> tuple:
 
 
 def draft_monthly_invoices(today=None) -> dict:
-	"""Tick 1 (1st, off-peak): draft the just-closed month, one job per team.
+	"""Tick 1 (1st, 08:00 IST, after the UTC month closes): draft the just-closed month, one job per team.
 
 	Drafting and collection are separate ticks, not one job that does both: rating is
 	heavy and local, collection is slow and external, and a run that interleaves them

@@ -281,6 +281,8 @@ scheduler_events = {
 		],
 		# 09:00 system time (Asia/Kolkata): remind INR teams to top up before the payment date.
 		"0 9 * * *": ["central.billing.payments.top_up_reminders.run_top_up_reminders"],
+		# 08:00 IST on the 1st: usage days are UTC, and the UTC month closes at 05:30 IST.
+		"0 8 1 * *": ["central.billing.revenue.invoicing.draft_monthly_invoices"],
 		"*/5 * * * *": [
 			# Credit a recent top-up whose callback and webhook are late.
 			"central.billing.payments.reconciliation.reconcile_recent_top_up_orders",
@@ -335,7 +337,6 @@ scheduler_events = {
 		"central.notification.digest.send_due_digests",
 	],
 	"monthly": [
-		"central.billing.revenue.invoicing.draft_monthly_invoices",
 		"central.billing.payments.payments.expire_payment_methods",
 	],
 }
