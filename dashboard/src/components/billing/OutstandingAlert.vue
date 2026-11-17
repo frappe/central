@@ -28,6 +28,15 @@ const unsettledRows = computed(() =>
 // Only an issued invoice is owed. One not issued yet is still being prepared.
 const openRows = computed(() => unsettledRows.value.filter((r) => r.is_issued))
 const hasOutstanding = computed(() => outstanding.value > 0)
+// The invoice the banner's button opens: an overdue one first, then the oldest.
+const invoiceToOpen = computed(() => {
+	const rows = [...openRows.value].sort(
+		(a, b) =>
+			Number(b.status === 'Overdue') - Number(a.status === 'Overdue') ||
+			a.period_start.localeCompare(b.period_start),
+	)
+	return rows[0]?.invoice ?? null
+})
 const allHeld = computed(
 	() => unsettledRows.value.length > 0 && openRows.value.length === 0,
 )
@@ -88,7 +97,11 @@ const action = computed(() => ({
 			? 'View invoice'
 			: 'Pay now',
 	onClick: () => {
-		router.push({ name: 'BillingInvoices' })
+		const invoice = invoiceToOpen.value
+		router.push({
+			name: 'BillingInvoices',
+			query: invoice ? { invoice } : {},
+		})
 	},
 }))
 </script>
