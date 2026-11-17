@@ -2,7 +2,6 @@
 # For license information, please see license.txt
 """Storage usage is kept per bucket per UTC day as the day's peak, and billed as the GB-month."""
 
-import threading
 from unittest.mock import patch
 
 import frappe
@@ -14,6 +13,7 @@ from central.billing.revenue import storage_bridge, usage_ledger, usage_recount
 from central.billing.revenue.invoicing.generate import generate_team_invoice, team_clusters
 from central.billing.revenue.invoicing.lifecycle import cancel_invoice, reissue_invoice
 from central.billing.revenue.metering import ingest_rollup
+from central.billing.tests.test_credits import run_workers
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	_clear_metered_plans,
@@ -34,24 +34,9 @@ GB = 1_000_000_000
 
 def on_own_connection(fn) -> None:
 	"""Run `fn` and commit it on a second database connection, as another worker would."""
-	site, errors = frappe.local.site, []
-
-	def worker():
-		frappe.init(site=site)
-		frappe.connect()
-		try:
-			fn()
-			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- the other worker's own transaction
-		except Exception as error:
-			errors.append(error)
-		finally:
-			frappe.destroy()
-
-	thread = threading.Thread(target=worker)
-	thread.start()
-	thread.join()
-	if errors:
-		raise errors[0]
+	[outcome] = run_workers(1, lambda _i: fn()).values()
+	if outcome != "ok":
+		raise AssertionError(f"the other worker failed: {outcome}")
 
 
 def read_one_page(names: list[str], run: str = "test-run") -> int:
