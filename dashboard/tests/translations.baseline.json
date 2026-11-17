@@ -162,7 +162,6 @@
 	"src/pages/onboarding/SiteReadyPage.vue": 12,
 	"src/pages/servers/NewServerPage.vue": 46,
 	"src/pages/servers/ServerPage.vue": 22,
-	"src/pages/services/AIInference.vue": 21,
 	"src/pages/settings/SettingsDetailPage.vue": 1,
 	"src/pages/settings/SettingsPage.vue": 1,
 	"src/pages/team/AccessPage.vue": 7,
