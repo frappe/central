@@ -162,30 +162,30 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 					:options="viewOptions"
 				/>
 
-				<Alert
-					v-if="view === 'invoices' && invoicesError"
-					theme="red"
-					:title="__('Couldn\'t load your invoices')"
-					:description="__('Retry, or contact support if this keeps happening.')"
-					:primary-action="{ label: __('Retry'), onClick: reloadInvoices }"
-				/>
-				<InvoiceListView
-					v-else-if="view === 'invoices'"
-					:invoices="invoices"
-					:loading="invoicesLoading && !invoices.length"
-					:active-name="selected?.name"
-					@row-click="selectRow"
-				/>
-
+				<template v-if="view === 'invoices'">
+					<Alert
+						v-if="invoicesError"
+						theme="red"
+						:title="__('Couldn\'t load your invoices')"
+						:description="__('Retry, or contact support if this keeps happening.')"
+						:primary-action="{ label: __('Retry'), onClick: reloadInvoices }"
+					/>
+					<InvoiceListView
+						v-else
+						:invoices="invoices"
+						:loading="invoicesLoading && !invoices.length"
+						:active-name="selected?.name"
+						@row-click="selectRow"
+					/>
+					<RefundsCard />
+				</template>
 				<StatementCard
-					v-if="view !== 'invoices'"
+					v-else
 					:statement="reports.statement.data ?? null"
 					:loading="reports.statementLoading.value"
 					:export-url="reports.exportUrl('statement')"
 					@retry="reports.statement.reload()"
 				/>
-
-				<RefundsCard v-if="view === 'invoices'" />
 			</div>
 		</div>
 
