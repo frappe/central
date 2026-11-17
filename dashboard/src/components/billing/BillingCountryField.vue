@@ -86,7 +86,19 @@ watch(
 	{ immediate: true },
 )
 
-defineExpose({ save: () => saveOnce(country.value) })
+// Continue goes on only from a known country state. Without the profile we cannot
+// tell whether a country is already saved, so stop and ask the user to retry.
+function saveOnContinue(): Promise<boolean> {
+	if (saving) return saving
+	if (!profile.value) {
+		error.value = "Couldn't load your billing details. Try again."
+		return Promise.resolve(false)
+	}
+	error.value = ''
+	return saveOnce(country.value)
+}
+
+defineExpose({ save: saveOnContinue })
 </script>
 
 <template>
