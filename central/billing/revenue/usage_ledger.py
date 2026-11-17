@@ -2,10 +2,10 @@
 # For license information, please see license.txt
 
 import datetime
+from dataclasses import dataclass, field
 
 import frappe
 from frappe.query_builder import Criterion
-from pypika.terms import Tuple
 
 DOCTYPE = "Usage Day"
 LEVEL = "Level"
@@ -35,26 +35,29 @@ _DAY_FIELDS = (
 _INSERT_FIELDS = (*_META_FIELDS, *_DAY_FIELDS, "landed_at", "estimated")
 
 
-def write_days(rows: list[dict]) -> int:
-	"""Store each line as its subject's row for its UTC day, and return how many lines it wrote."""
+@dataclass
+class Written:
+	"""How many lines a write stored, and the lines another worker stored first."""
+
+	count: int = 0
+	conflicts: list[dict] = field(default_factory=list)
+
+
+def write_days(rows: list[dict]) -> Written:
+	"""Store each line as its subject's row for its UTC day."""
 	# An existing day takes a line only when it is a real reading over an estimate, a higher Level
 	# peak or a newer Sum total. A billed day never changes.
 	rows = _merged(rows)
 	if not rows:
-		return 0
+		return Written()
 	now = frappe.utils.now_datetime()
 	existing = _existing_days(rows)
 	fresh = [row for row in rows if _key(row) not in existing]
-	_insert(fresh, now)
-	if fresh:
-		# A concurrent writer may have inserted one of these days first; the line then updates its row.
-		# A locking read sees that row even when it committed after this transaction's snapshot.
-		existing.update(_locked_days(fresh))
+	conflicts = _insert(fresh, now)
 	changed = _changed(rows, existing)
 	for name, row in changed:
 		_update(name, row, now)
-	# A line that lost the insert race and then updated its row is still one line.
-	return len({_key(row) for row in fresh} | {_key(row) for _, row in changed})
+	return Written(len(fresh) - len(conflicts) + len(changed), conflicts)
 
 
 def is_newer(current, row: dict) -> bool:
@@ -155,7 +158,7 @@ def _estimate_day(day: datetime.date) -> int:
 		for row in previous
 		if (row.service, row.subject) in live
 	]
-	return write_days(rows)
+	return write_days(rows).count
 
 
 def _live_subjects(services: set) -> set:
@@ -183,34 +186,26 @@ def _existing_days(rows: list[dict]) -> dict:
 	)
 
 
-def _locked_days(rows: list[dict]) -> dict:
-	"""Lock and return the stored days for exactly these lines' keys."""
-	# Matching the whole unique key locks only these rows, never other meters or days of a subject
-	# that a billing run may be locking in the opposite order.
+def _days_where(condition) -> dict:
 	day = frappe.qb.DocType(DOCTYPE)
-	keys = Tuple(day.service, day.subject, day.meter, day.day).isin([Tuple(*_key(row)) for row in rows])
-	return _days_where(keys, for_update=True)
-
-
-def _days_where(condition, for_update: bool = False) -> dict:
-	day = frappe.qb.DocType(DOCTYPE)
-	query = (
+	found = (
 		frappe.qb.from_(day)
 		.select(day.name, day.service, day.subject, day.meter, day.day, day.aggregation)
 		.select(day.quantity, day.as_of, day.estimated, day.invoice)
 		.where(condition)
-	)
-	found = (query.for_update() if for_update else query).run(as_dict=True)
+	).run(as_dict=True)
 	return {_key(row): row for row in found}
 
 
-def _insert(rows: list[dict], now) -> None:
+def _insert(rows: list[dict], now) -> list[dict]:
+	"""Insert these new days, and return the lines whose day another worker inserted first."""
 	if not rows:
-		return
+		return []
 	user = frappe.session.user
+	names = [frappe.generate_hash(length=12) for _row in rows]
 	values = [
 		(
-			frappe.generate_hash(length=12),
+			name,
 			now,
 			now,
 			user,
@@ -219,10 +214,13 @@ def _insert(rows: list[dict], now) -> None:
 			now,
 			frappe.utils.cint(row.get("estimated")),
 		)
-		for row in rows
+		for name, row in zip(names, rows, strict=True)
 	]
-	# A day another worker inserted a moment ago is skipped here and updated after.
 	frappe.db.bulk_insert(DOCTYPE, list(_INSERT_FIELDS), values, ignore_duplicates=True)
+	# A day another worker inserted during this transaction is left alone: under snapshot isolation
+	# any lock on that row is refused. This transaction sees its own inserts, so a missing name lost.
+	stored = set(frappe.get_all(DOCTYPE, filters={"name": ["in", names]}, pluck="name"))
+	return [row for name, row in zip(names, rows, strict=True) if name not in stored]
 
 
 def _update(name: str, row: dict, now) -> None:

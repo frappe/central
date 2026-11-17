@@ -37,8 +37,13 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 			rejected.append({"subject": _subject_of(line), "reason": reason})
 		else:
 			rows.append(_row(service, line, subjects[line["subject"]], as_of))
-	write_days(rows)
-	return {"accepted": len(rows), "rejected": rejected}
+	conflicts = write_days(rows).conflicts
+	# A day another worker wrote at the same moment is not confirmed, so the service sends it again.
+	rejected += [
+		{"subject": row["subject"], "reason": _("the day changed at the same time; send it again")}
+		for row in conflicts
+	]
+	return {"accepted": len(rows) - len(conflicts), "rejected": rejected}
 
 
 def verified_service(service_name: str | None, signature: str | None, raw_body: bytes):

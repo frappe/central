@@ -108,20 +108,19 @@ class TestUsageLedger(IntegrationTestCase):
 		[day] = self.days()
 		self.assertEqual(day.quantity, 50)
 
-	def test_a_line_that_loses_the_insert_race_still_lands(self):
+	def test_a_line_that_loses_the_insert_race_is_written_by_the_next_reading(self):
 		self.read("2026-06-01", 10)
-		existing = usage_ledger._existing_days
-		calls = []
-
-		def missed_first(rows, **kwargs):
-			calls.append(rows)
-			return {} if len(calls) == 1 else existing(rows, **kwargs)
-
-		with patch.object(usage_ledger, "_existing_days", side_effect=missed_first):
+		with (
+			patch.object(usage_ledger, "_existing_days", return_value={}),
+			patch("frappe.log_error") as log_error,
+		):
 			self.read("2026-06-01", 40)
+		log_error.assert_not_called()
+		self.assertEqual([d.quantity for d in self.days()], [10])
+		self.read("2026-06-01", 40)
 		self.assertEqual([d.quantity for d in self.days()], [40])
 
-	def test_a_day_another_worker_committed_after_this_snapshot_still_lands(self):
+	def test_a_day_another_worker_committed_after_this_snapshot_is_a_conflict(self):
 		meter = frappe.get_doc("Service", STORAGE_SERVICE).get_meter(STORAGE_METER)
 
 		def line(gb: float) -> dict:
@@ -137,7 +136,12 @@ class TestUsageLedger(IntegrationTestCase):
 		# Ends this transaction first, so the cleanup is not waiting on its row lock.
 		self.addCleanup(frappe.db.rollback)
 
-		self.assertEqual(usage_ledger.write_days([line(40)]), 1)
+		written = usage_ledger.write_days([line(40)])
+		self.assertEqual((written.count, [c["quantity"] for c in written.conflicts]), (0, [40]))
+		frappe.db.rollback()
+		self.assertEqual([d.quantity for d in self.days()], [10])
+
+		usage_ledger.write_days([line(40)])  # The resend, in a new transaction.
 		self.assertEqual([d.quantity for d in self.days()], [40])
 
 	def test_a_stale_read_never_lowers_a_peak(self):
@@ -362,31 +366,31 @@ class TestUsageLedger(IntegrationTestCase):
 		broken.db_insert()
 		return broken.name
 
-	def new_region_logs(self, read) -> list[str]:
-		"""Run `read` with every bucket but the test's own failing, and return the Error Logs it wrote."""
+	def region_logs(self, read) -> list[dict]:
+		"""Run `read` with every bucket but the test's own failing, and return its region error logs."""
 
 		def usage(bucket):
 			if bucket.name != self.bucket.name:
 				raise frappe.ValidationError("Cargo is down")
 			return {"used_bytes": 30 * GB}
 
-		region_logs = {"reference_doctype": "Region", "reference_name": CLUSTER}
-		before = set(frappe.get_all("Error Log", filters=region_logs, pluck="name"))
 		with (
 			patch.object(storage_bridge, "utc_today", return_value=frappe.utils.getdate("2026-06-01")),
 			patch.object(TeamService, "get_usage", new=usage),
+			patch("frappe.log_error") as log_error,
 		):
 			read()
-		logs = frappe.get_all("Error Log", filters=region_logs, fields=["name", "method"])
-		new = [log for log in logs if log.name not in before]
-		frappe.db.delete("Error Log", {"name": ["in", [log.name for log in new]]})
-		return [log.method for log in new]
+		return [
+			call.kwargs for call in log_error.call_args_list if call.kwargs.get("reference_name") == CLUSTER
+		]
 
 	def test_a_bucket_that_cannot_be_read_does_not_stop_the_page(self):
 		broken = self.broken_bucket("2")
-		logs = self.new_region_logs(lambda: read_one_page([broken, self.bucket.name]))
+		logs = self.region_logs(lambda: read_one_page([broken, self.bucket.name]))
 		self.assertEqual([d.quantity for d in self.days()], [30])
-		self.assertEqual(logs, [f"Storage usage: 1 bucket(s) not read in {CLUSTER}"])
+		self.assertEqual(
+			[log["title"] for log in logs], [f"Storage usage: 1 bucket(s) not read in {CLUSTER}"]
+		)
 
 	def read_whole_run(self, names: list[str], enqueue) -> None:
 		frappe.db.set_value("Service", STORAGE_SERVICE, "central_reads", 1)
@@ -407,19 +411,20 @@ class TestUsageLedger(IntegrationTestCase):
 		from central.billing.tests.utils import run_enqueued_inline
 
 		names = [self.broken_bucket("2"), self.bucket.name, self.broken_bucket("3")]
-		logs = self.new_region_logs(lambda: self.read_whole_run(names, run_enqueued_inline))
+		logs = self.region_logs(lambda: self.read_whole_run(names, run_enqueued_inline))
 		self.assertEqual([d.quantity for d in self.days()], [30])
-		self.assertEqual(logs, [f"Storage usage: 2 bucket(s) not read in {CLUSTER}"])
+		self.assertEqual(
+			[log["title"] for log in logs], [f"Storage usage: 2 bucket(s) not read in {CLUSTER}"]
+		)
 
 	def test_a_page_that_fails_to_write_still_logs_its_region_once(self):
-		from frappe.deferred_insert import save_to_db
-
 		def crash():
 			with (
 				patch.object(storage_bridge, "write_days", side_effect=frappe.QueryDeadlockError),
 				self.assertRaises(frappe.QueryDeadlockError),
 			):
 				read_one_page([self.bucket.name])
-			save_to_db("Error Log")
 
-		self.assertEqual(self.new_region_logs(crash), [f"Storage usage: 1 bucket(s) not read in {CLUSTER}"])
+		[log] = self.region_logs(crash)
+		self.assertEqual(log["title"], f"Storage usage: 1 bucket(s) not read in {CLUSTER}")
+		self.assertTrue(log["defer_insert"])  # The crashed job rolls back, so the log is written apart.

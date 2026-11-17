@@ -11,7 +11,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.catalog.subscriptions import provision_service_subscription
-from central.billing.revenue import service_reports
+from central.billing.revenue import service_reports, usage_ledger
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	_clear_metered_plans,
@@ -93,6 +93,17 @@ class TestServiceReports(IntegrationTestCase):
 		answer = self.send([line("2026-06-19", 10), line("2026-06-20", 12)])
 		self.assertEqual(answer, {"accepted": 2, "rejected": []})
 		self.assertEqual([q for _d, q in self.days()], [10, 12])
+
+	def test_a_day_written_at_the_same_time_is_rejected_to_be_sent_again(self):
+		self.send([line("2026-06-20", 10)])
+		with patch.object(usage_ledger, "_existing_days", return_value={}):
+			answer = self.send([line("2026-06-19", 8), line("2026-06-20", 12)])
+		self.assertEqual(answer["accepted"], 1)
+		self.assertEqual(
+			answer["rejected"],
+			[{"subject": BUCKET, "reason": "the day changed at the same time; send it again"}],
+		)
+		self.assertEqual([q for _d, q in self.days()], [8, 10])
 
 	def test_a_wrong_signature_is_refused_whole(self):
 		with self.assertRaises(frappe.PermissionError):

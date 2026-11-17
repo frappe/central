@@ -46,7 +46,8 @@ def read_page(run: str, region: str, names: list[str]) -> int:
 		except Exception as error:
 			failed.append(f"{name}: {error!r}")
 	try:
-		written = write_days(list(readings.values()))
+		# A day another worker wrote meanwhile is written again by the next hour's reading.
+		written = write_days(list(readings.values())).count
 	except Exception as error:
 		# The page still counts down, so the region's summary is written; the job itself still fails.
 		failed += [f"{name}: page failed: {type(error).__name__}" for name in readings]
