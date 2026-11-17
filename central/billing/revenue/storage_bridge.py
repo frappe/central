@@ -69,6 +69,8 @@ class RegionRead:
 
 	def __init__(self, run: str, region: str):
 		self.region = region
+		# The list goes through the cache's own methods, which add the site prefix; the counter needs
+		# raw set and decr, which do not, so its key is prefixed here.
 		self.errors = f"storage_read:{run}:{region}:errors"
 		self.pages = frappe.cache.make_key(f"storage_read:{run}:{region}:pages")
 
