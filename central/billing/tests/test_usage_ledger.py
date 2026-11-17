@@ -54,6 +54,11 @@ def on_own_connection(fn) -> None:
 		raise errors[0]
 
 
+def read_one_page(names: list[str], run: str = "test-run") -> int:
+	storage_bridge.RegionRead(run, CLUSTER).start(1)
+	return storage_bridge.read_page(run, CLUSTER, names)
+
+
 class TestUsageLedger(IntegrationTestCase):
 	def setUp(self):
 		frappe.db.delete("Team Service", {"team": TEAM})
@@ -93,7 +98,7 @@ class TestUsageLedger(IntegrationTestCase):
 				return_value={"used_bytes": gb * GB},
 			),
 		):
-			storage_bridge.read_region(CLUSTER, [self.bucket.name])
+			read_one_page([self.bucket.name])
 
 	def days(self, **filters):
 		return frappe.get_all(
@@ -366,13 +371,17 @@ class TestUsageLedger(IntegrationTestCase):
 		)
 		self.assertEqual(self.unread_buckets("2026-06-05"), [])
 
-	def test_a_bucket_that_cannot_be_read_does_not_stop_the_region(self):
-		broken = frappe.get_doc({**self.bucket.as_dict(), "name": None, "bucket_name": f"{BUCKET}-2"})
+	def broken_bucket(self, suffix: str) -> str:
+		broken = frappe.get_doc({**self.bucket.as_dict(), "name": None, "bucket_name": f"{BUCKET}-{suffix}"})
 		broken.external_id = broken.bucket_name
 		broken.db_insert()
+		return broken.name
+
+	def new_region_logs(self, read) -> list[str]:
+		"""Run `read` with every bucket but the test's own failing, and return the Error Logs it wrote."""
 
 		def usage(bucket):
-			if bucket.name == broken.name:
+			if bucket.name != self.bucket.name:
 				raise frappe.ValidationError("Cargo is down")
 			return {"used_bytes": 30 * GB}
 
@@ -382,9 +391,37 @@ class TestUsageLedger(IntegrationTestCase):
 			patch.object(storage_bridge, "utc_today", return_value=frappe.utils.getdate("2026-06-01")),
 			patch.object(TeamService, "get_usage", new=usage),
 		):
-			storage_bridge.read_region(CLUSTER, [broken.name, self.bucket.name])
-		self.assertEqual([d.quantity for d in self.days()], [30])
+			read()
 		logs = frappe.get_all("Error Log", filters=region_logs, fields=["name", "method"])
-		new = [log.method for log in logs if log.name not in before]
-		self.assertEqual(new, [f"Storage usage: 1 bucket(s) not read in {CLUSTER}"])
-		frappe.db.delete("Error Log", {"name": ["in", [log.name for log in logs]]})
+		new = [log for log in logs if log.name not in before]
+		frappe.db.delete("Error Log", {"name": ["in", [log.name for log in new]]})
+		return [log.method for log in new]
+
+	def test_a_bucket_that_cannot_be_read_does_not_stop_the_page(self):
+		broken = self.broken_bucket("2")
+		logs = self.new_region_logs(lambda: read_one_page([broken, self.bucket.name]))
+		self.assertEqual([d.quantity for d in self.days()], [30])
+		self.assertEqual(logs, [f"Storage usage: 1 bucket(s) not read in {CLUSTER}"])
+
+	def read_whole_run(self, names: list[str], enqueue) -> None:
+		frappe.db.set_value("Service", STORAGE_SERVICE, "central_reads", 1)
+		with (
+			patch.object(storage_bridge, "PAGE_SIZE", 1),
+			patch.object(storage_bridge, "billed_buckets", return_value={CLUSTER: names}),
+			patch("frappe.enqueue", side_effect=enqueue),
+		):
+			storage_bridge.read_storage_usage()
+
+	def test_a_region_of_many_pages_is_read_in_one_job_per_page(self):
+		pages = []
+		names = [self.bucket.name, self.broken_bucket("2")]
+		self.read_whole_run(names, lambda method, **kwargs: pages.append(kwargs["names"]))
+		self.assertEqual(pages, [[name] for name in names])
+
+	def test_a_run_logs_one_error_per_region_for_all_its_pages(self):
+		from central.billing.tests.utils import run_enqueued_inline
+
+		names = [self.broken_bucket("2"), self.bucket.name, self.broken_bucket("3")]
+		logs = self.new_region_logs(lambda: self.read_whole_run(names, run_enqueued_inline))
+		self.assertEqual([d.quantity for d in self.days()], [30])
+		self.assertEqual(logs, [f"Storage usage: 2 bucket(s) not read in {CLUSTER}"])

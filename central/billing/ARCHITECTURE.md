@@ -239,7 +239,7 @@ flowchart LR
     C1 --> DMI["draft_monthly_invoices → draft page jobs"]
     M1 --> EX["expire_payment_methods"]
     H1 --> CDI["collect_due_invoices → settle page jobs"]
-    H1 --> RSU["storage_bridge.read_storage_usage → one job per region"]
+    H1 --> RSU["storage_bridge.read_storage_usage → one job per page of 100 buckets"]
     H1 --> RCC["usage_recount.recount_changed → recount page jobs"]
 
     subgraph INSTALL["install/migrate/before_tests"]
@@ -274,7 +274,7 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, setup 
 | hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
 | cron `0 8 1 * *` (08:00 IST on the 1st) | `revenue.invoicing.draft_monthly_invoices` | after the UTC month closes at 05:30 IST: waive internal teams' unpaid invoices, start the month's Billing Run, then draft the just-closed month as page jobs on the `billing` queue |
 | hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run once the draft tick has started it |
-| hourly | `revenue.storage_bridge.read_storage_usage` | until Cargo reports usage itself: read every billed bucket, one job per region, and keep each UTC day's peak as a Usage Day; one Error Log per region names how many buckets it could not read |
+| hourly | `revenue.storage_bridge.read_storage_usage` | until Cargo reports usage itself: read every billed bucket in pages of 100, one job per page, and keep each UTC day's peak as a Usage Day; a failed bucket never stops its page, and the last page of a region writes one Error Log that names how many of the region's buckets the run could not read |
 | hourly | `revenue.usage_recount.recount_changed` | recount the usage months whose Usage Days changed since the last run, as page jobs |
 | daily | `revenue.usage_ledger.fill_missing_days` | give a Level subject with no reading for a UTC day that ended 48 hours ago its last reading, marked estimated |
 | daily | `revenue.usage_ledger.prune_old_days` | delete billed Usage Days older than 13 months |
