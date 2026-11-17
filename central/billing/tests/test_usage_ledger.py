@@ -425,3 +425,16 @@ class TestUsageLedger(IntegrationTestCase):
 		logs = self.new_region_logs(lambda: self.read_whole_run(names, run_enqueued_inline))
 		self.assertEqual([d.quantity for d in self.days()], [30])
 		self.assertEqual(logs, [f"Storage usage: 2 bucket(s) not read in {CLUSTER}"])
+
+	def test_a_page_that_fails_to_write_still_logs_its_region_once(self):
+		from frappe.deferred_insert import save_to_db
+
+		def crash():
+			with (
+				patch.object(storage_bridge, "write_days", side_effect=frappe.QueryDeadlockError),
+				self.assertRaises(frappe.QueryDeadlockError),
+			):
+				read_one_page([self.bucket.name])
+			save_to_db("Error Log")
+
+		self.assertEqual(self.new_region_logs(crash), [f"Storage usage: 1 bucket(s) not read in {CLUSTER}"])

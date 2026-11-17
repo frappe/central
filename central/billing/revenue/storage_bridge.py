@@ -38,14 +38,20 @@ def read_storage_usage() -> int:
 def read_page(run: str, region: str, names: list[str]) -> int:
 	"""Read one page of a region's buckets and write their days."""
 	meter = frappe.get_doc("Service", STORAGE_SERVICE).get_meter(STORAGE_METER)
-	rows, failed = [], []
+	readings, failed = {}, []
 	for name in names:
 		# One bucket's failure, of any kind, must not stop the page's other buckets.
 		try:
-			rows.append(_reading(name, meter))
+			readings[name] = _reading(name, meter)
 		except Exception as error:
 			failed.append(f"{name}: {error!r}")
-	written = write_days(rows)
+	try:
+		written = write_days(list(readings.values()))
+	except Exception as error:
+		# The page still counts down, so the region's summary is written; the job itself still fails.
+		failed += [f"{name}: page failed: {type(error).__name__}" for name in readings]
+		RegionRead(run, region).finish_page(failed, crashed=True)
+		raise
 	RegionRead(run, region).finish_page(failed)
 	return written
 
@@ -70,7 +76,7 @@ class RegionRead:
 		# nosemgrep: frappe-cache-breaks-multitenancy -- make_key adds the site prefix; decr needs a raw int.
 		frappe.cache.set(self.pages, pages, ex=RUN_TTL_SECONDS)
 
-	def finish_page(self, failed: list[str]) -> None:
+	def finish_page(self, failed: list[str], crashed: bool = False) -> None:
 		"""Count the page's failures; the region's last page logs them all once."""
 		# Failures are pushed before the page counter drops, so the last page sees every one.
 		for line in failed:
@@ -78,9 +84,9 @@ class RegionRead:
 		if failed:
 			frappe.cache.expire_key(self.errors, RUN_TTL_SECONDS)
 		if frappe.cache.decr(self.pages) == 0:
-			self._log_failures()
+			self._log_failures(crashed)
 
-	def _log_failures(self) -> None:
+	def _log_failures(self, crashed: bool) -> None:
 		count = frappe.cache.llen(self.errors)
 		if count:
 			lines = [
@@ -91,6 +97,8 @@ class RegionRead:
 				message="\n".join(lines),
 				reference_doctype="Region",
 				reference_name=self.region,
+				# A crashed page's job rolls back its transaction, so its log must not depend on it.
+				defer_insert=crashed,
 			)
 		frappe.cache.delete_value(self.errors)
 		frappe.cache.delete(self.pages)
