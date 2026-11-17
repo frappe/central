@@ -67,8 +67,6 @@ const atKeyLimit = computed(
 const canSetCaps = computed(
 	() => prepaid.value && props.canManage && activeKeys.value.length > 0,
 )
-const query = ref('')
-
 const searchable = computed(() => apiKeys.value.length > 6)
 
 const sortedKeys = computed(() =>
@@ -77,32 +75,36 @@ const sortedKeys = computed(() =>
 	),
 )
 
-const visibleKeys = computed(() => {
-	const search = query.value.trim().toLowerCase()
-
-	if (!search) return sortedKeys.value
-
-	return sortedKeys.value.filter((key) =>
-		key.title.toLowerCase().includes(search),
-	)
-})
-
 const PAGE_SIZE = 10
-const page = ref(1)
 
-const pageCount = computed(() =>
-	Math.ceil(visibleKeys.value.length / PAGE_SIZE),
-)
+/** A title search over `keys`, shown a page at a time. */
+const usePagedSearch = (keys: () => AIApiKey[]) => {
+	const query = ref('')
+	const page = ref(1)
+	const matches = computed(() => {
+		const search = query.value.trim().toLowerCase()
+		return keys().filter((key) => key.title.toLowerCase().includes(search))
+	})
+	const pageCount = computed(() => Math.ceil(matches.value.length / PAGE_SIZE))
+	const rows = computed(() =>
+		matches.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE),
+	)
+	watch(pageCount, (count) => {
+		page.value = Math.min(page.value, Math.max(count, 1))
+	})
+	watch(query, () => {
+		page.value = 1
+	})
+	return { query, page, matches, pageCount, rows }
+}
 
-const pagedKeys = computed(() =>
-	visibleKeys.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE),
-)
-watch(pageCount, (count) => {
-	page.value = Math.min(page.value, Math.max(count, 1))
-})
-watch(query, () => {
-	page.value = 1
-})
+const {
+	query,
+	page,
+	matches: visibleKeys,
+	pageCount,
+	rows: pagedKeys,
+} = usePagedSearch(() => sortedKeys.value)
 const isCapReached = (key: AIApiKey): boolean =>
 	key.cap > 0 && key.month_spent >= key.cap
 const capPercent = (key: AIApiKey): number =>
@@ -229,11 +231,19 @@ const create = async (): Promise<void> => {
 const capsOpen = ref(false)
 // The one key the dialog is open for, from its row; blank is every live key.
 const capsOnly = ref('')
+// Keys with no cap yet lead: Save waits on them, so they must not sit on a later page.
 const capKeys = computed(() =>
-	activeKeys.value.filter(
-		(key) => !capsOnly.value || key.name === capsOnly.value,
-	),
+	activeKeys.value
+		.filter((key) => !capsOnly.value || key.name === capsOnly.value)
+		.sort((a, b) => Number(a.cap >= 1) - Number(b.cap >= 1)),
 )
+const {
+	query: capsQuery,
+	page: capsPage,
+	matches: capMatches,
+	pageCount: capsPageCount,
+	rows: capRows,
+} = usePagedSearch(() => capKeys.value)
 const capValues = ref<Record<string, string>>({})
 const capsError = ref('')
 const committedTotal = computed(() =>
@@ -263,6 +273,8 @@ const openCaps = (only = ''): void => {
 		activeKeys.value.map((key) => [key.name, String(key.cap)]),
 	)
 	capsError.value = ''
+	capsQuery.value = ''
+	capsPage.value = 1
 	capsOpen.value = true
 }
 
@@ -643,7 +655,25 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 	>
 		<template #default>
 			<Alert v-if="capsError" class="mb-4" theme="red" :title="capsError" />
+			<TextInput
+				v-if="capKeys.length > PAGE_SIZE"
+				v-model="capsQuery"
+				class="mb-4"
+				placeholder="Search keys"
+				aria-label="Search keys by title"
+			>
+				<template #prefix>
+					<span
+						class="lucide-search size-4 text-ink-gray-5"
+						aria-hidden="true"
+					/>
+				</template>
+			</TextInput>
+			<p v-if="!capRows.length" class="py-3 text-p-sm text-ink-gray-6">
+				No key is named that. Try another name, or clear the search.
+			</p>
 			<div
+				v-else
 				class="mb-2 grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 text-sm-medium text-ink-gray-6"
 				aria-hidden="true"
 			>
@@ -654,7 +684,7 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 			</div>
 			<div class="space-y-3">
 				<div
-					v-for="(key, index) in capKeys"
+					v-for="(key, index) in capRows"
 					:key="key.name"
 					class="grid grid-cols-[2fr_1fr_1fr_1fr] items-center gap-3"
 				>
@@ -680,6 +710,21 @@ const revoke = async (key: AIApiKey): Promise<void> => {
 					/>
 				</div>
 			</div>
+			<ListViewPagination
+				v-if="capsPageCount > 1"
+				class="mt-3"
+				:page="capsPage"
+				:page-count="capsPageCount"
+				:page-size="PAGE_SIZE"
+				:can-previous="capsPage > 1"
+				:can-next="capsPage < capsPageCount"
+				:show-page-size="false"
+				:count-text="`${capMatches.length} keys`"
+				@first="capsPage = 1"
+				@previous="capsPage--"
+				@next="capsPage++"
+				@last="capsPage = capsPageCount"
+			/>
 			<p class="mt-4 text-p-sm text-ink-gray-5">
 				Every key needs a cap of at least $1. Spend is as of {{ asOf }}:
 				The live figure is checked when you save.
