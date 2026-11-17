@@ -244,6 +244,20 @@ class TestUsageLedger(IntegrationTestCase):
 		)
 		self.assertAlmostEqual(quantity, 1.0)
 
+	def test_the_hourly_recount_sees_a_day_that_committed_after_its_last_scan(self):
+		frappe.db.set_default(usage_recount.WATERMARK, "2026-06-02 10:00:00")
+		self.read("2026-06-01", 30)
+		frappe.db.set_value("Usage Day", {"team": TEAM}, "landed_at", "2026-06-02 09:58:00")
+		with patch(
+			"frappe.enqueue",
+			side_effect=lambda method, **kwargs: usage_recount.recount_page(kwargs["months"]),
+		):
+			usage_recount.recount_changed(now="2026-06-02 11:00:00")
+		quantity = frappe.db.get_value(
+			"Usage Rollup", {"team": TEAM, "period_start": "2026-06-01"}, "quantity"
+		)
+		self.assertAlmostEqual(quantity, 1.0)
+
 	def test_billed_days_past_thirteen_months_are_pruned(self):
 		self.read("2025-03-01", 30)
 		self.read("2025-03-02", 30)

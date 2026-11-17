@@ -45,7 +45,8 @@ def recount_changed(now=None) -> int:
 	from central.billing.revenue.invoicing.run import billing_queue
 
 	now = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
-	since = frappe.db.get_default(WATERMARK) or "2000-01-01 00:00:00"
+	# Overlap the last run, so a day whose transaction committed after that scan is still seen.
+	since = frappe.utils.add_to_date(frappe.db.get_default(WATERMARK) or "2000-01-01", minutes=-5)
 	months = sorted(_changed_months(since, now))
 	for start in range(0, len(months), PAGE_SIZE):
 		frappe.enqueue(
