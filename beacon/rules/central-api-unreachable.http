@@ -1,0 +1,9 @@
+-- title: Central API unreachable
+-- severity: High
+-- url: {central_url}/api/method/ping
+-- expected_text: pong
+-- timeout: 10
+-- pending_for: 180
+-- resolve_after: 300
+-- runbook_url: https://github.com/frappe/central/blob/develop/beacon/runbooks/central-unreachable.md
+-- Beacon calls the Central API from outside. The dashboard, the CLI and Pilot use it. Desk sets the Regions to the Central Telemetry Region.

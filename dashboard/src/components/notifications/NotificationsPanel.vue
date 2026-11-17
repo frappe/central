@@ -4,6 +4,7 @@ import {
 	dayjsLocal,
 	MobileNavItem,
 	Popover,
+	ScrollArea,
 	Select,
 	SidebarItem,
 	TabButtons,
@@ -11,7 +12,6 @@ import {
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import EmptyState from '@/components/common/EmptyState.vue'
-import Scrollbar from '@/components/common/Scrollbar.vue'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useNotifications } from '@/composables/useNotifications'
 import type { NotificationSeverity, TeamNotification } from '@/types/billing'
@@ -163,7 +163,7 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 				<Select v-model="category" class="ml-auto" :options="CATEGORIES" />
 			</div>
 
-			<Scrollbar v-if="items.length" class="min-h-0 flex-1">
+			<ScrollArea v-if="items.length" class="min-h-0 flex-1">
 				<button
 					v-for="(n, i) in items"
 					:key="n.name"
@@ -207,7 +207,7 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 						</span>
 					</span>
 				</button>
-			</Scrollbar>
+			</ScrollArea>
 
 			<div v-else class="min-h-0 flex-1 px-4 pb-3">
 				<EmptyState

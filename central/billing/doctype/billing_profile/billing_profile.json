@@ -47,6 +47,7 @@
   "payment_day",
   "payment_day_changes",
   "payment_day_changes_cycle",
+  "setup_lock_cleared_at",
   "section_break_trust",
   "trust_tier_level",
   "trust_tier",
@@ -246,6 +247,13 @@
    "read_only": 1
   },
   {
+   "description": "Set by Clear Setup Lock. Failed payment method setups and top-ups before this time do not count towards the wait.",
+   "fieldname": "setup_lock_cleared_at",
+   "fieldtype": "Datetime",
+   "label": "Setup Lock Cleared At",
+   "read_only": 1
+  },
+  {
    "fieldname": "section_break_trust",
    "fieldtype": "Section Break",
    "label": "Trust Tier"
@@ -363,7 +371,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-05 18:00:00.000000",
+ "modified": "2026-11-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Profile",

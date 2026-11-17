@@ -335,6 +335,9 @@ def get_lifecycle_event(
 
 
 def get_action_event(action: Document, server: Document) -> dict | None:
+	# resource_action imports this module, so its helper loads here.
+	from central.infrastructure.doctype.resource_action.resource_action import get_error
+
 	succeeded, failed = ACTION_EVENTS[action.action]
 	return get_event(
 		server,
@@ -343,7 +346,7 @@ def get_action_event(action: Document, server: Document) -> dict | None:
 		actor=action.requested_by,
 		details=get_action_details(action),
 		status=action.status,
-		error=action.error_message,
+		error=(get_error(action) or {}).get("message"),
 		reference=("Resource Action", action.name),
 		occurred_at=action.completed_at,
 	)

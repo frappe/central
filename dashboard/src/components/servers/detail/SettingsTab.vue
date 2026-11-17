@@ -81,18 +81,18 @@ const isLocked = computed(
 			</template>
 		</SettingsSection>
 
-		<SettingsSection
-			title="Rescue mode"
-			description="Boot a rescue environment with your original disk attached."
-		>
+		<SettingsSection title="Rescue mode">
+			<template #description>
+				Boot a rescue environment with your original disk attached.
+				<span v-if="error" role="alert" class="mt-1 block text-ink-red-5">
+					{{ error }}
+				</span>
+			</template>
 			<Alert
 				v-if="pendingBootMessage"
 				theme="amber"
 				:title="pendingBootMessage"
 			/>
-			<p v-if="error" role="alert" class="text-p-sm text-ink-red-5">
-				{{ error }}
-			</p>
 			<template #actions>
 				<Button
 					v-if="canSelect"

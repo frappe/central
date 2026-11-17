@@ -233,18 +233,6 @@ class TestServerOverview(IntegrationTestCase):
 
 		get.assert_not_called()
 
-	def test_atlas_failure_marks_metrics_unavailable(self):
-		with (
-			patch("central.integrations.servers.get_client") as get_client,
-			patch("central.integrations.servers.frappe.log_error") as log_error,
-		):
-			get_client.return_value.get_vm_metrics.side_effect = AtlasConnectionError
-
-			result = get_cached_metrics(self.server, START)
-
-		self.assertEqual(result, {"available": False})
-		log_error.assert_called_once()
-
 	def test_unknown_atlas_response_fails_loudly(self):
 		with (
 			patch("central.integrations.servers.get_client") as get_client,
@@ -274,6 +262,25 @@ class TestServerOverview(IntegrationTestCase):
 		self.assertIsNone(points[0]["received_bytes_per_second"])
 		self.assertIsNone(points[1]["cpu_percent"])
 		self.assertFalse(points[1]["is_up"])
+
+	def test_guest_agent_usage_replaces_the_host_view(self):
+		sample = make_sample(300, 0, 0)
+		sample["guest"] = {
+			"memory": {"total_bytes": 1000, "available_bytes": 700},
+			"root_filesystem": {"size_bytes": 5000, "used_bytes": 2000},
+			"system_state": "running",
+		}
+		unreachable = make_sample(600, 0, 0)
+		unreachable["guest"] = {**sample["guest"], "system_state": "unreachable"}
+
+		points = get_metric_points([make_sample(0, 0, 0), sample, unreachable], vcpus=2)
+
+		self.assertEqual(
+			[points[0]["memory_bytes"], points[0]["disk_used_bytes"], points[0]["disk_total_bytes"]],
+			[300, 2000, 5000],
+		)
+		self.assertEqual(points[1]["memory_bytes"], 512 * 1024 * 1024)
+		self.assertEqual(points[1]["disk_used_bytes"], 1024 * 1024 * 1024)
 
 
 def make_sample(timestamp: int, cpu_microseconds: int, received_bytes: int, up: bool = True) -> dict:

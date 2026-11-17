@@ -40,6 +40,8 @@ yarn dev
 
 Use the development URL printed by Vite. To build assets, run `pilot build --apps central` from the bench directory.
 
+Each push to `develop` publishes pre-built assets to the `assets-develop` GitHub release. Pilot downloads them instead of building the dashboard.
+
 ## Documentation
 
 - [User guide](https://frappe.github.io/central/): customer instructions for the console and Pilot.

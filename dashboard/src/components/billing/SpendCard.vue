@@ -9,7 +9,6 @@ import {
 	BILLING_REPORT_MONTHS,
 	type useBillingReports,
 } from '@/composables/useBillingReports'
-import { useSpendingLimits } from '@/composables/useSpendingLimits'
 import { currencySymbol, money } from '@/lib/format'
 import type { SpendSlice } from '@/types/billing'
 
@@ -19,7 +18,6 @@ interface Props {
 
 const props = defineProps<Props>()
 const { forecast } = useBillingOverview()
-const { current: tierCurrent } = useSpendingLimits()
 
 const MONTH_OPTIONS = BILLING_REPORT_MONTHS.map((option) => ({
 	...option,
@@ -55,47 +53,26 @@ const stats = computed(() => [
 	{ label: 'Tax', value: props.reports.tax.data?.total_tax ?? 0 },
 ])
 
-const limit = computed(() => Number(tierCurrent.value?.max_spend ?? 0))
-
 const chartRows = computed(() => {
 	const rows = history.value?.months ?? []
 
+	// Before tax, like the invoiced bars.
 	const accrued = Number(
-		forecast.data?.measured ?? forecast.data?.projected_total ?? 0,
+		forecast.data?.measured ?? forecast.data?.subtotal ?? 0,
 	)
 
 	return rows.map((row, index) => {
 		const isCurrent = index === rows.length - 1
-		const current = isCurrent ? Math.max(row.total, accrued) : 0
-		const within = limit.value ? Math.min(current, limit.value) : current
 
 		return {
 			month: row.month.endsWith('-01') ? row.month.slice(0, 4) : row.label,
-			invoiced: isCurrent ? 0 : row.total,
-			current: within,
-			over: current - within,
-			limit: limit.value,
+			invoiced: isCurrent ? 0 : row.subtotal,
+			current: isCurrent ? Math.max(row.subtotal, accrued) : 0,
 		}
 	})
 })
 
-const showLimit = computed(
-	() =>
-		limit.value > 0 &&
-		limit.value <=
-			Math.max(
-				...chartRows.value.map((row) => row.invoiced + row.current + row.over),
-			),
-)
-
-const hasOverage = computed(() => chartRows.value.some((row) => row.over > 0))
-
-const seriesKeys = computed(() => [
-	'invoiced',
-	'current',
-	...(hasOverage.value ? ['over'] : []),
-	...(showLimit.value ? ['limit'] : []),
-])
+const seriesKeys = ['invoiced', 'current']
 
 const { tokens } = useChartTokens(ref())
 
@@ -110,14 +87,6 @@ const themeColor = (name: string): string => {
 const seriesConfig = computed(() => ({
 	invoiced: { label: 'Invoiced', color: themeColor('surface-gray-7') },
 	current: { label: 'This cycle', color: themeColor('surface-gray-4') },
-	over: { label: 'Over limit', color: themeColor('surface-amber-6') },
-	limit: {
-		label: `Spend limit ${money(limit.value, currency.value, { trimTrailingZeros: true })}`,
-		type: 'line' as const,
-		dashed: true,
-		echartOptions: { lineStyle: { width: 1 } },
-		color: themeColor('ink-gray-5'),
-	},
 }))
 
 const MAX_SLICES = 4
@@ -164,7 +133,7 @@ const toSlices = (
 const hasSpend = computed(
 	() =>
 		!props.reports.loading.value &&
-		chartRows.value.some((row) => row.invoiced + row.current + row.over > 0),
+		chartRows.value.some((row) => row.invoiced + row.current > 0),
 )
 
 const breakdowns = computed(() =>
@@ -248,6 +217,9 @@ const breakdowns = computed(() =>
 						:y-axis="{ format: compact }"
 					/>
 				</div>
+				<p class="mt-2 text-p-sm text-ink-gray-5">
+					{{ __('Bars show spend before tax. Taxes are added on top.') }}
+				</p>
 			</template>
 		</BillingCard>
 

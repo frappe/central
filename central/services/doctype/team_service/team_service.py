@@ -107,6 +107,17 @@ class TeamService(Document):
 		"""Cap the bucket in Cargo, which owns and enforces the quota. Zero lifts a cap."""
 		ObjectStorageClient.from_region(self.region).set_quota(self.bucket_name, size_gib, max_objects)
 
+	def get_allowed_origins(self) -> list[str]:
+		"""The websites that may call the bucket from a browser. Cargo owns the list."""
+		receipt = ObjectStorageClient.from_region(self.region).get_allowed_origins(self.bucket_name)
+		return receipt["allowed_origins"]
+
+	def set_allowed_origins(self, origins: list[str]) -> list[str]:
+		"""Replace the websites that may call the bucket from a browser. Returns the list as
+		Cargo stored it: each origin once, lowercase, without a default port."""
+		receipt = ObjectStorageClient.from_region(self.region).set_allowed_origins(self.bucket_name, origins)
+		return receipt["allowed_origins"]
+
 	def rotate_credentials(self) -> None:
 		"""Replace the bucket's key. The old key stops working at once."""
 		receipt = ObjectStorageClient.from_region(self.region).rotate_credentials(

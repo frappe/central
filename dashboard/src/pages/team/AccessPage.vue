@@ -32,7 +32,7 @@ const memberCountText = computed(() => {
 	<div class="relative flex h-full min-h-0">
 		<div class="min-w-0 flex-1 overflow-y-auto">
 			<main
-				class="mx-auto flex max-w-3xl flex-col gap-3 md:gap-4 p-3 md:p-4 lg:mt-6"
+				class="mx-auto flex max-w-3xl flex-col gap-3 md:gap-4 p-3 md:p-4 lg:pt-8"
 			>
 				<div class="mb-5 flex items-center gap-3">
 					<!-- Square: this is the organisation, not a person. Circles stay

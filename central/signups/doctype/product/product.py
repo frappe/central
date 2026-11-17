@@ -49,6 +49,7 @@ class Product(Document):
 		landing_route: DF.Data | None
 		logo: DF.AttachImage | None
 		plan_notes: DF.Table[ProductPlanNote]
+		reply_to: DF.Data | None
 		product_key: DF.Data
 		setup_messages: DF.SmallText | None
 		signup_app: DF.Data
@@ -167,6 +168,7 @@ class Product(Document):
 			recipients=[frappe.session.user],
 			subject=_("[Test] {0}").format(email["subject"]),
 			message=email["html"],
+			reply_to=self.reply_to,
 			now=True,
 		)
 

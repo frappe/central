@@ -22,13 +22,16 @@ import { useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
+import { useSetupWait } from '@/composables/useSetupWait'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import {
 	type GatewayOrder,
+	isCancelledIntent,
 	mountPayPalButtons,
 	openRazorpayCheckout,
 	stripeCardElementStyle,
 } from '@/lib/gateway'
+import { __ } from '@/lib/translate'
 
 interface BeginResult {
 	card?: boolean
@@ -55,6 +58,7 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 	let stripe: Stripe | null = null
 	let card: StripeCardElement | null = null
 	let order: GatewayOrder | null = null
+	const { closedAttemptMessage } = useSetupWait()
 
 	// Create the gateway order, then resolve by rail:
 	//  - Stripe → { card: true }: dialog mounts the card Element.
@@ -175,13 +179,17 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 		submitting.value = true
 		error.value = ''
 		try {
-			const { paymentIntent, error } = await stripe.confirmCardPayment(
-				o.client_secret,
-				{
+			const { paymentIntent, error: payError } =
+				await stripe.confirmCardPayment(o.client_secret, {
 					payment_method: { card },
-				},
-			)
-			if (error) throw error
+				})
+			if (payError && isCancelledIntent(payError)) {
+				const closed = await explainClosedOrder()
+				// The dialog may have closed while the server answered.
+				if (card) error.value = closed
+				return
+			}
+			if (payError) throw payError
 			if (paymentIntent?.status !== 'succeeded')
 				throw new Error('Payment was not completed.')
 
@@ -197,6 +205,15 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 		} finally {
 			submitting.value = false
 		}
+	}
+
+	// The server closed this payment after too many failed attempts. Say the wait, or
+	// ask for a fresh start; nothing new is opened on the customer's behalf.
+	async function explainClosedOrder(): Promise<string> {
+		return closedAttemptMessage(
+			activeTeam.value ?? '',
+			__('This attempt was closed. Start again to add credit.'),
+		)
 	}
 
 	function finish(res: unknown): void {

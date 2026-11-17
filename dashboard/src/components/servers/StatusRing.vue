@@ -55,7 +55,7 @@ withDefaults(defineProps<StatusRingProps>(), { shape: 'circle' })
 }
 
 @property --status-ring-angle {
-	syntax: '<angle>';
+	syntax: "<angle>";
 	inherits: false;
 	initial-value: 0deg;
 }

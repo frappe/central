@@ -78,7 +78,8 @@ export function useAddPaymentMethod({
 			await confirm.submit({ payment_method: order.payment_method, ...handles })
 			if (confirm.error) throw confirm.error
 			const res = confirm.data ?? undefined
-			if (res?.status === 'Failed') {
+			// A setup that expired while the checkout was open is not saved either.
+			if (res?.status === 'Failed' || res?.status === 'Expired') {
 				error.value = res.message ?? `Could not add ${methodType}`
 				return
 			}

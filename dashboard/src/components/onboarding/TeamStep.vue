@@ -2,6 +2,7 @@
 import { Alert, TextInput } from 'frappe-ui'
 import { computed } from 'vue'
 import { useCreateTeam } from '@/composables/useCreateTeam'
+import { __ } from '@/lib/translate'
 
 defineEmits<{ submit: [] }>()
 
@@ -20,6 +21,8 @@ const hint = computed(() =>
 		? `You already have a team called “${name.value}”`
 		: 'You can add a logo later in team settings.',
 )
+
+const createTeamErrorTitle = __("Couldn't create the team")
 </script>
 
 <template>
@@ -27,15 +30,15 @@ const hint = computed(() =>
 		<Alert
 			v-if="error"
 			theme="red"
-			title="Couldn't create the team"
+			:title="createTeamErrorTitle"
 			:description="error"
 		/>
 		<div>
 			<TextInput
 				v-model="teamName"
-				label="Team name"
+				:label="__('Team name')"
 				size="md"
-				placeholder="e.g. Acme"
+				:placeholder="__('e.g. Acme')"
 				autocomplete="off"
 				autofocus
 				@keyup.enter="$emit('submit')"

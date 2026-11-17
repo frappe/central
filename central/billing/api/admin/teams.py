@@ -232,3 +232,13 @@ def get_delinquent_teams() -> list[dict]:
 			}
 		)
 	return rows
+
+
+@frappe.whitelist(methods=["POST"])
+def clear_setup_lock(team: str) -> dict:
+	"""Let a team that failed too many setups or top-ups try again now (operator only)."""
+	require_operator()
+	from central.billing.payments import setup_lockout
+
+	setup_lockout.clear(team)
+	return {"team": team, "cleared_at": frappe.db.get_value("Billing Profile", team, "setup_lock_cleared_at")}

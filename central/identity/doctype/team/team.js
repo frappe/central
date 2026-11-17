@@ -1,5 +1,10 @@
 frappe.ui.form.on("Team", {
 	refresh(frm) {
+		if (!frm.is_new() && frappe.user.has_role("System Manager")) {
+			frm.add_custom_button(__("Billing Summary"), () =>
+				frappe.set_route("query-report", "Billing Lookup", { team: frm.doc.name }),
+			);
+		}
 		if (frm.is_new() || !frm.has_perm("write")) {
 			return;
 		}

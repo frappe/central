@@ -69,6 +69,8 @@ export interface AIState {
 	enabled: boolean
 	// Grove is down or in maintenance: nothing else is filled in.
 	unavailable?: boolean
+	// A converted trial's key is on its way to the team: no key is created until it lands.
+	key_handover_pending?: boolean
 	spend?: AISpend
 	usage?: AIMonthUsage
 	geographies?: AIGeography[]
@@ -114,8 +116,6 @@ export interface AIApiKey {
 	title: string
 	status: 'active' | 'revoked'
 	creation: string
-	// UTC; Grove refuses to revoke a key before this, so the console does not ask.
-	revocable_at: string
 	masked: string
 	geography: string
 	// The base URL for both API surfaces, of the key's own geography.

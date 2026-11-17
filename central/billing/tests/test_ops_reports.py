@@ -36,15 +36,17 @@ class TestWebhookLag(BillingTestCase):
 	def setUp(self):
 		self.gateway = make_stripe_gateway().name
 
-	def _webhook(self, received, processed):
+	def _webhook(self, received, processed, occurred=None, status="Processed", deliveries=1):
 		event = frappe.get_doc(
 			{
 				"doctype": "Webhook Event",
 				"gateway": self.gateway,
 				"gateway_event_id": frappe.generate_hash(length=10),
 				"event_type": "payment_intent.succeeded",
-				"status": "Processed",
+				"status": status,
 				"processed_at": processed,
+				"occurred_at": occurred,
+				"deliveries": deliveries,
 			}
 		).insert(ignore_permissions=True)
 		frappe.db.set_value("Webhook Event", event.name, "creation", received, update_modified=False)
@@ -68,18 +70,67 @@ class TestWebhookLag(BillingTestCase):
 		self.assertEqual(rows[0]["events"], 2)
 		self.assertEqual(rows[0]["slow"], 1)
 
-	def test_an_unprocessed_webhook_has_no_lag_to_report(self):
-		frappe.get_doc(
-			{
-				"doctype": "Webhook Event",
-				"gateway": self.gateway,
-				"gateway_event_id": frappe.generate_hash(length=10),
-				"event_type": "payment_intent.succeeded",
-				"status": "Received",
-			}
-		).insert(ignore_permissions=True)
-		_columns, rows, _msg, _chart, _summary = webhook_lag.execute({"gateway": self.gateway})
-		self.assertEqual(rows, [])
+	def test_a_late_delivery_is_measured_from_when_the_gateway_raised_it(self):
+		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:01", occurred="2026-06-10 08:30:00")
+		self._webhook("2026-06-10 11:00:00", "2026-06-10 11:00:01", occurred="2026-06-10 10:59:59")
+		_columns, rows, _msg, _chart, _summary = webhook_lag.execute(
+			{"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)
+		self.assertEqual(rows[0]["delivery_worst_seconds"], 5400.0)
+		self.assertEqual(rows[0]["delivered_late"], 1)
+		self.assertEqual(rows[0]["slow"], 0)
+
+	def test_unknown_delivery_times_are_blank_not_zero(self):
+		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:01")
+		_columns, rows, _msg, _chart, summary = webhook_lag.execute(
+			{"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)
+		self.assertIsNone(rows[0]["delivery_median_seconds"])
+		self.assertIsNone(rows[0]["delivery_worst_seconds"])
+		delivery_p95 = next(s for s in summary if s["label"] == "p95 Delivery (s)")
+		self.assertIsNone(delivery_p95["value"])
+		self.assertNotIn("indicator", delivery_p95)
+
+	def test_failed_events_and_repeat_deliveries_are_counted(self):
+		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:01", deliveries=3)
+		self._webhook("2026-06-10 10:05:00", None, status="Failed")
+		_columns, rows, _msg, _chart, _summary = webhook_lag.execute(
+			{"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)
+		self.assertEqual(rows[0]["events"], 2)
+		self.assertEqual(rows[0]["failed"], 1)
+		self.assertEqual(rows[0]["repeat_deliveries"], 2)
+
+	def test_the_chart_plots_delivery_only_when_every_day_has_a_time(self):
+		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:02")
+		self._webhook("2026-06-11 10:00:00", "2026-06-11 10:00:03", occurred="2026-06-11 09:58:00")
+		filters = {"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+
+		chart = webhook_lag.execute(filters)[3]
+		self.assertEqual(chart["data"]["labels"], ["2026-06-10", "2026-06-11"])
+		self.assertEqual([d["values"] for d in chart["data"]["datasets"]], [[2.0, 3.0]])
+
+		chart = webhook_lag.execute({**filters, "from_date": "2026-06-11"})[3]
+		self.assertEqual([d["values"] for d in chart["data"]["datasets"]], [[120.0], [3.0]])
+
+	def test_a_day_where_every_event_failed_draws_no_processing_line(self):
+		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:02")
+		self._webhook("2026-06-11 10:00:00", None, status="Failed")
+
+		chart = webhook_lag.execute(
+			{"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)[3]
+		self.assertIsNone(chart)
+
+	def test_a_late_event_still_waiting_counts_its_delivery_but_no_processing(self):
+		self._webhook("2026-06-10 10:00:00", None, occurred="2026-06-10 09:00:00", status="Received")
+		_columns, rows, _msg, _chart, _summary = webhook_lag.execute(
+			{"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)
+		self.assertEqual(rows[0]["waiting"], 1)
+		self.assertEqual(rows[0]["delivered_late"], 1)
+		self.assertEqual(rows[0]["delivery_worst_seconds"], 3600.0)
+		self.assertIsNone(rows[0]["worst_seconds"])
 
 
 class TestDunningRecovery(BillingTestCase):

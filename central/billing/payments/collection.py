@@ -31,14 +31,30 @@ from central.billing.payments import charges, decline
 
 
 def ordered_methods(team: str) -> list:
-	"""A team's chargeable methods, primary first. Skips non-active and methods
-	whose mandate needs re-authorisation."""
+	"""A team's chargeable methods, primary first. A mandate awaiting re-authorisation
+	stays in: `collection_mode.method_limit` holds it to its own maximum."""
 	return frappe.get_all(
 		"Payment Method",
-		filters={"team": team, "status": "Active", "reauth_required": 0},
+		filters={"team": team, "status": "Active"},
 		order_by="priority asc, creation asc",
-		fields=["name", "gateway", "priority"],
+		fields=["name", "gateway", "priority", "mandate_max_amount", "display_label", "method_type"],
 	)
+
+
+def next_method_for_amount(inv, earlier: set | None = None, skipped: set | None = None):
+	"""The next method to charge the invoice's amount on. While some method left on file can
+	take the amount off-session, one that cannot is passed over. `inv` carries name, team,
+	currency and expected_collection."""
+	from central.billing.payments import collection_mode
+
+	amount = inv.expected_collection
+	is_covered = collection_mode.is_within_off_session_limit(inv.team, amount, invoice=inv.name)
+	passed_over = set(skipped or ())
+	while method := next_method_for(inv.name, inv.team, earlier, skip=passed_over):
+		if not is_covered or collection_mode.is_within_method_limit(method, inv.currency, amount):
+			return method
+		passed_over.add(method.name)
+	return None
 
 
 def get_teams_with_retry_rail(teams: set[str]) -> set[str]:
@@ -60,7 +76,7 @@ def get_teams_with_retry_rail(teams: set[str]) -> set[str]:
 	return set(
 		frappe.get_all(
 			"Payment Method",
-			filters={"team": ["in", list(allowed)], "status": "Active", "reauth_required": 0},
+			filters={"team": ["in", list(allowed)], "status": "Active"},
 			pluck="team",
 			distinct=True,
 		)
@@ -87,6 +103,31 @@ def _failed_methods_for(invoice: str, earlier: set | None = None) -> set:
 		or a.name not in earlier
 		or not decline.is_retryable_later(a.failure_code, a.decline_code)
 	}
+
+
+def get_methods_left(team: str, invoice: str | None = None) -> list:
+	"""The team's chargeable methods, less any whose decline on `invoice` no later round
+	can clear."""
+	methods = ordered_methods(team)
+	if not invoice:
+		return methods
+	failed = _failed_methods_for(invoice, attempts_of(invoice))
+	return [m for m in methods if m.name not in failed]
+
+
+def method_for_amount(team: str, currency: str | None, amount: float, invoice: str | None = None):
+	"""The method a charge of `amount` lands on: the first, primary first, whose limit covers
+	it. None when no method left can take it off-session."""
+	from central.billing.payments import collection_mode
+
+	return next(
+		(
+			m
+			for m in get_methods_left(team, invoice)
+			if collection_mode.is_within_method_limit(m, currency, amount)
+		),
+		None,
+	)
 
 
 def next_method_for(invoice: str, team: str, earlier: set | None = None, skip: set | None = None):
@@ -133,6 +174,7 @@ def collect_invoice(invoice: str, new_round: bool = False, now: datetime | str |
 	is tried at most once per round. `new_round` starts a dunning retry round, and
 	`now` is the clock a pre-debit window is read against.
 	"""
+	from central.billing.payments import collection_mode
 	from central.billing.revenue.tax import is_internal_team
 
 	inv = frappe.get_doc("Invoice", invoice)
@@ -141,6 +183,10 @@ def collect_invoice(invoice: str, new_round: bool = False, now: datetime | str |
 	earlier = attempts_of(invoice) if new_round else None
 	skipped = set()
 	while True:
+		# A team that pays by hand, or is asked to choose, is never charged off-session: not
+		# after a notice it switched past, nor after a failed mandate paused it mid-run.
+		if not collection_mode.is_debit_allowed(inv.team):
+			return {"collected": False, "reason": "debit_held"}
 		outcome = _charge_next_method(inv, earlier, skipped, now)
 		if outcome is not None:
 			return outcome
@@ -234,7 +280,7 @@ def _charge_next_method(
 	if in_flight := charges.in_flight_attempt(inv.name):
 		return {"collected": False, "reason": "attempt_in_flight", "attempt": in_flight}
 
-	method = next_method_for(inv.name, inv.team, earlier, skip=skipped)
+	method = next_method_for_amount(inv, earlier, skipped)
 	if not method:
 		# Every method has failed (or there are none) — leave it for dunning, and
 		# ask the customer for another way to pay. Off-session there is nobody to

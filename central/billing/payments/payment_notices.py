@@ -9,18 +9,23 @@ from frappe import _
 from central.billing.doctype.invoice.invoice import is_owed, owed_filters
 from central.billing.platform import notifications
 from central.billing.platform.jobs import each_isolated
+from central.billing.revenue import tax
 from central.notification import engine
 
 
-def notify_payment_scheduled(invoice) -> None:
+def notify_payment_scheduled(invoice, collect_started=None) -> None:
 	"""Tell the team what an opened invoice charges, after credit, and when.
 
 	A rail that owes a pre-debit notice is charged at its pre-debit charge time, which can be
-	a day after the payment date. Every other rail is charged on the payment date."""
+	a day after the payment date. Every other rail is charged on the payment date. A bill the
+	card or UPI cannot pay asks for a top-up instead (`_ask_for_top_up`)."""
+	if due := _get_top_up_due(invoice):
+		_ask_for_top_up(invoice, due, collect_started)
+		return
 	credit = frappe.utils.flt(invoice.credit_applied)
 	context = {
 		**get_payment_context(invoice),
-		"payment_date": _format_date(invoice.predebit_charge_after or invoice.payment_date),
+		"payment_date": format_date(invoice.predebit_charge_after or invoice.payment_date),
 		"total": frappe.utils.fmt_money(invoice.total, currency=invoice.currency),
 		"credit_applied": frappe.utils.fmt_money(credit, currency=invoice.currency) if credit > 0 else None,
 	}
@@ -33,6 +38,42 @@ def notify_payment_scheduled(invoice) -> None:
 	)
 
 
+def _get_top_up_due(invoice) -> dict | None:
+	"""The top-up ask for an INR bill above the team's off-session limit. A Manual Checkout
+	team pays by hand, so it keeps the plain notice."""
+	from central.billing.payments import top_up_reminders
+	from central.billing.revenue.invoicing import wallet_draw
+
+	if invoice.currency != "INR":
+		return None
+	if frappe.db.get_value("Billing Profile", invoice.team, "collection_mode") == "Manual Checkout":
+		return None
+	due = frappe.utils.flt(invoice.expected_collection)
+	gst = wallet_draw.gst_still_due(invoice, due)
+	return top_up_reminders.get_shortfall_due(invoice.team, due, gst, invoice.payment_date, invoice.name)
+
+
+def _ask_for_top_up(invoice, due: dict, collect_started) -> None:
+	"""One notice per bill: none when the collection step already moved the team to Action
+	Required (that notice asks it to act), and none when it had a top-up notice today."""
+	from central.billing.payments import top_up_reminders
+
+	if collect_started and _has_action_required_since(invoice.team, collect_started):
+		return
+	if not top_up_reminders.is_first_notice_today(invoice.team, frappe.utils.getdate()):
+		return
+	top_up_reminders.send_top_up_notice(invoice.team, due)
+
+
+def _has_action_required_since(team: str, since) -> bool:
+	return bool(
+		frappe.db.exists(
+			"Billing Notification Log",
+			{"team": team, "event_type": "Action Required", "creation": [">=", since]},
+		)
+	)
+
+
 def notify_payment_date_changed(profile) -> None:
 	"""Tell the team its new payment day, and which invoice it applies to.
 
@@ -42,11 +83,13 @@ def notify_payment_date_changed(profile) -> None:
 		return
 
 	from central.billing.doctype.billing_profile.billing_profile import get_payment_date
+	from central.billing.payments import collection_mode
 
 	next_month = frappe.utils.add_months(frappe.utils.get_first_day(frappe.utils.nowdate()), 1)
 	context = {
 		"payment_day": get_ordinal(profile.payment_day),
-		"next_payment_date": _format_date(get_payment_date(profile.team, next_month)),
+		"pays_by_hand": not collection_mode.is_debit_allowed(profile.team),
+		"next_payment_date": format_date(get_payment_date(profile.team, next_month)),
 		**_get_uncharged_invoice(profile.team),
 	}
 	notifications.notify(profile.team, "Payment Date Changed", context=context)
@@ -68,7 +111,7 @@ def _get_uncharged_invoice(team: str) -> dict:
 	)
 	if not invoice:
 		return {}
-	return {"open_invoice": invoice.name, "open_payment_date": _format_date(invoice.payment_date)}
+	return {"open_invoice": invoice.name, "open_payment_date": format_date(invoice.payment_date)}
 
 
 def notify_retry_failed(invoice: str) -> None:
@@ -116,7 +159,7 @@ def _get_overdue_message(invoice: str, team: str) -> str:
 		return _(
 			"Invoice {0} is overdue and your payment is still processing. Add credit to your wallet "
 			"now to avoid suspension on {1}. If the payment also goes through, we will refund it."
-		).format(invoice, _format_date(suspends_on))
+		).format(invoice, format_date(suspends_on))
 
 	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
 	if mode == "Manual Checkout":
@@ -195,13 +238,21 @@ def send_payment_reminders(now: datetime) -> list[dict]:
 
 
 def send_payment_reminder(invoice: str, now: datetime) -> dict:
-	"""Send one payment reminder. A method that owes a pre-debit notice gets that notice instead."""
+	"""Send one payment reminder, at most one notice per bill, decided in this order:
+
+	1. A bill the card or UPI cannot pay keeps the top-up notice as its only one.
+	2. A bill no method may take off-session, or a team that pays by hand, gets the reminder,
+	   asking for a payment by hand.
+	3. A method that owes a pre-debit notice gets that notice instead.
+	4. Otherwise the reminder names the method charged."""
 	from central.billing.payments import emandate
 
 	doc = frappe.get_doc("Invoice", invoice)
 	if not _is_reminder_due(doc, now):
 		return {"invoice": invoice, "skipped": "not_due"}
-	gateway = _get_charged_gateway(doc.team)
+	if _get_top_up_due(doc):
+		return {"invoice": invoice, "skipped": "top_up_notice"}
+	gateway = _get_charged_gateway(doc)
 	if gateway and emandate.is_notice_required(doc, gateway):
 		return {"invoice": invoice, "skipped": "predebit_notice"}
 	if not _has_claimed_reminder(invoice, now):
@@ -217,12 +268,10 @@ def send_payment_reminder(invoice: str, now: datetime) -> dict:
 	return {"invoice": invoice, "reminded": True}
 
 
-def _get_charged_gateway(team: str) -> str | None:
-	"""The gateway of the method the charge uses first, or None when the team has no method."""
-	from central.billing.payments import collection
-
-	methods = collection.ordered_methods(team)
-	return methods[0].gateway if methods else None
+def _get_charged_gateway(invoice) -> str | None:
+	"""The gateway of the method the charge lands on, or None when no method can take it."""
+	method = _get_charging_method(invoice)
+	return method.gateway if method else None
 
 
 def _has_claimed_reminder(invoice: str, now: datetime) -> bool:
@@ -251,25 +300,44 @@ def _is_reminder_due(invoice, now: datetime) -> bool:
 
 
 def get_payment_context(invoice) -> dict:
-	"""The amount, the payment date and the method a payment notice names."""
+	"""The amount, the tax it includes, the payment date and the method a payment notice names.
+
+	`over_limit` is set when the team has methods but none may take the amount off-session,
+	so the notice asks for a payment by hand instead of naming a method. `pays_by_hand` is set
+	for a team whose methods are never charged off-session, so no method is named."""
+	from central.billing.payments import collection, collection_mode
+
+	pays_by_hand = not collection_mode.is_debit_allowed(invoice.team)
+	method = _get_charging_method(invoice)
 	return {
 		"amount": frappe.utils.fmt_money(invoice.expected_collection, currency=invoice.currency),
-		"payment_date": _format_date(invoice.payment_date),
-		"method": get_charging_method_label(invoice.team),
+		"tax_note": tax.TaxNames(invoice.team).note(invoice),
+		"payment_date": format_date(invoice.payment_date),
+		"method": _get_method_label(method),
+		"pays_by_hand": pays_by_hand,
+		"over_limit": not (pays_by_hand or method)
+		and bool(collection.get_methods_left(invoice.team, invoice.name)),
 	}
 
 
-def get_charging_method_label(team: str) -> str | None:
-	"""The label of the method the next charge uses, or None when the team has none."""
-	from central.billing.payments import collection
-
-	methods = collection.ordered_methods(team)
-	if not methods:
+def _get_method_label(method) -> str | None:
+	if not method:
 		return None
-	return frappe.db.get_value("Payment Method", methods[0].name, "display_label") or methods[0].gateway
+	return frappe.db.get_value("Payment Method", method.name, "display_label") or method.gateway
 
 
-def _format_date(value) -> str:
+def _get_charging_method(invoice):
+	"""The method the charge lands on. None for a team whose methods are never charged off-session."""
+	from central.billing.payments import collection, collection_mode
+
+	if not collection_mode.is_debit_allowed(invoice.team):
+		return None
+	return collection.method_for_amount(
+		invoice.team, invoice.currency, frappe.utils.flt(invoice.expected_collection), invoice.name
+	)
+
+
+def format_date(value) -> str:
 	return frappe.utils.formatdate(value, "d MMMM yyyy")
 
 

@@ -49,10 +49,11 @@ function refresh(): void {
 		<Button label="Remove observed SSH" @click="removeObservedSsh" />
 		<FirewallSection
 			resource-id="test-vm"
+			region="test-region"
 			:is-enabled="enabled"
 			:rules="rules"
 			:can-edit="true"
-			:servers="[]"
+			:attached="[]"
 		/>
 		<ResizeServerDialog v-model:open="resizing" :server="server" />
 	</main>

@@ -11,6 +11,7 @@ from frappe.utils import date_diff, flt, getdate
 from central.billing.report._capacity import active_machines
 from central.billing.report._columns import column, inr
 from central.billing.report._economics import to_inr
+from central.billing.report._revenue import revenue_criterion
 
 
 def execute(filters: dict | None = None):
@@ -45,7 +46,7 @@ def _earned_by_host() -> dict[str, float]:
 	line = frappe.qb.DocType("Invoice Line Item")
 	invoice = frappe.qb.DocType("Invoice")
 	server = frappe.qb.DocType("Virtual Machine")
-	rows = (
+	query = (
 		frappe.qb.from_(line)
 		.join(invoice)
 		.on(invoice.name == line.parent)
@@ -54,10 +55,11 @@ def _earned_by_host() -> dict[str, float]:
 		.select(server.atlas_host_id, invoice.currency, Sum(line.amount).as_("amount"))
 		.where(line.parenttype == "Invoice")
 		.where(invoice.invoice_type == "Billable")
-		.where(invoice.status.notin(("Cancelled", "Waived")))
+		.where(revenue_criterion(invoice))
 		.where(server.atlas_host_id.isnotnull())
 		.groupby(server.atlas_host_id, invoice.currency)
-	).run(as_dict=True)
+	)
+	rows = query.run(as_dict=True)
 	earned = defaultdict(float)
 	for row in rows:
 		earned[row.atlas_host_id] += flt(to_inr(row.amount, row.currency))

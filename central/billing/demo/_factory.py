@@ -706,13 +706,10 @@ def arm_emandate(team):
 	)
 	if not open_inv:
 		return
-	st = collection_mode.evaluate(
-		team,
-		projected_amount=frappe.utils.flt(open_inv.expected_collection),
-		reason="invoice_over_threshold",
-	)
-	if not st["action_required"]:
+	if collection_mode.is_within_off_session_limit(team, open_inv.expected_collection, open_inv.name):
 		emandate.schedule_predebit(open_inv.name)
+	else:
+		collection_mode.trip_off_session_debit(team, "invoice_over_threshold", open_inv.name)
 
 
 # --- helpers ----------------------------------------------------------------

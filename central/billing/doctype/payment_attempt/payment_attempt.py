@@ -95,3 +95,6 @@ def on_doctype_update() -> None:
 	frappe.db.add_index("Payment Attempt", ["team"])
 	frappe.db.add_index("Payment Attempt", ["gateway_order_id"])
 	frappe.db.add_index("Payment Attempt", ["status", "creation"])
+	# The telemetry gauges read the last hour and the newest capture of each gateway each minute.
+	frappe.db.add_index("Payment Attempt", ["initiated_at"])
+	frappe.db.add_index("Payment Attempt", ["gateway", "status", "completed_at"])

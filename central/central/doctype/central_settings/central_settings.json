@@ -18,6 +18,12 @@
   "infra_alert_webhook_url",
   "column_break_infra_webhooks",
   "infra_report_webhook_url",
+  "helpdesk_section",
+  "helpdesk_url",
+  "column_break_helpdesk",
+  "helpdesk_api_key",
+  "helpdesk_api_secret",
+  "articles_enabled",
   "feature_flags_tab",
   "addons_section",
   "enable_addons",
@@ -152,6 +158,41 @@
    "fieldtype": "Password",
    "label": "Infra Report Webhook URL",
    "length": 512
+  },
+  {
+   "fieldname": "helpdesk_section",
+   "fieldtype": "Section Break",
+   "label": "Helpdesk"
+  },
+  {
+   "description": "Base URL of the Frappe Helpdesk site, such as https://support.frappe.io. Central creates and lists tickets in the console when the API key and secret are also set.",
+   "fieldname": "helpdesk_url",
+   "fieldtype": "Data",
+   "label": "Helpdesk URL",
+   "options": "URL"
+  },
+  {
+   "fieldname": "column_break_helpdesk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "API key of the Helpdesk service user with the Agent role.",
+   "fieldname": "helpdesk_api_key",
+   "fieldtype": "Data",
+   "label": "Helpdesk API Key"
+  },
+  {
+   "description": "Secret for that API key. Central stores it encrypted.",
+   "fieldname": "helpdesk_api_secret",
+   "fieldtype": "Password",
+   "label": "Helpdesk API Secret"
+  },
+  {
+   "default": "0",
+   "description": "Show help articles from the support desk in the Get help dialog. Turn this on when the support desk has published articles.",
+   "fieldname": "articles_enabled",
+   "fieldtype": "Check",
+   "label": "Show Help Articles"
   },
   {
    "fieldname": "feature_flags_tab",
@@ -509,7 +550,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-28 18:00:00.000000",
+ "modified": "2026-11-04 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

@@ -3,6 +3,7 @@ import { Alert, Dialog, TextInput, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 import type { Project } from '@/types/billing'
 
 // Edit a Project: its title and its spending_limit are the only two knobs a
@@ -88,10 +89,10 @@ async function submit(): Promise<void> {
 }
 
 const dialogOptions = computed(() => ({
-	title: 'Edit project',
+	title: __('Edit project'),
 	actions: [
 		{
-			label: 'Save',
+			label: __('Save'),
 			variant: 'solid' as const,
 			loading: saving.value,
 			disabled: !canSubmit.value,
@@ -99,6 +100,8 @@ const dialogOptions = computed(() => ({
 		},
 	],
 }))
+
+const saveProjectErrorTitle = __("Couldn't save the project")
 </script>
 
 <template>
@@ -112,21 +115,21 @@ const dialogOptions = computed(() => ({
 				<Alert
 					v-if="formError"
 					theme="red"
-					title="Couldn't save the project"
+					:title="saveProjectErrorTitle"
 					:description="formError"
 				/>
 				<TextInput
 					v-model="title"
-					label="Title"
+					:label="__('Title')"
 					autofocus
 					@keyup.enter="submit"
 				/>
 				<TextInput
 					v-model="spendingLimit"
 					type="number"
-					label="Spending limit"
-					placeholder="No limit"
-					description="Prevents adding a resource when its monthly cost would put the project over this limit. Existing resources keep running. Leave blank for no limit."
+					:label="__('Spending limit')"
+					:placeholder="__('No limit')"
+					:description="__('Prevents adding a resource when its monthly cost would put the project over this limit. Existing resources keep running. Leave blank for no limit.')"
 					min="0"
 				/>
 			</div>

@@ -26,6 +26,7 @@ from central.patches.v0_0 import (
 	charge_gst_to_indian_tax_profiles,
 	clear_retired_scenario_ladder_overrides,
 	expire_promotional_credit_and_clear_unbooked_wallets,
+	mark_old_setups_released,
 	mark_waived_invoices_as_not_synced,
 	merge_invoice_draft_and_open_into_outstanding,
 	move_internal_flag_to_billing_profile,
@@ -537,3 +538,47 @@ class TestRemoveWebhookEventsOfAnotherProduct(IntegrationTestCase):
 		for kept in (central, unreadable):
 			self.assertTrue(frappe.db.exists("Webhook Event", kept))
 			self.assertTrue(frappe.db.exists("Billing Event", {"subject": kept}))
+
+
+class TestMarkOldSetupsReleased(IntegrationTestCase):
+	def setUp(self):
+		make_stripe_gateway()
+		ensure_team(TEAM)
+
+	def _method(self, status: str, modified=None, **fields) -> str:
+		method = frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": "Stripe",
+				"method_type": "Card",
+				"status": status,
+				**fields,
+			}
+		)
+		method.db_insert()
+		if modified:
+			frappe.db.set_value("Payment Method", method.name, "modified", modified, update_modified=False)
+		return method.name
+
+	def test_only_released_setups_are_marked_with_their_last_change(self):
+		expired = self._method("Expired", setup_reference="seti_a", modified="2026-10-01 10:00:00")
+		cancelled = self._method("Cancelled", setup_reference="seti_b", modified="2026-10-02 10:00:00")
+		lapsed_card = self._method("Expired", setup_reference="seti_c", validated_at="2026-01-01 10:00:00")
+		no_reference = self._method("Expired")
+		pending = self._method("Pending Validation", setup_reference="seti_d")
+
+		mark_old_setups_released.execute()
+
+		released = dict(
+			frappe.get_all(
+				"Payment Method",
+				filters={"team": TEAM},
+				fields=["name", "setup_released_at"],
+				as_list=True,
+			)
+		)
+		self.assertEqual(str(released[expired]), "2026-10-01 10:00:00")
+		self.assertEqual(str(released[cancelled]), "2026-10-02 10:00:00")
+		for name in (lapsed_card, no_reference, pending):
+			self.assertIsNone(released[name])

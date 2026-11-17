@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import datetime
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -12,7 +13,7 @@ from central.billing.payments.webhooks import process_webhook
 from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import run_enqueued_inline
+from central.billing.tests.utils import processing_jobs, run_enqueued_inline, run_repeat_counts
 
 EVENT_ID = "evt_webhook_500"
 PAYLOAD = (
@@ -74,7 +75,7 @@ class TestStripeWebhookReceiver(IntegrationTestCase):
 
 		self.assertEqual(frappe.local.response.http_status_code, 200)
 		self.assertEqual(self._events(), 1)  # no duplicate
-		self.assertEqual(enqueue.call_count, 1)  # no second job
+		self.assertEqual(processing_jobs(enqueue), 1)  # no second job
 
 
 R_PAYLOAD = (
@@ -124,6 +125,54 @@ class TestRazorpayWebhookReceiver(IntegrationTestCase):
 			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
 			process_webhook("Razorpay", R_PAYLOAD, {**R_HEADERS, "X-Razorpay-Event-Id": "evt_forged_new"})
 		self.assertEqual(self._events(), 1)
+
+	def test_the_event_keeps_its_delivery_id_and_when_razorpay_raised_it(self):
+		with razorpay_signature(valid=True), patch("frappe.enqueue"):
+			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+
+		event = frappe.db.get_value(
+			"Webhook Event",
+			{"gateway_event_id": R_EVENT_ID},
+			["delivery_id", "occurred_at", "deliveries"],
+			as_dict=True,
+		)
+		self.assertEqual(event.delivery_id, "evt_razorpay_webhook_1")
+		raised = frappe.utils.convert_utc_to_system_timezone(datetime.datetime(2023, 11, 14, 22, 13, 20))
+		self.assertEqual(event.occurred_at, raised.replace(tzinfo=None))
+		self.assertEqual(event.deliveries, 1)
+
+	def _deliveries(self):
+		return frappe.db.get_value("Webhook Event", {"gateway_event_id": R_EVENT_ID}, "deliveries")
+
+	def test_a_repeat_delivery_is_counted_on_the_event(self):
+		with (
+			razorpay_signature(valid=True),
+			patch("frappe.enqueue", side_effect=run_repeat_counts) as enqueue,
+		):
+			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+
+		self.assertEqual(self._deliveries(), 3)
+		self.assertEqual(processing_jobs(enqueue), 1)
+
+	def test_a_repeat_that_loses_the_insert_race_is_counted(self):
+		exists = frappe.db.exists
+
+		def not_stored_yet(doctype, *args, **kwargs):
+			return False if doctype == "Webhook Event" else exists(doctype, *args, **kwargs)
+
+		with (
+			razorpay_signature(valid=True),
+			patch("frappe.enqueue", side_effect=run_repeat_counts) as enqueue,
+		):
+			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+			with patch.object(frappe.db, "exists", side_effect=not_stored_yet):
+				process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+
+		self.assertEqual(self._events(), 1)
+		self.assertEqual(self._deliveries(), 2)
+		self.assertEqual(processing_jobs(enqueue), 1)
 
 	def test_invalid_signature_returns_400_with_zero_db_writes(self):
 		with razorpay_signature(valid=False), patch("frappe.enqueue") as enqueue:

@@ -3,6 +3,7 @@ import { Alert } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import BillingDetailsCard from '@/components/billing/BillingDetailsCard.vue'
 import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
+import HowYouPayCard from '@/components/billing/HowYouPayCard.vue'
 import PaymentMethodFlow from '@/components/billing/PaymentMethodFlow.vue'
 import PaymentMethodsCard from '@/components/billing/PaymentMethodsCard.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
@@ -47,6 +48,7 @@ const setupFlow = ref<InstanceType<typeof PaymentMethodFlow> | null>(null)
 						: undefined
 				"
 			/>
+			<HowYouPayCard v-if="profile && !needsDetails" />
 			<PaymentMethodsCard />
 			<BillingDetailsCard
 				v-if="profile && !needsDetails"

@@ -5,7 +5,7 @@
 Written only by `billing.states` (`transition` and `record_event`). It is a projection: no pricing,
 invoicing, settlement, dunning or entitlement code may read it, so dropping the table
 would not change a single invoice total. Its readers are engineers debugging, the
-admin UI, and the reports.
+admin UI, the reports, and the wait after failed payment method setups.
 """
 
 import frappe

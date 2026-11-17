@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 import type { SubscriptionRow } from '@/types/billing'
 
 // Tag a subscription into a Project, or clear it back to untagged. Controlled by
@@ -41,7 +42,7 @@ watch(
 watch(selected, () => (formError.value = ''))
 
 const options = computed(() => [
-	{ label: 'No project', value: UNTAGGED },
+	{ label: __('No project'), value: UNTAGGED },
 	...(projects.data ?? [])
 		.filter((p) => p.enabled)
 		.map((p) => ({ label: p.title, value: p.name })),
@@ -76,10 +77,10 @@ async function submit(): Promise<void> {
 }
 
 const dialogOptions = computed(() => ({
-	title: 'Move to project',
+	title: __('Move to project'),
 	actions: [
 		{
-			label: 'Save',
+			label: __('Save'),
 			variant: 'solid' as const,
 			loading: assign.loading,
 			disabled: !canSubmit.value,
@@ -87,6 +88,8 @@ const dialogOptions = computed(() => ({
 		},
 	],
 }))
+
+const changeProjectErrorTitle = __("Couldn't change the project")
 </script>
 
 <template>
@@ -100,14 +103,14 @@ const dialogOptions = computed(() => ({
 				v-if="formError"
 				class="mb-4"
 				theme="red"
-				title="Couldn't change the project"
+				:title="changeProjectErrorTitle"
 				:description="formError"
 			/>
 			<Select
 				v-model="selected"
 				:options="options"
-				label="Project"
-				description="Group this subscription under a project in your cost breakdown. All subscriptions remain on one invoice."
+				:label="__('Project')"
+				:description="__('Group this subscription under a project in your cost breakdown. All subscriptions remain on one invoice.')"
 			/>
 		</template>
 	</Dialog>

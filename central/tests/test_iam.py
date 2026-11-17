@@ -4,6 +4,7 @@ from frappe.tests import IntegrationTestCase
 from central.iam import (
 	can,
 	expand_capabilities,
+	get_active_team_member_users,
 	get_effective_permissions,
 	get_user_team_names,
 	resolve_team,
@@ -158,6 +159,13 @@ class TestCentralIAM(IntegrationTestCase):
 
 		self.assertEqual(get_user_team_names(member), [team.name])
 		self.assertEqual(resolve_team(member), team.name)
+
+	def test_active_team_member_users_leave_out_invited_members(self):
+		team = self.make_team("IAM Member Users Team", self.viewer, "Viewer")
+		team.append("members", {"user": self.developer, "role": "Developer", "status": "Invited"})
+		team.save()
+
+		self.assertEqual(sorted(get_active_team_member_users(team.name)), sorted([self.owner, self.viewer]))
 
 	def test_user_claim_is_team_scoped(self):
 		team_a = self.make_team("IAM Team A", self.viewer, "Viewer")

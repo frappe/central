@@ -20,6 +20,11 @@ def enabled() -> bool:
 	return bool(frappe.conf.get("enable_erpnext_sync"))
 
 
+def is_configured() -> bool:
+	"""Whether the sync is on and the site knows where the accounting system is."""
+	return enabled() and bool(frappe.conf.get("erpnext_url"))
+
+
 def auth_headers() -> dict:
 	key = frappe.conf.get("erpnext_api_key")
 	secret = frappe.conf.get("erpnext_api_secret")
@@ -52,8 +57,8 @@ def call(method: str, params: dict | None = None) -> dict | None:
 
 
 def fetch(doctype: str, name: str) -> frappe._dict | None:
-	"""One record by name, or None when it does not exist."""
-	if not enabled():
+	"""One record by name, or None when it does not exist. An empty name is never asked for."""
+	if not (enabled() and doctype and name):
 		return None
 	response = requests.get(
 		_url(f"api/resource/{quote(doctype)}/{quote(name, safe='')}"),

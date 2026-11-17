@@ -47,7 +47,7 @@ The distinction matters:
 | `server:view` | List servers and sites; view status, specs, and metrics. |
 | `server:create` | Provision a new server. |
 | `server:power` | Start, stop, and restart a server. |
-| `server:network` | Change the firewall, public addresses, and WireGuard access of a server. |
+| `server:network` | Change the firewall, public addresses, and WireGuard access of a server. A team-wide grant also manages the team's firewall rulesets. |
 | `server:resize` | Resize, rebuild, or rename a server. |
 | `server:snapshot` | Create and restore server snapshots. |
 | `server:terminate` | Destroy a server. |

@@ -18,6 +18,7 @@ from central.billing.api.dashboard._shared import (
 	_resolve_team,
 	_team_currency,
 )
+from central.billing.doctype.payment_method.payment_method import without_expired_setups
 from central.billing.payments import decline
 
 
@@ -25,14 +26,16 @@ from central.billing.payments import decline
 def list_payment_methods(team: str | None = None) -> list[dict]:
 	"""Payment methods — display fields only; gateway secrets are never returned.
 
-	Hides Cancelled methods and ones still mid-setup (Pending Validation): until a
-	card clears the micro-charge it isn't usable, isn't in the charge order, and
-	would only confuse the list (it has no label/expiry yet)."""
+	Hides Cancelled methods, ones still mid-setup (Pending Validation) and setups
+	that expired unfinished: until a card clears the micro-charge it isn't usable,
+	isn't in the charge order, and would only confuse the list (it has no
+	label/expiry yet). A card that expired after use stays listed."""
 	team = _resolve_team(team)
 	rows = frappe.get_all(
 		"Payment Method",
 		filters={"team": team, "status": ["not in", ["Cancelled", "Pending Validation"]]},
 		fields=[
+			"validated_at",
 			"name",
 			"method_type",
 			"status",
@@ -47,7 +50,10 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 		],
 		order_by="priority asc, creation asc",
 	)
-	return rows
+	listed = without_expired_setups(rows)
+	for row in listed:
+		del row["validated_at"]
+	return listed
 
 
 @frappe.whitelist()
@@ -120,6 +126,18 @@ def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> 
 
 	with customer_safe_gateway_errors():
 		return payments.initiate_payment_method_setup(team, gateway)
+
+
+@frappe.whitelist()
+def get_setup_wait(team: str | None = None) -> dict:
+	"""How long the caller must wait before a new setup or top-up. It creates nothing."""
+	team = _resolve_team(team)
+	from central.billing.payments import setup_lockout
+
+	wait = setup_lockout.wait_for(team, frappe.session.user)
+	if not wait:
+		return {"message": None, "seconds": None}
+	return {"message": setup_lockout.wait_message(wait), "seconds": int(wait.total_seconds())}
 
 
 @frappe.whitelist(methods=["POST"])

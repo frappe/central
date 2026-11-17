@@ -13,8 +13,8 @@ fixtures = [
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
 	# Warpgate signs in through the Central OpenID Connect provider and checks the Atlas roles.
 	# Product Operators create and edit products; only System Managers delete them.
-	# Staff Viewers read Team, Site and Virtual Machine in Desk, without customer data fields,
-	# and manage Product and Email OAuth Provider.
+	# Staff Viewers read Team, Site and Virtual Machine in Desk, and manage Product and
+	# Email OAuth Provider.
 	{
 		"dt": "Role",
 		"filters": [
@@ -50,16 +50,14 @@ website_user_home_page = "dashboard"
 
 # required_apps = []
 
-# Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "central",
-# 		"logo": "/assets/central/logo.png",
-# 		"title": "Central",
-# 		"route": "/central",
-# 		"has_permission": "central.api.permission.has_app_permission"
-# 	}
-# ]
+add_to_apps_screen = [
+	{
+		"name": "central",
+		"logo": "/assets/central/logo.svg",
+		"title": "Central",
+		"route": "/desk/central",
+	}
+]
 
 # Includes in <head>
 # ------------------
@@ -198,7 +196,7 @@ after_install = [
 
 doc_events = {
 	"User": {
-		"validate": ["central.users.validate_user_image", "central.users.validate_staff_viewer_roles"],
+		"validate": "central.users.validate_user_image",
 		"after_insert": "central.users.grant_central_user_role",
 		"on_update": "central.infrastructure.doctype.wireguard_device.wireguard_device.remove_disabled_user_devices",
 	},
@@ -272,14 +270,20 @@ scheduler_events = {
 	"cron": {
 		"* * * * *": [
 			"central.infrastructure.doctype.warpgate_access.warpgate_access.revoke_ended_access",
+			"central.integrations.datum.publish_error_logs",
+			"central.integrations.metrics.publish_metrics",
 		],
 		"*/10 * * * *": [
 			# Repair observed state through scoped regional reads.
 			"central.integrations.servers.reconcile",
 			"central.infrastructure.doctype.region.cargo_connection.register_pending_cargo",
 		],
-		# Retry proxy routes that failed or never ran, up to the attempt limit.
+		# 09:00 system time (Asia/Kolkata): remind INR teams to top up before the payment date.
+		"0 9 * * *": ["central.billing.payments.top_up_reminders.run_top_up_reminders"],
 		"*/5 * * * *": [
+			# Credit a recent top-up whose callback and webhook are late.
+			"central.billing.payments.reconciliation.reconcile_recent_top_up_orders",
+			# Retry proxy routes that failed or never ran, up to the attempt limit.
 			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",
 			"central.infrastructure.doctype.site.site.record_ready_sites",
 			"central.infrastructure.doctype.site.site.poll_site_renames",
@@ -295,6 +299,7 @@ scheduler_events = {
 	],
 	"daily_long": [
 		"central.infrastructure.doctype.vm_snapshot.vm_snapshot.take_automatic_snapshots",
+		"central.billing.ingester.gst_state_backfill.record_missing_gst_states",
 	],
 	"daily": [
 		"central.identity.doctype.team_invitation.team_invitation.expire_pending_invitations",
@@ -319,6 +324,8 @@ scheduler_events = {
 		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
 		"central.billing.payments.reconciliation.run_reconciliation",
 		"central.billing.payments.webhooks.retry_failed_webhooks",
+		"central.billing.payments.setup_expiry.expire_unfinished_setups",
+		"central.billing.payments.setup_expiry.retry_unfinished_releases",
 		"central.billing.platform.alerts.run_operator_alerts",
 		"central.signups.alerts.alert_failed_signups",
 		"central.notification.digest.send_due_digests",
@@ -400,7 +407,7 @@ ignore_links_on_delete = ["Activity Event"]
 # Request Events
 # ----------------
 before_request = ["central.oidc.take_client_credentials"]
-# after_request = ["central.utils.after_request"]
+after_request = ["central.integrations.metrics.count_request"]
 
 # The OpenID Connect discovery document of the Central issuer.
 page_renderer = ["central.oidc.DiscoveryPage"]
@@ -464,6 +471,7 @@ _BILLING_TEAM_RECORDS = (
 permission_query_conditions = {
 	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
 	"WireGuard Device": "central.permissions.wireguard_device_query_conditions",
+	"Firewall Ruleset": "central.permissions.firewall_ruleset_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
 	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
@@ -484,6 +492,7 @@ permission_query_conditions = {
 has_permission = {
 	"Team SSH Key": "central.permissions.team_ssh_key_has_permission",
 	"WireGuard Device": "central.permissions.wireguard_device_has_permission",
+	"Firewall Ruleset": "central.permissions.firewall_ruleset_has_permission",
 	"Virtual Machine": "central.permissions.server_has_permission",
 	"Pilot Credential": "central.permissions.pilot_credential_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",
@@ -515,7 +524,7 @@ require_type_annotated_api_methods = True
 
 # Days Log Settings keeps a record before its daily clean-up drops it.
 default_log_clearing_doctypes = {
-  "Activity Event": 365,
+	"Activity Event": 365,
 	"AI Trial Key": 30,
 }
 
