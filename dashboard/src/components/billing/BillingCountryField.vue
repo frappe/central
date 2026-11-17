@@ -87,12 +87,13 @@ watch(
 )
 
 // Continue goes on only from a known country state. Without the profile we cannot
-// tell whether a country is already saved, so stop and ask the user to retry.
-function saveOnContinue(): Promise<boolean> {
+// tell whether a country is already saved, so load it first and stop if that fails.
+async function saveOnContinue(): Promise<boolean> {
 	if (saving) return saving
+	if (!profile.value) await refresh()
 	if (!profile.value) {
 		error.value = "Couldn't load your billing details. Try again."
-		return Promise.resolve(false)
+		return false
 	}
 	error.value = ''
 	return saveOnce(country.value)
