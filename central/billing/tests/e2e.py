@@ -45,7 +45,7 @@ def _enter_test_mode() -> None:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def seed(scenario: str = "profile_pending", currency: str = "INR") -> dict:
+def seed(scenario: str = "profile_pending", currency: str = "INR", onboarding: int = 0) -> dict:
 	"""Build an isolated team for one Playwright spec and return the handles the
 	test needs: the team slug, and the member's login (email + password).
 
@@ -62,14 +62,16 @@ def seed(scenario: str = "profile_pending", currency: str = "INR") -> dict:
 
 	The seeded user owns exactly one team, as Owner with full billing capability, so
 	it is the deterministic whoami default and the spec never has to switch teams.
-	Its onboarding is skipped, because the specs test the billing screens.
+	Its onboarding is skipped, because the specs test the billing screens. Pass
+	`onboarding=1` to keep its steps pending, so the console opens the onboarding dialog.
 	"""
 	_enter_test_mode()
 
 	member = make_user(f"e2e-{frappe.generate_hash(8)}@example.com")
 	update_password(member, E2E_PASSWORD)
 	seeded_team = frappe.get_doc({"doctype": "Team", "team_name": "E2E Team", "owner_user": member}).insert()
-	seeded_team.skip_onboarding()
+	if not frappe.utils.cint(onboarding):
+		seeded_team.skip_onboarding()
 	team = seeded_team.name
 
 	if scenario in ("ready", "with_invoices"):

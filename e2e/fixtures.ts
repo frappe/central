@@ -37,12 +37,12 @@ export const test = base.extend({
   users: async ({ page, request }, use) => {
     const seeded = []
 
-    const seed = async ({ scenario = 'profile_pending', currency = 'INR' } = {}) => {
+    const seed = async ({ scenario = 'profile_pending', currency = 'INR', onboarding = 0 } = {}) => {
       let creds
 
       await expect(async () => {
         const res = await request.post(method('central.billing.tests.e2e.seed'), {
-          form: { scenario, currency },
+          form: { scenario, currency, onboarding },
         })
         expect(res.ok(), `seed failed: ${res.status()} ${await res.text()}`).toBeTruthy()
         creds = (await res.json()).message

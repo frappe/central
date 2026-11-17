@@ -27,7 +27,7 @@ These specs run:
 
 | Area | Specs |
 | --- | --- |
-| Billing | `invoices`, `limits`, `overview`, `profile`, `projects`, `reports` |
+| Billing | `invoices`, `limits`, `onboarding-country`, `overview`, `profile`, `projects`, `reports` |
 | Servers | `servers/list`, `servers/new`, `servers/trial-upgrade` |
 | Sites | `sites/plan-change` (the public progress page) |
 | Team | `team/invite`, `team/manage`, `team/roles`, `team/settings`, `team/switch` |
@@ -128,6 +128,7 @@ Each spec provisions its own sandbox through the test-only backend endpoints in
   they own, with its console onboarding skipped. The team is the deterministic
   `whoami` default. Scenarios:
   `profile_pending` → `ready` (complete profile) → `with_invoices`.
+  Pass `onboarding=1` to keep the onboarding steps pending, so the console opens the onboarding dialog.
 - `teardown(team, email)` deletes everything that spec created.
 
 The `users` fixture in `e2e/fixtures.ts` calls these for you
