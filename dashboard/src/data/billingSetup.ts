@@ -28,6 +28,9 @@ const state = reactive<SetupState>({
 	team: undefined,
 })
 let inflight: Promise<void> | null = null
+// The team of the latest request. An older request that ends later must not
+// overwrite the newer team's profile.
+let latestKey: string | undefined
 
 export function billingSetupState(): SetupState {
 	return state
@@ -43,6 +46,7 @@ export async function fetchBillingSetup(
 	if (!force && state.team === key && state.data != null) return state.data
 	if (force || state.team !== key) inflight = null
 	if (!inflight) {
+		latestKey = key
 		inflight = (async () => {
 			state.loading = true
 			try {
@@ -53,14 +57,18 @@ export async function fetchBillingSetup(
 					headers: { Accept: 'application/json' },
 				})
 				const j = r.ok ? await r.json() : null
+				if (key !== latestKey) return
 				state.data = j ? (j.data ?? j.message ?? j) : null
 				state.team = key
 			} catch {
+				if (key !== latestKey) return
 				state.data = null // fail-open: the guard won't trap anyone if this errors
 				state.team = key
 			} finally {
-				state.loading = false
-				inflight = null
+				if (key === latestKey) {
+					state.loading = false
+					inflight = null
+				}
 			}
 		})()
 	}
