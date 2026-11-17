@@ -20,6 +20,7 @@ from central.billing.tests.utils import (
 	give_team_a_card,
 	make_plan,
 )
+from central.services.doctype.team_service.team_service import TeamService
 
 TEAM = "team-usage-ledger"
 CLUSTER = "ap-south-1"
@@ -67,7 +68,7 @@ class TestUsageLedger(IntegrationTestCase):
 				return_value={"used_bytes": gb * GB},
 			),
 		):
-			storage_bridge.read_page([self.bucket.name])
+			storage_bridge.read_region(CLUSTER, [self.bucket.name])
 
 	def days(self, **filters):
 		return frappe.get_all(
@@ -278,3 +279,25 @@ class TestUsageLedger(IntegrationTestCase):
 				if v.subject == self.subscription
 			]
 		self.assertEqual(len(found), 1)
+
+	def test_a_bucket_that_cannot_be_read_does_not_stop_the_region(self):
+		frappe.db.delete("Error Log", {"reference_doctype": "Region", "reference_name": CLUSTER})
+		broken = frappe.get_doc({**self.bucket.as_dict(), "name": None, "bucket_name": f"{BUCKET}-2"})
+		broken.external_id = broken.bucket_name
+		broken.db_insert()
+
+		def usage(bucket):
+			if bucket.name == broken.name:
+				raise frappe.ValidationError("Cargo is down")
+			return {"used_bytes": 30 * GB}
+
+		with (
+			patch.object(storage_bridge, "utc_today", return_value=frappe.utils.getdate("2026-06-01")),
+			patch.object(TeamService, "get_usage", new=usage),
+		):
+			storage_bridge.read_region(CLUSTER, [broken.name, self.bucket.name])
+		self.assertEqual([d.quantity for d in self.days()], [30])
+		logs = frappe.get_all(
+			"Error Log", filters={"reference_doctype": "Region", "reference_name": CLUSTER}, pluck="method"
+		)
+		self.assertEqual(logs, [f"Storage usage: 1 bucket(s) not read in {CLUSTER}"])
