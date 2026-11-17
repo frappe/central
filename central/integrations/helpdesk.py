@@ -22,6 +22,8 @@ RELATED_SEARCH_LIMIT = 20
 # Helpdesk as an agent, so Helpdesk does not drop it for us.
 CUSTOMER_VISIBLE_SEARCH_DOCTYPES = frozenset({"HD Ticket", "Communication"})
 TEAM_TICKET_LIMIT = 500
+# `frappe.client.insert_many` refuses more than 200 documents in one request.
+CONTACT_INSERT_LIMIT = 200
 SERVICE_USER_CACHE_SECONDS = 24 * 60 * 60
 
 TICKET_FIELDS = [
@@ -106,8 +108,8 @@ class HelpdeskClient:
 			"url": self.ticket_portal_url(ticket["name"]),
 		}
 
-	def sync_customer(self, team: str, contacts: list[dict]) -> None:
-		"""Make `team` an HD Customer whose Contacts are exactly `contacts`, in their order."""
+	def ensure_customer(self, team: str) -> None:
+		"""Create the team's HD Customer when Helpdesk does not have it yet."""
 		if not self.call("frappe.client.get_list", doctype="HD Customer", filters={"name": team}):
 			self.call(
 				"frappe.client.insert",
@@ -115,7 +117,11 @@ class HelpdeskClient:
 				doc={"doctype": "HD Customer", "customer_name": team},
 			)
 
+	def sync_customer(self, team: str, contacts: list[dict]) -> None:
+		"""Make `team` an HD Customer whose Contacts are exactly `contacts`, in their order."""
+		self.ensure_customer(team)
 		contact_names = self.ensure_contacts(contacts)
+
 		rows = [
 			{
 				"contact_name": contact_names[contact["email"].lower()],
@@ -132,23 +138,22 @@ class HelpdeskClient:
 		)
 
 	def ensure_contacts(self, contacts: list[dict]) -> dict[str, str]:
-		"""The Contact name for each email in `contacts`, creating the missing Contacts in one call."""
+		"""The Contact name for each email in `contacts`, creating the missing Contacts."""
 		emails = list(dict.fromkeys(contact["email"].lower() for contact in contacts))
 		if not emails:
 			return {}
 
 		names = self.contacts_by_email(emails)
 		missing = [contact for contact in contacts if contact["email"].lower() not in names]
-		if not missing:
-			return names
-
-		created = self.call(
-			"frappe.client.insert_many",
-			timeout=WRITE_TIMEOUT,
-			docs=self.contact_documents(missing),
-		)
-		for contact, name in zip(missing, created, strict=True):
-			names[contact["email"].lower()] = name
+		for start in range(0, len(missing), CONTACT_INSERT_LIMIT):
+			batch = missing[start : start + CONTACT_INSERT_LIMIT]
+			created = self.call(
+				"frappe.client.insert_many",
+				timeout=WRITE_TIMEOUT,
+				docs=self.contact_documents(batch),
+			)
+			for contact, name in zip(batch, created, strict=True):
+				names[contact["email"].lower()] = name
 
 		return names
 

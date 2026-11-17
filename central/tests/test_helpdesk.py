@@ -8,6 +8,7 @@ import requests
 from frappe.tests import IntegrationTestCase
 
 from central.integrations.helpdesk import (
+	CONTACT_INSERT_LIMIT,
 	SEARCH_TIMEOUT,
 	TEAM_TICKET_LIMIT,
 	TICKET_FIELDS,
@@ -148,6 +149,30 @@ class TestHelpdeskClient(IntegrationTestCase):
 					{"contact_name": "CT-2", "is_manager": 0},
 				]
 			},
+		)
+
+	def test_sync_customer_inserts_contacts_in_batches_the_helpdesk_accepts(self):
+		contacts = [
+			{"email": f"member{index}@example.test", "full_name": "", "is_manager": False}
+			for index in range(CONTACT_INSERT_LIMIT + 1)
+		]
+		with patch(
+			"central.integrations.helpdesk.requests.post",
+			side_effect=[
+				self.response(200, {"message": [{"name": "TEAM-1"}]}),
+				self.response(200, {"message": []}),
+				self.response(200, {"message": [f"CT-{index}" for index in range(CONTACT_INSERT_LIMIT)]}),
+				self.response(200, {"message": ["CT-LAST"]}),
+				self.response(200, {"message": {"name": "TEAM-1"}}),
+			],
+		) as post:
+			self.client.sync_customer("TEAM-1", contacts)
+
+		batches = [call.kwargs["json"]["docs"] for call in post.call_args_list[2:4]]
+		self.assertEqual([len(batch) for batch in batches], [CONTACT_INSERT_LIMIT, 1])
+		self.assertEqual(
+			len(post.call_args_list[4].kwargs["json"]["fieldname"]["contacts"]),
+			CONTACT_INSERT_LIMIT + 1,
 		)
 
 	def test_sync_customer_clears_the_contacts_of_a_team_without_members(self):
