@@ -17,6 +17,7 @@ defineProps<{
 	canManage: boolean
 	busy: string
 	hideHeader?: boolean
+	rounded?: boolean
 }>()
 
 defineEmits<{
@@ -35,15 +36,19 @@ const columns = [
 
 type BadgeTheme = 'gray' | 'red' | 'blue' | 'green' | 'amber' | 'violet'
 
-const serverSubtitle = (sub: SubscriptionRow): string => {
-	const parts: string[] = []
+const serverPlan = (
+	sub: SubscriptionRow,
+): { name: string; details: string } => {
+	const [name = '', ...specs] = (sub.plan_title ?? '').split(/\s+[—–]\s+/)
 
-	if (sub.plan_title && sub.plan_title !== subscriptionTitle(sub))
-		parts.push(sub.plan_title)
+	if (name === subscriptionTitle(sub))
+		return { name: '', details: sub.region || sub.billing_cycle }
 
-	if (sub.region) parts.push(sub.region)
-
-	return parts.join(' · ') || sub.billing_cycle || 'Monthly'
+	return {
+		name,
+		details:
+			[...specs, sub.region].filter(Boolean).join(' · ') || sub.billing_cycle,
+	}
 }
 
 const statusInfo = (
@@ -110,18 +115,17 @@ const exhausted = (s: ServiceRow): boolean =>
 	s.allowance > 0 &&
 	s.period_usage >= s.allowance
 
-const usagePct = (s: ServiceRow): number => {
-	if (!s.allowance) return 0
-
-	return Math.min(100, Math.round((s.period_usage / s.allowance) * 100))
-}
-
 const overAllowance = (s: ServiceRow): boolean =>
 	s.allowance > 0 && s.period_usage > s.allowance
 </script>
 
 <template>
-	<Table flush :columns="columns" :rows="rows" :hide-header="hideHeader">
+	<Table
+		:flush="!rounded"
+		:columns="columns"
+		:rows="rows"
+		:hide-header="hideHeader"
+	>
 		<template #name="{ row }">
 			<component
 				:is="row.sub.gateway_url ? 'button' : 'div'"
@@ -155,10 +159,6 @@ const overAllowance = (s: ServiceRow): boolean =>
 				<span class="truncate text-base text-ink-gray-9">
 					{{ row.service.title || row.service.plan }}
 				</span>
-				<Badge
-					v-if="row.service.settlement_mode !== 'Prepaid Pack'"
-					label="Metered"
-				/>
 				<Badge v-if="exhausted(row.service)" theme="amber" label="Exhausted" />
 				<Badge
 					v-else-if="overAllowance(row.service)"
@@ -170,28 +170,18 @@ const overAllowance = (s: ServiceRow): boolean =>
 
 		<template #usage="{ row }">
 			<span v-if="row.kind === 'server'" class="text-sm text-ink-gray-5">
-				{{ serverSubtitle(row.sub) }}
+				<span class="text-ink-gray-7">{{ serverPlan(row.sub).name }}</span>
+				<template v-if="serverPlan(row.sub).name"> · </template>
+				{{ serverPlan(row.sub).details }}
 			</span>
 
-			<div v-else-if="row.kind === 'service'" class="flex items-center gap-2.5">
-				<div
-					v-if="row.service.allowance > 0"
-					class="h-1 flex-1 overflow-hidden rounded-1 bg-surface-gray-2"
-				>
-					<span
-						class="block h-full"
-						:class="overAllowance(row.service) ? 'bg-surface-amber-5' : 'bg-surface-gray-7'"
-						:style="{ width: `${overAllowance(row.service) ? 100 : usagePct(row.service)}%` }"
-					/>
-				</div>
-				<span class="text-sm tabular-nums text-ink-gray-5">
-					{{ usageLabel(row.service) }}
-				</span>
-			</div>
+			<span v-else-if="row.kind === 'service'" class="text-sm text-ink-gray-5">
+				{{ usageLabel(row.service) }}
+			</span>
 		</template>
 
 		<template #cost="{ row }">
-			<template v-if="row.kind === 'server'">
+			<div v-if="row.kind === 'server'" class="flex flex-col gap-0.5">
 				<span
 					class="block text-base tabular-nums"
 					:class="isTerminated(row.sub) ? 'text-ink-gray-4' : 'text-ink-gray-9'"
@@ -204,7 +194,7 @@ const overAllowance = (s: ServiceRow): boolean =>
 				>
 					{{ money(row.sub.monthly_rate, currency, { trimTrailingZeros: true }) }}/mo
 				</span>
-			</template>
+			</div>
 
 			<span v-else class="text-base tabular-nums text-ink-gray-9">
 				{{ money(row.cost ?? 0, currency) }}

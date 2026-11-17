@@ -10,7 +10,6 @@ import GstStatusBanner from '@/components/billing/GstStatusBanner.vue'
 import LimitsCard from '@/components/billing/LimitsCard.vue'
 import OutstandingAlert from '@/components/billing/OutstandingAlert.vue'
 import PayingForCard from '@/components/billing/PayingForCard.vue'
-import PayingForPanel from '@/components/billing/PayingForPanel.vue'
 import PaymentSchedulePanel from '@/components/billing/PaymentSchedulePanel.vue'
 import ProjectsPanel from '@/components/billing/ProjectsPanel.vue'
 import SpendCard from '@/components/billing/SpendCard.vue'
@@ -37,14 +36,7 @@ const outstanding = computed(() => {
 	)
 })
 
-type Tray =
-	| 'wallet'
-	| 'cycle'
-	| 'schedule'
-	| 'payingFor'
-	| 'projects'
-	| 'tiers'
-	| null
+type Tray = 'wallet' | 'cycle' | 'schedule' | 'projects' | 'tiers' | null
 
 const tray = ref<Tray>(null)
 
@@ -59,7 +51,6 @@ const trayModel = (name: Exclude<Tray, null>) =>
 const showWalletHistory = trayModel('wallet')
 const showCycleBreakdown = trayModel('cycle')
 const showSchedule = trayModel('schedule')
-const showPayingFor = trayModel('payingFor')
 const showProjects = trayModel('projects')
 const showTiers = trayModel('tiers')
 
@@ -121,10 +112,7 @@ const onAddCredits = () => {
 				/>
 			</div>
 
-			<PayingForCard
-				@open="showPayingFor = true"
-				@open-projects="showProjects = true"
-			/>
+			<PayingForCard @open-projects="showProjects = true" />
 
 			<SpendCard :reports="reports">
 				<LimitsCard @open-tiers="showTiers = true" />
@@ -134,7 +122,6 @@ const onAddCredits = () => {
 		<WalletHistoryPanel v-model:open="showWalletHistory" />
 		<CycleBreakdownPanel v-model:open="showCycleBreakdown" />
 		<PaymentSchedulePanel v-model:open="showSchedule" />
-		<PayingForPanel v-model:open="showPayingFor" />
 		<ProjectsPanel v-model:open="showProjects" />
 		<TiersPanel v-model:open="showTiers" />
 	</div>
