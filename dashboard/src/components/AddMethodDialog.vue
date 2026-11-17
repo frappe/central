@@ -256,6 +256,9 @@ const addPaymentMethodErrorTitle = __("Couldn't add the payment method")
 
 			<!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
 			<div v-else-if="stripeMode" class="space-y-3">
+				<p class="text-p-sm text-ink-gray-6">
+					{{ __('We check a card with a small charge (₹0.50 or $0.50) and refund it straight away. Indian cards set up for auto-pay and UPI are not charged.') }}
+				</p>
 				<p v-if="stripeLoading" class="text-p-sm text-ink-gray-6">
 					{{ __('Loading secure card field…') }}
 				</p>
@@ -265,7 +268,7 @@ const addPaymentMethodErrorTitle = __("Couldn't add the payment method")
 				/>
 				<p class="text-p-sm text-ink-gray-6">
 					<template v-if="stripeSubmitting">
-						{{ __("Validating your card with a small temporary charge that's refunded right away. This can take a few seconds, so please don't close this window.") }}
+						{{ __("Checking your card. This can take a few seconds, so please don't close this window.") }}
 					</template>
 					<template v-else>
 						{{ __("Card details are entered on Stripe's secure field. We never see your card number.") }}

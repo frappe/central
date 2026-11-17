@@ -44,8 +44,8 @@ const offerFacts = computed(() => {
 const steps = computed(() => [
 	{
 		icon: 'lucide-credit-card',
-		title: 'No charge today',
-		text: 'We save it and check that it works.',
+		title: 'A small check charge, refunded',
+		text: 'We check a card with a small charge (₹0.50 or $0.50) and refund it straight away. Indian cards set up for auto-pay and UPI are not charged.',
 	},
 	{
 		icon: 'lucide-wallet',
