@@ -7,7 +7,7 @@ test('Lists the seeded invoices', async ({ page, users }) => {
 	await page.goto('/dashboard/billing/invoices')
 
 	await expect(page.getByRole('row').filter({ hasText: 'Paid' })).toHaveCount(1)
-	await expect(page.getByRole('row').filter({ hasText: 'Open' })).toHaveCount(1)
+	await expect(page.getByRole('row').filter({ hasText: 'Outstanding' })).toHaveCount(1)
 })
 
 test('Opens an invoice receipt', async ({ page, users }) => {
