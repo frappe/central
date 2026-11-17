@@ -16,12 +16,14 @@ REQUEST_COUNTS_KEY = "central:telemetry:request_counts"
 OPEN_ACTION_STATUSES = ("Queued", "Dispatching", "Sent", "In Progress", "Uncertain")
 FINISHED_ACTION_STATUSES = ("Succeeded", "Failed", "Timed Out")
 # Only these groups of /api/method/central.api.<group> get their own label, so the label set stays small.
+FAILURES_NAMED = 20
 API_GROUPS = {"auth", "identity", "jwks", "oidc", "pilot", "servers", "signups", "sites", "sso", "teams"}
 
 
 class CentralMetrics:
 	"""The gauges that show whether Central does its work: customer requests, resource actions, payments,
-	billing, domains, snapshots, emails and background jobs. Each is a count or an age, never a label per record."""
+	billing, domains, snapshots, emails and background jobs. Each is a count or an age. Only failures get a
+	label per record, at most FAILURES_NAMED of each kind, so Beacon can name what failed."""
 
 	def __init__(self) -> None:
 		self.now = now_datetime()
@@ -87,8 +89,33 @@ class CentralMetrics:
 				"status": ("in", FINISHED_ACTION_STATUSES),
 				"completed_at": (">", self.now - timedelta(hours=1)),
 			},
-			fields=["region", "resource_type", "action", "status"],
+			fields=[
+				"region",
+				"resource_type",
+				"action",
+				"status",
+				"title",
+				"subdomain",
+				"resource_id",
+				"error_code",
+			],
+			order_by="completed_at desc",
 		)
+		named = Counter()
+		for row in finished:
+			key = (row.region or "none", row.resource_type, row.action)
+			if row.status == "Succeeded" or named[key] >= FAILURES_NAMED:
+				continue
+			named[key] += 1
+			self.add(
+				"central_resource_action_failed",
+				1,
+				region=key[0],
+				resource_type=row.resource_type,
+				action=row.action,
+				resource=row.title or row.subdomain or row.resource_id or "none",
+				error=row.error_code or row.status,
+			)
 		for (region, resource_type, action, status), count in Counter(
 			(row.region or "none", row.resource_type, row.action, row.status) for row in finished
 		).items():
@@ -222,15 +249,31 @@ class CentralMetrics:
 
 
 def add_webhook_requests(metrics: CentralMetrics, now: datetime) -> None:
+	"""Count the requests by webhook and status, and name the newest Exhausted ones with their first error line."""
 	rows = frappe.get_all(
 		"Webhook Request Log",
 		filters={"creation": (">", now - timedelta(days=1))},
-		fields=["webhook", "status"],
+		fields=["webhook", "status", "reference_doctype", "reference_document", "error"],
+		order_by="creation desc",
 	)
 	for (webhook, status), count in Counter(
 		(row.webhook or "none", row.status or "none") for row in rows
 	).items():
 		metrics.add("frappe_webhook_requests_last_day", count, webhook=webhook, status=status)
+
+	named = Counter()
+	for row in rows:
+		webhook = row.webhook or "none"
+		if row.status != "Exhausted" or named[webhook] >= FAILURES_NAMED:
+			continue
+		named[webhook] += 1
+		metrics.add(
+			"frappe_webhook_request_exhausted",
+			1,
+			webhook=webhook,
+			document=f"{row.reference_doctype} {row.reference_document}",
+			error=((row.error or "").strip().splitlines() or ["no error"])[-1][:120],
+		)
 
 
 def count_request(request, response) -> None:
