@@ -185,15 +185,15 @@ class HelpdeskClient:
 
 		return user
 
-	def list_open_tickets(self, team: str) -> list[dict]:
-		"""The newest unresolved tickets of `team`, each with its portal `url`.
-		A ticket waiting on the customer is Paused, not Resolved, and is still open."""
+	def list_open_tickets(self, team: str, raised_by: str | None = None) -> list[dict]:
+		"""The newest unresolved tickets of `team`, only those `raised_by` raised when it is set,
+		each with its portal `url`. A ticket waiting on the customer is Paused, not Resolved."""
 		rows = self.call(
 			"frappe.client.get_list",
 			doctype="HD Ticket",
 			fields=TICKET_FIELDS,
 			filters=[
-				["HD Ticket", "customer", "=", team],
+				*team_ticket_filters(team, raised_by),
 				["HD Ticket", "status_category", "not in", ["Resolved"]],
 			],
 			order_by="creation desc",
@@ -222,10 +222,10 @@ class HelpdeskClient:
 			for row in rows or []
 		]
 
-	def list_related_tickets(self, team: str, query: str) -> list[dict]:
-		"""The team's tickets that match `query` in Helpdesk's full-text search, any status,
-		each with its portal `url`. A closed ticket can still answer the question."""
-		team_tickets = self.get_team_tickets(team)
+	def list_related_tickets(self, team: str, query: str, raised_by: str | None = None) -> list[dict]:
+		"""The team's tickets, only those `raised_by` raised when it is set, that match `query` in
+		Helpdesk's full-text search, any status, each with its portal `url`."""
+		team_tickets = self.get_team_tickets(team, raised_by)
 		if not team_tickets:
 			return []
 
@@ -260,12 +260,12 @@ class HelpdeskClient:
 
 		return tickets
 
-	def get_team_tickets(self, team: str) -> dict[str, str | None]:
+	def get_team_tickets(self, team: str, raised_by: str | None = None) -> dict[str, str | None]:
 		"""Every ticket of `team`, any status, mapped to the email that raised it."""
 		rows = self.call(
 			"frappe.client.get_list",
 			doctype="HD Ticket",
-			filters=[["HD Ticket", "customer", "=", team]],
+			filters=team_ticket_filters(team, raised_by),
 			fields=["name", "raised_by"],
 			limit_page_length=TEAM_TICKET_LIMIT,
 		)
@@ -333,6 +333,15 @@ class HelpdeskClient:
 			) from e
 
 		return read(method, response)
+
+
+def team_ticket_filters(team: str, raised_by: str | None) -> list[list]:
+	"""The tickets of `team`, narrowed to the ones `raised_by` raised when it is set."""
+	filters = [["HD Ticket", "customer", "=", team]]
+	if raised_by:
+		filters.append(["HD Ticket", "raised_by", "=", raised_by])
+
+	return filters
 
 
 def plain_text(markup: str) -> str:

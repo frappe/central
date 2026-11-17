@@ -62,6 +62,10 @@ class SupportTestCase(IntegrationTestCase):
 		team.append("members", {"user": user, "role": role, "status": status})
 		team.save()
 
+	def _custom_role(self, capability: str) -> str:
+		role = {"doctype": "Team Role", "role_name": f"{capability} {self.suffix}", "team": self.team}
+		return frappe.get_doc(role | {"capabilities": [{"capability": capability}]}).insert().name
+
 	def _grant_server(self, user: str, server: str) -> None:
 		"""Make `user` a Developer on `server` only."""
 		team = frappe.get_doc("Team", self.team)
@@ -120,6 +124,7 @@ class TestSupportTickets(SupportTestCase):
 		second_server = ensure_server(f"support-second-{self.suffix}", self.team, title="web-3")
 		second_site = self._site("second", self.team, second_server)
 		self._grant_server(scoped, self.server)
+		self._add_member(scoped, self._custom_role("support:view"))
 		frappe.set_user(scoped)
 
 		create_ticket(self.team, "server", SERVER_ISSUE, description="It broke.", server=self.server)
@@ -221,7 +226,27 @@ class TestSupportTickets(SupportTestCase):
 
 		list_tickets(self.team)
 
-		self.helpdesk.list_open_tickets.assert_called_once_with(team=self.team)
+		self.helpdesk.list_open_tickets.assert_called_once_with(self.team, None)
+
+	def test_a_viewer_lists_only_the_tickets_they_raised(self):
+		viewer = ensure_user("support.viewer@example.test")
+		self._add_member(viewer, "Viewer")
+		frappe.set_user(viewer)
+
+		list_tickets(self.team)
+		find_related(self.team, "broken mail")
+
+		self.helpdesk.list_open_tickets.assert_called_once_with(self.team, viewer)
+		self.helpdesk.list_related_tickets.assert_called_once_with(self.team, "broken mail", viewer)
+
+	def test_a_role_without_support_view_is_refused(self):
+		member = ensure_user("support.norole@example.test")
+		self._add_member(member, self._custom_role("server:view"))
+		frappe.set_user(member)
+
+		with self.assertRaises(frappe.PermissionError):
+			list_tickets(self.team)
+		self.helpdesk.list_open_tickets.assert_not_called()
 
 	def test_a_teammates_ticket_does_not_link_to_the_portal(self):
 		developer = ensure_user("support.developer@example.test")
@@ -243,6 +268,8 @@ class TestSupportTickets(SupportTestCase):
 		invited = ensure_user("support.invited@example.test")
 		self._add_member(developer, "Developer")
 		self._add_member(invited, "Developer", status="Invited")
+		viewer = ensure_user("support.viewer@example.test")
+		self._add_member(viewer, "Viewer")
 
 		contacts = {contact["email"]: contact for contact in get_customer_contacts(self.team)}
 
@@ -250,7 +277,8 @@ class TestSupportTickets(SupportTestCase):
 		self.assertEqual(
 			contacts[self.owner]["full_name"], frappe.db.get_value("User", self.owner, "full_name")
 		)
-		self.assertFalse(contacts[developer]["is_manager"])
+		self.assertTrue(contacts[developer]["is_manager"])
+		self.assertFalse(contacts[viewer]["is_manager"])
 		self.assertNotIn(invited, contacts)
 
 	def test_a_member_change_enqueues_one_helpdesk_customer_sync(self):
@@ -273,6 +301,32 @@ class TestSupportTickets(SupportTestCase):
 		team.save()
 
 		enqueue.assert_not_called()
+
+	def test_a_custom_role_capability_change_syncs_its_team(self):
+		role = frappe.get_doc("Team Role", self._custom_role("support:view"))
+		self.enterContext(patch("central.support.is_helpdesk_configured", return_value=True))
+		enqueue = self.enterContext(patch("frappe.enqueue"))
+
+		role.append("capabilities", {"capability": "support:manage"})
+		role.save()
+
+		synced = [
+			call
+			for call in enqueue.call_args_list
+			if call.args[0] == "central.support.sync_helpdesk_customer"
+		]
+		self.assertEqual([call.kwargs["team"] for call in synced], [self.team])
+
+	def test_the_patch_gives_custom_roles_support_view_once(self):
+		from central.patches.v0_0.grant_support_view_to_custom_roles import execute
+
+		role = self._custom_role("server:view")
+
+		execute()
+		execute()
+
+		capabilities = frappe.get_all("Role Capability", {"parent": role}, pluck="capability")
+		self.assertEqual(sorted(capabilities), ["server:view", "support:view"])
 
 	def _failed_sync(self, team: str, contacts: list[dict]) -> None:
 		if team == self.team:
@@ -310,7 +364,7 @@ class TestSupportTickets(SupportTestCase):
 		list_tickets(self.team)
 
 		self.helpdesk.create_ticket.assert_called_once()
-		self.helpdesk.list_open_tickets.assert_called_once_with(team=self.team)
+		self.helpdesk.list_open_tickets.assert_called_once_with(self.team, self.owner)
 
 	def test_a_suspended_team_member_without_a_team_argument_resolves_their_only_team(self):
 		solo = ensure_user("support.solo@example.test")
@@ -382,7 +436,7 @@ class TestSupportTickets(SupportTestCase):
 
 		self.assertEqual(result, {"articles": [{"name": "kb-1"}], "tickets": [self.own_ticket]})
 		self.helpdesk.search_articles.assert_called_once_with("broken mail")
-		self.helpdesk.list_related_tickets.assert_called_once_with(self.team, "broken mail")
+		self.helpdesk.list_related_tickets.assert_called_once_with(self.team, "broken mail", None)
 
 	def test_find_related_skips_articles_when_they_are_disabled(self):
 		frappe.set_user(self.owner)
