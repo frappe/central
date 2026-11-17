@@ -1,7 +1,7 @@
 -- title: Central Job Queue
 -- resource_type: Region
 -- section: Central
--- unit: 
+-- unit:
 -- style: Line
 -- is_key_chart: 0
 -- sort_order: 20
