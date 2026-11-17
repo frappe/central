@@ -176,26 +176,13 @@ def enqueue_helpdesk_customer_sync(team: str) -> None:
 	)
 
 
-def backfill_helpdesk_customers() -> None:
-	"""Make every Team a Helpdesk customer, then point the tickets opened before the customer model
-	at their team. One team's failure is logged and must not stop the rest."""
+def assign_marked_tickets() -> None:
+	"""Give each ticket without a customer the team its marker names, in one call per team."""
 	if not is_helpdesk_configured():
 		return
 
-	teams = frappe.get_all("Team", pluck="name")
-	for team in teams:
-		try:
-			sync_helpdesk_customer(team)
-		except Exception as error:
-			frappe.log_error(title="Helpdesk customer backfill failed", message=f"{team}: {error}")
-
-	assign_marked_tickets(teams)
-
-
-def assign_marked_tickets(teams: list[str]) -> None:
-	"""Give each ticket without a customer the team its marker names, in one call per team."""
 	client = HelpdeskClient.from_settings()
-	known_teams = set(teams)
+	known_teams = set(frappe.get_all("Team", pluck="name"))
 	tickets_by_team: dict[str, list[str]] = {}
 	for ticket in client.list_marked_tickets():
 		team = ticket_team(ticket.get("description") or "")
