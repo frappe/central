@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import call, patch
 
 import frappe
 
-from central.support import assign_marked_tickets, get_customer_contacts, team_context_line
+from central.support import (
+	SYNC_ATTEMPTS,
+	assign_marked_tickets,
+	get_customer_contacts,
+	sync_helpdesk_customer,
+	team_context_line,
+)
 from central.tests.test_iam import ensure_user
 from central.tests.test_support import SupportTestCase
 
@@ -38,6 +45,13 @@ class TestHelpdeskCustomerSync(SupportTestCase):
 		enqueue.assert_called_once()
 		self.assertEqual(enqueue.call_args.args[0], "central.support.sync_helpdesk_customer")
 		self.assertEqual(enqueue.call_args.kwargs["team"], self.team)
+		self.assertEqual(enqueue.call_args.kwargs["rq_retry"].max, 3)
+
+	def test_a_change_while_the_sync_runs_is_copied_again(self):
+		with patch("central.support.now_datetime", return_value=datetime(2000, 1, 1)):
+			sync_helpdesk_customer(self.team)
+
+		self.assertEqual(self.customer_helpdesk.sync_customer.call_count, SYNC_ATTEMPTS)
 
 	def test_a_team_status_change_enqueues_a_sync(self):
 		self.enterContext(patch("central.support.is_helpdesk_configured", return_value=True))
