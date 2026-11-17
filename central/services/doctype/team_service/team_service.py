@@ -7,9 +7,9 @@ from frappe.model.document import Document
 
 from central.billing.catalog.subscriptions import end_subscription, provision_service_subscription
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
+from central.services.doctype.service.service import STORAGE_SERVICE
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 
-STORAGE_SERVICE = "storage"
 AI_SERVICE = "ai"
 
 
@@ -26,6 +26,7 @@ class TeamService(Document):
 		add_on_service: DF.Literal["storage", "ai"]
 		bucket_name: DF.Data | None
 		endpoint_url: DF.Data | None
+		external_id: DF.Data | None
 		region: DF.Link | None
 		secret_access_key: DF.Password | None
 		status: DF.Literal["Active", "Suspended"]
@@ -138,6 +139,7 @@ class TeamService(Document):
 		self.validate_bucket_region()
 		self.validate_bucket_is_unclaimed()
 		self.validate_one_ai_service()
+		self.external_id = self.bucket_name if self.is_bucket else self.team
 
 	def validate_bucket_region(self) -> None:
 		"""The form asks for it through mandatory_depends_on, which the server does not check."""
