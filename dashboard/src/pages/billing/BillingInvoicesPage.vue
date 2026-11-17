@@ -191,9 +191,7 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 
 		<!-- Docked receipt panel — the shared SidePanel, slides in beside the
          list, never over it. Header carries all invoice identity: number +
-         status together, so the body never needs a labelled "Status" row.
-         GROUNDING GAP (#70): no email-invoice endpoint yet, so that action
-         stays disabled. -->
+         status together, so the body never needs a labelled "Status" row. -->
 		<SidePanel
 			:open="!!selected"
 			@update:open="(v: boolean) => !v && (selected = null)"
@@ -217,13 +215,6 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 				</div>
 			</template>
 			<template #actions>
-				<Button
-					variant="ghost"
-					icon="lucide-mail"
-					:disabled="true"
-					title="Email invoice (coming soon)"
-					label="Email invoice"
-				/>
 				<Button
 					variant="ghost"
 					icon="lucide-download"
