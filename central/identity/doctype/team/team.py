@@ -138,7 +138,8 @@ class Team(TeamLifecycle, Document):
 		# A staging-trial team keeps a complete billing profile, so it can create servers.
 		on_team_update(self)
 		remove_departed_devices(self)
-		enqueue_helpdesk_customer_sync(self)
+		if self.has_member_change():
+			enqueue_helpdesk_customer_sync(self.name)
 
 	def has_member_change(self) -> bool:
 		"""Whether this save changes the team's members, including a new team.

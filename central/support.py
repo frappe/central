@@ -120,6 +120,15 @@ def keep_own_ticket_links(tickets: list[dict]) -> list[dict]:
 	]
 
 
+def get_ticket_owner_filter(team: str) -> str | None:
+	"""The email whose tickets alone the caller may list, or None when they may list the whole
+	team's. A Customer Manager in Helpdesk, a `support:manage` holder, sees every team ticket."""
+	if user_has_operator_bypass() or can(frappe.session.user, team, "support:manage"):
+		return None
+
+	return get_user_email()
+
+
 def get_customer_contacts(team: str) -> list[dict]:
 	"""The Active members of `team` as Helpdesk customer contacts, one per user.
 	A member who manages the team is a Helpdesk Customer Manager."""
@@ -135,7 +144,7 @@ def get_customer_contacts(team: str) -> list[dict]:
 		{
 			"email": details[user].email,
 			"full_name": details[user].full_name or "",
-			"is_manager": can(user, team, "team:manage_members"),
+			"is_manager": can(user, team, "support:manage"),
 		}
 		for user in users
 		if details.get(user) and details[user].email
@@ -147,16 +156,16 @@ def sync_helpdesk_customer(team: str) -> None:
 	HelpdeskClient.from_settings().sync_customer(team, get_customer_contacts(team))
 
 
-def enqueue_helpdesk_customer_sync(team) -> None:
-	"""Queue a Helpdesk customer sync, because a new team and a member change both alter its contacts."""
-	if not is_helpdesk_configured() or not team.has_member_change():
+def enqueue_helpdesk_customer_sync(team: str) -> None:
+	"""Queue one Helpdesk customer sync of `team` after the commit, when Helpdesk is configured."""
+	if not is_helpdesk_configured():
 		return
 
 	frappe.enqueue(
 		"central.support.sync_helpdesk_customer",
-		team=team.name,
+		team=team,
 		enqueue_after_commit=True,
-		job_id=f"helpdesk_customer::{team.name}",
+		job_id=f"helpdesk_customer::{team}",
 		deduplicate=True,
 	)
 

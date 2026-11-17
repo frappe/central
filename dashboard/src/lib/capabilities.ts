@@ -7,10 +7,11 @@ const CATEGORY_LABEL: Record<string, string> = {
 	billing: 'Billing',
 	team: 'Team',
 	service: 'Services',
+	support: 'Support',
 	server: 'Servers',
 	cluster: 'Servers',
 }
-const CATEGORY_ORDER = ['Billing', 'Team', 'Services', 'Servers']
+const CATEGORY_ORDER = ['Billing', 'Team', 'Services', 'Support', 'Servers']
 
 /** The capabilities Central can grant on one server rather than the whole team. */
 export type ServerCapability =
@@ -111,10 +112,11 @@ const CATEGORY_NOUN: Record<string, string> = {
 	billing: 'billing',
 	team: 'team',
 	service: 'services',
+	support: 'support',
 	server: 'servers',
 	cluster: 'servers',
 }
-const NOUN_ORDER = ['billing', 'team', 'services', 'servers']
+const NOUN_ORDER = ['billing', 'team', 'services', 'support', 'servers']
 
 function listOf(items: string[]): string {
 	if (items.length <= 2) return items.join(' and ')

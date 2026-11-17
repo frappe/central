@@ -54,12 +54,18 @@
    },
    {
     "capability": "server:console"
+   },
+   {
+    "capability": "support:view"
+   },
+   {
+    "capability": "support:manage"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-10-25 12:21:44",
+  "modified": "2026-11-17 17:40:22",
   "name": "Owner",
   "role_name": "Owner",
   "team": null
@@ -116,12 +122,18 @@
    },
    {
     "capability": "server:console"
+   },
+   {
+    "capability": "support:view"
+   },
+   {
+    "capability": "support:manage"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-10-25 12:21:44",
+  "modified": "2026-11-17 17:40:22",
   "name": "Admin",
   "role_name": "Admin",
   "team": null
@@ -166,12 +178,18 @@
    },
    {
     "capability": "server:console"
+   },
+   {
+    "capability": "support:view"
+   },
+   {
+    "capability": "support:manage"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-10-25 12:21:44",
+  "modified": "2026-11-17 17:40:22",
   "name": "Developer",
   "role_name": "Developer",
   "team": null
@@ -186,12 +204,15 @@
    },
    {
     "capability": "service:view"
+   },
+   {
+    "capability": "support:view"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-06-30 00:00:00",
+  "modified": "2026-11-17 17:40:22",
   "name": "Viewer",
   "role_name": "Viewer",
   "team": null
@@ -215,12 +236,18 @@
    },
    {
     "capability": "service:manage"
+   },
+   {
+    "capability": "support:view"
+   },
+   {
+    "capability": "support:manage"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-06-30 00:00:00",
+  "modified": "2026-11-17 17:40:22",
   "name": "Billing",
   "role_name": "Billing",
   "team": null

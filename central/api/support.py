@@ -61,7 +61,9 @@ def find_related(team: str | None = None, query: str = "") -> dict:
 		articles, articles_failed = _search_or_empty(client.search_articles, query)
 	else:
 		articles, articles_failed = [], False
-	tickets, tickets_failed = _search_or_empty(client.list_related_tickets, team, query)
+	tickets, tickets_failed = _search_or_empty(
+		client.list_related_tickets, team, query, support.get_ticket_owner_filter(team)
+	)
 	if articles_failed and tickets_failed:
 		frappe.throw(_("Support is unavailable right now. Try again in a few minutes."), HelpdeskUnavailable)
 
@@ -81,4 +83,5 @@ def _search_or_empty(search: Callable, *args) -> tuple[list, bool]:
 @require_support_team_member
 def list_tickets(team: str | None = None) -> list[dict]:
 	"""The team's open tickets, newest first. Only the caller's own tickets link to the portal."""
-	return support.keep_own_ticket_links(HelpdeskClient.from_settings().list_open_tickets(team=team))
+	tickets = HelpdeskClient.from_settings().list_open_tickets(team, support.get_ticket_owner_filter(team))
+	return support.keep_own_ticket_links(tickets)
