@@ -91,6 +91,7 @@ synthetic, because minting a Razorpay-issued one needs its bot-gated sheet.
 
 - The bench must already be running and serving the dashboard. The suite targets `http://central.localhost:8000` by default. Set `E2E_BASE_URL` for another site or port. See the [README](../README.md) for the bench setup.
 - The site must have `allow_tests: true`. This gates the test-only seed endpoints. They are unreachable on any site without it.
+- A site with no outgoing email account needs `mute_emails: 1`, or the specs that invite a team member fail.
 - The site needs the catalog and gateway records. Run the demo seed first: `pilot frappe --site central.localhost execute central.billing.demo.demo_scenarios.seed`.
 - Real **test-mode** gateway keys in `sites/common_site_config.json` (`stripe_secret_key`/`stripe_publishable_key` = `sk_test_`/`pk_test_`, `razorpay_key_id`/`razorpay_key_secret` = `rzp_test`). Stripe specs need outbound network to `js.stripe.com` and the Stripe API.
 
