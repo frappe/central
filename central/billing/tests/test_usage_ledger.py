@@ -290,7 +290,6 @@ class TestUsageLedger(IntegrationTestCase):
 		self.assertEqual(self.unread_buckets("2026-06-05"), [])
 
 	def test_a_bucket_that_cannot_be_read_does_not_stop_the_region(self):
-		frappe.db.delete("Error Log", {"reference_doctype": "Region", "reference_name": CLUSTER})
 		broken = frappe.get_doc({**self.bucket.as_dict(), "name": None, "bucket_name": f"{BUCKET}-2"})
 		broken.external_id = broken.bucket_name
 		broken.db_insert()
@@ -300,13 +299,15 @@ class TestUsageLedger(IntegrationTestCase):
 				raise frappe.ValidationError("Cargo is down")
 			return {"used_bytes": 30 * GB}
 
+		region_logs = {"reference_doctype": "Region", "reference_name": CLUSTER}
+		before = set(frappe.get_all("Error Log", filters=region_logs, pluck="name"))
 		with (
 			patch.object(storage_bridge, "utc_today", return_value=frappe.utils.getdate("2026-06-01")),
 			patch.object(TeamService, "get_usage", new=usage),
 		):
 			storage_bridge.read_region(CLUSTER, [broken.name, self.bucket.name])
 		self.assertEqual([d.quantity for d in self.days()], [30])
-		logs = frappe.get_all(
-			"Error Log", filters={"reference_doctype": "Region", "reference_name": CLUSTER}, pluck="method"
-		)
-		self.assertEqual(logs, [f"Storage usage: 1 bucket(s) not read in {CLUSTER}"])
+		logs = frappe.get_all("Error Log", filters=region_logs, fields=["name", "method"])
+		new = [log.method for log in logs if log.name not in before]
+		self.assertEqual(new, [f"Storage usage: 1 bucket(s) not read in {CLUSTER}"])
+		frappe.db.delete("Error Log", {"name": ["in", [log.name for log in logs]]})
