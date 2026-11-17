@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import BillingCountryField from '@/components/billing/BillingCountryField.vue'
 import PaymentMethodFlow from '@/components/billing/PaymentMethodFlow.vue'
 import TrialBillingBanner from '@/components/billing/TrialBillingBanner.vue'
@@ -12,6 +12,13 @@ const { profile } = useBillingSetup()
 const flow = ref<InstanceType<typeof PaymentMethodFlow> | null>(null)
 const countryField = ref<InstanceType<typeof BillingCountryField> | null>(null)
 const hasMethod = ref(false)
+// True for the whole submit, so the dialog holds its actions until it ends.
+const saving = ref(false)
+// The dialog can leave this step while the country saves; then the flow must not start.
+let isUnmounted = false
+onBeforeUnmount(() => {
+	isUnmounted = true
+})
 
 // The offer is gone from the profile once the credit is granted, so keep the last one seen
 // to confirm it after the payment method is added.
@@ -67,14 +74,22 @@ defineExpose({
 	submitLabel: computed(() =>
 		hasMethod.value ? 'Continue' : 'Add payment method',
 	),
-	saving: false,
-	submit: async () => {
-		if (hasMethod.value) return true
-		if (countryField.value && !(await countryField.value.save())) return false
-		flow.value?.start()
-		return false
-	},
+	saving,
+	submit,
 })
+
+async function submit(): Promise<boolean> {
+	if (hasMethod.value) return true
+	if (saving.value) return false
+	saving.value = true
+	try {
+		if (countryField.value && !(await countryField.value.save())) return false
+		if (!isUnmounted) flow.value?.start()
+		return false
+	} finally {
+		saving.value = false
+	}
+}
 </script>
 
 <template>
