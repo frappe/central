@@ -2,8 +2,10 @@
 import { Button } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useInvoices } from '@/composables/useInvoices'
 import { billingPeriod } from '@/lib/date'
 import { formatDate, money, plural } from '@/lib/format'
+import { invoiceToOpen } from '@/lib/invoiceToOpen'
 import { attemptStory } from '@/lib/status'
 import type { PaymentAttempt, Statement } from '@/types/billing'
 
@@ -12,6 +14,7 @@ const props = defineProps<{
 	attempts: PaymentAttempt[] | null
 }>()
 const router = useRouter()
+const { invoices } = useInvoices()
 
 const currency = computed(() => props.statement?.currency ?? 'INR')
 const earlier = computed(() =>
@@ -79,6 +82,28 @@ const detail = computed(() => {
 	return isOverdue.value ? 'Pay now to keep your servers running.' : ''
 })
 
+// The statement holds only Billable invoices. An issued invoice always has a
+// due date.
+const statementInvoices = computed(() =>
+	(props.statement?.rows ?? []).map((r) => ({
+		name: r.invoice,
+		status: r.status,
+		period_start: r.period_start,
+		due_date: r.due_date,
+		invoice_type: 'Billable',
+	})),
+)
+
+// Both sources together, so a list out of step with the statement cannot hide
+// an overdue invoice. The statement copy wins, as it drives this banner.
+const owedInvoices = computed(() => {
+	const fromStatement = new Set(statementInvoices.value.map((r) => r.name))
+	return [
+		...statementInvoices.value,
+		...invoices.value.filter((r) => !fromStatement.has(r.name)),
+	]
+})
+
 const action = computed(() => ({
 	label:
 		props.attempts === null ||
@@ -88,7 +113,11 @@ const action = computed(() => ({
 			? 'View invoice'
 			: 'Pay now',
 	onClick: () => {
-		router.push({ name: 'BillingInvoices' })
+		const invoice = invoiceToOpen(owedInvoices.value)
+		router.push({
+			name: 'BillingInvoices',
+			query: invoice ? { invoice } : {},
+		})
 	},
 }))
 </script>

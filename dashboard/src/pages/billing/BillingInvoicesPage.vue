@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Badge, Button, LoadingText, Spinner, TabButtons } from 'frappe-ui'
+import {
+	Alert,
+	Badge,
+	Button,
+	LoadingText,
+	Spinner,
+	TabButtons,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import InvoiceListView from '@/components/billing/InvoiceListView.vue'
@@ -34,6 +41,7 @@ const viewOptions = [
 const {
 	invoices,
 	loading: invoicesLoading,
+	error: invoicesError,
 	reload: reloadInvoices,
 } = useInvoices()
 
@@ -154,14 +162,23 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 					:options="viewOptions"
 				/>
 
-				<InvoiceListView
-					v-if="view === 'invoices'"
-					:invoices="invoices"
-					:loading="invoicesLoading && !invoices.length"
-					:active-name="selected?.name"
-					@row-click="selectRow"
-				/>
-
+				<template v-if="view === 'invoices'">
+					<Alert
+						v-if="invoicesError"
+						theme="red"
+						:title="__('Couldn\'t load your invoices')"
+						:description="__('Retry, or contact support if this keeps happening.')"
+						:primary-action="{ label: __('Retry'), onClick: reloadInvoices }"
+					/>
+					<InvoiceListView
+						v-else
+						:invoices="invoices"
+						:loading="invoicesLoading && !invoices.length"
+						:active-name="selected?.name"
+						@row-click="selectRow"
+					/>
+					<RefundsCard />
+				</template>
 				<StatementCard
 					v-else
 					:statement="reports.statement.data ?? null"
@@ -169,16 +186,12 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 					:export-url="reports.exportUrl('statement')"
 					@retry="reports.statement.reload()"
 				/>
-
-				<RefundsCard v-if="view === 'invoices'" />
 			</div>
 		</div>
 
 		<!-- Docked receipt panel — the shared SidePanel, slides in beside the
          list, never over it. Header carries all invoice identity: number +
-         status together, so the body never needs a labelled "Status" row.
-         GROUNDING GAP (#70): no email-invoice endpoint yet, so that action
-         stays disabled. -->
+         status together, so the body never needs a labelled "Status" row. -->
 		<SidePanel
 			:open="!!selected"
 			@update:open="(v: boolean) => !v && (selected = null)"
@@ -202,13 +215,6 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 				</div>
 			</template>
 			<template #actions>
-				<Button
-					variant="ghost"
-					icon="lucide-mail"
-					:disabled="true"
-					title="Email invoice (coming soon)"
-					label="Email invoice"
-				/>
 				<Button
 					variant="ghost"
 					icon="lucide-download"

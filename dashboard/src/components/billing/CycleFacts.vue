@@ -123,15 +123,15 @@ const onAddMethod = () => {
 
 <template>
 	<div
-		class="grid grid-cols-[minmax(0,1fr)_auto] content-between items-center gap-x-3 gap-y-3 px-4 py-3 text-base leading-6"
+		class="grid grid-cols-[minmax(6.5rem,1fr)_minmax(0,auto)] content-between items-center gap-x-3 gap-y-3 px-4 py-3 text-base leading-6"
 	>
 		<LoadingText v-if="loading" :lines="4" class="col-span-2 py-2" />
 
 		<template v-else>
 			<template v-if="hasOutstanding">
-				<span class="truncate text-ink-gray-5"> {{ __('Due now') }} </span>
+				<span class="text-ink-gray-5"> {{ __('Due now') }} </span>
 
-				<div class="flex items-center justify-end gap-2">
+				<div class="flex flex-wrap items-center justify-end gap-2">
 					<Tooltip :text="blocker?.title" :disabled="!blocker">
 						<span
 							class="whitespace-nowrap text-base-medium tabular-nums text-ink-gray-9"
@@ -143,9 +143,9 @@ const onAddMethod = () => {
 			</template>
 
 			<template v-for="step in dunningSteps" :key="step.label">
-				<span class="truncate text-ink-gray-5"> {{ step.label }} </span>
+				<span class="text-ink-gray-5"> {{ step.label }} </span>
 
-				<div class="flex items-center justify-end gap-2">
+				<div class="flex flex-wrap items-center justify-end gap-2">
 					<Tooltip :text="step.hint">
 						<span
 							class="whitespace-nowrap text-base-medium tabular-nums"
@@ -157,9 +157,9 @@ const onAddMethod = () => {
 				</div>
 			</template>
 
-			<span class="truncate text-ink-gray-5"> {{ __('Wallet') }} </span>
+			<span class="text-ink-gray-5"> {{ __('Wallet') }} </span>
 
-			<div class="flex items-center justify-end gap-2">
+			<div class="flex flex-wrap items-center justify-end gap-2">
 				<Tooltip :text="__('Wallet history')">
 					<Button
 						variant="ghost"
@@ -187,7 +187,7 @@ const onAddMethod = () => {
 				</Tooltip>
 			</div>
 
-			<span class="truncate text-ink-gray-5"> {{ __('Payment method') }} </span>
+			<span class="text-ink-gray-5"> {{ __('Payment method') }} </span>
 
 			<span
 				v-if="primaryMethod"
@@ -204,7 +204,7 @@ const onAddMethod = () => {
 			/>
 			<span v-else class="text-right text-ink-gray-5">{{ __('None') }}</span>
 
-			<span class="truncate text-ink-gray-5"> {{ __('Next invoice') }} </span>
+			<span class="text-ink-gray-5"> {{ __('Next invoice') }} </span>
 
 			<span
 				class="whitespace-nowrap text-right text-base-medium tabular-nums text-ink-gray-9"
@@ -212,11 +212,11 @@ const onAddMethod = () => {
 				{{ nextInvoiceOn || '—' }}
 			</span>
 
-			<span class="truncate text-ink-gray-5">
+			<span class="text-ink-gray-5">
 				{{ __('Next payment date') }}
 			</span>
 
-			<div class="flex items-center justify-end gap-2">
+			<div class="flex flex-wrap items-center justify-end gap-2">
 				<Tooltip v-if="canManageBilling" :text="__('Change payment date')">
 					<Button
 						variant="ghost"

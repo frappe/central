@@ -1,35 +1,25 @@
 <script setup lang="ts">
-import { Button, LoadingText, Switch } from 'frappe-ui'
+import { Button, LoadingText } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import SidePanel from '@/components/common/SidePanel.vue'
 import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
-import { infoToast } from '@/lib/feedback'
 import { money, signedMoney } from '@/lib/format'
 import { downloadReceipt } from '@/lib/invoicePdf'
 import { __ } from '@/lib/translate'
 import type { CreditLedgerEntry } from '@/types/billing'
 
 // Wallet history — a docked side panel (like the invoice detail tray), opened
-// from the compact Wallet card. Balance header, auto-recharge toggle, the credit
-// ledger, and Add credit (TopupDialog → #67). The page owns whether it's mounted;
-// the close button clears that.
+// from the compact Wallet card. The page owns whether it's mounted; the close
+// button clears that.
 const open = defineModel<boolean>('open', { default: false })
 const { credit, ledger, currency, reloadMoney } = useBillingOverview()
 const { canManageBilling } = useCapabilities()
 const { requireSetup } = useBillingSetup()
 
 const balance = computed(() => Number(credit.data?.balance ?? 0))
-
-// GROUNDING GAP (#69): no auto-recharge endpoint yet. The toggle is rendered to
-// match the design but is inert until one lands.
-const autoRecharge = ref(false)
-function onAutoRecharge(): void {
-	autoRecharge.value = false
-	infoToast("Auto-recharge isn't available yet")
-}
 
 const showTopup = ref(false)
 function onAddCredit(): void {
@@ -55,16 +45,6 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 		title="Wallet history"
 		:subtitle="`Balance ${money(balance, currency)}`"
 	>
-		<template #actions>
-			<Switch
-				class="mr-1"
-				label="Auto-recharge"
-				:model-value="autoRecharge"
-				:disabled="!canManageBilling"
-				@update:model-value="onAutoRecharge"
-			/>
-		</template>
-
 		<!-- Ledger -->
 		<div class="min-h-0 flex-1 overflow-y-auto">
 			<LoadingText
