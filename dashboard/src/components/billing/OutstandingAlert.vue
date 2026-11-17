@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { billingPeriod } from '@/lib/date'
 import { formatDate, money, plural } from '@/lib/format'
+import { invoiceToOpen } from '@/lib/invoiceToOpen'
 import { attemptStory } from '@/lib/status'
 import type { PaymentAttempt, Statement } from '@/types/billing'
 
@@ -28,15 +29,6 @@ const unsettledRows = computed(() =>
 // Only an issued invoice is owed. One not issued yet is still being prepared.
 const openRows = computed(() => unsettledRows.value.filter((r) => r.is_issued))
 const hasOutstanding = computed(() => outstanding.value > 0)
-// The invoice the banner's button opens: an overdue one first, then the oldest.
-const invoiceToOpen = computed(() => {
-	const rows = [...openRows.value].sort(
-		(a, b) =>
-			Number(b.status === 'Overdue') - Number(a.status === 'Overdue') ||
-			a.period_start.localeCompare(b.period_start),
-	)
-	return rows[0]?.invoice ?? null
-})
 const allHeld = computed(
 	() => unsettledRows.value.length > 0 && openRows.value.length === 0,
 )
@@ -97,7 +89,7 @@ const action = computed(() => ({
 			? 'View invoice'
 			: 'Pay now',
 	onClick: () => {
-		const invoice = invoiceToOpen.value
+		const invoice = invoiceToOpen(props.statement?.rows ?? [])
 		router.push({
 			name: 'BillingInvoices',
 			query: invoice ? { invoice } : {},
