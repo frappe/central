@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Combobox, useCall } from 'frappe-ui'
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
@@ -32,7 +32,8 @@ const save = useCall<unknown, Record<string, unknown>>({
 	method: 'POST',
 	immediate: false,
 })
-const country = ref(profile.value?.country ?? '')
+const country = ref('')
+let picked = false
 const error = ref('')
 
 async function saveCountry(value: string): Promise<boolean> {
@@ -61,18 +62,29 @@ function saveOnce(value: string): Promise<boolean> {
 }
 
 function onChange(value: string): void {
+	picked = true
 	country.value = value
 	saveOnce(value)
 }
 
 // The browser's time zone is a good first guess for India, the one country with its own
 // currency. The field shows the guess; it is saved only when the user goes on.
-onMounted(() => {
-	if (country.value || currencyLocked.value) return
+function guessCountry(): string {
+	if (currencyLocked.value) return ''
 	const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
-	if (zone === 'Asia/Kolkata' || zone === 'Asia/Calcutta')
-		country.value = 'India'
-})
+	return zone === 'Asia/Kolkata' || zone === 'Asia/Calcutta' ? 'India' : ''
+}
+
+// The profile loads after the field mounts: show its country once it arrives, and
+// guess only when it has none. A country the user picked is never overwritten.
+watch(
+	profile,
+	(loaded) => {
+		if (!loaded || picked) return
+		country.value = loaded.country || guessCountry()
+	},
+	{ immediate: true },
+)
 
 defineExpose({ save: () => saveOnce(country.value) })
 </script>
