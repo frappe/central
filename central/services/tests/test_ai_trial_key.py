@@ -4,9 +4,11 @@
 from unittest.mock import Mock, patch
 
 import frappe
+import requests
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 
+from central.integrations.grove import GroveUnavailable
 from central.services.doctype.ai_trial_key import ai_trial_key
 from central.services.doctype.ai_trial_key.ai_trial_key import TRIAL_TEAM, AITrialKey
 
@@ -396,3 +398,70 @@ class TestAITrialKey(IntegrationTestCase):
 		ai_trial_key.retry_stale()
 		self.grove.revoke_key.assert_not_called()
 		key.reload().delete()
+
+	def held(self, status: str = "Assigned", team: str = "TEAM-00001") -> AITrialKey:
+		key = self.available()
+		key.db_set({"status": status, "server": "vm-credits", "team": team})
+		return key
+
+	def test_a_running_trial_reads_its_gateway_under_its_own_secret_once_a_minute(self):
+		key = self.held()
+		balance = self.enterContext(
+			patch(f"{MODULE}.get_key_balance", return_value={"balance": 0.75, "spent": 1.25})
+		)
+
+		first, second = (
+			AITrialKey.get_server_credits("vm-credits"),
+			AITrialKey.get_server_credits("vm-credits"),
+		)
+
+		balance.assert_called_once_with(GATEWAY, key.get_password("api_key"))
+		self.assertEqual(first, {"state": "Active", "window": "Total", "cap": 2, "spent": 1.25})
+		self.assertEqual(second, first)
+
+		key.reload().raise_cap(6)
+		self.assertEqual(AITrialKey.get_server_credits("vm-credits")["cap"], 6)
+
+	def test_a_converted_key_reads_its_month_from_the_teams_figures(self):
+		key = self.held("Converted", team="TEAM-00002")
+		self.grove.get_figures.return_value = {
+			"keys": [
+				{"name": "other", "cap": 1, "month_spent": 1},
+				{"name": key.grove_key, "cap": 10, "month_spent": 4},
+			]
+		}
+
+		credits = AITrialKey.get_server_credits("vm-credits")
+
+		self.grove.get_figures.assert_called_once_with("TEAM-00002", timeout=(3, 5))
+		self.assertEqual(credits, {"state": "Active", "window": "Monthly", "cap": 10, "spent": 4})
+
+	def test_a_revoked_key_reads_ended_without_a_call(self):
+		self.held("Revoked")
+		balance = self.enterContext(patch(f"{MODULE}.get_key_balance"))
+
+		credits = AITrialKey.get_server_credits("vm-credits")
+
+		self.assertEqual((credits["state"], credits["spent"]), ("Ended", None))
+		balance.assert_not_called()
+		self.grove.get_figures.assert_not_called()
+
+	def test_a_silent_grove_shows_no_credit_and_is_not_asked_again_for_a_minute(self):
+		self.held("Converted")
+		self.grove.get_figures.side_effect = GroveUnavailable("down")
+
+		self.assertIsNone(AITrialKey.get_server_credits("vm-credits"))
+		self.assertIsNone(AITrialKey.get_server_credits("vm-credits"))
+		self.grove.get_figures.assert_called_once()
+
+	def test_a_failed_gateway_read_shows_no_credit_and_is_logged(self):
+		self.held()
+		self.enterContext(patch(f"{MODULE}.get_key_balance", side_effect=requests.HTTPError("401")))
+
+		with patch(f"{MODULE}.frappe.log_error") as log_error:
+			self.assertIsNone(AITrialKey.get_server_credits("vm-credits"))
+
+		log_error.assert_called_once()
+
+	def test_a_server_without_a_key_has_no_credit(self):
+		self.assertIsNone(AITrialKey.get_server_credits("vm-without-key"))
