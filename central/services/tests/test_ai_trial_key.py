@@ -7,6 +7,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 
+from central.integrations.grove import GroveUnavailable
 from central.services.doctype.ai_trial_key import ai_trial_key
 from central.services.doctype.ai_trial_key.ai_trial_key import TRIAL_TEAM, AITrialKey
 
@@ -396,3 +397,61 @@ class TestAITrialKey(IntegrationTestCase):
 		ai_trial_key.retry_stale()
 		self.grove.revoke_key.assert_not_called()
 		key.reload().delete()
+
+	def held(self, status: str = "Assigned", team: str = "TEAM-00001") -> AITrialKey:
+		key = self.available()
+		key.db_set({"status": status, "server": "vm-credits", "team": team})
+		return key
+
+	def test_a_running_trial_reads_its_credit_at_grove_once_until_its_cap_is_raised(self):
+		key = self.held()
+		self.grove.get_key_spend.return_value = {"cap": 5, "spent": 1.25, "key_cap_window": "Total"}
+
+		first, second = (
+			AITrialKey.get_server_credits("vm-credits"),
+			AITrialKey.get_server_credits("vm-credits"),
+		)
+
+		self.grove.get_key_spend.assert_called_once_with(TRIAL_TEAM, key.grove_key)
+		self.assertEqual(first, {"state": "Active", "window": "Total", "cap": 5, "spent": 1.25})
+		self.assertEqual(second, first)
+
+		key.reload().raise_cap(6)
+		AITrialKey.get_server_credits("vm-credits")
+		self.assertEqual(self.grove.get_key_spend.call_count, 2)
+
+	def test_a_converted_key_is_read_under_the_customers_team(self):
+		key = self.held("Converted", team="TEAM-00002")
+		self.grove.get_key_spend.return_value = {"cap": 10, "spent": 0, "key_cap_window": "Monthly"}
+
+		AITrialKey.get_server_credits("vm-credits")
+
+		self.grove.get_key_spend.assert_called_once_with("TEAM-00002", key.grove_key)
+
+	def test_a_revoked_key_reads_ended_without_asking_grove(self):
+		self.held("Revoked")
+
+		credits = AITrialKey.get_server_credits("vm-credits")
+
+		self.assertEqual((credits["state"], credits["spent"]), ("Ended", None))
+		self.grove.get_key_spend.assert_not_called()
+
+	def test_a_silent_grove_shows_no_credit_and_is_not_asked_again_for_a_minute(self):
+		self.held()
+		self.grove.get_key_spend.side_effect = GroveUnavailable("down")
+
+		self.assertIsNone(AITrialKey.get_server_credits("vm-credits"))
+		self.assertIsNone(AITrialKey.get_server_credits("vm-credits"))
+		self.grove.get_key_spend.assert_called_once()
+
+	def test_a_reply_in_another_shape_shows_no_credit_and_is_logged(self):
+		self.held()
+		self.grove.get_key_spend.return_value = {"cap": 5}
+
+		with patch(f"{MODULE}.frappe.log_error") as log_error:
+			self.assertIsNone(AITrialKey.get_server_credits("vm-credits"))
+
+		log_error.assert_called_once()
+
+	def test_a_server_without_a_key_has_no_credit(self):
+		self.assertIsNone(AITrialKey.get_server_credits("vm-without-key"))

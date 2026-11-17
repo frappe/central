@@ -136,6 +136,10 @@ class GroveClient:
 		gateway; a key minted there is refused), `is_default`."""
 		return self.call("grove.api.catalog.geographies") or []
 
+	def get_key_spend(self, team: str, key: str) -> dict:
+		"""One key's cap and its spend over the cap window. A short timeout: billing waits on it."""
+		return self.call("grove.api.usage.key_spend", timeout=(3, 5), team=team, key=key)
+
 	def get_figures(self, team: str) -> dict:
 		"""What the console shows, as one entry Grove keeps until something moves it (a record lands,
 		a correction, a key or the team saved, its tier edited) and 30 minutes at most, so every
@@ -175,10 +179,10 @@ class GroveClient:
 			pulled_until=pulled_until,
 		)
 
-	def call(self, method: str, **body) -> dict | list:
+	def call(self, method: str, timeout: tuple[int, int] = TIMEOUT, **body) -> dict | list:
 		try:
 			response = requests.post(
-				f"{self.base_url}/api/method/{method}", json=body, headers=self.headers, timeout=TIMEOUT
+				f"{self.base_url}/api/method/{method}", json=body, headers=self.headers, timeout=timeout
 			)
 		except (requests.ConnectionError, requests.Timeout) as e:
 			raise GroveUnavailable(_("Grove can't be reached right now.")) from e

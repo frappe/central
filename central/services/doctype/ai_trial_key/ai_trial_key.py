@@ -146,6 +146,49 @@ class AITrialKey(Document):
 		}
 
 	@classmethod
+	def get_server_credits(cls, server: str) -> dict | None:
+		"""The AI credit of the server's trial key, or None without a key or an answer from Grove.
+		Kept 30 minutes: Grove lands usage hourly."""
+		key = frappe.db.get_value(
+			"AI Trial Key",
+			{"server": server},
+			["name", "status", "cap", "grove_key", "team"],
+			as_dict=True,
+			order_by="creation desc",
+		)
+		if not key:
+			return None
+		if key.status in ("Revoking", "Revoked", "Conversion Failed"):
+			return {"state": "Ended", "window": "Total", "cap": flt(key.cap), "spent": None}
+
+		if (credits := frappe.cache.get_value(credits_cache_key(key.grove_key))) is None:
+			credits = cls.read_credits(key)
+			# A failure is kept a minute, so a Grove outage slows one billing load, not each.
+			frappe.cache.set_value(
+				credits_cache_key(key.grove_key), credits, expires_in_sec=1800 if credits else 60
+			)
+		return credits or None
+
+	@staticmethod
+	def read_credits(key: frappe._dict) -> dict:
+		"""Grove's figures for the key, under the team that holds it. {} on any failure: billing
+		must still load."""
+		team = key.team if key.status == "Converted" else TRIAL_TEAM
+		try:
+			spend = GroveClient.from_settings().get_key_spend(team, key.grove_key)
+			return {
+				"state": "Active",
+				"window": spend["key_cap_window"],
+				"cap": flt(spend["cap"]),
+				"spent": flt(spend["spent"]),
+			}
+		except frappe.ValidationError:
+			frappe.clear_last_message()
+		except Exception:
+			frappe.log_error(title=f"AI credits read failed for {key.name}")
+		return {}
+
+	@classmethod
 	def link_server(cls, resource_action: str, server: str) -> None:
 		frappe.db.set_value(
 			"AI Trial Key", {"resource_action": resource_action, "status": "Assigned"}, "server", server
@@ -269,6 +312,7 @@ class AITrialKey(Document):
 
 		GroveClient.from_settings().update_caps(TRIAL_TEAM, {self.grove_key: flt(cap)})
 		self.db_set("cap", flt(cap))
+		frappe.cache.delete_value(credits_cache_key(self.grove_key))
 
 	def on_trash(self) -> None:
 		# A record must outlive its live key, so that a failed revoke is retried.
@@ -300,6 +344,10 @@ class AITrialKey(Document):
 			self.db_set({"revoked": 1, "last_error": None}, commit=True)
 		else:
 			self.db_set({"status": "Revoked", "last_error": None}, commit=True)
+
+
+def credits_cache_key(grove_key: str) -> str:
+	return f"ai_trial_key_credits:{grove_key}"
 
 
 def revoke_trial_key(name: str) -> None:
