@@ -35,16 +35,18 @@ const save = useCall<unknown, Record<string, unknown>>({
 const country = ref(profile.value?.country ?? '')
 const error = ref('')
 
-async function saveCountry(value: string): Promise<void> {
-	if (!value || value === profile.value?.country) return
+// True once the shown country is saved, or there was nothing to save.
+async function saveCountry(value: string): Promise<boolean> {
+	if (!value || value === profile.value?.country) return true
 	error.value = ''
 	await save.submit({ team: activeTeam.value, country: value })
 	if (save.error) {
 		error.value = getErrorMessage(save.error, 'Could not save your country.')
-		return
+		return false
 	}
 	await refresh()
 	reloadProfile()
+	return true
 }
 
 function onChange(value: string): void {
@@ -53,12 +55,15 @@ function onChange(value: string): void {
 }
 
 // The browser's time zone is a good first guess for India, the one country with its own
-// currency. The field shows the guess, and the user can change it.
+// currency. The field shows the guess; it is saved only when the user goes on.
 onMounted(() => {
 	if (country.value) return
 	const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
-	if (zone === 'Asia/Kolkata' || zone === 'Asia/Calcutta') onChange('India')
+	if (zone === 'Asia/Kolkata' || zone === 'Asia/Calcutta')
+		country.value = 'India'
 })
+
+defineExpose({ save: () => saveCountry(country.value) })
 </script>
 
 <template>

@@ -9,6 +9,7 @@ import type { WelcomeCredit } from '@/types/billing'
 
 const { profile } = useBillingSetup()
 const flow = ref<InstanceType<typeof PaymentMethodFlow> | null>(null)
+const countryField = ref<InstanceType<typeof BillingCountryField> | null>(null)
 const hasMethod = ref(false)
 
 // The offer is gone from the profile once the credit is granted, so keep the last one seen
@@ -68,6 +69,7 @@ defineExpose({
 	saving: false,
 	submit: async () => {
 		if (hasMethod.value) return true
+		if (countryField.value && !(await countryField.value.save())) return false
 		flow.value?.start()
 		return false
 	},
@@ -77,7 +79,7 @@ defineExpose({
 <template>
 	<div class="space-y-5">
 		<TrialBillingBanner :link-to-upgrade="false" />
-		<BillingCountryField v-if="!hasMethod" />
+		<BillingCountryField v-if="!hasMethod" ref="countryField" />
 		<div
 			v-if="hasMethod"
 			class="flex items-start gap-3 rounded-6 bg-surface-green-1 px-4 py-3"
