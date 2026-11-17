@@ -3,6 +3,7 @@
 -- severity: High
 -- resource_type: Region
 -- runbook_url: https://github.com/frappe/central/blob/develop/beacon/runbooks/central-webhooks-failing.md
+-- charts: central-failures
 -- interval: 300
 -- pending_for: 600
 -- resolve_after: 1800

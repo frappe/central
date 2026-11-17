@@ -3,6 +3,7 @@
 -- severity: High
 -- resource_type: Region
 -- runbook_url: https://github.com/frappe/central/blob/develop/beacon/runbooks/central-api-errors.md
+-- charts: central-requests
 -- interval: 60
 -- pending_for: 120
 -- resolve_after: 300

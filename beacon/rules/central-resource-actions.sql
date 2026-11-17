@@ -3,6 +3,7 @@
 -- severity: High
 -- resource_type: Region
 -- runbook_url: https://github.com/frappe/central/blob/develop/beacon/runbooks/central-resource-actions.md
+-- charts: central-resource-actions, central-oldest-work
 -- interval: 60
 -- pending_for: 120
 -- resolve_after: 600

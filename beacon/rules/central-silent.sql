@@ -3,6 +3,7 @@
 -- severity: High
 -- resource_type: Region
 -- runbook_url: https://github.com/frappe/central/blob/develop/beacon/runbooks/central-silent.md
+-- charts: central-job-queue
 -- interval: 60
 -- pending_for: 180
 -- resolve_after: 120

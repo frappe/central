@@ -3,6 +3,7 @@
 -- severity: Medium
 -- resource_type: Region
 -- runbook_url: https://github.com/frappe/central/blob/develop/beacon/runbooks/central-background-work.md
+-- charts: central-oldest-work, central-failures, central-job-queue
 -- interval: 300
 -- pending_for: 600
 -- resolve_after: 900
