@@ -94,11 +94,9 @@ def release_invoice(invoice: str) -> None:
 
 
 def recount_month(subscription: str, resource_type: str, month, drafting: bool = False) -> MonthCount | None:
-	"""Write the first open month at or after `month` from the days not yet billed.
-
-	A billed or closed month is never recounted, so its late days go into the next open month.
-	The month a draft is billing stays open even when an earlier draft of it closed it.
-	"""
+	"""Write the first open month at or after `month` from the days not yet billed."""
+	# A billed or closed month is never recounted, so its late days go into the next open month.
+	# The month a draft is billing stays open, even when an earlier draft of it billed nothing.
 	meter = _meter(subscription, resource_type)
 	if not meter:
 		return None

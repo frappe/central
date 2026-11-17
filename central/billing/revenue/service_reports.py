@@ -22,11 +22,9 @@ CLOCK_SKEW = datetime.timedelta(minutes=5)
 
 
 def accept_report(service_name: str | None, signature: str | None, raw_body: bytes) -> dict:
-	"""Store a signed report's lines as Usage Days. Only a failed signature refuses the whole call.
-
-	Each line is one subject's value for one UTC day so far, so a report sent again, late or out
-	of order changes nothing it should not.
-	"""
+	"""Store a signed report's lines as Usage Days. Only a failed signature refuses the whole call."""
+	# Each line is one subject's value for one UTC day so far, so a resent, late or reordered report
+	# changes nothing it should not.
 	service = verified_service(service_name, signature, raw_body)
 	report = _parsed(raw_body)
 	as_of = reported_at(report.get("as_of"))

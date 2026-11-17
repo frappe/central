@@ -14,12 +14,9 @@ ESTIMATE_AFTER_DAYS = 3
 ESTIMATE_LOOKBACK_DAYS = 7
 DELETE_PAGE = 5000
 
-_INSERT_FIELDS = (
-	"name",
-	"creation",
-	"modified",
-	"owner",
-	"modified_by",
+_META_FIELDS = ("name", "creation", "modified", "owner", "modified_by")
+# A line's own values, in the order they are inserted.
+_DAY_FIELDS = (
 	"service",
 	"meter",
 	"subject",
@@ -33,17 +30,14 @@ _INSERT_FIELDS = (
 	"source_amount",
 	"source_currency",
 	"as_of",
-	"landed_at",
-	"estimated",
 )
+_INSERT_FIELDS = (*_META_FIELDS, *_DAY_FIELDS, "landed_at", "estimated")
 
 
 def write_days(rows: list[dict]) -> int:
-	"""Store each line as its subject's row for that UTC day, and return how many lines it wrote.
-
-	A new day is inserted. An existing day takes the line only when it is a real reading over an
-	estimate, a higher Level peak, or a newer Sum total. A billed day is never changed.
-	"""
+	"""Store each line as its subject's row for its UTC day, and return how many lines it wrote."""
+	# An existing day takes a line only when it is a real reading over an estimate, a higher Level
+	# peak or a newer Sum total. A billed day never changes.
 	rows = _merged(rows)
 	if not rows:
 		return 0
@@ -102,7 +96,7 @@ def release_days(invoice: str) -> None:
 
 
 def fill_missing_days(today=None) -> int:
-	"""Daily: give a Level subject that went silent its last reading, marked estimated (D-27)."""
+	"""Daily: give a Level subject that went silent its last reading, marked estimated."""
 	last = _utc_date(today) - datetime.timedelta(days=ESTIMATE_AFTER_DAYS)
 	written = 0
 	for offset in range(ESTIMATE_LOOKBACK_DAYS, -1, -1):
@@ -139,7 +133,7 @@ def _estimate_day(day: datetime.date) -> int:
 	previous = frappe.get_all(
 		DOCTYPE,
 		filters={"day": day - datetime.timedelta(days=1), "aggregation": LEVEL},
-		fields=list(_INSERT_FIELDS[5:]),
+		fields=[*_DAY_FIELDS, "estimated"],
 	)
 	if not previous:
 		return 0
@@ -194,7 +188,7 @@ def _insert(rows: list[dict], now) -> None:
 			now,
 			user,
 			user,
-			*(row.get(field) for field in _INSERT_FIELDS[5:-2]),
+			*(row.get(field) for field in _DAY_FIELDS),
 			now,
 			frappe.utils.cint(row.get("estimated")),
 		)
