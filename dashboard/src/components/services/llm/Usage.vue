@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, LoadingText, Select } from 'frappe-ui'
+import { Button, Combobox, LoadingText, Select } from 'frappe-ui'
 import { AreaChart, BarChart, useChartTokens } from 'frappe-ui/charts'
 import { computed, ref, watch } from 'vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
@@ -188,8 +188,10 @@ const isEmpty = computed(() => !usageLoading.value && !rows.value.length)
 	<div class="flex flex-col gap-4 md:gap-5">
 		<Teleport v-if="active" defer to="#ai-tab-controls">
 			<div class="flex items-center gap-2">
-				<Select
+				<!-- A team can hold hundreds of keys: the list scrolls and is searched by title. -->
+				<Combobox
 					v-model="apiKey"
+					trigger="button"
 					:options="keyOptions"
 					align="end"
 					aria-label="API key"
