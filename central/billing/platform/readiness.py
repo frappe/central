@@ -328,16 +328,17 @@ def check_terminated_servers_stop_billing() -> list[Violation]:
 
 
 def check_storage_usage_is_recorded() -> list[Violation]:
-	"""Every billed bucket has a Usage Day for the last closed UTC day, so no day is left unbilled."""
+	"""Every billed bucket that existed yesterday (UTC) has a Usage Day for it, so no day is left unbilled."""
 	from central.billing.revenue.usage_ledger import utc_today
 	from central.services.doctype.service.service import STORAGE_SERVICE
+	from central.services.doctype.team_service.team_service import billed_subjects
 
-	yesterday = utc_today() - datetime.timedelta(days=1)
-	buckets = frappe.get_all(
-		"Team Service",
-		filters={"add_on_service": STORAGE_SERVICE, "subscription": ["is", "set"]},
-		fields=["external_id", "team", "subscription"],
-	)
+	today = utc_today()
+	yesterday = today - datetime.timedelta(days=1)
+	# Creation is in system time; a bucket made after yesterday ended (UTC) had nothing to read.
+	cutoff = frappe.utils.convert_utc_to_system_timezone(
+		datetime.datetime.combine(today, datetime.time(), datetime.UTC)
+	).replace(tzinfo=None)
 	read = set(
 		frappe.get_all("Usage Day", filters={"service": STORAGE_SERVICE, "day": yesterday}, pluck="subject")
 	)
@@ -347,10 +348,10 @@ def check_storage_usage_is_recorded() -> list[Violation]:
 			team=bucket.team,
 			subject_doctype="Subscription",
 			subject=bucket.subscription,
-			detail=f"Bucket {bucket.external_id} has no usage for {yesterday} (UTC). The next reading or the daily estimate fills it.",
+			detail=f"Bucket {subject} has no usage for {yesterday} (UTC). The next reading or the daily estimate fills it.",
 		)
-		for bucket in buckets
-		if bucket.external_id not in read
+		for subject, bucket in billed_subjects(STORAGE_SERVICE).items()
+		if subject not in read and bucket.creation < cutoff
 	]
 
 

@@ -271,14 +271,23 @@ class TestUsageLedger(IntegrationTestCase):
 	def test_a_service_region_counts_as_a_team_cluster(self):
 		self.assertIn(CLUSTER, team_clusters(TEAM))
 
-	def test_a_bucket_with_no_usage_for_yesterday_is_flagged(self):
-		with patch.object(usage_ledger, "utc_today", return_value=frappe.utils.getdate("2026-06-05")):
-			found = [
+	def unread_buckets(self, today: str) -> list:
+		with patch.object(usage_ledger, "utc_today", return_value=frappe.utils.getdate(today)):
+			return [
 				v
 				for v in invariants.audit(only="M1", checks=readiness.CHECKS)
 				if v.subject == self.subscription
 			]
-		self.assertEqual(len(found), 1)
+
+	def test_a_bucket_with_no_usage_for_yesterday_is_flagged(self):
+		frappe.db.set_value("Team Service", self.bucket.name, "creation", "2026-06-01", update_modified=False)
+		self.assertEqual(len(self.unread_buckets("2026-06-05")), 1)
+
+	def test_a_bucket_made_after_yesterday_is_not_flagged(self):
+		frappe.db.set_value(
+			"Team Service", self.bucket.name, "creation", "2026-06-05 12:00", update_modified=False
+		)
+		self.assertEqual(self.unread_buckets("2026-06-05"), [])
 
 	def test_a_bucket_that_cannot_be_read_does_not_stop_the_region(self):
 		frappe.db.delete("Error Log", {"reference_doctype": "Region", "reference_name": CLUSTER})
