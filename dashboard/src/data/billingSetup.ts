@@ -39,7 +39,8 @@ export function billingSetupState(): SetupState {
 }
 
 // `team` scopes the check; '' (or falsy) lets the backend resolve the caller's
-// default team. Cached per-team, so a team switch refetches.
+// default team. Cached per-team, so a team switch refetches. Resolves with this
+// team's own profile: shared state may already belong to a newer request.
 export async function fetchBillingSetup(
 	team: string | null | undefined,
 	{ force = false }: { force?: boolean } = {},
@@ -56,8 +57,7 @@ export async function fetchBillingSetup(
 	if (force || inflight?.key !== key) {
 		inflight = { key, promise: loadBillingSetup(key, ++latestToken) }
 	}
-	await inflight.promise
-	return state.data
+	return inflight.promise
 }
 
 async function loadBillingSetup(
