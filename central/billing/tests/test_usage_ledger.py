@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 """Storage usage is kept per bucket per UTC day as the day's peak, and billed as the GB-month."""
 
+import threading
 from unittest.mock import patch
 
 import frappe
@@ -21,6 +22,7 @@ from central.billing.tests.utils import (
 	give_team_a_card,
 	make_plan,
 )
+from central.services.doctype.service.service import STORAGE_METER, STORAGE_SERVICE
 from central.services.doctype.team_service.team_service import TeamService
 
 TEAM = "team-usage-ledger"
@@ -28,6 +30,28 @@ CLUSTER = "ap-south-1"
 PLAN = "usage-ledger-plan"
 BUCKET = "team-usage-ledger-bucket"
 GB = 1_000_000_000
+
+
+def on_own_connection(fn) -> None:
+	"""Run `fn` and commit it on a second database connection, as another worker would."""
+	site, errors = frappe.local.site, []
+
+	def worker():
+		frappe.init(site=site)
+		frappe.connect()
+		try:
+			fn()
+			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- the other worker's own transaction
+		except Exception as error:
+			errors.append(error)
+		finally:
+			frappe.destroy()
+
+	thread = threading.Thread(target=worker)
+	thread.start()
+	thread.join()
+	if errors:
+		raise errors[0]
 
 
 class TestUsageLedger(IntegrationTestCase):
@@ -99,20 +123,39 @@ class TestUsageLedger(IntegrationTestCase):
 		existing = usage_ledger._existing_days
 		calls = []
 
-		def missed_first(rows):
+		def missed_first(rows, **kwargs):
 			calls.append(rows)
-			return {} if len(calls) == 1 else existing(rows)
+			return {} if len(calls) == 1 else existing(rows, **kwargs)
 
 		with patch.object(usage_ledger, "_existing_days", side_effect=missed_first):
 			self.read("2026-06-01", 40)
+		self.assertEqual([d.quantity for d in self.days()], [40])
+
+	def test_a_day_another_worker_committed_after_this_snapshot_still_lands(self):
+		meter = frappe.get_doc("Service", STORAGE_SERVICE).get_meter(STORAGE_METER)
+
+		def line(gb: float) -> dict:
+			day = frappe.utils.getdate("2026-06-01")
+			return meter.get_day_row(self.bucket, day, gb * GB, as_of=frappe.utils.now_datetime())
+
+		first = line(10)
+		frappe.get_all("Usage Day", limit=1)  # Opens this transaction's snapshot first.
+		on_own_connection(lambda: usage_ledger.write_days([first]))
+		self.addCleanup(
+			on_own_connection, lambda: frappe.db.delete("Usage Day", {"subject": first["subject"]})
+		)
+		# Ends this transaction first, so the cleanup is not waiting on its row lock.
+		self.addCleanup(frappe.db.rollback)
+
+		self.assertEqual(usage_ledger.write_days([line(40)]), 1)
 		self.assertEqual([d.quantity for d in self.days()], [40])
 
 	def test_a_stale_read_never_lowers_a_peak(self):
 		self.read("2026-06-01", 50)
 		existing = usage_ledger._existing_days
 
-		def stale(rows):
-			return {key: frappe._dict(row, quantity=10) for key, row in existing(rows).items()}
+		def stale(rows, **kwargs):
+			return {key: frappe._dict(row, quantity=10) for key, row in existing(rows, **kwargs).items()}
 
 		with patch.object(usage_ledger, "_existing_days", side_effect=stale):
 			self.read("2026-06-01", 30)

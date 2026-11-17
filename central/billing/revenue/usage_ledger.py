@@ -47,11 +47,13 @@ def write_days(rows: list[dict]) -> int:
 	_insert(fresh, now)
 	if fresh:
 		# A concurrent writer may have inserted one of these days first; the line then updates its row.
-		existing.update(_existing_days(fresh))
-	changed = [(existing[_key(row)].name, row) for row in rows if is_newer(existing[_key(row)], row)]
+		# A locking read sees that row even when it committed after this transaction's snapshot.
+		existing.update(_existing_days(fresh, for_update=True))
+	changed = _changed(rows, existing)
 	for name, row in changed:
 		_update(name, row, now)
-	return len(fresh) + len(changed)
+	# A line that lost the insert race and then updated its row is still one line.
+	return len({_key(row) for row in fresh} | {_key(row) for _, row in changed})
 
 
 def is_newer(current, row: dict) -> bool:
@@ -63,6 +65,15 @@ def is_newer(current, row: dict) -> bool:
 	if current.get("aggregation") == LEVEL:
 		return frappe.utils.flt(row["quantity"]) > frappe.utils.flt(current.get("quantity"))
 	return frappe.utils.get_datetime(row["as_of"]) > frappe.utils.get_datetime(current.get("as_of"))
+
+
+def _changed(rows: list[dict], existing: dict) -> list[tuple]:
+	"""(stored day, line) for each line that should replace its stored day."""
+	return [
+		(existing[_key(row)].name, row)
+		for row in rows
+		if _key(row) in existing and is_newer(existing[_key(row)], row)
+	]
 
 
 def _merged(rows: list[dict]) -> list[dict]:
@@ -157,10 +168,10 @@ def _key(row) -> tuple:
 	return (row["service"], row["subject"], row["meter"], str(frappe.utils.getdate(row["day"])))
 
 
-def _existing_days(rows: list[dict]) -> dict:
+def _existing_days(rows: list[dict], for_update: bool = False) -> dict:
 	"""The stored days for these lines, by key. One query for the whole batch."""
 	day = frappe.qb.DocType(DOCTYPE)
-	found = (
+	query = (
 		frappe.qb.from_(day)
 		.select(day.name, day.service, day.subject, day.meter, day.day, day.aggregation)
 		.select(day.quantity, day.as_of, day.estimated, day.invoice)
@@ -173,7 +184,8 @@ def _existing_days(rows: list[dict]) -> dict:
 				]
 			)
 		)
-	).run(as_dict=True)
+	)
+	found = (query.for_update() if for_update else query).run(as_dict=True)
 	return {_key(row): row for row in found}
 
 
