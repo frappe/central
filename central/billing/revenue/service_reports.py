@@ -18,6 +18,7 @@ MAXIMUM_LINES = 1000
 # Far above any one subject's daily value in raw units, and low enough to divide safely.
 MAXIMUM_VALUE = 10**18
 MAXIMUM_CURRENCY = 10
+MAXIMUM_DIMENSION = 140
 CLOCK_SKEW = datetime.timedelta(minutes=5)
 
 
@@ -88,9 +89,26 @@ def line_problem(service, line, subjects: dict) -> str | None:
 		return _("unknown meter")
 	if _subject_of(line) not in subjects:
 		return _("unknown subject")
-	if not _is_number_in_range(line.get("value"), 0):
-		return _("value must be a number from 0 to {0}").format(MAXIMUM_VALUE)
-	return _source_problem(line) or _day_problem(line.get("day"))
+	return (
+		_value_problem(service, line)
+		or _dimension_problem(line.get("dimension"))
+		or _source_problem(line)
+		or _day_problem(line.get("day"))
+	)
+
+
+def _value_problem(service, line: dict) -> str | None:
+	# A meter that counts corrections, such as AI cost, may go below zero.
+	lowest = -MAXIMUM_VALUE if service.get_meter(line["meter"]).allow_negative else 0
+	if _is_number_in_range(line.get("value"), lowest):
+		return None
+	return _("value must be a number from {0} to {1}").format(lowest, MAXIMUM_VALUE)
+
+
+def _dimension_problem(dimension) -> str | None:
+	if dimension is None or (isinstance(dimension, str) and len(dimension) <= MAXIMUM_DIMENSION):
+		return None
+	return _("dimension must be text of at most {0} characters").format(MAXIMUM_DIMENSION)
 
 
 def _is_number_in_range(value, lowest: float) -> bool:
@@ -133,6 +151,7 @@ def _row(service, line: dict, team_service, as_of: datetime.datetime) -> dict:
 		team_service,
 		line["day"],
 		line["value"],
+		dimension=line.get("dimension"),
 		source_amount=line.get("amount"),
 		source_currency=line.get("currency"),
 		as_of=as_of,

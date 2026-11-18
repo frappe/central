@@ -10,6 +10,8 @@
   "resource_type",
   "unit",
   "unit_divisor",
+  "cost_currency",
+  "allow_negative",
   "label"
  ],
  "fields": [
@@ -55,6 +57,20 @@
    "non_negative": 1
   },
   {
+   "fieldname": "cost_currency",
+   "fieldtype": "Link",
+   "label": "Cost Currency",
+   "options": "Currency",
+   "description": "The meter counts money in this currency, so it bills at that amount, converted at the month's rate."
+  },
+  {
+   "fieldname": "allow_negative",
+   "fieldtype": "Check",
+   "label": "Allow Negative",
+   "default": "0",
+   "description": "A day may be below zero, such as a correction of an earlier day's cost."
+  },
+  {
    "fieldname": "label",
    "fieldtype": "Data",
    "label": "Label"
@@ -63,7 +79,7 @@
  "grid_page_length": 50,
  "istable": 1,
  "links": [],
- "modified": "2026-11-17 12:00:00.000000",
+ "modified": "2026-11-18 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Service Meter",

@@ -22,6 +22,7 @@ import frappe
 from frappe import _
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
+from central.billing.revenue.metered_lines import billable_quantity, line_description
 
 
 def _metered_plan_for(resource_type: str):
@@ -73,6 +74,8 @@ def _resolve_terms(meter: dict):
 	- **Grandfathered**: the locked allowance + per-unit rate off the resource's
 	  active price-lock (skipped when there is no active lock).
 	"""
+	if meter.get("locked_terms"):
+		return meter["locked_terms"]
 	plan = _metered_plan_for(meter.get("resource_type"))
 	if plan and plan.pricing_mode == "Live":
 		return {
@@ -302,6 +305,7 @@ def _insert_rollup(meter: dict, terms: dict, qty: float, seq: int, key: str) -> 
 			"team": terms["team"],
 			"cluster": terms["cluster"],
 			"resource_type": meter.get("resource_type"),
+			"dimension": meter.get("dimension"),
 			"meter_type": meter.get("meter_type"),
 			"period_start": meter.get("period_start"),
 			"period_end": meter.get("period_end"),
@@ -360,6 +364,8 @@ def _metered_lines(team: str, clusters: list, period_start, period_end, explain:
 		.select(
 			Rollup.resource_id,
 			Rollup.resource_type,
+			Rollup.dimension,
+			Rollup.period_start,
 			Rollup.meter_type,
 			Rollup.quantity,
 			Rollup.unit,
@@ -410,8 +416,8 @@ def _metered_lines(team: str, clusters: list, period_start, period_end, explain:
 			resolved = r.locked_rate
 			allowance = frappe.utils.flt(r.locked_allowance)
 
-		billable_qty = max(0.0, frappe.utils.flt(r.quantity) - allowance)
-		if billable_qty <= 0:
+		billable_qty = billable_quantity(frappe.utils.flt(r.quantity), allowance)
+		if not billable_qty:
 			continue
 
 		# Usage ran past the allowance, so the overage must resolve to a rate. Surface the
@@ -445,6 +451,7 @@ def _metered_lines(team: str, clusters: list, period_start, period_end, explain:
 			"cluster": r.cluster,
 			"resource_type": r.resource_type,
 			"unit": r.unit,
+			"description": line_description(r, rate),
 			"quantity": billable_qty,
 			"rate": rate,
 			"days": 0,
