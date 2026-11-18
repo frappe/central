@@ -1,0 +1,217 @@
+# Copyright (c) 2026, frappe and Contributors
+# See license.txt
+
+from unittest.mock import Mock, patch
+from urllib.parse import parse_qs, urlsplit
+
+import frappe
+from frappe.tests import IntegrationTestCase
+from frappe.utils import set_request
+
+from central.api.oauth import disconnect, relay_token, start
+from central.integrations.oauth.oauth import PROVIDER
+from central.integrations.oauth.meta import GRAPH_URL, ROUTE
+from central.integrations.oauth.setup import ensure_email_oauth_providers
+from central.permissions import meta_webhook_route_has_permission, meta_webhook_route_query_conditions
+from central.tests import test_email_oauth
+
+WHATSAPP_CALLBACK = "/api/method/whatsapp.whatsapp.oauth.callback"
+
+
+class TestMetaSignIn(IntegrationTestCase):
+	# the same team, server, site and Pilot credential as the email sign-in tests
+	setUp = test_email_oauth.TestEmailOAuth.setUp
+	enable_meta = test_email_oauth.TestEmailOAuth.enable_meta
+	call_callback = test_email_oauth.TestEmailOAuth.call_callback
+
+	def as_pilot(self, path: str, site: str | None = None):
+		headers = {"X-Pilot-Token": self.token} | ({"X-Pilot-Site": site} if site else {})
+		set_request(method="POST", path=path, headers=headers)
+
+	def sign_in(self) -> str:
+		"""A team member signs in to Meta for this site; returns the WABA ID Meta will report."""
+		self.enable_meta()
+		self.as_pilot("/api/method/central.api.oauth.start")
+		start(
+			provider="meta",
+			state="state-1",
+			code_challenge="challenge-1",
+			return_url=f"https://{self.site}{WHATSAPP_CALLBACK}",
+		)
+		self.call_callback(self.owner, state="state-1", code="meta-code")
+		frappe.set_user("Administrator")
+		return f"waba-{frappe.generate_hash(length=8)}"
+
+	def relay(self, waba_id: str, site: str | None = None, token_reply: tuple[int, dict] | None = None):
+		"""relay_token for meta against a fake Meta; returns the result and the fake Graph API."""
+		status, body = token_reply or (200, {"access_token": "meta-token", "token_type": "bearer"})
+		post = self.enterContext(patch("central.integrations.oauth.oauth.requests.post"))
+		post.return_value = Mock(ok=status < 400, json=Mock(return_value=body))
+		graph = self.enterContext(patch("central.integrations.oauth.meta.requests.request"))
+		graph.side_effect = fake_graph(waba_id)
+		self.graph = graph  # kept for a test whose relay raises
+
+		self.as_pilot("/api/method/central.api.oauth.relay_token", self.site if site is None else site)
+		result = relay_token(
+			provider="meta", grant_type="authorization_code", code="meta-code", code_verifier="verifier-1"
+		)
+		return result, post, graph
+
+	def route_to(self, waba_id: str, site: str) -> None:
+		frappe.get_doc(
+			{"doctype": ROUTE, "waba_id": waba_id, "team": self.team, "server": self.server, "site": site}
+		).insert()
+
+	def other_site(self) -> str:
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Site",
+					"site_name": f"other-{frappe.generate_hash(length=6)}.oauth.example.test",
+					"team": self.team,
+					"server": self.server,
+				}
+			)
+			.insert()
+			.name
+		)
+
+	def test_meta_is_seeded_disabled_with_the_embedded_signup_parameters(self):
+		frappe.delete_doc(PROVIDER, "meta", force=True, ignore_missing=True)
+		ensure_email_oauth_providers()
+		meta = frappe.get_doc(PROVIDER, "meta")
+
+		self.assertFalse(meta.enabled)
+		self.assertEqual(set(meta.get_query_params()), {"config_id", "extras"})
+
+	def test_meta_sign_in_link_has_the_embedded_signup_parameters_and_no_pkce(self):
+		self.enable_meta()
+		self.as_pilot("/api/method/central.api.oauth.start")
+
+		link = start(
+			provider="meta",
+			state="s",
+			code_challenge="challenge-1",
+			return_url=f"https://{self.site}{WHATSAPP_CALLBACK}",
+		)
+
+		query = parse_qs(urlsplit(link["authorize_url"]).query)
+		self.assertIn("config_id", query)
+		self.assertIn("sessionInfoVersion", query["extras"][0])
+		self.assertNotIn("code_challenge", query)
+
+	def test_meta_sign_in_readies_the_account_and_routes_its_webhooks_to_the_site(self):
+		waba_id = self.sign_in()
+
+		result, post, graph = self.relay(waba_id)
+
+		self.assertNotIn("code_verifier", post.call_args.kwargs["data"])
+		self.assertEqual(
+			(result["access_token"], result["app_id"], result["waba_id"], result["phone_id"]),
+			("meta-token", "meta-app-id", waba_id, "phone-1"),
+		)
+		self.assertRegex(result["pin"], r"^\d{6}$")
+		self.assertGreaterEqual(len(result["webhook_secret"]), 32)
+
+		calls = [(c.args[0], c.args[1].removeprefix(f"{GRAPH_URL}/")) for c in graph.call_args_list]
+		self.assertEqual(
+			calls,
+			[
+				("GET", "debug_token"),
+				("GET", f"{waba_id}/phone_numbers"),
+				("POST", f"{waba_id}/subscribed_apps"),
+				("POST", "phone-1/register"),
+			],
+		)
+		debug_token = graph.call_args_list[0].kwargs
+		self.assertEqual(debug_token["headers"]["Authorization"], "Bearer meta-app-id|meta-secret")
+		self.assertEqual(graph.call_args_list[3].kwargs["json"]["pin"], result["pin"])
+
+		route = frappe.get_doc(ROUTE, waba_id)
+		self.assertEqual((route.team, route.server, route.site), (self.team, self.server, self.site))
+		self.assertEqual(route.get_password("webhook_secret"), result["webhook_secret"])
+
+	def test_meta_sign_in_again_replaces_the_webhook_secret(self):
+		waba_id = self.sign_in()
+		self.route_to(waba_id, self.site)
+
+		result, _post, _graph = self.relay(waba_id)
+
+		self.assertEqual(
+			frappe.get_doc(ROUTE, waba_id).get_password("webhook_secret"), result["webhook_secret"]
+		)
+
+	def test_meta_sign_in_refuses_a_waba_routed_to_another_site(self):
+		waba_id = self.sign_in()
+		self.route_to(waba_id, self.other_site())
+
+		with self.assertRaisesRegex(frappe.ValidationError, "already connected to another"):
+			self.relay(waba_id)
+
+		# refused before Meta is changed for this site
+		self.assertEqual([c.args[0] for c in self.graph.call_args_list], ["GET"])
+		self.assertNotEqual(frappe.db.get_value(ROUTE, waba_id, "site"), self.site)
+
+	def test_meta_sign_in_must_come_from_a_site_on_this_server(self):
+		for site in ("", "unknown.oauth.example.test"):
+			waba_id = self.sign_in()
+			with self.subTest(site=site), self.assertRaises(frappe.PermissionError):
+				self.relay(waba_id, site=site)
+			self.assertFalse(frappe.db.exists(ROUTE, waba_id))
+
+	def test_meta_passes_on_an_expired_code_as_invalid_grant(self):
+		waba_id = self.sign_in()
+		expired = {
+			"error": {"message": "expired", "type": "OAuthException", "code": 100, "error_subcode": 36007}
+		}
+
+		with self.assertRaisesRegex(frappe.ValidationError, "invalid_grant"):
+			self.relay(waba_id, token_reply=(400, expired))
+
+	def test_disconnect_drops_the_route_only_for_the_site_it_goes_to(self):
+		waba_id = f"waba-{frappe.generate_hash(length=8)}"
+		self.route_to(waba_id, self.site)
+
+		self.as_pilot("/api/method/central.api.oauth.disconnect", self.other_site())
+		with self.assertRaises(frappe.PermissionError):
+			disconnect(waba_id=waba_id)
+		self.assertTrue(frappe.db.exists(ROUTE, waba_id))
+
+		self.as_pilot("/api/method/central.api.oauth.disconnect", self.site)
+		disconnect(waba_id=waba_id)
+		self.assertFalse(frappe.db.exists(ROUTE, waba_id))
+		disconnect(waba_id=waba_id)  # a second call has nothing left to drop
+
+	def test_only_a_system_manager_reaches_a_route(self):
+		frappe.set_user(self.owner)
+		self.assertEqual(meta_webhook_route_query_conditions(), "1 = 0")
+		self.assertFalse(meta_webhook_route_has_permission(frappe._dict(team=self.team)))
+
+		frappe.set_user("Administrator")
+		self.assertEqual(meta_webhook_route_query_conditions(), "")
+		self.assertTrue(meta_webhook_route_has_permission(frappe._dict(team=self.team)))
+
+
+def fake_graph(waba_id: str):
+	"""Meta's Graph API for one Embedded Signup: the WABA, its one number, and success for each change."""
+	replies = {
+		("GET", "debug_token"): {
+			"data": {
+				"app_id": "meta-app-id",
+				"is_valid": True,
+				"granular_scopes": [
+					{"scope": "business_management"},
+					{"scope": "whatsapp_business_management", "target_ids": [waba_id]},
+					{"scope": "whatsapp_business_messaging", "target_ids": [waba_id]},
+				],
+			}
+		},
+		("GET", f"{waba_id}/phone_numbers"): {"data": [{"id": "phone-1", "display_phone_number": "+1 555"}]},
+		("POST", f"{waba_id}/subscribed_apps"): {"success": True},
+		("POST", "phone-1/register"): {"success": True},
+	}
+
+	def reply(method: str, url: str, **kwargs):
+		return Mock(ok=True, json=Mock(return_value=replies[(method, url.removeprefix(f"{GRAPH_URL}/"))]))
+
+	return reply

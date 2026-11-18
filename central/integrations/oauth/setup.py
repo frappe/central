@@ -1,4 +1,6 @@
-"""Seed an OAuth Provider record for each provider Frappe Cloud can sign mailboxes in with."""
+"""Seed an OAuth Provider record for each provider Frappe Cloud can sign mailboxes and WhatsApp accounts in with."""
+
+import json
 
 import frappe
 
@@ -37,6 +39,16 @@ DEFAULT_PROVIDERS = {
 		"token_url": "https://oauth.yandex.com/token",
 		"scopes": ["mail:imap_full", "mail:smtp", "login:email"],
 		"query_parameters": {},
+	},
+	# WhatsApp Embedded Signup: the configuration at Meta sets the permissions, so no scopes here
+	"meta": {
+		"authorize_url": "https://www.facebook.com/v23.0/dialog/oauth",
+		"token_url": "https://graph.facebook.com/v23.0/oauth/access_token",
+		"scopes": [],
+		"query_parameters": {
+			"config_id": "REPLACE_WITH_EMBEDDED_SIGNUP_CONFIGURATION_ID",
+			"extras": json.dumps({"setup": {}, "featureType": "", "sessionInfoVersion": "3"}),
+		},
 	},
 }
 

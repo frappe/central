@@ -1,6 +1,6 @@
 """Sign a V2 site in to an OAuth provider in one click: a mailbox (mail providers) or a WhatsApp account (meta).
 
-Central holds Frappe Cloud's app for each provider; a site reaches `get_active_providers`, `start` and `relay_token` through its Pilot.
+Central holds Frappe Cloud's app for each provider; a site reaches `get_active_providers`, `start`, `relay_token` and `disconnect` through its Pilot.
 `central.api.email_oauth` is the old path of these endpoints, kept for live sites.
 """
 
@@ -11,6 +11,7 @@ from frappe import _
 
 from central.api.pilot import pilot_credential_auth
 from central.iam import can
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.oauth.oauth import (
 	CALLBACK_PATH,
 	PROVIDER,
@@ -22,8 +23,11 @@ from central.integrations.oauth.oauth import (
 	remember_code_owner,
 	start_sign_in,
 )
+from central.integrations.oauth.meta import connect_whatsapp, disconnect_whatsapp
 
 LOGIN_PATH = "/dashboard/login"
+# Pilot sets this to the site it authenticated, so a site cannot speak for another
+SITE_HEADER = "X-Pilot-Site"
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
@@ -112,10 +116,10 @@ def relay_token(
 	scope: str | None = None,
 ) -> dict:
 	"""Called by a site through its Pilot: swap a code or refresh token at the provider using Frappe Cloud's app secret."""
+	credential = frappe.local.pilot_credential
 	if grant_type == "authorization_code":  # initial exchange of the authorization code for a token
-		credential = frappe.local.pilot_credential
 		claim_code(code, credential.team, credential.server)
-	return exchange_token(
+	token = exchange_token(
 		provider,
 		grant_type,
 		code=code,
@@ -123,3 +127,27 @@ def relay_token(
 		refresh_token=refresh_token,
 		scope=scope,
 	)
+	if provider == "meta":
+		site = get_calling_site(credential)
+		return connect_whatsapp(token["access_token"], credential.team, credential.server, site)
+	return token
+
+
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def disconnect(waba_id: str) -> None:
+	"""Called by a site through its Pilot when it deletes a WhatsApp account: stop sending it that account's Meta webhooks."""
+	disconnect_whatsapp(waba_id, get_calling_site(frappe.local.pilot_credential))
+
+
+def get_calling_site(credential: PilotCredential) -> str:
+	"""The site that made this call through its Pilot; it must be on the credential's server."""
+	site = frappe.get_request_header(SITE_HEADER)
+	if not (
+		site
+		and credential.server
+		and frappe.db.exists("Site", {"name": site, "team": credential.team, "server": credential.server})
+	):
+		frappe.throw(_("This call must come from a site on this server"), frappe.PermissionError)
+	return site

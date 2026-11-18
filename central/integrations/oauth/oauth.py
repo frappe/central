@@ -23,6 +23,8 @@ SITE_CALLBACK_PATHS = {
 	**dict.fromkeys(("microsoft", "google", "yahoo", "yandex"), MAIL_CALLBACK_PATH),
 	"meta": "/api/method/whatsapp.whatsapp.oauth.callback",
 }
+# Meta's login dialog documents no PKCE parameters; its code is still single use and bound to one server
+WITHOUT_PKCE = ("meta",)
 NOTE_TTL = 10 * 60
 # Pilot keeps only an error's text; the site matches this to fall back to its normal mailbox form
 PROVIDER_UNAVAILABLE = "provider_unavailable"
@@ -55,13 +57,13 @@ def start_sign_in(
 		prompt = " ".join(p for p in params.pop("prompt", "").split() if p != "select_account")
 		if prompt:
 			params["prompt"] = prompt
+	if provider not in WITHOUT_PKCE:
+		params.update(code_challenge=code_challenge, code_challenge_method="S256")
 	authorize_url = WebApplicationClient(config.client_id).prepare_request_uri(
 		config.authorize_url,
 		redirect_uri=get_url(CALLBACK_PATH),
 		scope=" ".join(scopes),
 		state=state,
-		code_challenge=code_challenge,
-		code_challenge_method="S256",
 		**params,
 	)
 	# the site saves these scopes on its Connected App, so it keeps no list of its own
@@ -134,6 +136,8 @@ def exchange_token(provider: str, grant_type: str, **params: str | None) -> dict
 	}
 	if grant_type == "authorization_code":
 		data["redirect_uri"] = get_url(CALLBACK_PATH)
+	if provider in WITHOUT_PKCE:
+		data.pop("code_verifier", None)
 
 	response = requests.post(
 		config.token_url, data={k: v for k, v in data.items() if v}, timeout=30, allow_redirects=False
@@ -141,8 +145,18 @@ def exchange_token(provider: str, grant_type: str, **params: str | None) -> dict
 	token = response.json()
 	if not response.ok:
 		# Pilot keeps only this text, so the site can still tell invalid_grant apart (standard OAuth error code)
-		frappe.throw(token.get("error") or _("The mail provider refused the token request"))
+		frappe.throw(get_token_error(token) or _("The provider refused the token request"))
 	return token
+
+
+def get_token_error(token: dict) -> str | None:
+	error = token.get("error")
+	if not isinstance(error, dict):
+		return error
+	# Meta answers with a Graph error; these subcodes are its expired and used codes
+	if error.get("error_subcode") in (36007, 36009):
+		return "invalid_grant"
+	return None
 
 
 def get_provider(provider: str) -> "OAuthProvider":

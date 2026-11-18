@@ -329,6 +329,22 @@ def pilot_credential_has_permission(doc, user: str | None = None, ptype: str | N
 	return user_has_operator_bypass(user or frappe.session.user)
 
 
+def meta_webhook_route_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every route.
+	2. All other users see no route because it holds the secret Central signs webhooks with.
+	"""
+	return _operator_only_query_conditions(user)
+
+
+def meta_webhook_route_has_permission(
+	doc, user: str | None = None, ptype: str | None = None, **kwargs
+) -> bool:
+	"""1. A System Manager has every permission.
+	2. All other users have no direct permission because sites change routes through Pilot.
+	"""
+	return user_has_operator_bypass(user or frappe.session.user)
+
+
 def team_notification_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every stored notification.
 	2. Customers use the capability-filtered notification feed and cannot query records directly.

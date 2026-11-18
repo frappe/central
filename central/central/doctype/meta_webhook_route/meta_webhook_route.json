@@ -1,0 +1,101 @@
+{
+ "actions": [],
+ "autoname": "field:waba_id",
+ "creation": "2026-11-18 15:20:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "waba_id",
+  "site",
+  "column_break_owner",
+  "team",
+  "server",
+  "signature_section",
+  "webhook_secret"
+ ],
+ "fields": [
+  {
+   "description": "The WhatsApp Business Account (WABA) whose Meta webhooks go to this site",
+   "fieldname": "waba_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "WhatsApp Business Account ID",
+   "reqd": 1,
+   "set_only_once": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "site",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Site",
+   "options": "Site",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_owner",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "server",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Server",
+   "options": "Virtual Machine",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "signature_section",
+   "fieldtype": "Section Break",
+   "label": "Signature"
+  },
+  {
+   "description": "Central signs each webhook it sends to the site with this secret. A new sign-in with Meta replaces it.",
+   "fieldname": "webhook_secret",
+   "fieldtype": "Password",
+   "label": "Webhook Secret",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-11-18 15:20:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Meta Webhook Route",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "site,team",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "site",
+ "track_changes": 1
+}
