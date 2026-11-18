@@ -231,7 +231,7 @@ const filters = computed<ListViewFilter[]>(() => [
 		:filters="filters"
 		searchable
 		:search-placeholder="__('Search by name, domain or IP')"
-		item-label="server"
+		:show-count="false"
 		row-class="min-h-11"
 		:empty-state="{
 			title: __('No servers match'),
