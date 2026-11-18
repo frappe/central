@@ -6,7 +6,7 @@ from frappe.integrations.doctype.webhook.webhook import get_next_retry, log_requ
 from frappe.utils.password import get_decrypted_password
 
 from central.integrations.oauth.oauth import PROVIDER
-from central.integrations.oauth.meta import ROUTE
+from central.integrations.oauth.meta import ROUTE, delete_routes
 
 WEBHOOK = "Meta to site"
 SITE_HANDLER_PATH = "/api/method/whatsapp.whatsapp.webhook.handler"
@@ -69,7 +69,10 @@ def deliver(waba_id: str, body: dict) -> None:
 		response = send_webhook_request(
 			"POST", url, headers, body, frappe.db.get_value("Webhook", WEBHOOK, "timeout")
 		)
-		response.raise_for_status()
+		if response.status_code == 410:  # the site no longer uses this WABA: stop sending it there
+			delete_routes(name=waba_id, site=site)
+		else:
+			response.raise_for_status()
 		log_request(WEBHOOK, "Site", site, url, headers, body, response, status="Delivered")
 	except Exception:
 		log_request(

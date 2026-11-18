@@ -13,7 +13,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime, set_request
 
 from central.api.meta_webhook import handler
-from central.integrations.oauth.meta import ROUTE
+from central.integrations.oauth.meta import ROUTE, check_route, save_route
 from central.integrations.oauth.meta_webhook import (
 	CENTRAL_SIGNATURE_HEADER,
 	WEBHOOK,
@@ -171,6 +171,49 @@ class TestMetaWebhook(IntegrationTestCase):
 			deliver(self.waba_id, meta_event(self.waba_id))
 		send.assert_not_called()
 		self.assertEqual(self.logs(), [])
+
+	def test_a_410_from_the_site_deletes_the_route_and_is_not_retried(self):
+		with patch("requests.Session.request", return_value=site_reply(410)):
+			deliver(self.waba_id, meta_event(self.waba_id))
+
+		self.assertFalse(frappe.db.exists(ROUTE, self.waba_id))
+		(log,) = self.logs()
+		self.assertEqual(log.status, "Delivered")
+		self.assertIsNone(frappe.db.get_value("Webhook Request Log", log.name, "next_retry"))
+
+	def test_a_terminated_server_frees_its_wabas_for_another_site_of_the_team(self):
+		server = frappe.get_doc("Virtual Machine", self.server)
+		with patch("frappe.enqueue"):
+			server.status = "Terminated"
+			server.save()
+
+		self.assertFalse(frappe.db.exists(ROUTE, self.waba_id))
+		_, jobs = self.call_meta(meta_event(self.waba_id))
+		self.assertEqual(jobs, [])
+
+		other_server = frappe.get_doc(
+			{
+				"doctype": "Virtual Machine",
+				"resource_id": f"vm-{frappe.generate_hash(length=6)}",
+				"team": self.team,
+				"region": server.region,
+			}
+		).insert()
+		other_site = frappe.get_doc(
+			{
+				"doctype": "Site",
+				"site_name": f"other-{self.site}",
+				"team": self.team,
+				"server": other_server.name,
+			}
+		).insert()
+		check_route(self.waba_id, other_site.name)
+		save_route(self.waba_id, self.team, other_server.name, other_site.name, WABA_SECRET)
+		self.assertEqual(frappe.db.get_value(ROUTE, self.waba_id, "site"), other_site.name)
+
+	def test_deleting_a_site_deletes_its_routes(self):
+		frappe.delete_doc("Site", self.site)
+		self.assertFalse(frappe.db.exists(ROUTE, self.waba_id))
 
 	def test_seeded_webhook_is_on_site_with_five_retries_and_never_fires(self):
 		webhook = frappe.get_doc("Webhook", WEBHOOK)

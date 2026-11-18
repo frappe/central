@@ -141,6 +141,11 @@ class Site(Document):
 	def before_rename(self, old_name: str, new_name: str, merge: bool = False) -> None:
 		BlockedDomain.validate_assignment(new_name)
 
+	def on_trash(self) -> None:
+		from central.integrations.oauth.meta import delete_routes
+
+		delete_routes(site=self.name)
+
 	def after_insert(self) -> None:
 		from central.signups.trial import Trial
 
