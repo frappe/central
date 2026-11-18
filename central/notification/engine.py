@@ -453,6 +453,7 @@ def render_notification_email(event, ctx: dict, extras: dict) -> tuple[str, str]
 			"title": escape_html(subject),
 			"paragraphs": [escape_html(part.strip()) for part in text.split("\n\n") if part.strip()],
 			"notes": extras.get("notes") or [],
+			"note_html": extras.get("note_html"),
 			"brand": extras.get("brand"),
 			"action_label": event.action_label,
 			"action_url": escape_html(action_url) if action_url else None,

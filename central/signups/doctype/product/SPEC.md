@@ -24,7 +24,7 @@ System Managers, Staff Viewers, and Product Operators create and edit products i
 | Trial Days | Days a trial site of this product runs from when Central records its site. 0 uses Central Settings, Trial Days. See [Trials](../../SPEC.md#trials). |
 | Trial Deletion Days | Days a stopped trial site is kept before its server is terminated. 0 uses Central Settings, Trial Deletion Days. |
 | Use Product Branding in Emails | Off uses Frappe Cloud's logo and name in emails. On uses the product's Logo and Title. See [Emails](#emails). |
-| Email Notes | One extra paragraph for each lifecycle email about a site of this product. See [Emails](#emails). |
+| Email Notes | Extra plain text or HTML for each lifecycle email about a site of this product. See [Emails](#emails). |
 | Reply-To Address | The address that gets replies to emails about a site of this product, such as an inbox that the sales CRM reads. Empty keeps the sender address. See [Emails](#emails). |
 | Hide Plan Specs | Hides the vCPU, memory and disk line under each plan on a site of this product. See [Plans](#plans). |
 | Plan Notes | A short tag for each plan, which the site's plan list shows on a site of this product. See [Plans](#plans). |
@@ -98,7 +98,7 @@ Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#ope
 | `trial_converted` | Frappe Cloud's billing page. |
 | `trial_deleted` | No action link. |
 
-**Email Notes.** Each row adds text under the standard text of one email, only for sites of this product. Separate paragraphs with a blank line. Use it for product advice, such as what to do first. Central keeps the standard text, the dates and the button, so a note cannot change the trial terms.
+**Email Notes.** Each row adds content under the standard text of one email, only for sites of this product. Use it for product advice, such as what to do first. Central keeps the standard text, the dates and the button, so a note cannot change the trial terms.
 
 **Replies.** With a **Reply-To Address**, every email about a site of this product sets that address as Reply-To. A customer who replies to a trial email then reaches the product team, for example an inbox that the CRM reads to create a lead. The sender stays notifications@frappecloud.com. **Send Test Email** uses the same Reply-To.
 
@@ -111,7 +111,14 @@ Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#ope
 | `trial_deletion_soon` | Export a channel from its menu before the site is deleted. |
 | `trial_ended` | Add a payment method to start your Raven site again. |
 
-A note is plain text. Central escapes it, so HTML shows as text. Add at most one note for each email. Central also escapes the product title and every other value in an email, because a Product Operator or a Pilot writes them.
+Each note has a **Format**:
+
+| Format | Field | What Central sends |
+|---|---|---|
+| Standard (default) | Note | Plain text in Frappe Cloud's paragraph style. Separate paragraphs with a blank line. Central escapes it, so HTML shows as text. |
+| HTML | Note (HTML) | Your own markup, for example `<p>Create a channel.</p><ul><li>Invite your team.</li></ul>`. When you save, Central sanitizes it with `sanitize_html`: it removes scripts, styles, forms, event handlers and unsafe links, and keeps paragraphs, lists, links, images and inline styles. The email stylesheet styles `p`, `ul`, `ol`, `li` and `a` like the standard text. |
+
+On save, Central keeps only the field of the chosen format and refuses a note with no content in that field. **Preview Email** shows either format with the form's unsaved changes, sanitized as it would be saved. It does not change the form. Add at most one note for each email. Central escapes the product title and every other value in an email, because a Product Operator or a Pilot writes them.
 
 ## Plans
 

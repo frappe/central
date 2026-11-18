@@ -7,10 +7,8 @@ from frappe.model.document import Document
 
 from central.billing.catalog.subscriptions import end_subscription, provision_service_subscription
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
+from central.services.doctype.service.service import AI_SERVICE, STORAGE_SERVICE
 from central.services.doctype.service_detail.service_detail import ServiceDetail
-
-STORAGE_SERVICE = "storage"
-AI_SERVICE = "ai"
 
 
 class TeamService(Document):
@@ -26,6 +24,7 @@ class TeamService(Document):
 		add_on_service: DF.Literal["storage", "ai"]
 		bucket_name: DF.Data | None
 		endpoint_url: DF.Data | None
+		external_id: DF.Data | None
 		region: DF.Link | None
 		secret_access_key: DF.Password | None
 		status: DF.Literal["Active", "Suspended"]
@@ -138,6 +137,7 @@ class TeamService(Document):
 		self.validate_bucket_region()
 		self.validate_bucket_is_unclaimed()
 		self.validate_one_ai_service()
+		self.external_id = self.bucket_name if self.is_bucket else self.team
 
 	def validate_bucket_region(self) -> None:
 		"""The form asks for it through mandatory_depends_on, which the server does not check."""
@@ -213,3 +213,17 @@ def on_doctype_update():
 	frappe.db.add_unique(
 		"Team Service", ["team", "bucket_name"], constraint_name="unique_team_service_bucket"
 	)
+
+
+def billed_subjects(service: str, external_ids: list[str] | None = None) -> dict:
+	"""The Team Services that bill a subscription for `service`, by subject, suspended ones included."""
+	filters = {"add_on_service": service, "subscription": ["is", "set"]}
+	if external_ids is not None:
+		filters["external_id"] = ["in", external_ids]
+	rows = frappe.get_all(
+		"Team Service",
+		filters=filters,
+		fields=["name", "external_id", "team", "subscription", "region", "creation"],
+		order_by="name asc",
+	)
+	return {row.external_id: row for row in rows}

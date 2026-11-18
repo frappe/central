@@ -141,9 +141,10 @@ Credit Ledger Entry ──team, ──currency                        (append-on
 Credit Wallet ──team                           (lock anchor / cached balance — one per (team,currency))
 Commitment ──team, ──currency              (spend floor)
 Usage Rollup ──team                            (metered aggregation)
+Usage Day ──team, ──subscription, ──invoice    (one subject's metered value for one UTC day)
 ```
 
-Money records (Invoice, Payment Attempt, Refund, Credit Ledger Entry, Credit Wallet, Usage Rollup, Webhook Event, Billing Event, Top-up Order) are read-only in Desk and keep a change history. `platform.records` refuses an edit or delete that billing code did not make through `save_billing_record` or `delete_billing_record`, Administrator included. The `ignore_permissions` flag alone does not allow the change. A `db_set` or `frappe.db.set_value` write does not run validation, so it needs no mark. A person changes them through the action that owns the change: cancel, refund, retry.
+Money records (Invoice, Payment Attempt, Refund, Credit Ledger Entry, Credit Wallet, Usage Day, Usage Rollup, Webhook Event, Billing Event, Top-up Order) are read-only in Desk and keep a change history, except Usage Day, which billing writes in bulk. `platform.records` refuses an edit or delete that billing code did not make through `save_billing_record` or `delete_billing_record`, Administrator included. The `ignore_permissions` flag alone does not allow the change. A `db_set` or `frappe.db.set_value` write does not run validation, so it needs no mark. A person changes them through the action that owns the change: cancel, refund, retry.
 
 **Payment plumbing**
 ```
@@ -218,6 +219,7 @@ flowchart LR
         D1["daily"]
         H1["hourly"]
         M1["monthly"]
+        C1["cron 0 8 1 * * (08:00 IST on the 1st)"]
     end
     D1 --> RD["run_dunning"]
     D1 --> CP["cleanup_payment_logs"]
@@ -227,14 +229,18 @@ flowchart LR
     D1 --> BR["run_billing_details_reminder"]
     D1 --> CE["run_credit_expiry"]
     D1 --> IA["run_invariant_audit"]
+    D1 --> FMD["usage_ledger.fill_missing_days"]
+    D1 --> POD["usage_ledger.prune_old_days"]
     H1 --> RF["retry_failed_syncs (ERPNext)"]
     H1 --> RR["run_reconciliation"]
     H1 --> OA["run_operator_alerts"]
     H1 --> SE["expire_unfinished_setups"]
     H1 --> SR["retry_unfinished_releases"]
-    M1 --> DMI["draft_monthly_invoices → draft page jobs"]
+    C1 --> DMI["draft_monthly_invoices → draft page jobs"]
     M1 --> EX["expire_payment_methods"]
     H1 --> CDI["collect_due_invoices → settle page jobs"]
+    H1 --> RSU["storage_bridge.read_storage_usage → one job per page of 100 buckets"]
+    H1 --> RCC["usage_recount.recount_changed → recount page jobs"]
 
     subgraph INSTALL["install/migrate/before_tests"]
         ECM["ensure_catalog_masters, ensure_constraints, ..."]
@@ -266,8 +272,12 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, setup 
 | hourly | `payments.setup_expiry.expire_unfinished_setups` | settle card and UPI (not PayPal) setups left Pending Validation for `SETUP_EXPIRES_HOURS` (24), oldest first, at most `SETUPS_PER_RUN`: activate a Razorpay mandate the gateway proves, remove and expire a Stripe card saved but never confirmed, expire the rest, and release anything older than `SETUP_RELEASE_DAYS` (7) without a notice; one `payment_method_setup_expired` notice per team per run, at most one per team in `NOTICE_COOLDOWN_HOURS` (24) |
 | hourly | `payments.setup_expiry.retry_unfinished_releases` | queue `release_late_setup` again for released setups with no `setup_released_at` (a cancelled setup only once `CANCELLED_SETUP_RELEASE_DELAY_MINUTES` (30) old), oldest first, at most `SETUPS_PER_RUN`, for `RELEASE_RETRY_DAYS` (7); then leave one comment for an operator and stop |
 | hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
-| monthly | `revenue.invoicing.draft_monthly_invoices` | waive internal teams' unpaid invoices, then draft the just-closed month as page jobs on the `billing` queue |
-| hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run |
+| cron `0 8 1 * *` (08:00 IST on the 1st) | `revenue.invoicing.draft_monthly_invoices` | after the UTC month closes at 05:30 IST: waive internal teams' unpaid invoices, start the month's Billing Run, then draft the just-closed month as page jobs on the `billing` queue |
+| hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run once the draft tick has started it |
+| hourly | `revenue.storage_bridge.read_storage_usage` | until Cargo reports usage itself: read every billed bucket in pages of 100, one job per page, and keep each UTC day's peak as a Usage Day; a failed bucket never stops its page, and the last page of a region writes one Error Log that names how many of the region's buckets the run could not read |
+| hourly | `revenue.usage_recount.recount_changed` | recount the usage months whose Usage Days changed since the last run, as page jobs |
+| daily | `revenue.usage_ledger.fill_missing_days` | give a Level subject with no reading for a UTC day that ended 48 hours ago its last reading, marked estimated |
+| daily | `revenue.usage_ledger.prune_old_days` | delete billed Usage Days older than 13 months |
 | hourly | `ingester.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
 
@@ -284,9 +294,9 @@ The team gets one `payment_method_setup_expired` notice per run, in-app and by e
 - If a sweep batch rolls back after an activation, the ₹1 refund still runs, and the setup is released after `SETUP_RELEASE_DAYS` (7).
 - A Stripe setup cancelled by a new setup and finished later in an old tab stays attached at Stripe. It is never charged, because only Active methods are charged.
 
-**The scheduled run is paged.** On the 1st, `draft_monthly_invoices` drafts the closed month as page jobs. Every hour, `collect_due_invoices` collects whatever has drafted and updates the **Billing Run** row for the month (start, counts, failures, completion). A lost worker stops one page only; the next hourly sweep picks up the rest. `run_monthly_billing` does both phases inline in one job; use it only for a small site or a test.
+**The scheduled run is paged.** At 08:00 IST on the 1st, after the UTC month closes, `draft_monthly_invoices` starts the **Billing Run** row for the month and drafts the closed month as page jobs. Every hour, `collect_due_invoices` collects whatever has drafted and, once the run has started, updates its row (counts, failures, completion). A lost worker stops one page only; the next hourly sweep picks up the rest. `run_monthly_billing` starts the same Billing Run row and does both phases inline in one job; use it only for a small site or a test.
 
-The readiness check B5 flags a month with billing but no Billing Run, and drafts that waited more than 3 hours to be collected. It feeds the hourly operator alerts.
+The readiness check B5 flags a month with billing but no Billing Run after the draft tick has fired (its time is read from the cron in `hooks.py`), and drafts that waited more than 3 hours to be collected. It feeds the hourly operator alerts.
 
 **The fan-out is two orchestrators, and neither of them does the work.** Each keyset-pages its subjects and enqueues a **page job** per slice: `draft_team_page(after, until)` / `settle_draft_page(cutoff, after, until)`, deduplicated on the slice's upper bound. A page job re-derives its slice from the bounds and works it in order. It commits after **each team / each invoice**. The page is the unit of *scheduling* and the team is still the unit of *work*, so a job killed at team 300 of 500 keeps the 299 it finished.
 
@@ -482,11 +492,12 @@ Pause and resume: `catalog.subscriptions.pause_billing` writes a `Paused` change
 ### B. Bill a period (draft → open → collect)
 ```mermaid
 flowchart TD
-    TICK(["monthly · draft_monthly_invoices"]) --> GDI["generate_draft_invoices (pages teams)"]
+    TICK(["08:00 IST on the 1st · draft_monthly_invoices"]) --> GDI["generate_draft_invoices (pages teams)"]
     GDI --> DTI["draft_team_invoice<br/>(per team, isolated, committed)"]
     DTI --> GTI["generate_team_invoice<br/>(per team: one consolidated invoice)"]
     GTI --> RS["reconcile_subscription (fix drift)"]
     GTI --> LINES["lines.compute_line_items<br/>day-weighted from Sub Change segments"]
+    GTI --> URC["usage_recount.recount_team<br/>usage months from Usage Days; stamp_invoice marks what was billed"]
     GTI --> MET["+ metering.metered_line_items<br/>max(0, qty−allowance)×rate"]
     GTI --> TAG["_tag_projects: stamp each line's Project, if any"]
     GTI --> DISC["+ commitments discount"]
@@ -509,19 +520,23 @@ flowchart TD
     PAID --> SYNC["erpnext_sync.enqueue_invoice_sync"]
 ```
 ```
-[monthly]  revenue.invoicing.draft_monthly_invoices   (settle_internal_teams, then page jobs)
+[cron 0 8 1 * *]  revenue.invoicing.draft_monthly_invoices   (settle_internal_teams, start the Billing Run, then page jobs)
   → generate_draft_invoices (pages teams)
   → draft_team_invoice (one team = one transaction = one commit)
     → generate_team_invoice (per team, aggregates every cluster it runs in)
       → reconcile_subscription (correct drift if stale)
       → lines.compute_line_items  (day-weighted, from Subscription Change rate-snapshot segments)
+      → usage_recount.recount_team (usage months from the unbilled Usage Days; a month whose draft
+        billed nothing is closed, and its late days go on the next month)
       → + metering.metered_line_items   (max(0, qty−allowance) × rate)
+      → usage_recount.stamp_invoice marks exactly the rollups and days it counted; only
+        reissue_invoice releases them, a cancel alone keeps them billed
       → _rate → _tag_projects stamps each line's Project (if its resource is tagged
         into one that's enabled, §2.1), then + commitments discount, + tax.resolve_tax
         (GST additive / SEZ zero / TDS withhold)
   → Invoice (Outstanding, no due date), one per team, same period, `period_key` keyed on (team, period)
 
-[hourly]   revenue.invoicing.collect_due_invoices   (snapshot the Billing Run, then page jobs)
+[hourly]   revenue.invoicing.collect_due_invoices   (snapshot a started Billing Run, then page jobs)
   → open_drafts (every Outstanding invoice with no due date and period_end ≤ the closed month)
   → settle_draft → open_and_collect (per invoice)
       → billing-details hold: a Billable invoice keeps no due date if the team has no billing

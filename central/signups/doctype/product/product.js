@@ -13,6 +13,11 @@ const EMAILS = [
 
 frappe.ui.form.on("Product", {
 	refresh(frm) {
+		// A row keeps either note or note_html, so the grid's Note column shows whichever is set.
+		frm.fields_dict.email_notes.grid.update_docfield_property("note", "formatter", (value, df, options, row) =>
+			row?.note_format === "HTML" ? frappe.utils.escape_html(strip_html(row.note_html || "")) : value,
+		);
+
 		if (frm.is_new() || !frm.has_perm("write")) return;
 
 		if (frm.doc.enabled) {

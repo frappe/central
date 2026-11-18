@@ -22,7 +22,7 @@ from central.billing.doctype.invoice.invoice import (
 	unissued_filters,
 )
 from central.billing.platform.records import save_billing_record
-from central.billing.revenue import credits
+from central.billing.revenue import credits, usage_recount
 from central.billing.revenue.dunning import get_suspension_date
 from central.billing.revenue.invoicing import wallet_draw
 from central.billing.revenue.invoicing.generate import generate_team_invoice
@@ -470,4 +470,6 @@ def reissue_invoice(invoice: str, reason: str | None = None) -> str | None:
 	"""
 	doc = frappe.get_doc("Invoice", invoice)
 	cancel_invoice(invoice, reason=reason)
+	# Only a reissue gives the usage back: a cancel alone keeps it billed, so it is never billed again.
+	usage_recount.release_invoice(invoice)
 	return generate_team_invoice(doc.team, doc.period_start, doc.period_end)

@@ -110,5 +110,7 @@ central.patches.v0_0.keep_only_custom_resource_action_copy
 central.patches.v0_0.mark_old_setups_released
 # A UPI mandate covers a bill at the spend limit with GST. Ask teams with a lower one to re-authorise it.
 central.patches.v0_0.flag_upi_mandates_below_the_gst_ceiling
+# Start the Usage Day ledger: register storage, name subjects, carry this month's storage into days.
+central.patches.v0_0.start_usage_day_ledger
 # The app rollout steps read 0 on a Central Settings saved before they existed, and Pilot holds every update on 0.
 central.patches.v0_0.seed_app_rollout_settings
