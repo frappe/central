@@ -86,7 +86,27 @@ def get_overview(team: str) -> dict:
 		"spend": figures["spend"],
 		"usage": get_month_usage(team, figures["usage"]),
 		"geographies": client.list_geographies(),
+		"billing_rate": get_billing_rate(team),
 	}
+
+
+def get_billing_rate(team: str) -> dict | None:
+	"""The rate this month's AI cost is billed at in the team's currency. None for a USD team."""
+	from central.billing.doctype.billing_profile.billing_profile import get_team_currency
+	from central.billing.revenue.exchange_rates import month_rate
+	from central.billing.revenue.usage_ledger import utc_today
+
+	currency = get_team_currency(team)
+	if currency == "USD":
+		return None
+	month = utc_today().replace(day=1)
+	try:
+		found = month_rate("USD", currency, month, store=False)
+	except Exception as error:
+		# The page still shows the usage in USD. Not an Error Log: every page view would add one.
+		frappe.logger("billing").warning(f"No USD to {currency} rate for {month}: {error!r}")
+		return None
+	return {"currency": currency, "rate": found.rate, "rate_date": str(found.rate_date), "month": str(month)}
 
 
 def get_month_usage(team: str, usage: dict) -> dict:

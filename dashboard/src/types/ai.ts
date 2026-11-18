@@ -74,6 +74,17 @@ export interface AIState {
 	spend?: AISpend
 	usage?: AIMonthUsage
 	geographies?: AIGeography[]
+	// The rate this month's usage is billed at in the team's currency; null for a USD team.
+	billing_rate?: AIBillingRate | null
+}
+
+export interface AIBillingRate {
+	currency: string
+	// One US dollar in `currency`, fixed for the month.
+	rate: number
+	// The accounting system's date for the rate; before the 1st when it had none that day.
+	rate_date: string
+	month: string
 }
 
 export interface AIUsageModel {
