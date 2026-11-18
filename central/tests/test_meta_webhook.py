@@ -22,7 +22,7 @@ from central.integrations.oauth.meta_webhook import (
 )
 from central.tests import test_email_oauth
 
-APP_SECRET = "meta-app-secret"
+APP_SECRET = "meta-secret"  # set by enable_meta
 VERIFY_TOKEN = "meta-verify-token"
 WABA_SECRET = "waba-webhook-secret"
 
@@ -54,15 +54,13 @@ def site_reply(status: int) -> requests.Response:
 
 class TestMetaWebhook(IntegrationTestCase):
 	setUp_site = test_email_oauth.TestEmailOAuth.setUp
+	enable_meta = test_email_oauth.TestEmailOAuth.enable_meta
 
 	def setUp(self):
 		self.setUp_site()
+		self.enable_meta()
 		ensure_meta_webhook()
-		self.enterContext(
-			patch.dict(
-				frappe.local.conf, {"meta_app_secret": APP_SECRET, "meta_webhook_verify_token": VERIFY_TOKEN}
-			)
-		)
+		self.enterContext(patch.dict(frappe.local.conf, {"meta_webhook_verify_token": VERIFY_TOKEN}))
 		self.waba_id = f"waba-{frappe.generate_hash(length=8)}"
 		frappe.get_doc(
 			{

@@ -1,8 +1,9 @@
 import { createHmac } from 'node:crypto'
 import { expect, test } from '@playwright/test'
 
-// Meta calls Central's webhook directly. Run against the test site, whose site config holds
-// these two values (bench --site v2-tests.localhost set-config <key> <value>):
+// Meta calls Central's webhook directly. Run against the test site, where the "meta" OAuth
+// Provider's client secret is APP_SECRET and the site config holds meta_webhook_verify_token
+// (bench --site v2-tests.localhost set-config meta_webhook_verify_token <value>):
 //   E2E_BASE_URL=http://v2-tests.localhost:8007 yarn playwright test e2e/meta-webhook.spec.ts
 // No seed data: the WABA in the body has no route, so Central answers Meta and sends nothing.
 const APP_SECRET = process.env.E2E_META_APP_SECRET || 'e2e-meta-app-secret'

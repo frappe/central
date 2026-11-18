@@ -5,6 +5,7 @@ import frappe
 from frappe.integrations.doctype.webhook.webhook import get_next_retry, log_request, send_webhook_request
 from frappe.utils.password import get_decrypted_password
 
+from central.integrations.oauth.oauth import PROVIDER
 from central.integrations.oauth.meta import ROUTE
 
 WEBHOOK = "Meta to site"
@@ -21,8 +22,10 @@ def is_verify_token(token: str) -> bool:
 
 
 def is_signed_by_meta(raw: bytes, signature: str) -> bool:
-	"""Meta signs each webhook body with the app secret: `sha256=<hex HMAC>`."""
-	secret = frappe.conf.get("meta_app_secret")
+	"""Meta signs each webhook body with the app secret: `sha256=<hex HMAC>`. It is the "meta"
+	provider's client secret, read even while new sign-ins are disabled, so connected accounts
+	keep their webhooks."""
+	secret = get_decrypted_password(PROVIDER, "meta", "client_secret", raise_exception=False)
 	if not (secret and signature.startswith("sha256=")):
 		return False
 	digest = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
