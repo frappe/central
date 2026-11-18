@@ -9,6 +9,7 @@
 		{% for paragraph in paragraphs %}{{ ui.paragraph(paragraph) }}{% endfor %}
 
 		{% for note in notes %}{{ ui.paragraph(note) }}{% endfor %}
+		{% if note_html %}<div class="fc-note">{{ note_html }}</div>{% endif %}
 
 		{% if action_label and action_url %}
 		{{ ui.button(_("Get started") if getting_started_url else action_label, action_url) }}

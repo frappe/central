@@ -21,7 +21,9 @@ class ProductEmailNote(Document):
 			"trial_deletion_soon",
 			"trial_converted",
 		]
-		note: DF.SmallText
+		note: DF.SmallText | None
+		note_format: DF.Literal["Standard", "HTML"]
+		note_html: DF.HTMLEditor | None
 		parent: DF.Data
 		parentfield: DF.Data
 		parenttype: DF.Data
