@@ -7,11 +7,11 @@ from frappe.model.document import Document
 
 from central.billing.doctype.billing_event import billing_event
 from central.billing.gateways.base import VerifiedPayment
-from central.billing.payments import decline
+from central.billing.payments import decline, setup_lockout
 from central.billing.platform.records import save_billing_record
 from central.billing.states import record_event, transition
 
-DECLINED_EVENT = "Top-up Order Declined"
+DECLINED_EVENT = setup_lockout.TOP_UP_DECLINED_EVENT
 
 
 class PaymentDoesNotCover(frappe.ValidationError):
@@ -54,6 +54,7 @@ class TopupOrder(Document):
 
 	@classmethod
 	def start(cls, team: str, gateway: str, currency: str, total, credit=None, gst=0) -> "TopupOrder":
+		setup_lockout.check(team, frappe.session.user)
 		# A system record: customers reach it only through the top-up routes, which check billing:manage.
 		return frappe.get_doc(
 			{
@@ -82,9 +83,9 @@ class TopupOrder(Document):
 	def record_gateway_order(self, gateway_order_id: str) -> None:
 		self.db_set("gateway_order_id", gateway_order_id)
 
-	def expire(self) -> None:
+	def expire(self, actor: str = "reconciliation", reason: str | None = None) -> None:
 		"""Stop asking the gateway about an order nobody paid."""
-		transition(self, "Expired", actor="reconciliation", correlation=self.team)
+		transition(self, "Expired", reason=reason, actor=actor, correlation=self.team)
 		save_billing_record(self)
 
 	def record_decline(self, failure: decline.Failure, gateway_event_id: str) -> None:
@@ -108,7 +109,9 @@ class TopupOrder(Document):
 			reason=self.failure_code,
 			correlation=gateway_event_id,
 			outcome=billing_event.FAILED,
+			payload={"decline_code": self.decline_code},
 		)
+		setup_lockout.note_failure(self.team, self.owner, self.failure_code, self.decline_code)
 
 	def _has_declined_event(self, gateway_event_id: str) -> bool:
 		return bool(
@@ -206,3 +209,5 @@ class TopupOrder(Document):
 def on_doctype_update() -> None:
 	frappe.db.add_index("Top-up Order", ["gateway", "gateway_order_id"])
 	frappe.db.add_index("Top-up Order", ["status", "creation"])
+	# The wait after failed top-ups reads a user's own orders.
+	frappe.db.add_index("Top-up Order", ["owner"])

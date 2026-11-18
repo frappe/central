@@ -22,12 +22,12 @@ const route = computed(() =>
 	<RouterLink
 		v-if="route"
 		:to="route"
-		class="text-base-medium text-ink-gray-9 underline-offset-2 hover:underline focus-visible:rounded-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+		class="text-sm-medium text-ink-gray-9 underline-offset-2 hover:underline focus-visible:rounded-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
 		@click.stop
 	>
 		{{ resource.label }}
 	</RouterLink>
-	<span v-else class="text-base-medium text-ink-gray-9"
+	<span v-else class="text-sm-medium text-ink-gray-9"
 		>{{ resource.label }}</span
 	>
 </template>

@@ -31,6 +31,14 @@ repos:
       - id: ruff-format
         name: "Run ruff formatter"
 
+  - repo: https://github.com/semgrep/pre-commit
+    rev: v1.185.0
+    hooks:
+      - id: semgrep
+        name: "Check that user-facing strings are translatable"
+        files: ^central/.*\.py$
+        args: ["--config=.semgrep/translation.yml", "--error", "--metrics=off", "--disable-version-check", "--quiet"]
+
   - repo: https://github.com/biomejs/pre-commit
     rev: v2.5.6
     hooks:

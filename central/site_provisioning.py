@@ -162,7 +162,7 @@ def trial_configuration(team: str, product: Product | None = None) -> dict:
 	offering = signup_offering()
 	has_plan = False
 	for region in trial_regions():
-		plan = get_cheapest_trial_plan(team, region)
+		plan = get_cheapest_trial_plan(team, region, offering)
 		if not plan:
 			continue
 
@@ -223,15 +223,17 @@ def signup_offering() -> str:
 	return (dedicated or offerings)[0].name
 
 
-def get_cheapest_trial_plan(team: str, region: str) -> str | None:
-	"""The cheapest marked trial plan in the Team's regional catalog, or None."""
+def get_cheapest_trial_plan(team: str, region: str, offering: str) -> str | None:
+	"""The cheapest marked trial plan the Team's regional catalog has for `offering`, or None."""
 	trial_plans = trial_plan_names()
 	if not trial_plans:
 		return None
 
 	plans = [
 		row
-		for rows in get_server_plans(team, cluster=region, include_trial_plans=True)["plans"].values()
+		for rows in get_server_plans(team, cluster=region, include_trial_plans=True, offering=offering)[
+			"plans"
+		].values()
 		for row in rows
 		if row["plan"] in trial_plans
 	]

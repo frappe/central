@@ -158,6 +158,8 @@ class TestOIDCProvider(IntegrationTestCase):
 				"authorization_code": frappe.generate_hash(),
 				"redirect_uri_bound_to_authorization_code": REDIRECT_URI,
 				"validity": "Valid",
+				# Frappe refuses a code that has no expiry.
+				"expiration_time": frappe.utils.add_to_date(None, minutes=10),
 			}
 		).insert()
 

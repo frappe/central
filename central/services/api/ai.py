@@ -1,11 +1,11 @@
 import frappe
 from frappe import _
-from frappe.rate_limiter import rate_limit
 from frappe.utils import flt
 from frappe.utils.translations import _lt
 
 from central.integrations.grove import GroveClient, GroveUnavailable
 from central.services import ai
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.signups.access import require_service_access
 from central.utils.guards import require_capability
 
@@ -31,13 +31,15 @@ KEY_FIELDS = (
 @require_capability("service:view", VIEW_DENIED)
 def get_ai(team: str | None = None) -> dict:
 	"""Whether AI is on for the team and, when it is, its spend and limits, this month's usage
-	and the geographies a key may be minted in. `unavailable` while Grove is down or in
-	maintenance: the page says so, and the keys keep working at the gateways."""
+	and the geographies a key may be minted in. `key_handover_pending` while a converted trial's
+	key is on its way to the team: no key is created until it lands. `unavailable` while Grove is
+	down or in maintenance: the page says so, and the keys keep working at the gateways."""
 	if not ai.get_ai_service(team):
 		return {"enabled": False}
 
 	try:
-		return {"enabled": True, **ai.get_overview(team)}
+		pending = AITrialKey.is_handover_pending(team)
+		return {"enabled": True, "key_handover_pending": pending, **ai.get_overview(team)}
 	except GroveUnavailable:
 		return {"enabled": True, "unavailable": True}
 
@@ -62,13 +64,14 @@ def list_api_keys(team: str | None = None) -> list[dict]:
 
 @frappe.whitelist(methods=["POST"])
 @require_capability("service:manage", MANAGE_DENIED)
-def create_api_key(
-	team: str | None = None, label: str | None = None, geography: str | None = None, cap: int | None = None
-) -> dict:
+def create_api_key(label: str, geography: str, cap: int, team: str | None = None) -> dict:
 	"""Mint a key for the team in `geography` with `cap` whole USD to spend a month, and return
-	its secret. This is the only time it is shown. `models` is what it may call, for the quickstart."""
+	its secret. This is the only time it is shown. `models` is what it may call, for the quickstart.
+	Refused while a converted trial's key is on its way to the team."""
 	require_ai(team)
-	label = (label or "").strip()
+	if AITrialKey.is_handover_pending(team):
+		frappe.throw(_("Your trial's API key is being moved to this team. Try again in a few minutes."))
+	label = label.strip()
 	if not label:
 		frappe.throw(_("Enter a name for the API key so you can identify it later."))
 	if not geography:
@@ -147,11 +150,9 @@ def get_models(team: str | None = None, geography: str | None = None) -> list[di
 
 
 @frappe.whitelist(methods=["POST"])
-@rate_limit(key="team", limit=15, seconds=60 * 60, ip_based=False)
 @require_capability("service:manage", MANAGE_DENIED)
 def revoke_api_key(team: str | None = None, key: str | None = None) -> dict:
-	"""Revoke one of the team's keys. Grove refuses another team's key. Fifteen an hour per team:
-	Grove holds no key back by age, so a mint-and-revoke loop stops here."""
+	"""Revoke one of the team's keys. Grove refuses another team's key."""
 	require_ai(team)
 	GroveClient.from_settings().revoke_key(team, key)
 

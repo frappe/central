@@ -3,3 +3,5 @@ node_modules/
 .vitepress/dist/
 content/auto-imports.d.ts
 content/components.d.ts
+# Copied from one-click-templates by scripts/sync-apps.mjs.
+content/apps/

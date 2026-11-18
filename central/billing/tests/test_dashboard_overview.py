@@ -192,14 +192,55 @@ class TestNextPayment(OverviewBase):
 	def test_a_bill_over_the_silent_ceiling_is_flagged_before_the_first(self):
 		complete_billing_profile(TEAM, currency="INR")
 		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Auto Charge")
-		# Tier cap under the bill: the charge path would refuse this off-session, so
-		# the customer is told now rather than after a failed debit.
-		set_team_tier(TEAM, max_spend=1000)
-		self._provision(rate=3000)
+		# A bill over ₹15,000: the charge path would refuse this off-session, so the
+		# customer is told now rather than after a failed debit.
+		set_team_tier(TEAM, max_spend=100000)
+		self._card()
+		self._provision(rate=20000)
 
 		out = dashboard.get_next_payment(TEAM)
 
 		self.assertIn("over_silent_threshold", [b["code"] for b in out["blockers"]])
+
+	def test_a_bill_over_only_the_tier_cap_is_not_flagged(self):
+		complete_billing_profile(TEAM, currency="INR")
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Auto Charge")
+		# The tier cap does not stop a debit; only the ₹15,000 ceiling does.
+		set_team_tier(TEAM, max_spend=1000)
+		self._card()
+		self._provision(rate=3000)
+
+		out = dashboard.get_next_payment(TEAM)
+
+		self.assertNotIn("over_silent_threshold", [b["code"] for b in out["blockers"]])
+
+	def test_a_held_team_is_not_shown_a_card_to_charge(self):
+		complete_billing_profile(TEAM, currency="INR")
+		self._card()
+		self._provision(rate=3000)
+		for mode in ("Manual Checkout", "Action Required"):
+			with self.subTest(mode=mode):
+				frappe.db.set_value("Billing Profile", TEAM, "collection_mode", mode)
+
+				out = dashboard.get_next_payment(TEAM)
+
+				self.assertIsNone(out["method"])
+				self.assertTrue(out["debit_held"])
+				self.assertFalse(out["will_auto_charge"])
+
+	def _card(self):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": make_razorpay_gateway().name,
+				"method_type": "Card",
+				"status": "Active",
+				"gateway_method_id": "tok_overview_card",
+			}
+		).insert(ignore_permissions=True)
 
 	def test_nothing_due_is_not_a_blocker(self):
 		out = dashboard.get_next_payment(TEAM)

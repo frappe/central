@@ -27,6 +27,7 @@ class TestProfile(IntegrationTestCase):
 	def test_my_profile_returns_the_session_user(self):
 		profile = my_profile()
 		self.assertEqual(profile["user"], self.user)
+		self.assertEqual(profile["email"], self.user)
 		self.assertEqual(profile["full_name"], "Profile User")
 
 	def test_guest_is_rejected(self):

@@ -1,0 +1,7 @@
+-- title: Billing
+-- description: Invoices, payments and credits work.
+-- scope: Global
+-- measurement: Declared
+-- slo_target: 99.9
+-- sort_order: 7
+-- Billing has no metric yet. Published incidents in Beacon set its status.

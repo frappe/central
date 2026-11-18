@@ -9,6 +9,10 @@ import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
 
 const require = createRequire(import.meta.url)
 
+// English __(): fills {0}, {1} from the values, as translate.ts does with no catalog.
+const __ = (text, values = []) =>
+	text.replace(/\{(\d+)\}/g, (match, index) => String(values[index] ?? match))
+
 function loadSource(path, dependencies = {}) {
 	const source = readFileSync(new URL(path, import.meta.url), 'utf8')
 	const code = path.endsWith('.vue')
@@ -23,7 +27,9 @@ function loadSource(path, dependencies = {}) {
 	}).outputText
 	runInNewContext(compiled, {
 		exports,
-		require: (name) => dependencies[name] ?? require(name),
+		require: (name) =>
+			dependencies[name] ??
+			(name === '@/lib/translate' ? { __ } : require(name)),
 	})
 	return exports
 }
@@ -86,6 +92,7 @@ const ui = Object.fromEntries(
 		'Checkbox',
 		'Dialog',
 		'LoadingText',
+		'ScrollArea',
 		'TextInput',
 		'Select',
 		'Badge',
@@ -96,6 +103,7 @@ const ui = Object.fromEntries(
 function mount(component, props) {
 	const root = { children: [] }
 	const app = renderer.createApp({ setup: () => () => h(component, props()) })
+	app.config.globalProperties.__ = __
 	app.mount(root)
 	function find(name, match = () => true, node = root) {
 		if (node.name === name && match(node.props)) return node
@@ -114,6 +122,7 @@ function mount(component, props) {
 const InviteRows = loadSource('../src/components/team/InviteRows.vue', {
 	'frappe-ui': ui,
 	'@/composables/useBulkInvite': { ALL_RESOURCES: '*', MAX_INVITATIONS: 20 },
+	'@/components/common/DialogScrollList.vue': stub('DialogScrollList'),
 }).default
 
 test('the only invitation row cannot be removed, and removing added rows preserves its input', async () => {

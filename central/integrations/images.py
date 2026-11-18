@@ -63,13 +63,26 @@ def list_images(
 	instance.ensure_accepts_new_servers()
 
 	client = AtlasClient.for_team(instance, team)
+	page = client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
+	if flow == "Server":
+		page["items"] = [image for image in page["items"] if not document.is_image_hidden(image["tags"])]
 
-	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
+	return page
 
 
 def list_apps(team: str, region: str) -> list[dict]:
 	"""The ready-to-run apps the region's Cargo has built, one per application."""
-	return _app_cargo(team, region).get_apps()
+	apps = _app_cargo(team, region).get_apps()
+	for app in apps:
+		app["documentation"] = get_guide_url(app.get("documentation"))
+
+	return apps
+
+
+def get_guide_url(documentation: str | None) -> str | None:
+	"""An app's guide address from its template, or None unless it is an https page. The
+	console opens it as a link."""
+	return documentation if str(documentation or "").startswith("https://") else None
 
 
 def get_app_requirements(team: str, region: str, application: str) -> AppRequirements:
@@ -123,7 +136,7 @@ def selected_image(
 
 	client = AtlasClient.for_team(instance, team, capability)
 	image = client.read_system_image(client.get_image(image_id), document.get_image_tags())
-	if not image["enabled"] or image["status"] != "available":
+	if not image["enabled"] or image["status"] != "available" or document.is_image_hidden(image["tags"]):
 		frappe.throw(_("This image is no longer available. Select another image."))
 
 	return image
@@ -181,8 +194,8 @@ def _restorable_snapshot(team: str, snapshot: str):
 
 
 def eligible_plans(team: str, region: str, offering: str, image_id: str, snapshot: str | None = None) -> dict:
-	"""Combine billing eligibility with the selected image's disk requirement. A restore
-	passes `snapshot` instead of an offering and image."""
+	"""Combine the offering's plan family and minimum memory with the selected image's disk
+	requirement. A restore passes `snapshot` instead of an offering and image."""
 	from math import ceil
 
 	from central.billing.catalog.composition import composition_quantities
@@ -193,8 +206,12 @@ def eligible_plans(team: str, region: str, offering: str, image_id: str, snapsho
 		if snapshot
 		else selected_image(team, region, offering, image_id)
 	)
-	minimum = get_minimum_shape(image, get_image_app_requirements(region, image, snapshot))
-	catalog = get_server_plans(team, cluster=region)
+	if snapshot:
+		offering = snapshot_source(team, snapshot)[0]
+	minimum = get_minimum_shape(
+		image, get_image_app_requirements(region, image, snapshot), get_minimum_memory_mib(offering)
+	)
+	catalog = get_server_plans(team, cluster=region, offering=offering)
 	groups = {}
 	for name, plans in catalog["plans"].items():
 		rows = [plan for plan in plans if is_shape_enough(composition_quantities(plan["includes"]), minimum)]
@@ -235,12 +252,19 @@ def get_image_app_requirements(
 	return CargoClient(region_document).get_app_requirements(image["tags"]["application"])
 
 
-def get_minimum_shape(image: dict, requirements: AppRequirements | None) -> dict[str, int]:
-	"""The smallest machine an image runs on: its root disk, and an app's minimum size."""
+def get_minimum_memory_mib(offering: str) -> int:
+	return frappe.get_cached_doc("Image Offering", offering).minimum_memory_mib
+
+
+def get_minimum_shape(
+	image: dict, requirements: AppRequirements | None, minimum_memory_mib: int = 0
+) -> dict[str, int]:
+	"""The smallest machine an image runs on: its root disk, its offering's minimum memory,
+	and an app's minimum size."""
 	minimum = (requirements or {}).get("minimum_size") or {}
 	return {
 		"cpu_millicores": minimum.get("cpu_millicores", 0),
-		"memory_mib": minimum.get("memory_mib", 0),
+		"memory_mib": max(minimum.get("memory_mib", 0), minimum_memory_mib),
 		"disk_mib": max(image["rootfs_size_mib"], minimum.get("disk_mib", 0)),
 	}
 

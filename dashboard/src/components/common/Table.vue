@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="Row extends Record<string, any>">
-import Scrollbar from '@/components/common/Scrollbar.vue'
+import { ScrollArea } from 'frappe-ui'
 
 interface Column {
 	key: string
@@ -24,7 +24,7 @@ defineSlots<{
 </script>
 
 <template>
-	<Scrollbar class="min-h-0" :class="height || 'flex-1'">
+	<ScrollArea class="min-h-0" :class="height || 'flex-1'" orientation="both">
 		<table
 			class="min-w-full border-separate border-spacing-0 text-left"
 			:class="{ flush }"
@@ -61,7 +61,7 @@ defineSlots<{
 				</tr>
 			</tbody>
 		</table>
-	</Scrollbar>
+	</ScrollArea>
 </template>
 
 <style scoped>

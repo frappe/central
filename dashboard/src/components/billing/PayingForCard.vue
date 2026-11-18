@@ -153,7 +153,7 @@ const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 		<ConfirmDialog
 			v-model:target="pendingPause"
 			title="Pause billing"
-			:message="`Pause billing for ${pendingPause ? subscriptionTitle(pendingPause) : ''}? This stops the server/VM and the site(s)/services running on it, and stops charges until you resume.`"
+			:message="`Pause ${pendingPause ? subscriptionTitle(pendingPause) : ''}? The server stops and you are not charged for it until you resume.`"
 			confirm-label="Pause billing"
 			:loading="busy === pendingPause?.name"
 			@confirm="confirmPause"

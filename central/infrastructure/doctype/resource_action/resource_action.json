@@ -173,12 +173,14 @@
    "read_only": 1
   },
   {
+   "description": "Set only when the region or Central gave its own sentence. When empty, the console shows the catalog message for the Error Code in the reader's language.",
    "fieldname": "error_message",
    "fieldtype": "Small Text",
    "label": "Error Message",
    "read_only": 1
   },
   {
+   "description": "Set only when the region or Central gave its own advice. When empty, the console shows the catalog remediation for the Error Code in the reader's language.",
    "fieldname": "remediation",
    "fieldtype": "Small Text",
    "label": "Remediation",
@@ -316,7 +318,7 @@
    "link_fieldname": "resource_action"
   }
  ],
- "modified": "2026-11-02 18:00:00.000000",
+ "modified": "2026-11-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Resource Action",

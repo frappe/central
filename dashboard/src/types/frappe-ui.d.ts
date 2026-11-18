@@ -270,6 +270,7 @@ export const TabButtons: Component
 export const TabList: Component
 export const Tabs: Component
 export const TabTrigger: Component
+export const Textarea: Component
 export const TextInput: Component
 export const ToastProvider: Component
 export const Tooltip: Component

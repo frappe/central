@@ -363,6 +363,27 @@ class TestStagedEscalation(DunningTestBase):
 		start.assert_called_once_with("start", server)
 		self.assertFalse(frappe.db.get_value("Subscription", sub, "stopped_for_nonpayment"))
 
+	def test_paying_does_not_start_a_server_the_customer_paused(self):
+		from central.billing.states import transition
+
+		sub = self._subscription()
+		server = self._running(sub)
+		inv = self._open_invoice(sub)
+		with patch("central.resource_actions.submit_billing_command"):
+			self._run_through(inv, sub, last_day=14)
+		frappe.db.set_value("Virtual Machine", server, "status", "Stopped")
+		subscriptions.pause_billing(sub)
+
+		doc = frappe.get_doc("Invoice", inv)
+		transition(doc, "Paid", reason="test payment", actor="test")
+		with patch("central.resource_actions.submit_billing_command") as start:
+			save_billing_record(doc)
+
+		self.assertEqual(self._standing(sub), "Current")
+		start.assert_not_called()
+		self.assertTrue(subscriptions.is_billing_paused(sub))
+		self.assertFalse(frappe.db.get_value("Subscription", sub, "stopped_for_nonpayment"))
+
 	def test_cancelling_an_unpaid_invoice_does_not_restore_the_team(self):
 		from central.billing.states import transition
 

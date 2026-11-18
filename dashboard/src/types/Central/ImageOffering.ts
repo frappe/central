@@ -25,6 +25,10 @@ export interface ImageOffering {
 	logo?: string
 	/**	Description : Small Text	*/
 	description?: string
+	/**	Plan Category : Link - Plan Category - The plan family a server from this offering is sold on. Leave blank to offer every server plan.	*/
+	plan_category?: string
+	/**	Minimum Memory (MiB) : Int - The smallest memory a server from this offering runs on. Smaller plans and custom sizes are not offered. Leave at 0 for no minimum.	*/
+	minimum_memory_mib?: number
 	/**	Required Image Tags : Table - Image Offering Tag - Every tag must match. Central only offers available, enabled System images.	*/
 	required_tags: ImageOfferingTag[]
 }

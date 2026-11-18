@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Button, Skeleton } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import BucketOriginsDialog from '@/components/addons/storage/BucketOriginsDialog.vue'
 import BucketQuotaDialog from '@/components/addons/storage/BucketQuotaDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import CopyableValue from '@/components/common/CopyableValue.vue'
@@ -8,6 +9,7 @@ import SettingsSection from '@/components/common/SettingsSection.vue'
 import UsageCard from '@/components/common/UsageCard.vue'
 import { bucketLabel, useObjectStorage } from '@/composables/useObjectStorage'
 import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 import type { BucketCredentials, StorageBucket } from '@/types/storage'
 
 interface Props {
@@ -26,9 +28,19 @@ const {
 	usageLoading,
 	usageError,
 	loadUsage,
+	origins,
+	originsLoading,
+	originsError,
+	loadOrigins,
 	rotateCredentials,
 	deleteBucket,
 } = useObjectStorage()
+
+watch(
+	() => props.bucket.name,
+	(name) => loadOrigins(name),
+	{ immediate: true },
+)
 
 const formatBytes = (bytes: number): string => {
 	const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
@@ -77,6 +89,7 @@ const quotaSummary = computed(() =>
 		: 'No quota is set, so the bucket grows as you upload.',
 )
 
+const originsTarget = ref<StorageBucket | null>(null)
 const quotaTarget = ref<StorageBucket | null>(null)
 const rotateTarget = ref<StorageBucket | null>(null)
 const deleteTarget = ref<StorageBucket | null>(null)
@@ -168,6 +181,46 @@ const remove = async (target: StorageBucket): Promise<void> => {
 		</SettingsSection>
 
 		<SettingsSection
+			:title="__('Browser access')"
+			:help="__('Allowed origins')"
+			:description="
+				__(
+					'Websites that may upload to and read from this bucket in a browser, with a presigned URL. This dashboard always may.',
+				)
+			"
+			:aria-busy="originsLoading"
+		>
+			<template v-if="canManage" #actions>
+				<Button :label="__('Edit origins')" @click="originsTarget = bucket" />
+			</template>
+
+			<Skeleton v-if="originsLoading && !origins" class="h-9 rounded-4" />
+
+			<div
+				v-else-if="originsError"
+				class="flex items-center justify-between gap-3 text-sm text-ink-gray-5"
+			>
+				{{ __("Allowed origins couldn't load.") }}
+				<Button
+					variant="ghost"
+					size="sm"
+					:label="__('Retry')"
+					@click="loadOrigins(bucket.name)"
+				/>
+			</div>
+
+			<ul v-else-if="origins?.length" class="space-y-1">
+				<li v-for="origin in origins" :key="origin">
+					<CopyableValue :value="origin" :label="__('Origin')" />
+				</li>
+			</ul>
+
+			<p v-else class="text-sm text-ink-gray-5">
+				{{ __('No other website is allowed.') }}
+			</p>
+		</SettingsSection>
+
+		<SettingsSection
 			v-if="canManage"
 			title="Delete bucket"
 			description="Permanently deletes the bucket and its access key. Delete all objects first."
@@ -182,6 +235,7 @@ const remove = async (target: StorageBucket): Promise<void> => {
 		</SettingsSection>
 
 		<BucketQuotaDialog v-model="quotaTarget" :usage="usage" />
+		<BucketOriginsDialog v-model="originsTarget" :origins="origins" />
 
 		<ConfirmDialog
 			v-model:target="rotateTarget"

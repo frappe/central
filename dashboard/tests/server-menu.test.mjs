@@ -89,10 +89,11 @@ test('Contact support sits beside Copy server ID and names the server and its si
 		.map((option) => option.label)
 
 	assert.deepEqual([...labels], ['Copy server ID', 'Contact support'])
-	assert.deepEqual(
-		{ ...supportContexts[0] },
-		{ Server: 'acme (vm-1)', Site: 'acme.test' },
-	)
+	const [context] = supportContexts
+	assert.equal(context.Server, undefined)
+	assert.equal(context.Site, 'acme.test')
+	assert.equal(context.server.resource_id, 'vm-1')
+	assert.equal(context.server.title, 'acme')
 })
 
 test('a locked web console is one disabled row with the reason and no submenu', () => {

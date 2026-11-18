@@ -3,6 +3,7 @@ from __future__ import annotations
 import frappe
 from frappe.core.api.file import get_max_file_size
 from frappe.sessions import get_csrf_token
+from frappe.translate import get_translation_version
 
 from central.identity.doctype.team_invitation.team_invitation import get_expiry_days
 
@@ -29,6 +30,9 @@ def get_context(context):
 		boot["socketio_port"] = frappe.conf.socketio_port
 	boot["site_name"] = frappe.local.site
 	boot["max_file_size"] = get_max_file_size()
+	# The console fetches the catalog from a URL with this version, so the browser caches it.
+	boot["lang"] = frappe.local.lang
+	boot["translations_version"] = get_translation_version()
 	# Frappe stores datetimes as a naive clock in this zone. The dashboard parses
 	# them here, then shows the viewer's local time. Asia/Calcutta is the old name
 	# for Asia/Kolkata, and browsers do not know the old one.

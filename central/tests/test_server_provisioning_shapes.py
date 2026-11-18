@@ -83,6 +83,7 @@ class TestServerProvisioningShapes(IntegrationTestCase):
 					10.0,
 				),
 			),
+			patch("central.resource_actions.get_minimum_memory_mib", return_value=0),
 			patch("central.resource_actions.resolve_team_ssh_keys", return_value=resolved_keys) as resolve,
 			patch("central.resource_actions.get_team_currency", return_value="USD"),
 			patch("central.resource_actions.frappe.db.get_value", return_value="Monthly"),

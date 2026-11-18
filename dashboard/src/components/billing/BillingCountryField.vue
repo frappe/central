@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { Combobox, useCall } from 'frappe-ui'
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { getErrorMessage } from '@/lib/feedback'
+import { getErrorMessage, isAbortError } from '@/lib/feedback'
 import type { BillingGeo } from '@/types/billing'
 
 // Country alone sets the billing currency, so asking it first lets the welcome credit and
@@ -32,33 +32,74 @@ const save = useCall<unknown, Record<string, unknown>>({
 	method: 'POST',
 	immediate: false,
 })
-const country = ref(profile.value?.country ?? '')
+const country = ref('')
+let picked = false
 const error = ref('')
 
-async function saveCountry(value: string): Promise<void> {
-	if (!value || value === profile.value?.country) return
+async function saveCountry(value: string): Promise<boolean> {
+	if (!value || value === profile.value?.country) return true
 	error.value = ''
-	await save.submit({ team: activeTeam.value, country: value })
-	if (save.error) {
-		error.value = getErrorMessage(save.error, 'Could not save your country.')
-		return
+	try {
+		await save.submit({ team: activeTeam.value, country: value })
+	} catch (e) {
+		if (!isAbortError(e))
+			error.value = getErrorMessage(e, 'Could not save your country.')
+		return false
 	}
 	await refresh()
 	reloadProfile()
+	return true
+}
+
+// Continue can be pressed while a picked country is still saving; share that save
+// rather than sending the same request twice.
+let saving: Promise<boolean> | null = null
+function saveOnce(value: string): Promise<boolean> {
+	saving ??= saveCountry(value).finally(() => {
+		saving = null
+	})
+	return saving
 }
 
 function onChange(value: string): void {
+	picked = true
 	country.value = value
-	saveCountry(value)
+	saveOnce(value)
 }
 
 // The browser's time zone is a good first guess for India, the one country with its own
-// currency. The field shows the guess, and the user can change it.
-onMounted(() => {
-	if (country.value) return
+// currency. The field shows the guess; it is saved only when the user goes on.
+function guessCountry(): string {
+	if (currencyLocked.value) return ''
 	const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
-	if (zone === 'Asia/Kolkata' || zone === 'Asia/Calcutta') onChange('India')
-})
+	return zone === 'Asia/Kolkata' || zone === 'Asia/Calcutta' ? 'India' : ''
+}
+
+// The profile loads after the field mounts: show its country once it arrives, and
+// guess only when it has none. A country the user picked is never overwritten.
+watch(
+	profile,
+	(loaded) => {
+		if (!loaded || picked) return
+		country.value = loaded.country || guessCountry()
+	},
+	{ immediate: true },
+)
+
+// Continue goes on only from a known country state. Without the profile we cannot
+// tell whether a country is already saved, so load it first and stop if that fails.
+async function saveOnContinue(): Promise<boolean> {
+	if (saving) return saving
+	if (!profile.value) await refresh()
+	if (!profile.value) {
+		error.value = "Couldn't load your billing details. Try again."
+		return false
+	}
+	error.value = ''
+	return saveOnce(country.value)
+}
+
+defineExpose({ save: saveOnContinue })
 </script>
 
 <template>

@@ -277,6 +277,7 @@ const refresh = async (): Promise<void> => {
 						v-if="!activeKeyCount && canManage"
 						variant="solid"
 						label="Create key"
+						:disabled="ai?.key_handover_pending"
 						@click="$emit('create')"
 					/>
 				</li>

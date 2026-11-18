@@ -241,7 +241,6 @@ class TestDeduplication(EngineTestBase):
 		# timestamp outside the window.
 		cutoff = frappe.utils.add_to_date(None, minutes=-(DEDUP_WINDOW_MINUTES + 1))
 		frappe.db.set_value("Team Notification", result["notification"], "creation", cutoff)
-		frappe.db.commit()
 
 		third = dispatch(
 			TEAM, "backup_failure", message="third", reference_doctype="Site", reference_name="my-site"
@@ -564,13 +563,16 @@ class TestSaveUserPreferences(EngineTestBase):
 		self.assertEqual(billing["frequency"], "Weekly")
 		self.assertEqual(out["digest_hour"], 9)
 		self.assertEqual(billing["events"], [{"event_type": "payment_success", "email_enabled": 0}])
-		catalog = next(group for group in out["catalog"] if group["category"] == "Billing")
-		events = {event["event_type"]: event for event in catalog["events"]}
-		self.assertFalse(events["payment_success"]["can_receive"])
-		self.assertTrue(events["payment_failure"]["is_critical"])
-		server_catalog = next(group for group in out["catalog"] if group["category"] == "Server")
-		server_events = {event["event_type"]: event for event in server_catalog["events"]}
-		self.assertTrue(server_events["backup_failure"]["can_receive"])
+		catalog = {
+			group["category"]: [event["event_type"] for event in group["events"]] for group in out["catalog"]
+		}
+		self.assertNotIn("Billing", catalog)
+		self.assertIn("backup_failure", catalog["Server"])
+		self.assertIn("role_change", catalog["Team"])
+		self.assertNotIn("member_joined", catalog["Team"])
+		server = next(group for group in out["catalog"] if group["category"] == "Server")
+		titles = {event["event_type"]: event["title"] for event in server["events"]}
+		self.assertEqual(titles["backup_failure"], "Backup failure")
 
 	def test_rejects_event_from_another_category(self):
 		from central.notification.api import save_user_preferences
@@ -1016,6 +1018,40 @@ class TestReportPilotEvent(EngineTestBase):
 		self.assertEqual(row.message, "my-bench: cpu_usage_limit at 95.0%")
 		self.assertEqual((row.action_label, row.action_route), ("View server", "/servers/"))
 
+	def test_pilot_certificate_alerts_are_accepted_with_the_shipped_fixture(self):
+		"""Pilot sends certificate_expiry and certificate_failed with the domains of the certificate."""
+		fixture_path = frappe.get_app_path("central", "fixtures", "notification_event_type.json")
+		fixtures = {record["name"]: record for record in frappe.parse_json(frappe.read_file(fixture_path))}
+
+		class FakeCredential:
+			team = TEAM
+			server = None
+
+		for event_type, title in (
+			("certificate_expiry", "Certificate not renewing: a.example.com, b.example.com"),
+			("certificate_failed", "Certificate failed: a.example.com, b.example.com"),
+		):
+			with self.subTest(event_type):
+				self._ensure_event_type(
+					event_type, **{field: fixtures[event_type][field] for field in _FIXTURE_FIELDS}
+				)
+				with (
+					patch("central.api.pilot.PilotCredential.verify", return_value=FakeCredential()),
+					patch("frappe.get_request_header", return_value="fake-token"),
+				):
+					from central.notification.api import report_pilot_event
+
+					out = report_pilot_event(
+						event_type=event_type,
+						message="The certificate for a.example.com, b.example.com expired and has not renewed.",
+						context={"bench": "my-bench", "domains": ["a.example.com", "b.example.com"]},
+					)
+				self.assertTrue(out["created"])
+				row = frappe.get_all(
+					"Team Notification", {"team": TEAM, "event_type": event_type}, ["title", "action_route"]
+				)[0]
+				self.assertEqual((row.title, row.action_route), (title, "/servers/"))
+
 
 class TestTemplateContext(EngineTestBase):
 	def test_reference_doctype_in_template_context(self):
@@ -1275,3 +1311,94 @@ class TestFeedPagination(EngineTestBase):
 		page = feed.list_notifications(TEAM, user=self.user)
 		self.assertEqual(len(page["items"]), 3)
 		self.assertFalse(page["has_next_page"])
+
+
+class TestReaderLanguage(EngineTestBase):
+	"""One feed row serves the whole team, so each reader gets it in their own language."""
+
+	GERMAN: ClassVar[dict] = {
+		"Backup failed for {{ reference_name }}": "Sicherung fehlgeschlagen für {{ reference_name }}",
+		"View site": "Website ansehen",
+		"Your server reported a failure while trying to {action}, and it's now in a failed state.": (
+			"Ihr Server meldete einen Fehler beim Versuch: {action}."
+		),
+		"resize": "Größe ändern",
+	}
+
+	def setUp(self):
+		super().setUp()
+		self._ensure_event_type(
+			"backup_failure",
+			in_app_title="Backup failed for {{ reference_name }}",
+			in_app_body="{{ message }}",
+			action_label="View site",
+		)
+		self.german = dict(self.GERMAN)
+		self.translations = self.enterContext(
+			patch(
+				"frappe.translate.get_all_translations",
+				side_effect=lambda language: self.german if language == "de" else {},
+			)
+		)
+
+	def read_feed_in(self, language: str) -> dict:
+		from central.notification import list_notifications
+
+		previous = frappe.local.lang
+		frappe.local.lang = language
+		try:
+			return list_notifications(TEAM, user="Administrator")["items"][0]
+		finally:
+			frappe.local.lang = previous
+
+	def test_the_feed_fills_the_templates_in_the_readers_language(self):
+		from central.notification.engine import dispatch
+
+		dispatch(TEAM, "backup_failure", message="pg_dump error", reference_name="my-site")
+
+		german = self.read_feed_in("de")
+		english = self.read_feed_in("en")
+
+		self.assertEqual(german.title, "Sicherung fehlgeschlagen für my-site")
+		self.assertEqual(german.action_label, "Website ansehen")
+		self.assertEqual(english.title, "Backup failed for my-site")
+		self.assertNotIn("template_context", german)
+
+	def test_a_row_without_a_context_keeps_its_stored_copy(self):
+		from central.notification import create_notification
+
+		create_notification(TEAM, "Stored title", event_type="backup_failure", publish=False)
+
+		self.assertEqual(self.read_feed_in("de").title, "Stored title")
+
+	@patch("central.notification.engine.frappe.sendmail")
+	def test_each_recipient_gets_the_email_in_their_language(self, sendmail):
+		from central.notification.engine import send_notification_emails
+
+		languages = {"de@example.test": "de", "en@example.test": "en"}
+		ctx = {"team": TEAM, "reference_name": "my-site", "reference_doctype": "", "message": ""}
+		with patch("central.notification.engine.get_user_lang", side_effect=languages.get):
+			send_notification_emails(list(languages), "backup_failure", ctx)
+
+		subjects = {call.kwargs["recipients"][0]: call.kwargs["subject"] for call in sendmail.call_args_list}
+		self.assertEqual(subjects["de@example.test"], "Sicherung fehlgeschlagen für my-site")
+		self.assertEqual(subjects["en@example.test"], "Backup failed for my-site")
+
+	def test_an_error_code_is_read_as_its_catalog_sentence(self):
+		from central.notification.engine import dispatch
+
+		context = {"error_code": "ACTION_FAILED", "action": "resize", "resource_id": "vm-1"}
+		dispatch(TEAM, "backup_failure", context=context, reference_name="my-site")
+
+		self.assertEqual(
+			self.read_feed_in("de").message, "Ihr Server meldete einen Fehler beim Versuch: Größe ändern."
+		)
+		self.assertIn("trying to resize", self.read_feed_in("en").message)
+
+	def test_a_broken_translation_keeps_the_stored_copy(self):
+		from central.notification.engine import dispatch
+
+		dispatch(TEAM, "backup_failure", message="pg_dump error", reference_name="my-site")
+		self.german["Backup failed for {{ reference_name }}"] = "Sicherung {% if"
+
+		self.assertEqual(self.read_feed_in("de").title, "Backup failed for my-site")

@@ -1,15 +1,24 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import BillingCountryField from '@/components/billing/BillingCountryField.vue'
 import PaymentMethodFlow from '@/components/billing/PaymentMethodFlow.vue'
 import TrialBillingBanner from '@/components/billing/TrialBillingBanner.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { cardCheckText } from '@/lib/collectionText'
 import { money } from '@/lib/format'
 import type { WelcomeCredit } from '@/types/billing'
 
 const { profile } = useBillingSetup()
 const flow = ref<InstanceType<typeof PaymentMethodFlow> | null>(null)
+const countryField = ref<InstanceType<typeof BillingCountryField> | null>(null)
 const hasMethod = ref(false)
+// True for the whole submit, so the dialog holds its actions until it ends.
+const saving = ref(false)
+// The dialog can leave this step while the country saves; then the flow must not start.
+let isUnmounted = false
+onBeforeUnmount(() => {
+	isUnmounted = true
+})
 
 // The offer is gone from the profile once the credit is granted, so keep the last one seen
 // to confirm it after the payment method is added.
@@ -43,8 +52,8 @@ const offerFacts = computed(() => {
 const steps = computed(() => [
 	{
 		icon: 'lucide-credit-card',
-		title: 'No charge today',
-		text: 'We save it and check that it works.',
+		title: 'A small check charge, refunded',
+		text: cardCheckText,
 	},
 	{
 		icon: 'lucide-wallet',
@@ -65,19 +74,28 @@ defineExpose({
 	submitLabel: computed(() =>
 		hasMethod.value ? 'Continue' : 'Add payment method',
 	),
-	saving: false,
-	submit: async () => {
-		if (hasMethod.value) return true
-		flow.value?.start()
-		return false
-	},
+	saving,
+	submit,
 })
+
+async function submit(): Promise<boolean> {
+	if (hasMethod.value) return true
+	if (saving.value) return false
+	saving.value = true
+	try {
+		if (countryField.value && !(await countryField.value.save())) return false
+		if (!isUnmounted) flow.value?.start()
+		return false
+	} finally {
+		saving.value = false
+	}
+}
 </script>
 
 <template>
 	<div class="space-y-5">
 		<TrialBillingBanner :link-to-upgrade="false" />
-		<BillingCountryField v-if="!hasMethod" />
+		<BillingCountryField v-if="!hasMethod" ref="countryField" />
 		<div
 			v-if="hasMethod"
 			class="flex items-start gap-3 rounded-6 bg-surface-green-1 px-4 py-3"

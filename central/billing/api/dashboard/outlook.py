@@ -22,6 +22,7 @@ from central.billing.api.dashboard._shared import _resolve_team, _team_currency
 from central.billing.doctype.billing_profile.billing_profile import get_payment_date
 from central.billing.doctype.invoice.invoice import OVERDUE, owed_filters
 from central.billing.payments.charges import in_flight_attempt
+from central.billing.revenue import tax
 from central.billing.revenue.dunning import (
 	LADDER_FIELDS,
 	dunning_policy,
@@ -35,10 +36,6 @@ from central.billing.revenue.dunning import (
 # Customer-facing copy for the findings the engine can raise. `fix` is the sentence
 # that tells someone what to actually do — the reason this is worth showing at all.
 _BLOCKER_COPY = {
-	"over_mandate_cap": {
-		"title": "We can't auto-debit this",
-		"fix": "Add credit to cover it, or pay this bill manually. Your servers keep running either way.",
-	},
 	"over_silent_threshold": {
 		"title": "This bill needs your approval",
 		"fix": "Bills above the auto-debit limit have to be paid by you. We'll send a link when it's due.",
@@ -80,32 +77,33 @@ def get_next_payment(team: str | None = None) -> dict:
 	of an owed invoice, else the running cycle's. When the oldest owed invoice's own
 	payment date has passed, its place on the dunning ladder is reported beside it.
 	"""
+	from central.billing.payments import collection_mode
+
 	team = _resolve_team(team)
 	currency = _team_currency(team)
 	today = frappe.utils.getdate()
 
 	owed = _owed_invoices(team)
 	invoice = owed[0] if owed else None
-	if invoice:
-		amount = frappe.utils.flt(invoice.expected_collection)
-		period_end = invoice.period_end
-	else:
-		amount, period_end = _projected_collectable(team, today)
+	amount, period_end, bill = _amount_due(team, invoice, today)
 
+	debit_held = not collection_mode.is_debit_allowed(team)
 	charge_on = _scheduled_charge_on(team, owed, today)
 	missed = _missed_payment(team, invoice, today)
 	blockers = _blockers(team, amount, currency, missed["next_retry_on"] or charge_on, today)
 	return {
 		"currency": currency,
 		"amount": amount,
+		"tax_note": _tax_note(team, bill),
 		"charge_on": str(charge_on) if charge_on else None,
 		"invoice": invoice.name if invoice else None,
 		"period_end": str(period_end) if period_end else None,
 		"collection_mode": frappe.db.get_value("Billing Profile", team, "collection_mode"),
-		"method": _charging_method(team),
+		"debit_held": debit_held,
+		"method": _charging_method(team, amount, invoice.name if invoice else None),
 		# Empty blockers is not a promise the charge succeeds — only that nothing in
 		# the data decides otherwise. The UI says "we'll charge", never "it will work".
-		"will_auto_charge": not blockers,
+		"will_auto_charge": not (blockers or debit_held),
 		"blockers": blockers,
 		**missed,
 	}
@@ -125,6 +123,19 @@ def get_payment_schedule(team: str | None = None) -> dict:
 	}
 
 
+def _amount_due(team: str, invoice, today) -> tuple[float, object, object]:
+	"""The amount, period end and bill of the next debit: the owed invoice, else the projection."""
+	if invoice:
+		return frappe.utils.flt(invoice.expected_collection), invoice.period_end, invoice
+	return _projected_collectable(team, today)
+
+
+def _tax_note(team: str, block) -> str | None:
+	"""What the amount includes, from the bill it totals: "incl. IGST 18%", or "SEZ supply,
+	no GST". None without a bill, since the amount then carries no tax."""
+	return tax.TaxNames(team).note(block) if block else None
+
+
 def _owed_invoices(team: str) -> list[frappe._dict]:
 	"""The open bills we still have to collect, oldest due first."""
 	return frappe.get_all(
@@ -141,6 +152,7 @@ def _owed_invoices(team: str) -> list[frappe._dict]:
 			*LADDER_FIELDS,
 			"period_end",
 			"predebit_charge_after",
+			*tax.LABEL_FIELDS,
 		],
 		order_by="due_date asc",
 	)
@@ -249,8 +261,9 @@ def _suspended_since(team: str):
 	)
 
 
-def _projected_collectable(team: str, today) -> tuple[float, object]:
-	"""What the current period would collect if it closed as projected."""
+def _projected_collectable(team: str, today) -> tuple[float, object, dict | None]:
+	"""What the current period would collect if it closed as projected, its end, and the
+	projected invoice (None when nothing is billable)."""
 	from central.billing.projection import engine
 
 	month_start = frappe.utils.get_first_day(today)
@@ -258,8 +271,8 @@ def _projected_collectable(team: str, today) -> tuple[float, object]:
 	# Unguarded for the same reason get_forecast is: a customer page must not fail
 	# because the request that reached it happened to write something first.
 	projection = engine.project(team, month_start, month_end, today=today, guarded=False)
-	invoice = projection["invoice"] or {}
-	return frappe.utils.flt(invoice.get("expected_collection")), month_end
+	invoice = projection["invoice"]
+	return frappe.utils.flt((invoice or {}).get("expected_collection")), month_end, invoice
 
 
 def _blockers(team: str, amount: float, currency: str, charge_on, today) -> list[dict]:
@@ -280,27 +293,29 @@ def _blockers(team: str, amount: float, currency: str, charge_on, today) -> list
 	return blockers
 
 
-def _charging_method(team: str) -> dict | None:
-	"""The instrument that would actually be charged: the primary chargeable one."""
-	from central.billing.payments import collection
+def _charging_method(team: str, amount: float, invoice: str | None = None) -> dict | None:
+	"""The method the bill would be charged on, and the most it may take off-session.
 
-	methods = collection.ordered_methods(team)
-	if not methods:
+	The first method, primary first, whose own limit covers `amount`. None when none does:
+	the bill is then paid by hand, and a blocker says so. None too for a team whose
+	methods are never charged off-session."""
+	from central.billing.payments import collection, collection_mode
+
+	if not collection_mode.is_debit_allowed(team):
 		return None
-	method = frappe.db.get_value(
-		"Payment Method",
-		methods[0].name,
-		["display_label", "method_type", "mandate_max_amount", "card_network"],
-		as_dict=True,
-	)
+	currency = _team_currency(team)
+	method = collection.method_for_amount(team, currency, amount, invoice)
 	if not method:
 		return None
+	limit = collection_mode.method_limit(method.gateway, currency, method.mandate_max_amount)
+	row = frappe.db.get_value(
+		"Payment Method", method.name, ["display_label", "method_type", "card_network"], as_dict=True
+	)
 	return {
-		"label": method.display_label,
-		"method_type": method.method_type,
-		"card_network": method.card_network,
-		# The ceiling is the number the blocker copy refers to, so it travels with it.
-		"ceiling": frappe.utils.flt(method.mandate_max_amount) or None,
+		"label": row.display_label,
+		"method_type": row.method_type,
+		"card_network": row.card_network,
+		"ceiling": limit,
 	}
 
 

@@ -23,7 +23,7 @@ from central.billing.api.dashboard._shared import (
 	_require_billing_setup,
 	_team_currency,
 )
-from central.billing.doctype.payment_method.payment_method import held_method_filters
+from central.billing.doctype.payment_method.payment_method import held_method_filters, without_expired_setups
 from central.billing.gateways import capabilities
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
 
@@ -237,7 +237,7 @@ def _payment_method_rows(team: str) -> list[dict]:
 	rows = frappe.get_all(
 		"Payment Method",
 		{"team": team},
-		["name", "method_type", "display_label", "is_default", "status"],
+		["name", "method_type", "display_label", "is_default", "status", "validated_at"],
 		or_filters=held_method_filters(),
 		order_by="is_default desc, priority asc, creation asc",
 	)
@@ -249,7 +249,7 @@ def _payment_method_rows(team: str) -> list[dict]:
 			"is_default": bool(r.is_default),
 			"status": r.status,
 		}
-		for r in rows
+		for r in without_expired_setups(rows)
 	]
 
 
@@ -358,7 +358,7 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 	reference, gateway}`; redirect the payer to `checkout_url`, then poll
 	`confirm_payment_method_checkout`. Stripe only for now (hosted `setup` mode)."""
 	from central.billing.gateways.registry import get_adapter
-	from central.billing.payments import payments
+	from central.billing.payments import payments, setup_lockout
 
 	redirect_url = _require_own_site_url(redirect_url)
 	team = _team()
@@ -374,14 +374,14 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 			frappe.ValidationError,
 		)
 
+	setup_lockout.check(team)
 	adapter = get_adapter(gw_doc)
 	payments._cancel_abandoned_setups(team, gw_doc.name)  # close prior never-finished attempts
 	customer = payments.ensure_gateway_customer(team, gw_doc.name, adapter)
 	session = adapter.create_setup_checkout_session(
 		customer, success_url=redirect_url, cancel_url=redirect_url
 	)
-	# Persist the checkout session on the pending row so the setup can be reconciled
-	# on return (or by a webhook) even if the poll below never runs.
+	# Kept on the pending row, so a webhook can reconcile the setup if the poll never runs.
 	method = frappe.get_doc(
 		{
 			"doctype": "Payment Method",
@@ -494,21 +494,20 @@ def reconcile_payment_setup() -> dict:
 @pilot_credential_auth
 def get_available_plans() -> dict:
 	"""Active plans the credential's server can switch to — priced for the team's currency
-	on the server's cluster, admitted by the trust tier, within remaining headroom.
-	Grouped by sub-category. The server is resolved from the credential (a pilot only sees
-	its own server's options)."""
-	from central.billing.api.dashboard.catalog import get_eligible_plans
+	on the server's cluster, sold for its image offering, admitted by the trust tier, within
+	remaining headroom. Grouped by sub-category. The server is resolved from the credential
+	(a pilot only sees its own server's options)."""
+	from central.billing.catalog.server_plans import get_server_plans
 
 	team = _team()
-	cluster = frappe.db.get_value("Virtual Machine", _server(), "region")
+	server = _server()
+	cluster = frappe.db.get_value("Virtual Machine", server, "region")
 	# No provisioned cluster → offer nothing; a cluster-less menu skips the
 	# allowed-clusters guard and would leak plans from other regions.
 	if not cluster:
 		return {"plans": {}}
-	# The delegated menu gates on the session user's capability; the pilot is a Guest
-	# session, so act as operator — the team is fixed from the verified credential.
-	with _as_operator():
-		return get_eligible_plans(cluster=cluster, team=team)
+	# The team and the server are fixed from the verified credential.
+	return get_server_plans(team, cluster=cluster, server=server)
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
@@ -764,11 +763,12 @@ def get_billing_summary(site: str | None = None) -> dict:
 	(+ spec labels for the usage meters), the cycle estimate, the credit balance (with
 	an insufficient-balance flag), this server's next bill with its breakdown and what
 	would stop the charge, whether a payment method / profile exist, and the site's open
-	trial. `site` names the site on a server with several. Usage percentages are filled
+	trial and AI credit. `site` names the site on a server with several. Usage percentages are filled
 	in by the bench (host-local)."""
 	from central.billing.api.dashboard._shared import _profile_complete
 	from central.billing.api.dashboard.invoices import get_forecast
 	from central.billing.revenue import credits
+	from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 	from central.signups.doctype.product.product import get_server_product
 	from central.signups.trial import get_trial_status
 
@@ -807,6 +807,7 @@ def get_billing_summary(site: str | None = None) -> dict:
 		"payment_method": {"label": default["label"], "name": default["name"]} if default else None,
 		"profile_complete": _profile_complete(team),
 		"trial": get_trial_status(server, site),
+		"ai_credits": AITrialKey.get_server_credits(server),
 		"plan_change": _pending_plan_change(server),
 	}
 

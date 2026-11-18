@@ -124,20 +124,10 @@ def grant_central_user_role(doc, method: str | None = None) -> None:
 		doc.add_roles(CENTRAL_USER_ROLE)
 
 
-def validate_staff_viewer_roles(doc, method: str | None = None) -> None:
-	"""A Staff Viewer reads every team. Central User reads customer data fields, so one user
-	must not hold both roles."""
-	roles = {row.role for row in doc.roles}
-	if {STAFF_VIEWER_ROLE, CENTRAL_USER_ROLE} <= roles:
-		frappe.throw(
-			_("A user cannot have both the {0} and {1} roles. Use the {2} role profile.").format(
-				STAFF_VIEWER_ROLE, CENTRAL_USER_ROLE, STAFF_ROLE_PROFILE
-			)
-		)
-
-
 def ensure_staff_role_profile() -> None:
-	"""Create the Frappe Employee role profile once. An operator may change it in Desk later."""
+	"""Create the Frappe Employee role profile once. An operator may change it in Desk later.
+
+	It holds Central User, because a role profile replaces every other role of its users."""
 	if frappe.db.exists("Role Profile", STAFF_ROLE_PROFILE):
 		return
 
@@ -146,7 +136,7 @@ def ensure_staff_role_profile() -> None:
 		{
 			"doctype": "Role Profile",
 			"role_profile": STAFF_ROLE_PROFILE,
-			"roles": [{"role": STAFF_VIEWER_ROLE}],
+			"roles": [{"role": CENTRAL_USER_ROLE}, {"role": STAFF_VIEWER_ROLE}],
 		}
 	).insert(ignore_permissions=True)
 
@@ -214,7 +204,5 @@ def _should_skip_role_grant(doc) -> bool:
 		return True
 	if frappe.flags.in_install or frappe.flags.in_migrate:
 		return True
-	if not frappe.db.exists("Role", CENTRAL_USER_ROLE):
-		return True
 
-	return STAFF_VIEWER_ROLE in {row.role for row in doc.roles}
+	return not frappe.db.exists("Role", CENTRAL_USER_ROLE)

@@ -24,7 +24,9 @@
   "message",
   "section_break_action",
   "action_label",
-  "action_route"
+  "action_route",
+  "section_break_rendering",
+  "template_context"
  ],
  "fields": [
   {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "in_standard_filter": 1, "label": "Team", "reqd": 1, "search_index": 1},
@@ -43,11 +45,13 @@
   {"fieldname": "message", "fieldtype": "Small Text", "label": "Message"},
   {"fieldname": "section_break_action", "fieldtype": "Section Break"},
   {"fieldname": "action_label", "fieldtype": "Data", "label": "Action Label", "description": "Button text for an actionable notification, e.g. 'Pay now'."},
-  {"fieldname": "action_route", "fieldtype": "Data", "label": "Action Route", "description": "Console route the action button navigates to, e.g. '/billing/invoices'."}
+  {"fieldname": "action_route", "fieldtype": "Data", "label": "Action Route", "description": "Console route the action button navigates to, e.g. '/billing/invoices'."},
+  {"collapsible": 1, "fieldname": "section_break_rendering", "fieldtype": "Section Break", "label": "Rendering"},
+  {"fieldname": "template_context", "fieldtype": "JSON", "label": "Template Context", "read_only": 1, "description": "The values the event's templates were filled with. The feed and the digest fill the templates again, so each reader gets the title and message in their own language. Title and Message keep the copy from when the event happened."}
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-24 18:00:00.000000",
+ "modified": "2026-11-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Notification",
  "name": "Team Notification",

@@ -431,6 +431,16 @@ def get_metric_point(previous: dict, sample: dict, vcpus: float) -> dict:
 	is_up = previous["up"] and sample["up"]
 	compute, disk = sample["compute"], sample["disk"]
 
+	guest = sample.get("guest") or {}
+	if guest.get("system_state", "unreachable") != "unreachable":
+		# The guest's own view leaves out page cache that the host charges to the VM.
+		memory, filesystem = guest["memory"], guest["root_filesystem"]
+		memory_bytes = memory["total_bytes"] - memory["available_bytes"]
+		disk_used_bytes, disk_total_bytes = filesystem["used_bytes"], filesystem["size_bytes"]
+	else:
+		memory_bytes = compute["memory_bytes"]
+		disk_used_bytes, disk_total_bytes = disk["used_mib"] * MIB, disk["size_mib"] * MIB
+
 	def rate(section: str, key: str) -> float | None:
 		change = sample[section][key] - previous[section][key]
 		return change / seconds if is_up and change >= 0 else None
@@ -443,9 +453,9 @@ def get_metric_point(previous: dict, sample: dict, vcpus: float) -> dict:
 		"cpu_percent": None
 		if cpu_microseconds_per_second is None
 		else min(100, cpu_microseconds_per_second / 10_000 / (vcpus or 1)),
-		"memory_bytes": compute["memory_bytes"],
-		"disk_used_bytes": disk["used_mib"] * MIB,
-		"disk_total_bytes": disk["size_mib"] * MIB,
+		"memory_bytes": memory_bytes,
+		"disk_used_bytes": disk_used_bytes,
+		"disk_total_bytes": disk_total_bytes,
 		"disk_read_bytes_per_second": disk["read_bytes_per_second"],
 		"disk_write_bytes_per_second": disk["write_bytes_per_second"],
 		"received_bytes_per_second": rate("network", "received_bytes"),

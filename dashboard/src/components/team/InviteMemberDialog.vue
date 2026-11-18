@@ -7,6 +7,7 @@ import { useBulkInvite } from '@/composables/useBulkInvite'
 import { useRegions } from '@/composables/useRegions'
 import { teamParams } from '@/composables/useTeamScope'
 import { getResourceOptions } from '@/lib/resourceScope'
+import { __ } from '@/lib/translate'
 import type { TeamRegistry } from '@/types/api'
 
 const props = defineProps<{ open: boolean }>()
@@ -66,12 +67,15 @@ async function send(): Promise<void> {
 	if (sent) emit('invited')
 	if (!failed) open.value = false
 }
+
+const sendInvitationsErrorTitle = __("Couldn't send the invitations")
+const loadRolesErrorTitle = __("Couldn't load the roles")
 </script>
 
 <template>
 	<Dialog
 		v-model="open"
-		title="Invite members"
+		:title="__('Invite members')"
 		size="2xl"
 		:show-close-button="false"
 		:dismissible="!saving"
@@ -81,13 +85,13 @@ async function send(): Promise<void> {
 				v-if="requestError"
 				class="mb-4"
 				theme="red"
-				title="Couldn't send the invitations"
+				:title="sendInvitationsErrorTitle"
 				:description="requestError"
 			/>
 			<Alert
 				v-if="rolesError"
 				theme="red"
-				title="Couldn't load the roles"
+				:title="loadRolesErrorTitle"
 				:description="rolesError"
 			/>
 			<LoadingText v-else-if="rolesLoading && !roleOptions.length" :lines="2" />
@@ -102,7 +106,11 @@ async function send(): Promise<void> {
 		</template>
 		<template #actions>
 			<div class="flex items-center justify-end gap-2">
-				<Button label="Cancel" :disabled="saving" @click="open = false" />
+				<Button
+					:label="__('Cancel')"
+					:disabled="saving"
+					@click="open = false"
+				/>
 				<Button
 					variant="solid"
 					:label="submitLabel"

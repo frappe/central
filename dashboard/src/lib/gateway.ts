@@ -1,4 +1,4 @@
-import type { StripeElementStyle } from '@stripe/stripe-js'
+import type { StripeElementStyle, StripeError } from '@stripe/stripe-js'
 
 // Hand a started order to the gateway's hosted element, resolve when the customer
 // finishes. Raw card/UPI data never touches our form — the gateway collects it.
@@ -233,4 +233,15 @@ function tokenColor(variable: string): string {
 	const color = getComputedStyle(probe).color
 	probe.remove()
 	return color
+}
+
+// Central cancels an open intent once too many attempts failed. Stripe then refuses to
+// confirm it; only the server can say how long the wait is.
+export function isCancelledIntent(error: StripeError): boolean {
+	const intent = error.setup_intent ?? error.payment_intent
+	return (
+		(error.code === 'setup_intent_unexpected_state' ||
+			error.code === 'payment_intent_unexpected_state') &&
+		intent?.status === 'canceled'
+	)
 }

@@ -1,7 +1,8 @@
 frappe.ui.form.on("Resource Action", {
 	refresh(frm) {
 		if (frm.is_new()) return;
-		if (frm.doc.error_message) frm.set_intro(frappe.utils.escape_html(frm.doc.error_message), "red");
+		const error = frm.doc.__onload?.error;
+		if (error) frm.set_intro(frappe.utils.escape_html(error.message), "red");
 		if (frm.doc.resource_type === "Site" && frm.doc.action === "create") render_setup_timeline(frm);
 		if (["Queued", "Dispatching", "Sent", "In Progress", "Uncertain"].includes(frm.doc.status)) {
 			frm.add_custom_button(__("Check Progress"), async () => {

@@ -46,6 +46,10 @@ export interface ServerOverview {
 		team_name: string
 		ssh_command: string | null
 		ssh_keys: ServerSSHKey[]
+		/** The one-click app the server was created from, or null for any other server. */
+		application: string | null
+		/** The https:// address of the app's guide, or null when it has none. */
+		documentation_url: string | null
 		has_public_ipv6: 0 | 1
 		is_firewall_enabled: 0 | 1
 		is_termination_protected: 0 | 1
@@ -53,6 +57,8 @@ export interface ServerOverview {
 		has_wireguard_access: 0 | 1
 		/** Null until Central first reads the firewall from the region. */
 		firewall_rules: FirewallRules | null
+		/** The team rulesets the server uses. Empty when it has its own rules. */
+		firewall_rulesets: string[]
 		/** Set only for a System Manager. */
 		operator_links: {
 			desk_url: string

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button, Select, TextInput } from 'frappe-ui'
+import DialogScrollList from '@/components/common/DialogScrollList.vue'
 import {
 	ALL_RESOURCES,
 	type InviteRow,
@@ -47,62 +48,64 @@ function removeRow(index: number): void {
 			<span v-if="rows.length > 1" class="w-7 shrink-0" />
 		</div>
 
-		<div class="space-y-3">
-			<div v-for="(row, index) in rows" :key="index">
-				<div class="flex items-start gap-3">
-					<TextInput
-						v-model="row.email"
-						class="min-w-0 flex-1"
-						type="email"
-						:autofocus="index === 0"
-						placeholder="teammate@company.com"
-						:aria-label="`Email ${index + 1}`"
-						:disabled="disabled"
-						@update:model-value="row.error = ''"
-					/>
-					<Select
-						v-model="row.role"
-						class="w-36 shrink-0"
-						:options="roleOptions"
-						placeholder="Role"
-						:aria-label="`Role ${index + 1}`"
-						:disabled="disabled"
-					/>
-					<Select
-						v-if="resourceOptions"
-						v-model="row.resource"
-						class="w-44 shrink-0"
-						:options="resourceOptions"
-						:aria-label="`Resource ${index + 1}`"
-						:disabled="disabled"
-					>
-						<!-- One line per option: Select lets a taller option shrink and overlap when the menu height is capped. -->
-						<template #item-label="{ item }">
-							<div class="flex min-w-0 items-center gap-2">
-								<span class="truncate leading-tighter">{{ item.label }}</span>
-								<span
-									v-if="item.description"
-									class="shrink-0 text-sm leading-tighter text-ink-gray-5"
-								>
-									{{ item.description }}
-								</span>
-							</div>
-						</template>
-					</Select>
-					<Button
-						v-if="rows.length > 1"
-						variant="ghost"
-						icon="lucide-x"
-						:aria-label="`Remove ${row.email || `row ${index + 1}`}`"
-						:disabled="disabled"
-						@click="removeRow(index)"
-					/>
+		<DialogScrollList>
+			<div class="space-y-3">
+				<div v-for="(row, index) in rows" :key="index">
+					<div class="flex items-start gap-3">
+						<TextInput
+							v-model="row.email"
+							class="min-w-0 flex-1"
+							type="email"
+							:autofocus="index === 0"
+							placeholder="teammate@company.com"
+							:aria-label="`Email ${index + 1}`"
+							:disabled="disabled"
+							@update:model-value="row.error = ''"
+						/>
+						<Select
+							v-model="row.role"
+							class="w-36 shrink-0"
+							:options="roleOptions"
+							placeholder="Role"
+							:aria-label="`Role ${index + 1}`"
+							:disabled="disabled"
+						/>
+						<Select
+							v-if="resourceOptions"
+							v-model="row.resource"
+							class="w-44 shrink-0"
+							:options="resourceOptions"
+							:aria-label="`Resource ${index + 1}`"
+							:disabled="disabled"
+						>
+							<!-- One line per option: Select lets a taller option shrink and overlap when the menu height is capped. -->
+							<template #item-label="{ item }">
+								<div class="flex min-w-0 items-center gap-2">
+									<span class="truncate leading-tighter">{{ item.label }}</span>
+									<span
+										v-if="item.description"
+										class="shrink-0 text-sm leading-tighter text-ink-gray-5"
+									>
+										{{ item.description }}
+									</span>
+								</div>
+							</template>
+						</Select>
+						<Button
+							v-if="rows.length > 1"
+							variant="ghost"
+							icon="lucide-x"
+							:aria-label="`Remove ${row.email || `row ${index + 1}`}`"
+							:disabled="disabled"
+							@click="removeRow(index)"
+						/>
+					</div>
+					<p v-if="row.error" class="mt-1 text-p-xs text-ink-red-7">
+						{{ row.error }}
+					</p>
 				</div>
-				<p v-if="row.error" class="mt-1 text-p-xs text-ink-red-7">
-					{{ row.error }}
-				</p>
 			</div>
-		</div>
+		</DialogScrollList>
 
 		<div class="mt-4 flex items-center gap-3">
 			<Button

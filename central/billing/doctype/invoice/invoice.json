@@ -32,6 +32,8 @@
   "output_tax_amount",
   "zero_rating_reason",
   "customer_gstin",
+  "gst_state",
+  "gst_state_recorded",
   "total",
   "column_break_totals",
   "tds_applicable",
@@ -215,6 +217,23 @@
    "fieldname": "customer_gstin",
    "fieldtype": "Data",
    "label": "Customer GSTIN",
+   "read_only": 1
+  },
+  {
+   "description": "The team's billing state when this invoice was issued. Its GST is filed and labelled with this state, so a later change to the team's state does not change it.",
+   "fieldname": "gst_state",
+   "fieldtype": "Data",
+   "label": "GST State",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Set when the GST state is recorded. A recorded blank state means the team had no state when the invoice was issued.",
+   "fieldname": "gst_state_recorded",
+   "fieldtype": "Check",
+   "label": "GST State Recorded",
+   "no_copy": 1,
    "read_only": 1
   },
   {
@@ -404,7 +423,7 @@
    "link_fieldname": "invoice"
   }
  ],
- "modified": "2026-11-05 18:00:00.000000",
+ "modified": "2026-11-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice",

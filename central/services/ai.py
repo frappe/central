@@ -29,19 +29,10 @@ def enable(team: str) -> str:
 
 
 def stop_team_keys(team: str) -> None:
-	"""Stop every live key of a team that is closing. Each cap goes to 0 first, which Grove allows at
-	any time, so no key spends again. Then every one is revoked."""
-	if not get_ai_service(team):
-		return
-
-	client = GroveClient.from_settings()
-	live = [key for key in client.get_figures(team)["keys"] if key["status"] == "active"]
-	if not live:
-		return
-
-	client.update_caps(team, {key["name"]: 0 for key in live})
-	for key in live:
-		client.revoke_key(team, key["name"])
+	"""Tell Grove that a team is closing. Grove revokes every live key; what else closing takes is
+	Grove's to decide."""
+	if get_ai_service(team):
+		GroveClient.from_settings().archive_team(team)
 
 
 def set_team_suspended(team: str, suspended: bool) -> None:

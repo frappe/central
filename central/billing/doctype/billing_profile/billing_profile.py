@@ -181,6 +181,7 @@ class BillingProfile(Document):
 		profile_id: DF.Data | None
 		promoted_at: DF.Datetime | None
 		promotion_basis: DF.SmallText | None
+		setup_lock_cleared_at: DF.Datetime | None
 		spend_alert_threshold: DF.Currency
 		state: DF.Autocomplete | None
 		team: DF.Link
@@ -188,6 +189,14 @@ class BillingProfile(Document):
 		trust_tier: DF.Data | None
 		trust_tier_level: DF.Link | None
 	# end: auto-generated types
+
+	def onload(self):
+		from central.billing import authz
+		from central.billing.payments import setup_lockout
+
+		# Only an operator may clear the lock, so only an operator is told about it.
+		is_shown = authz.is_operator() and setup_lockout.is_anyone_waiting(self.name)
+		self.set_onload("setup_lock_wait", is_shown)
 
 	def validate(self):
 		self.validate_phone()
