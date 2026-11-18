@@ -5,6 +5,7 @@ import frappe
 from frappe.tests import UnitTestCase
 
 from central.errors import AtlasConnectionError, AtlasRejected
+from central.integrations.atlas import SLEEP_OFF_SETTINGS
 from central.integrations.servers import resize_server
 
 SHAPE = {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 50}
@@ -25,6 +26,7 @@ class TestServerResize(UnitTestCase):
 		memory_mib: int = 2048,
 		disk_mib: int = 25600,
 		sleep_after_idle_seconds: int = 0,
+		deep_sleep_after_idle_seconds: int = 0,
 	):
 		return {
 			"current_state": state,
@@ -32,6 +34,7 @@ class TestServerResize(UnitTestCase):
 				"cpu_millicores": cpu_millicores,
 				"memory_mib": memory_mib,
 				"sleep_after_idle_seconds": sleep_after_idle_seconds,
+				"deep_sleep_after_idle_seconds": deep_sleep_after_idle_seconds,
 			},
 			"disk": {"size_mib": disk_mib},
 		}
@@ -95,7 +98,7 @@ class TestServerResize(UnitTestCase):
 
 		self.client.vm_action.assert_not_called()
 		self.client.resize.assert_not_called()
-		self.client.disable_idle_shutdown.assert_called_once_with("vm-00001")
+		self.client.set_compute_settings.assert_called_once_with("vm-00001", SLEEP_OFF_SETTINGS)
 
 	def test_disk_only_grow_on_a_sleeping_server_stays_online(self):
 		"""The disk grows online, and the idle change sends no resource values, so Atlas takes
@@ -107,7 +110,25 @@ class TestServerResize(UnitTestCase):
 		self.client.vm_action.assert_not_called()
 		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
 		self.client.resize.assert_not_called()
-		self.client.disable_idle_shutdown.assert_called_once_with("vm-00001")
+		self.client.set_compute_settings.assert_called_once_with("vm-00001", SLEEP_OFF_SETTINGS)
+
+	def test_a_disk_grow_turns_deep_sleep_off_before_the_disk_grows(self):
+		"""Atlas refuses a disk past the offload limit while deep sleep is set, so sleep goes off first."""
+		self.client.get_vm.return_value = self.remote(
+			"running", 2000, 4096, deep_sleep_after_idle_seconds=3600
+		)
+
+		resize_server(self.server, {**SHAPE, "disk_gigabytes": 100})
+
+		self.assertEqual(
+			[
+				entry[0]
+				for entry in self.client.method_calls
+				if entry[0] in ("set_compute_settings", "update_disk")
+			],
+			["set_compute_settings", "update_disk"],
+		)
+		self.client.set_compute_settings.assert_called_once_with("vm-00001", SLEEP_OFF_SETTINGS)
 
 	def test_stopped_server_is_resized_then_started(self):
 		self.client.get_vm.side_effect = [
@@ -222,7 +243,7 @@ class TestServerResize(UnitTestCase):
 		self.client.get_vm.return_value = {**self.remote("running"), "is_in_rescue_mode": True}
 		resize_server(self.server, {"vcpus": 1, "memory_megabytes": 2048, "disk_gigabytes": 50})
 		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
-		self.client.disable_idle_shutdown.assert_not_called()
+		self.client.set_compute_settings.assert_not_called()
 		self.client.vm_action.assert_not_called()
 
 

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Self
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from pydantic import ValidationError
 from requests import RequestException
 
 from central.iam import can, user_has_operator_bypass
@@ -226,6 +227,34 @@ class VirtualMachine(Document):
 		self.add_comment(
 			"Info", _("{0} revoked the Pilot credentials of this server.").format(frappe.session.user)
 		)
+
+	@frappe.whitelist()
+	def get_compute_settings(self) -> dict:
+		"""Operator action: read the sleep and CPU burst settings from the region."""
+		from central.integrations.servers import get_compute_settings
+
+		frappe.only_for("System Manager")
+		self.require_live()
+		return get_compute_settings(self).model_dump()
+
+	@frappe.whitelist(methods=["POST"])
+	def set_compute_settings(self, settings: dict) -> None:
+		"""Operator action: change sleep and CPU burst on the region, recorded on the server."""
+		from central.integrations.servers import set_compute_settings
+		from central.server_models import ComputeSettings
+
+		frappe.only_for("System Manager")
+		self.require_live()
+		try:
+			validated = ComputeSettings.model_validate(settings)
+		except ValidationError:
+			frappe.throw(_("Enter zero or a positive whole number for each compute setting."))
+
+		if changes := set_compute_settings(self, validated):
+			summary = ", ".join("{0} = {1}".format(field, value) for field, value in changes.items())
+			self.add_comment(
+				"Info", _("{0} changed compute settings: {1}").format(frappe.session.user, summary)
+			)
 
 	def enqueue_route_removal(self) -> None:
 		"""A terminated server serves nothing, so its site and custom-domain routes go too."""
