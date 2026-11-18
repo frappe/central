@@ -15,9 +15,15 @@ import { useProjects } from '@/composables/useProjects'
 import { money } from '@/lib/format'
 import { subscriptionTitle } from '@/lib/subscriptions'
 
-const VISIBLE = 5
+interface Props {
+	full?: boolean
+}
 
-defineEmits<{ open: []; openProjects: [] }>()
+const props = defineProps<Props>()
+
+defineEmits<{ openProjects: [] }>()
+
+const VISIBLE = 5
 
 const router = useRouter()
 const { canManageBilling } = useCapabilities()
@@ -49,17 +55,28 @@ const {
 const showCreate = ref(false)
 const projectCount = computed(() => projects.data?.length ?? 0)
 
-const visible = computed(() => rows.value.slice(0, VISIBLE))
-const hidden = computed(() => Math.max(0, rows.value.length - VISIBLE))
+const visible = computed(() =>
+	props.full ? rows.value : rows.value.slice(0, VISIBLE),
+)
+const hidden = computed(() =>
+	Math.max(0, rows.value.length - visible.value.length),
+)
 const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 </script>
 
 <template>
 	<section
 		aria-labelledby="subscriptions-heading"
-		class="overflow-hidden rounded-6 border border-outline-gray-1 bg-surface-base"
+		:class="
+			full
+				? ''
+				: 'overflow-hidden rounded-6 border border-outline-gray-1 bg-surface-base'
+		"
 	>
-		<header class="flex items-center justify-between gap-3 px-4 py-3">
+		<header
+			v-if="!full"
+			class="flex items-center justify-between gap-3 px-4 py-3"
+		>
 			<h2 id="subscriptions-heading" class="text-base-semibold text-ink-gray-8">
 				Subscriptions
 				<Badge v-if="rows.length" class="ml-1" :label="String(rows.length)" />
@@ -91,6 +108,7 @@ const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 			<PayingForTable
 				v-if="rows.length"
 				:rows="visible"
+				:rounded="full"
 				:currency="currency"
 				:can-manage="canManageBilling"
 				:busy="busy"
@@ -99,16 +117,17 @@ const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 				@resume="onResume"
 				@assign-project="askAssignProject"
 			/>
-			<button
+			<RouterLink
 				v-if="hidden"
-				type="button"
-				class="flex w-full items-center gap-1 border-t border-outline-gray-1 px-4 py-2.5 text-sm text-ink-gray-5 transition-colors hover:bg-surface-gray-1 hover:text-ink-gray-8"
-				@click="$emit('open')"
+				:to="{ name: 'BillingSubscriptions' }"
+				class="flex w-full items-center gap-1 border-t border-outline-gray-1 px-4 py-2.5 text-sm text-ink-gray-5 transition-colors hover:text-ink-gray-8"
 			>
 				View all {{ rows.length }}
 				<span class="lucide-arrow-right size-3.5" aria-hidden="true" />
-			</button>
+			</RouterLink>
+
 			<div
+				v-if="!full"
 				class="flex flex-wrap items-center justify-between gap-3 border-t border-outline-gray-1 px-4 py-3"
 			>
 				<div class="flex min-w-0 items-center gap-2.5">
@@ -136,7 +155,7 @@ const goToObjectStorage = () => router.push({ name: 'ObjectStorage' })
 					/>
 				</div>
 			</div>
-			<StopAllServersRow />
+			<StopAllServersRow v-if="!full" />
 		</div>
 
 		<CreateProjectDialog v-model="showCreate" @created="reloadProjects" />
