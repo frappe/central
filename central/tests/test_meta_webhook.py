@@ -125,6 +125,7 @@ class TestMetaWebhook(IntegrationTestCase):
 		self.assertEqual(len(jobs), 1)
 		job = jobs[0].kwargs
 		self.assertEqual(job["waba_id"], self.waba_id)
+		self.assertEqual(job["queue"], "short")
 		self.assertEqual([entry["id"] for entry in job["body"]["entry"]], [self.waba_id])
 
 		_, jobs = self.call_meta(meta_event("waba-not-routed"))
@@ -176,6 +177,12 @@ class TestMetaWebhook(IntegrationTestCase):
 	def test_seeded_webhook_is_on_site_with_five_retries_and_never_fires(self):
 		webhook = frappe.get_doc("Webhook", WEBHOOK)
 		self.assertEqual(
-			(webhook.webhook_doctype, webhook.enabled, webhook.max_retries, webhook.condition),
-			("Site", 1, 5, "False"),
+			(
+				webhook.webhook_doctype,
+				webhook.enabled,
+				webhook.max_retries,
+				webhook.condition,
+				webhook.background_jobs_queue,
+			),
+			("Site", 1, 5, "False", "short"),
 		)

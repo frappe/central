@@ -10,6 +10,8 @@ from central.integrations.oauth.meta import ROUTE
 WEBHOOK = "Meta to site"
 SITE_HANDLER_PATH = "/api/method/whatsapp.whatsapp.webhook.handler"
 CENTRAL_SIGNATURE_HEADER = "X-Frappe-Central-Signature"
+# First tries and Frappe's retries run here, apart from the default queue of Central's other webhooks
+QUEUE = "short"
 
 
 def is_verify_token(token: str) -> bool:
@@ -40,6 +42,7 @@ def relay(body: dict) -> None:
 	for waba_id in frappe.get_all(ROUTE, {"name": ["in", list(entries_by_waba)]}, pluck="name"):
 		frappe.enqueue(
 			deliver,
+			queue=QUEUE,
 			waba_id=waba_id,
 			body={**body, "entry": entries_by_waba[waba_id]},
 			enqueue_after_commit=True,
@@ -73,8 +76,12 @@ def deliver(waba_id: str, body: dict) -> None:
 
 def ensure_meta_webhook() -> None:
 	"""Seed the Webhook the relay logs its tries against. Its condition is never true, so Frappe
-	never fires it for a Site; only the retry job uses it, for up to 5 more tries."""
+	never fires it for a Site; only the retry job uses it, for up to 5 more tries.
+	Frappe's retry job takes at most 100 due rows every 5 minutes for all Webhooks together
+	(about 28.8k retries a day), so a long outage of a busy site drains slowly."""
 	if frappe.db.exists("Webhook", WEBHOOK):
+		if not frappe.db.get_value("Webhook", WEBHOOK, "background_jobs_queue"):
+			frappe.db.set_value("Webhook", WEBHOOK, "background_jobs_queue", QUEUE)
 		return
 	# Runs from the install, migrate and test hooks, which have no signed-in user
 	frappe.get_doc(
@@ -89,6 +96,7 @@ def ensure_meta_webhook() -> None:
 			"request_structure": "JSON",
 			"webhook_json": "{}",
 			"max_retries": 5,
+			"background_jobs_queue": QUEUE,
 			"enabled": 1,
 		}
 	).insert(ignore_permissions=True)
