@@ -483,7 +483,7 @@ Central sends stock `HD Ticket` fields only. It does not change the Helpdesk sch
 | `customer` | The team id, such as `TEAM-00012` |
 | `via_customer_portal` | `1` |
 
-A critical issue is `Unreachable or down`, `Site setup or provisioning failed`, or `Payment method or failed charge`. A ticket for one of these is `Urgent`. Every other ticket gets the Helpdesk default priority. The client cannot set a priority.
+A critical issue is `Unreachable or down`, `Site setup or provisioning failed`, or `Payment method or failed charge`. A ticket for one of these is `Critical`, a priority that must exist in Helpdesk. Every other ticket gets the Helpdesk default priority. The client cannot set a priority.
 
 Each Context block ends with an `Open in Central` line. It links the Team, and the Server or Site when the ticket names one, to the Desk record. An agent opens the record from the ticket.
 
