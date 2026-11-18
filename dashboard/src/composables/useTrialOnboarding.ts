@@ -13,12 +13,12 @@ export function useTrialOnboarding() {
 
 	async function prepareTeam(): Promise<void> {
 		await sessionReady
-		const result = await postFrappe<{ team: string | null }>(
+		const result = await postFrappe<{ team: string }>(
 			methodUrl(API.createTrialTeam),
-			readFirstTouch() ?? {},
+			{ ...readFirstTouch(), team: activeTeam.value || undefined },
 		)
 		forgetFirstTouch()
-		if (result.team) await adoptNewTeam(result.team)
+		if (result.team !== activeTeam.value) await adoptNewTeam(result.team)
 		requestKey.value = savedRequestKey()
 	}
 

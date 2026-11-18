@@ -31,7 +31,6 @@ export const API = {
 	listTeamRoles: 'central.api.teams.list_team_roles',
 	createTeam: 'central.api.teams.create_team',
 	setOnboardingStep: 'central.api.teams.set_onboarding_step',
-	skipOnboarding: 'central.api.teams.skip_onboarding',
 	renameTeam: 'central.api.teams.rename_team',
 	setTeamLogo: 'central.api.teams.set_team_logo',
 	myProfile: 'central.api.identity.my_profile',
@@ -67,25 +66,41 @@ export const API = {
 	openConsole: 'central.api.servers.open_console',
 	resizeServer: 'central.api.servers.resize_server',
 	renameServer: 'central.api.servers.rename_server',
+	getRescueState: 'central.api.servers.get_rescue_state',
+	setRescueMode: 'central.api.servers.set_rescue_mode',
 	setTerminationProtection: 'central.api.servers.set_termination_protection',
 	updateServerFirewall: 'central.api.servers.update_server_firewall',
+	listFirewallRulesets: 'central.api.firewall_rulesets.list_firewall_rulesets',
+	saveFirewallRuleset: 'central.api.firewall_rulesets.save_firewall_ruleset',
+	deleteFirewallRuleset:
+		'central.api.firewall_rulesets.delete_firewall_ruleset',
+	setServerFirewallRulesets:
+		'central.api.firewall_rulesets.set_server_firewall_rulesets',
 	setServerPublicIp: 'central.api.servers.set_server_public_ip',
 	setServerIpv4Internet: 'central.api.servers.set_server_ipv4_internet',
+	setServerWireguardAccess: 'central.api.servers.set_server_wireguard_access',
 	publicIpv4Pricing: 'central.api.servers.public_ipv4_pricing',
 	terminateServer: 'central.api.servers.terminate_server',
 	keepTrialSite: 'central.api.servers.keep_trial_site',
 	serverOverview: 'central.api.servers.server_overview',
+	serverActivity: 'central.api.activity.server_activity',
+	teamActivity: 'central.api.activity.team_activity',
 	serverMetrics: 'central.api.servers.server_metrics',
 	serverHostnames: 'central.api.servers.server_hostnames',
 	listImageOfferings: 'central.api.images.list_offerings',
 	listRegionalImages: 'central.api.images.list_images',
 	imageEligiblePlans: 'central.api.images.eligible_plans',
+	listApps: 'central.api.images.list_apps',
+	appRequirements: 'central.api.images.get_app_requirements',
 	listTeamSSHKeys: 'central.api.ssh_keys.list_team_ssh_keys',
 	createTeamSSHKey: 'central.api.ssh_keys.create_team_ssh_key',
 	rotateTeamSSHKey: 'central.api.ssh_keys.rotate_team_ssh_key',
 	retryTeamSSHKeySync: 'central.api.ssh_keys.retry_team_ssh_key_sync',
 	deleteTeamSSHKey: 'central.api.ssh_keys.delete_team_ssh_key',
 	setServerSSHKeys: 'central.api.ssh_keys.set_server_ssh_keys',
+	listWireGuardDevices: 'central.api.wireguard.list_wireguard_devices',
+	createWireGuardDevice: 'central.api.wireguard.create_wireguard_device',
+	deleteWireGuardDevice: 'central.api.wireguard.delete_wireguard_device',
 
 	// ── Snapshots (central.api.snapshots) ──
 	// server:view reads them and their price; server:snapshot takes, keeps and deletes.
@@ -112,6 +127,10 @@ export const API = {
 	createBucket: 'central.services.api.storage.create_bucket',
 	rotateBucketCredentials: 'central.services.api.storage.rotate_credentials',
 	setBucketQuota: 'central.services.api.storage.set_bucket_quota',
+	bucketAllowedOrigins:
+		'central.services.api.storage.get_bucket_allowed_origins',
+	setBucketAllowedOrigins:
+		'central.services.api.storage.set_bucket_allowed_origins',
 	deleteBucket: 'central.services.api.storage.delete_bucket',
 	listBucketObjects: 'central.services.api.storage.list_objects',
 	bucketObjectUrl: 'central.services.api.storage.get_object_url',
@@ -135,6 +154,11 @@ export const API = {
 	trialAppInstall: 'central.api.sites.get_trial_app_install',
 
 	getBenchLink: 'central.api.sso.get_bench_link',
+
+	createSupportTicket: 'central.api.support.create_ticket',
+	getTicketOptions: 'central.api.support.get_ticket_options',
+	findRelated: 'central.api.support.find_related',
+	listSupportTickets: 'central.api.support.list_tickets',
 
 	eligiblePlans: 'central.billing.api.dashboard.catalog.get_eligible_plans',
 	composedConfig: 'central.billing.api.dashboard.catalog.get_composed_config',
@@ -178,6 +202,7 @@ export const API = {
 	topupOptions: 'central.billing.api.dashboard.get_topup_options',
 	createTopupOrder: 'central.billing.api.dashboard.create_topup_order',
 	confirmTopup: 'central.billing.api.dashboard.confirm_topup',
+	setupWait: 'central.billing.api.dashboard.get_setup_wait',
 	initiateCardSetup: 'central.billing.api.dashboard.initiate_card_setup',
 	confirmCard: 'central.billing.api.dashboard.confirm_card',
 	setupPaymentMethodOrder:

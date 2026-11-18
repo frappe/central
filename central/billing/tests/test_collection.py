@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
-from central.billing.gateways.base import PaymentResult
+from central.billing.gateways.base import GatewayError, PaymentResult
 from central.billing.payments import charges, collection, payments
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -87,7 +87,9 @@ class FallbackTestBase(IntegrationTestCase):
 				{
 					"doctype": "Invoice",
 					"team": TEAM,
-					"status": "Open",
+					"status": "Outstanding",
+					"due_date": "2026-12-31",
+					"payment_date": "2026-07-01",
 					"period_start": "2026-06-01",
 					"period_end": "2026-06-30",
 					"currency": "INR",
@@ -151,20 +153,43 @@ class TestSyncFallback(FallbackTestBase):
 
 		self.assertEqual(adapter.charge.call_count, 2)  # each method tried exactly once
 		self.assertEqual(result["reason"], "no_method")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 		# Re-running does not re-charge an already-failed method (escalate, don't repeat).
 		with stub_charges([]) as adapter:
 			collection.collect_invoice(inv)
 		self.assertEqual(adapter.charge.call_count, 0)
 
-	def test_reauth_required_method_is_skipped(self):
+	def test_refused_order_rotates_to_backup(self):
+		inv = self._open_invoice()
+		with stub_charges([(True, "pi_backup")]) as adapter:
+			adapter.prepare_charge.side_effect = [GatewayError("order refused"), None]
+			collection.collect_invoice(inv)
+
+		self.assertEqual(adapter.charge.call_count, 1)  # the primary never reached a charge
+		primary, backup = self._attempts()
+		self.assertEqual((primary.payment_method, primary.status), (self.primary, "Failed"))
+		self.assertEqual(
+			frappe.db.get_value("Payment Attempt", primary.name, "failure_code"), "order_refused"
+		)
+		self.assertEqual((backup.payment_method, backup.status), (self.backup, "Captured"))
+
+	def test_a_method_awaiting_reauth_is_still_charged(self):
 		frappe.db.set_value("Payment Method", self.backup, "reauth_required", 1)
 		inv = self._open_invoice()
-		with stub_charges([(False, None)]) as adapter:
-			result = collection.collect_invoice(inv)
+		with stub_charges([(False, None), (True, "pi_backup")]) as adapter:
+			collection.collect_invoice(inv)
 
-		self.assertEqual(adapter.charge.call_count, 1)  # only the primary; backup skipped
-		self.assertEqual(result["reason"], "no_method")
+		self.assertEqual(adapter.charge.call_count, 2)
+		self.assertEqual(self._attempts()[1].payment_method, self.backup)
+
+	def test_a_bill_above_a_flagged_backups_maximum_is_not_charged_on_it(self):
+		frappe.db.set_value("Payment Method", self.backup, {"reauth_required": 1, "mandate_max_amount": 500})
+		inv = self._open_invoice(total=1000)
+		with stub_charges([(False, None)]) as adapter:
+			collection.collect_invoice(inv)
+
+		self.assertEqual(adapter.charge.call_count, 1)
+		self.assertEqual([a.payment_method for a in self._attempts()], [self.primary])
 
 
 class TestWebhookFallback(FallbackTestBase):

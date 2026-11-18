@@ -59,5 +59,56 @@ central.patches.v0_0.copy_error_logs_to_diagnostics
 central.patches.v0_0.seed_signup_image_minimum_age
 # A card with no mandate carries no mandate currency (it used to default to INR).
 central.patches.v0_0.clear_default_mandate_currency
+# A first payment is dated by paid_at. A Paid invoice from before that field gets one.
+central.patches.v0_0.backfill_invoice_paid_at
+# Report, without changing anything, billing data the October 2026 security fixes would have refused.
+central.patches.v0_0.report_billing_security_findings
+# Remove the hidden rule that let every WireGuard VPN device pass the firewall, from every live server at Atlas.
+central.patches.v0_0.remove_wireguard_device_firewall_rule
+# Existing server events keep their Pilot caller after the explicit reportable flag.
+central.patches.v0_0.mark_pilot_reportable_events
+# Revoke every trial key still live, pool and assigned alike; the refill job mints the pools fresh.
+central.patches.v0_0.revoke_trial_keys
+# Apps: ready-to-run one-click images a region's Cargo builds.
+central.patches.v0_0.seed_template_offering
+# Image offerings show Frappe first, then Apps, then Ubuntu.
+central.patches.v0_0.order_image_offerings
+# Subscriptions and usage rollups keep the region name from their creation. Move them off a renamed region.
+central.patches.v0_0.repoint_billing_records_to_renamed_region
+# Draft and Open invoices become Outstanding.
+central.patches.v0_0.merge_invoice_draft_and_open_into_outstanding
+# The internal flag moves from Tax Profile to Billing Profile.
+central.patches.v0_0.move_internal_flag_to_billing_profile
+# A waived invoice never reaches the accounting system.
+central.patches.v0_0.mark_waived_invoices_as_not_synced
+# Promotional credit always expires, and a wallet holds nothing its ledger cannot prove.
+central.patches.v0_0.expire_promotional_credit_and_clear_unbooked_wallets
+# Webhook events from Frappe Cloud v1 are no longer stored. Remove the old ones.
+central.patches.v0_0.remove_webhook_events_of_another_product
+# Start per-team run outcomes and the minimum invoice amount, and clear what they replace.
+central.patches.v0_0.start_billing_run_outcomes_and_minimum_invoices
+# VM plans can bundle remote storage.
+central.patches.v0_0.allow_storage_in_vm_plans
+# Fill the activity feed from the Versions, deletions and server actions Central already keeps.
+central.patches.v0_0.backfill_activity_events
+# Every open invoice has a payment date: the date it opened.
+central.patches.v0_0.set_payment_date_on_open_invoices
+# An open invoice keeps the suspension date of the old ladder, so nobody is suspended earlier.
+central.patches.v0_0.set_suspension_date_on_open_invoices
+# The ladder counts from the payment date: retry every 2 days, suspend on the 15th, terminate 10 days later.
+central.patches.v0_0.set_dunning_ladder_settings
+# Saved scenarios drop the old ladder overrides and read the live ladder.
+central.patches.v0_0.clear_retired_scenario_ladder_overrides
+# GST is mandatory in India. Set it on Indian Tax Profiles that have no tax.
+central.patches.v0_0.charge_gst_to_indian_tax_profiles
+# Lower the minimum invoice amounts to the smallest charge the gateways accept.
+central.patches.v0_0.set_minimum_invoice_amounts_to_gateway_minimum
+# The Growth trust tier is renamed, so it does not read as the Growth plan.
+central.patches.v0_0.rename_growth_trust_tier_to_emerging
+central.patches.v0_0.keep_only_custom_resource_action_copy
+# Setups released by the old code are marked released, so the hourly retry does not call the gateway for them.
+central.patches.v0_0.mark_old_setups_released
+# A UPI mandate covers a bill at the spend limit with GST. Ask teams with a lower one to re-authorise it.
+central.patches.v0_0.flag_upi_mandates_below_the_gst_ceiling
 # The app rollout steps read 0 on a Central Settings saved before they existed, and Pilot holds every update on 0.
 central.patches.v0_0.seed_app_rollout_settings

@@ -4,6 +4,7 @@ from frappe.tests import IntegrationTestCase
 from central.iam import (
 	can,
 	expand_capabilities,
+	get_active_team_member_users,
 	get_effective_permissions,
 	get_user_team_names,
 	resolve_team,
@@ -52,10 +53,10 @@ class TestCentralIAM(IntegrationTestCase):
 		return team
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
-		# 16 capabilities across two live planes: central (8) + atlas (8). v5 merges
+		# 18 capabilities across two live planes: central (9) + atlas (9). v5 merges
 		# server:open into server:view. The bench plane remains deferred.
-		self.assertEqual(frappe.db.count("Capability"), 17)
-		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 8)
+		self.assertEqual(frappe.db.count("Capability"), 18)
+		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 9)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "atlas"}), 9)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "bench"}), 0)
 		# The retired roles are gone; the five-rung ladder is all that remains.
@@ -78,6 +79,7 @@ class TestCentralIAM(IntegrationTestCase):
 				"server:resize",
 				"server:snapshot",
 				"server:ssh-key",
+				"server:wireguard",
 				"server:terminate",
 				"server:console",
 			):
@@ -157,6 +159,13 @@ class TestCentralIAM(IntegrationTestCase):
 
 		self.assertEqual(get_user_team_names(member), [team.name])
 		self.assertEqual(resolve_team(member), team.name)
+
+	def test_active_team_member_users_leave_out_invited_members(self):
+		team = self.make_team("IAM Member Users Team", self.viewer, "Viewer")
+		team.append("members", {"user": self.developer, "role": "Developer", "status": "Invited"})
+		team.save()
+
+		self.assertEqual(sorted(get_active_team_member_users(team.name)), sorted([self.owner, self.viewer]))
 
 	def test_user_claim_is_team_scoped(self):
 		team_a = self.make_team("IAM Team A", self.viewer, "Viewer")

@@ -5,8 +5,13 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing.doctype.billing_event import billing_event
 from central.billing.gateways.base import VerifiedPayment
-from central.billing.states import transition
+from central.billing.payments import decline, setup_lockout
+from central.billing.platform.records import save_billing_record
+from central.billing.states import record_event, transition
+
+DECLINED_EVENT = setup_lockout.TOP_UP_DECLINED_EVENT
 
 
 class PaymentDoesNotCover(frappe.ValidationError):
@@ -32,11 +37,15 @@ class TopupOrder(Document):
 
 		credit: DF.Currency
 		currency: DF.Link
+		decline_code: DF.Data | None
+		failed_attempts: DF.Int
+		failure_code: DF.Data | None
 		failure_reason: DF.SmallText | None
 		gateway: DF.Link
 		gateway_order_id: DF.Data | None
 		gateway_payment_id: DF.Data | None
 		gst: DF.Currency
+		last_failed_at: DF.Datetime | None
 		ledger_entry: DF.Link | None
 		status: DF.Literal["Created", "Credited", "Failed", "Expired"]
 		team: DF.Link
@@ -45,6 +54,7 @@ class TopupOrder(Document):
 
 	@classmethod
 	def start(cls, team: str, gateway: str, currency: str, total, credit=None, gst=0) -> "TopupOrder":
+		setup_lockout.check(team, frappe.session.user)
 		# A system record: customers reach it only through the top-up routes, which check billing:manage.
 		return frappe.get_doc(
 			{
@@ -73,18 +83,54 @@ class TopupOrder(Document):
 	def record_gateway_order(self, gateway_order_id: str) -> None:
 		self.db_set("gateway_order_id", gateway_order_id)
 
-	def expire(self) -> None:
+	def expire(self, actor: str = "reconciliation", reason: str | None = None) -> None:
 		"""Stop asking the gateway about an order nobody paid."""
-		transition(self, "Expired", actor="reconciliation", correlation=self.team)
-		# Reconciliation runs as the system with no session user to check.
-		self.save(ignore_permissions=True)
+		transition(self, "Expired", reason=reason, actor=actor, correlation=self.team)
+		save_billing_record(self)
+
+	def record_decline(self, failure: decline.Failure, gateway_event_id: str) -> None:
+		"""Keep why the gateway declined a payment on this order, and log each decline as
+		a Billing Event. The order stays open, because the payer can try again on it.
+
+		1. Locked, so two failure webhooks both count.
+		2. A gateway event already logged on this order counts once."""
+		frappe.db.get_value("Top-up Order", self.name, "name", for_update=True)
+		self.reload()
+		if self._has_declined_event(gateway_event_id):
+			return
+
+		self.failed_attempts = frappe.utils.cint(self.failed_attempts) + 1
+		self.last_failed_at = frappe.utils.now_datetime()
+		self.update(decline.failure_fields(failure))
+		save_billing_record(self)
+		record_event(
+			self,
+			DECLINED_EVENT,
+			reason=self.failure_code,
+			correlation=gateway_event_id,
+			outcome=billing_event.FAILED,
+			payload={"decline_code": self.decline_code},
+		)
+		setup_lockout.note_failure(self.team, self.owner, self.failure_code, self.decline_code)
+
+	def _has_declined_event(self, gateway_event_id: str) -> bool:
+		return bool(
+			frappe.db.exists(
+				"Billing Event",
+				{
+					"subject_doctype": "Top-up Order",
+					"subject": self.name,
+					"event_type": DECLINED_EVENT,
+					"correlation": gateway_event_id,
+				},
+			)
+		)
 
 	def fail(self, reason: str) -> None:
 		"""Stop retrying an order an operator has to resolve, and keep the reason on it."""
 		transition(self, "Failed", reason=reason, actor="reconciliation", correlation=self.team)
 		self.failure_reason = reason
-		# Reconciliation runs as the system with no session user to check.
-		self.save(ignore_permissions=True)
+		save_billing_record(self)
 
 	def credit_wallet(self, payment: VerifiedPayment) -> dict:
 		"""Credit the wallet once for a payment that belongs to this order and covers it.
@@ -116,8 +162,7 @@ class TopupOrder(Document):
 		transition(self, "Credited", actor="gateway", correlation=self.team, amount=self.total)
 		self.gateway_payment_id = payment.payment_id
 		self.ledger_entry = result["ledger_entry"]
-		# A verified gateway payment credits it, often from a Guest webhook.
-		self.save(ignore_permissions=True)
+		save_billing_record(self)
 		return result
 
 	def _credit_surplus(self, payment: VerifiedPayment, adapter_key: str | None) -> None:
@@ -164,3 +209,5 @@ class TopupOrder(Document):
 def on_doctype_update() -> None:
 	frappe.db.add_index("Top-up Order", ["gateway", "gateway_order_id"])
 	frappe.db.add_index("Top-up Order", ["status", "creation"])
+	# The wait after failed top-ups reads a user's own orders.
+	frappe.db.add_index("Top-up Order", ["owner"])

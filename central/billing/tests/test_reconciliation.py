@@ -59,6 +59,7 @@ class ReconTestBase(IntegrationTestCase):
 			"Top-up Order",
 			"Credit Ledger Entry",
 			"Credit Wallet",
+			"Refund",
 		):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.commit()
@@ -70,7 +71,7 @@ class ReconTestBase(IntegrationTestCase):
 					"doctype": "Invoice",
 					"team": TEAM,
 					"invoice_type": "Billable",
-					"status": "Open",
+					"status": "Outstanding",
 					"period_start": "2026-05-01",
 					"period_end": "2026-05-31",
 					"currency": "INR",
@@ -167,7 +168,8 @@ class TestReconcile(ReconTestBase):
 		with gateway_status("failed"):
 			reconciliation.reconcile_attempt(attempt)
 		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Failed")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "failure_code"), "gateway_failed")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 	def test_uncompleted_checkout_is_failed_after_a_day(self):
 		inv = self._open_invoice()
@@ -178,6 +180,9 @@ class TestReconcile(ReconTestBase):
 			reconciliation.reconcile_attempt(attempt)
 			adapter.get_transaction_status.assert_not_called()
 		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Failed")
+		self.assertEqual(
+			frappe.db.get_value("Payment Attempt", attempt, "failure_code"), "checkout_abandoned"
+		)
 
 	def test_a_slow_checkout_is_left_open(self):
 		"""A UPI collect or 3DS checkout can take a while; it is not failed in its first day."""
@@ -249,7 +254,7 @@ class TestUnansweredCharge(ReconTestBase):
 		with charge_result(success=False):
 			reconciliation.reconcile_attempt(attempt)
 		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Failed")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 	def test_too_old_to_re_send_is_left_alone_and_alerted(self):
 		# Past the gateway's key window, re-sending would be a second charge — and
@@ -311,7 +316,7 @@ class TestCapturedUnsettled(ReconTestBase):
 		with gateway_status("requires_action"):
 			out = reconciliation.reconcile_captured_attempt(attempt, now=frappe.utils.now_datetime())
 		self.assertEqual(out["unresolved"], "requires_action")
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 	def test_captured_already_paid_invoice_is_skipped(self):
 		inv = self._open_invoice()
@@ -335,7 +340,7 @@ class TestCapturedUnsettled(ReconTestBase):
 		with gateway_status("succeeded"):
 			results = reconciliation.run_reconciliation()
 		self.assertNotIn(fresh, [r.get("attempt") for r in results])
-		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Outstanding")
 
 
 class TestScan(ReconTestBase):
@@ -372,54 +377,70 @@ class TestScan(ReconTestBase):
 			adapter.get_transaction_status.side_effect = transaction_status
 			results = reconciliation.run_reconciliation()
 
-		self.assertIn({"record": unreachable, "unresolved": "gateway_error"}, results)
+		self.assertNotIn(unreachable, [result.get("attempt") for result in results])
+		self.assertIn(answered, [result.get("attempt") for result in results])
 		self.assertEqual(frappe.db.get_value("Payment Attempt", unreachable, "status"), "Initiated")
 		self.assertEqual(frappe.db.get_value("Payment Attempt", answered, "status"), "Captured")
 
 
-class TestTopUpReconciliation(ReconTestBase):
-	"""A top-up whose callback and webhook were both lost is credited from the gateway."""
+class TestCompletedRefundRecheck(ReconTestBase):
+	def _completed_refund(self, refund_id, days_old=1):
+		invoice = self._open_invoice()
+		attempt = self._captured_attempt(invoice, txn=f"pi_{refund_id}")
+		refund = frappe.get_doc(
+			{
+				"doctype": "Refund",
+				"invoice": invoice,
+				"payment_attempt": attempt,
+				"team": TEAM,
+				"amount": 1000,
+				"currency": "INR",
+				"destination": "Source",
+				"status": "Completed",
+				"gateway_refund_id": refund_id,
+			}
+		).insert(ignore_permissions=True)
+		completed_at = frappe.utils.add_to_date(frappe.utils.now_datetime(), days=-days_old)
+		frappe.db.set_value("Refund", refund.name, "completed_at", completed_at)
+		return invoice, refund.name
 
-	def _order(self, order_id, hours_old=1):
-		from central.billing.doctype.top_up_order.top_up_order import TopupOrder
+	def _recheck(self, statuses):
+		adapter = MagicMock()
+		adapter.get_refund_status.side_effect = lambda refund_id: statuses.get(refund_id, "Completed")
+		with patch("central.billing.payments.reconciliation._adapter", return_value=adapter):
+			reconciliation.recheck_completed_refunds()
+		return [call.args[0] for call in adapter.get_refund_status.call_args_list]
 
-		order = TopupOrder.start(TEAM, GATEWAY, "INR", 700, credit=700)
-		order.record_gateway_order(order_id)
-		old = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-hours_old)
-		frappe.db.set_value("Top-up Order", order.name, "creation", old, update_modified=False)
-		return order.name
+	def _flags(self, invoice):
+		logs = frappe.get_all("Error Log", filters={"method": f"Refund failed after completion on {invoice}"})
+		comments = frappe.get_all(
+			"Comment", {"reference_doctype": "Invoice", "reference_name": invoice}, pluck="content"
+		)
+		return len(logs), sum("did not get" in c for c in comments)
 
-	def test_a_paid_top_up_is_credited(self):
-		from central.billing.gateways.base import VerifiedPayment
-		from central.billing.revenue import credits
+	def test_a_completed_refund_the_gateway_failed_later_is_flagged_once(self):
+		invoice, refund = self._completed_refund("re_recheck_failed")
 
-		order = self._order("pi_lost")
-		with gateway_status("succeeded") as adapter:
-			adapter.find_order_payment.return_value = VerifiedPayment(
-				"pi_lost", True, 700, "INR", order_id="pi_lost"
-			)
-			reconciliation.reconcile_top_up_orders()
-		self.assertEqual(frappe.db.get_value("Top-up Order", order, "status"), "Credited")
-		self.assertEqual(credits.get_balance(TEAM)["balance"], 700)
+		self._recheck({"re_recheck_failed": "Failed"})
+		self._recheck({"re_recheck_failed": "Failed"})
 
-	def test_a_short_top_up_fails_without_stopping_the_run(self):
-		from central.billing.gateways.base import VerifiedPayment
+		self.assertEqual(self._flags(invoice), (1, 1))
+		self.assertEqual(frappe.db.get_value("Refund", refund, "status"), "Completed")
 
-		short = self._order("pi_short")
-		paid = self._order("pi_paid")
-		with gateway_status("succeeded") as adapter:
-			adapter.find_order_payment.side_effect = lambda order_id: VerifiedPayment(
-				order_id, True, 100 if order_id == "pi_short" else 700, "INR", order_id=order_id
-			)
-			reconciliation.reconcile_top_up_orders()
+	def test_a_refund_completed_before_the_window_is_not_asked(self):
+		days_old = reconciliation.COMPLETED_REFUND_RECHECK_DAYS + 1
+		invoice, _ = self._completed_refund("re_recheck_old", days_old=days_old)
 
-		self.assertEqual(frappe.db.get_value("Top-up Order", short, "status"), "Failed")
-		self.assertTrue(frappe.db.get_value("Top-up Order", short, "failure_reason"))
-		self.assertEqual(frappe.db.get_value("Top-up Order", paid, "status"), "Credited")
+		asked = self._recheck({"re_recheck_old": "Failed"})
 
-	def test_an_unpaid_top_up_expires(self):
-		order = self._order("pi_never", hours_old=8 * 24)
-		with gateway_status("requires_payment_method") as adapter:
-			adapter.find_order_payment.return_value = None
-			reconciliation.reconcile_top_up_orders()
-		self.assertEqual(frappe.db.get_value("Top-up Order", order, "status"), "Expired")
+		self.assertNotIn("re_recheck_old", asked)
+		self.assertEqual(self._flags(invoice), (0, 0))
+
+	def test_a_refund_the_gateway_still_reports_completed_is_left_alone(self):
+		invoice, refund = self._completed_refund("re_recheck_ok")
+
+		asked = self._recheck({})
+
+		self.assertIn("re_recheck_ok", asked)
+		self.assertEqual(self._flags(invoice), (0, 0))
+		self.assertEqual(frappe.db.get_value("Refund", refund, "status"), "Completed")

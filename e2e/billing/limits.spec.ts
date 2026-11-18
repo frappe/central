@@ -6,7 +6,7 @@ test('Shows this cycle and the tiers', async ({ page, users, teams }) => {
 	await teams.setTrustTier({ team })
 
 	await page.goto('/dashboard/billing')
-	await page.getByRole('button', { name: 'All tiers' }).click()
+	await page.getByRole('button', { name: 'Tiers', exact: true }).click()
 
 	await expect(page.getByText('Limit tiers')).toBeVisible()
 	await expect(page.getByText('To qualify')).toBeVisible()

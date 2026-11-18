@@ -205,9 +205,14 @@ def my_invitations() -> list[dict[str, Any]]:
 def my_profile() -> dict[str, Any]:
 	"""The signed-in user's own profile — email, display name, photo."""
 	user = frappe.session.user
-	row = frappe.db.get_value("User", user, ["full_name", "user_image"], as_dict=True)
+	row = frappe.db.get_value("User", user, ["email", "full_name", "user_image"], as_dict=True)
 
-	return {"user": user, "full_name": row.full_name, "user_image": row.user_image}
+	return {
+		"user": user,
+		"full_name": row.full_name,
+		"user_image": row.user_image,
+		"email": row.email or None,
+	}
 
 
 @frappe.whitelist(methods=["POST"])

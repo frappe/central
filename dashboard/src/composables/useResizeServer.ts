@@ -12,8 +12,9 @@ import {
 import { getErrorMessage, isAbortError, successToast } from '@/lib/feedback'
 import { money } from '@/lib/format'
 import { planQuantity, presetPrice } from '@/lib/plans'
+import { __ } from '@/lib/translate'
 import type { ComposedConfig, Plan, Profile } from '@/types/api'
-import type { ServerTrial } from '@/types/billing'
+import type { ServerTrial, TrialPlanChoice } from '@/types/billing'
 
 interface ResizeCallbacks {
 	close: () => void
@@ -47,6 +48,8 @@ export function useResizeServer(
 		disk_gb?: number
 		/** The open free trial that keeps this server from being resized. */
 		trial?: ServerTrial | null
+		/** The paid plans the trial site may move to, cheapest first. */
+		trial_plans?: TrialPlanChoice[]
 		/** A converted trial's server is starting and has no subscription yet. */
 		starting?: boolean
 		lock?: {
@@ -103,6 +106,7 @@ export function useResizeServer(
 	)
 	const resizable = computed(() => configCall.data?.resizable === true)
 	const trial = computed(() => configCall.data?.trial ?? null)
+	const trialPlans = computed(() => configCall.data?.trial_plans ?? [])
 	const starting = computed(() => configCall.data?.starting === true)
 
 	// The subscription arrives once the converted server runs, so check again until it does.
@@ -349,7 +353,14 @@ export function useResizeServer(
 		if (targetPrice.value === null)
 			return 'The price could not be loaded. Please try again.'
 		if (available.value != null && targetPrice.value > available.value)
-			return 'This size is over your spending limit, including retained storage.'
+			return __(
+				'This size is over your spending limit, including retained storage. Up to {0} a month fits, before tax.',
+				[
+					money(available.value, currency.value || 'USD', {
+						trimTrailingZeros: true,
+					}),
+				],
+			)
 		return ''
 	})
 	const configError = computed(() =>
@@ -448,6 +459,7 @@ export function useResizeServer(
 		plansLoading,
 		resizable,
 		trial,
+		trialPlans,
 		starting,
 		nothingToShow,
 		resizeError,

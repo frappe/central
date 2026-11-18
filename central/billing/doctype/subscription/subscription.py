@@ -5,6 +5,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing.states import record_event
+
 
 class Subscription(Document):
 	# begin: auto-generated types
@@ -63,12 +65,13 @@ class Subscription(Document):
 
 		if project.team != self.team:
 			frappe.throw(
-				f"Project {self.project} belongs to team {project.team}, not {self.team}.",
+				_("Project {0} belongs to team {1}, not {2}.").format(self.project, project.team, self.team)
 			)
 		if not project.enabled:
 			frappe.throw(
-				f"Project {self.project} is disabled; its servers bill untagged on "
-				f"{self.team}'s consolidated invoice.",
+				_("Project {0} is disabled; its servers bill untagged on {1}'s consolidated invoice.").format(
+					self.project, self.team
+				)
 			)
 
 		if self.is_new() or self.has_value_changed("project"):
@@ -149,6 +152,7 @@ class Subscription(Document):
 				"changed_by": frappe.session.user,
 			}
 		).insert(ignore_permissions=True)
+		record_event(self, "Subscription Created", reason=self.plan)
 
 	def _opening_time(self):
 		"""Now for a subscription that starts today, so a server that runs a few hours bills
@@ -165,6 +169,27 @@ class Subscription(Document):
 		# composition) — a payment-method or standing edit is not a price event.
 		if not self.flags.in_insert and self._billing_segment_changed():
 			self.log_plan_change()
+		self.sync_customer_once_active()
+		self.record_change_event()
+
+	def record_change_event(self):
+		"""Keep subscription changes in the billing activity."""
+		if not self.get_doc_before_save():
+			return
+		if self.has_value_changed("enabled"):
+			record_event(
+				self, "Subscription Enabled" if self.enabled else "Subscription Disabled", reason=self.plan
+			)
+		elif self.has_value_changed("plan"):
+			record_event(self, "Subscription Plan Changed", reason=self.plan)
+
+	def sync_customer_once_active(self):
+		"""An enabled subscription is what makes a team a customer in the accounting system."""
+		if not self.enabled or not self.has_value_changed("enabled"):
+			return
+		from central.billing.ingester.customer import enqueue_for
+
+		enqueue_for(self.team)
 
 	def _billing_segment_changed(self) -> bool:
 		"""Whether this save opens a new billing segment (a re-lock, #82)."""

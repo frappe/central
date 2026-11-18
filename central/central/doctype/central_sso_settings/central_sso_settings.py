@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 ALGORITHM = "EdDSA"
 OIDC_ALGORITHM = "RS256"
 RSA_KEY_BITS = 2048
+DEFAULT_BENCH_SESSION_MINUTES = 60
+# Pilot sets its session cookie for 24 hours, so a longer token would outlive the cookie.
+MAXIMUM_BENCH_SESSION_MINUTES = 24 * 60
 
 SigningPlane = Literal["atlas", "pilot", "oidc"]
 
@@ -52,6 +55,7 @@ class CentralSSOSettings(Document):
 		atlas_key_id: DF.Data | None
 		atlas_private_key: DF.Password | None
 		atlas_public_key: DF.Code | None
+		bench_session_minutes: DF.Int
 		issuer_url: DF.Data | None
 		oidc_key_id: DF.Data | None
 		oidc_private_key: DF.Password | None
@@ -68,6 +72,20 @@ class CentralSSOSettings(Document):
 	def before_validate(self) -> None:
 		if self.issuer_url:
 			self.issuer_url = self.issuer_url.strip().rstrip("/")
+		# A site saved before this field existed loads it as None.
+		if self.bench_session_minutes is None:
+			self.bench_session_minutes = DEFAULT_BENCH_SESSION_MINUTES
+
+	def validate(self) -> None:
+		if not 1 <= self.bench_session_minutes <= MAXIMUM_BENCH_SESSION_MINUTES:
+			frappe.throw(
+				_("Session Length must be from 1 to {0} minutes.").format(MAXIMUM_BENCH_SESSION_MINUTES),
+				frappe.ValidationError,
+			)
+
+	@property
+	def bench_session_seconds(self) -> int:
+		return (self.bench_session_minutes or DEFAULT_BENCH_SESSION_MINUTES) * 60
 
 	@frappe.whitelist(methods=["POST"])
 	def initialize_signing_key(self, plane: SigningPlane) -> str:

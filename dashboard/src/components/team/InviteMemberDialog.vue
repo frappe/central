@@ -3,9 +3,11 @@ import { Alert, Button, Dialog, LoadingText, useCall } from 'frappe-ui'
 import { computed, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import InviteRows from '@/components/team/InviteRows.vue'
-import { ALL_RESOURCES, useBulkInvite } from '@/composables/useBulkInvite'
+import { useBulkInvite } from '@/composables/useBulkInvite'
 import { useRegions } from '@/composables/useRegions'
 import { teamParams } from '@/composables/useTeamScope'
+import { getResourceOptions } from '@/lib/resourceScope'
+import { __ } from '@/lib/translate'
 import type { TeamRegistry } from '@/types/api'
 
 const props = defineProps<{ open: boolean }>()
@@ -47,23 +49,9 @@ const regionLabel = (
 		: region.display_name
 }
 
-const resourceOptions = computed(() => {
-	const servers = registryCall.data?.servers ?? []
-	const sites = registryCall.data?.sites ?? []
-	return [
-		{ label: 'All resources', value: ALL_RESOURCES },
-		...servers.map((a) => ({
-			label: a.title || a.resource_id,
-			value: `Server::${a.name}`,
-			description: regionLabel(a.region),
-		})),
-		...sites.map((s) => ({
-			label: s.subdomain || s.name,
-			value: `Site::${s.name}`,
-			description: regionLabel(s.region),
-		})),
-	]
-})
+const resourceOptions = computed(() =>
+	getResourceOptions(registryCall.data, regionLabel),
+)
 
 // Read the servers and sites on every open, so a resource created since is offered.
 watch(open, (isOpen) => {
@@ -79,12 +67,15 @@ async function send(): Promise<void> {
 	if (sent) emit('invited')
 	if (!failed) open.value = false
 }
+
+const sendInvitationsErrorTitle = __("Couldn't send the invitations")
+const loadRolesErrorTitle = __("Couldn't load the roles")
 </script>
 
 <template>
 	<Dialog
 		v-model="open"
-		title="Invite members"
+		:title="__('Invite members')"
 		size="2xl"
 		:show-close-button="false"
 		:dismissible="!saving"
@@ -94,9 +85,15 @@ async function send(): Promise<void> {
 				v-if="requestError"
 				class="mb-4"
 				theme="red"
-				:title="requestError"
+				:title="sendInvitationsErrorTitle"
+				:description="requestError"
 			/>
-			<Alert v-if="rolesError" theme="red" :title="rolesError" />
+			<Alert
+				v-if="rolesError"
+				theme="red"
+				:title="loadRolesErrorTitle"
+				:description="rolesError"
+			/>
 			<LoadingText v-else-if="rolesLoading && !roleOptions.length" :lines="2" />
 			<InviteRows
 				v-else
@@ -109,7 +106,11 @@ async function send(): Promise<void> {
 		</template>
 		<template #actions>
 			<div class="flex items-center justify-end gap-2">
-				<Button label="Cancel" :disabled="saving" @click="open = false" />
+				<Button
+					:label="__('Cancel')"
+					:disabled="saving"
+					@click="open = false"
+				/>
 				<Button
 					variant="solid"
 					:label="submitLabel"

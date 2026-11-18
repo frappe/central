@@ -85,18 +85,17 @@ let lastSeen: Map<string, SeenState> | null = null
 
 function announceStateChanges(data: RegistryResponse | null | undefined): void {
 	if (!data) return
+	// A site's status is its server's, so a server that runs a site is announced once, by the site.
+	const siteLabels = new Map(
+		data.sites.map((site) => [site.server, site.subdomain || site.name]),
+	)
 	const current = new Map<string, SeenState>()
 	for (const server of data.servers)
 		if (server.status)
 			current.set(server.name, {
 				status: server.status,
-				label: server.title || server.name,
+				label: siteLabels.get(server.name) || server.title || server.name,
 			})
-	for (const site of data.sites)
-		current.set(site.name, {
-			status: site.status,
-			label: site.subdomain || site.name,
-		})
 
 	for (const [name, state] of current) {
 		const previous = lastSeen?.get(name)

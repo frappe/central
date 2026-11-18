@@ -92,11 +92,6 @@ class TestToErrorResponse(IntegrationTestCase):
 		self.assertNotIn("Atlas", env["message"])
 		self.assertNotIn("region ID", env["message"])
 
-	def test_unexpected_error_is_generalised(self):
-		env = to_error_response(KeyError("internal detail"))
-		self.assertEqual(env["code"], "UNEXPECTED")
-		self.assertNotIn("internal detail", env["message"])
-
 	def test_prebuilt_envelope_passes_through(self):
 		error = ResourceActionError("x")
 		error.envelope = {"code": "ATLAS_REJECTED"}

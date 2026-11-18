@@ -36,6 +36,7 @@ export function useCapabilities() {
 		canTerminateServer: computed(() => has('server:terminate')),
 		canSnapshotServer: computed(() => has('server:snapshot')),
 		canManageSSHKeys: computed(() => has('server:ssh-key')),
+		canManageWireGuard: computed(() => has('server:wireguard')),
 		canOpenConsole: computed(() => has('server:console')),
 		canViewClusters: computed(() => has('cluster:view')),
 		canViewBilling: computed(() => has('billing:view')),

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security problem
+    url: https://frappe.io/security
+    about: Email security@frappe.io. Do not open a public issue.
+  - name: Share feedback or a documentation problem
+    url: https://dashboard.frappe.io/beta-feedback
+    about: Ideas, suggestions, and missing or unclear docs.

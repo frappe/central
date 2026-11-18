@@ -81,7 +81,7 @@ def sync_pending_advances() -> None:
 def _payload(credit, customer: str, gateway: str, payment_id: str) -> dict:
 	settings = accounting_settings()
 	route = _gateway_row(settings, gateway, credit.currency)
-	tax = gst.treatment(credit.team)
+	tax = gst.treatment(credit.team, charged_tax=credit.tax_amount)
 	date = frappe.utils.getdate(credit.created_at or credit.creation)
 	paid = frappe.utils.flt(credit.amount) + frappe.utils.flt(credit.tax_amount)  # credit plus its GST
 	return {
@@ -107,7 +107,7 @@ def _payload(credit, customer: str, gateway: str, payment_id: str) -> dict:
 		"billing_address_gstin": tax.gstin,
 		"gst_category": tax.gst_category,
 		"place_of_supply": tax.place_of_supply,
-		"taxes": gst.tax_rows(tax.template, paid_amount=paid) if frappe.utils.flt(credit.tax_amount) else [],
+		"taxes": gst.tax_rows(tax.template, paid_amount=paid),
 		"remarks": f"Wallet top-up {credit.name} ({payment_id})",
 	}
 

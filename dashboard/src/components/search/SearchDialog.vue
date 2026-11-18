@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Dialog, KeyboardShortcut } from 'frappe-ui'
+import { Dialog, KeyboardShortcut, ScrollArea } from 'frappe-ui'
 import {
 	ListboxContent,
 	ListboxFilter,
@@ -51,55 +51,58 @@ function select(item: SearchItem): void {
 					/>
 				</div>
 
-				<ListboxContent
-					class="max-h-96 overflow-auto border-t border-outline-gray-1"
+				<ScrollArea
+					class="border-t border-outline-gray-1"
+					viewport-class="max-h-96"
 				>
-					<ListboxGroup
-						v-for="(group, name) in filtered"
-						:key="name"
-						class="mb-2 mt-4.5 first:mt-3"
-					>
-						<ListboxGroupLabel
-							class="mb-2.5 block px-4.5 text-base text-ink-gray-5"
+					<ListboxContent>
+						<ListboxGroup
+							v-for="(group, name) in filtered"
+							:key="name"
+							class="mb-2 mt-4.5 first:mt-3"
 						>
-							{{ name }}
-						</ListboxGroupLabel>
+							<ListboxGroupLabel
+								class="mb-2.5 block px-4.5 text-base text-ink-gray-5"
+							>
+								{{ name }}
+							</ListboxGroupLabel>
+
+							<div
+								v-for="item in group.items"
+								:key="`${name}-${item.name}`"
+								class="px-2.5"
+							>
+								<ListboxItem
+									:value="`${name}-${item.name}`"
+									class="flex w-full min-w-0 items-center gap-2 rounded-4 px-2 py-2 text-base-medium text-ink-gray-7 outline-none data-[highlighted]:bg-surface-gray-3"
+									@select="select(item)"
+								>
+									<span
+										:class="item.icon"
+										class="size-4 shrink-0 text-ink-gray-6"
+									/>
+									<span
+										class="min-w-0 flex-1 truncate"
+										v-html="highlightMatch(item.name, query)"
+									/>
+									<span
+										v-if="item.description"
+										class="shrink-0 truncate pl-2 text-xs text-ink-gray-5"
+									>
+										{{ item.description }}
+									</span>
+								</ListboxItem>
+							</div>
+						</ListboxGroup>
 
 						<div
-							v-for="item in group.items"
-							:key="`${name}-${item.name}`"
-							class="px-2.5"
+							v-if="query && !hasResults"
+							class="my-8 text-center text-base text-ink-gray-6"
 						>
-							<ListboxItem
-								:value="`${name}-${item.name}`"
-								class="flex w-full min-w-0 items-center gap-2 rounded-4 px-2 py-2 text-base-medium text-ink-gray-7 outline-none data-[highlighted]:bg-surface-gray-3"
-								@select="select(item)"
-							>
-								<span
-									:class="item.icon"
-									class="size-4 shrink-0 text-ink-gray-6"
-								/>
-								<span
-									class="min-w-0 flex-1 truncate"
-									v-html="highlightMatch(item.name, query)"
-								/>
-								<span
-									v-if="item.description"
-									class="shrink-0 truncate pl-2 text-xs text-ink-gray-5"
-								>
-									{{ item.description }}
-								</span>
-							</ListboxItem>
+							No results for "<b class="text-ink-gray-9">{{ query }}</b>"
 						</div>
-					</ListboxGroup>
-
-					<div
-						v-if="query && !hasResults"
-						class="my-8 text-center text-base text-ink-gray-6"
-					>
-						No results for "<b class="text-ink-gray-9">{{ query }}</b>"
-					</div>
-				</ListboxContent>
+					</ListboxContent>
+				</ScrollArea>
 
 				<div
 					class="mt-2 flex items-center justify-between border-t border-outline-gray-1 px-2.5 py-2 text-xs text-ink-gray-6"

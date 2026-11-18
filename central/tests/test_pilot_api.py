@@ -77,7 +77,8 @@ class TestPilotAPI(IntegrationTestCase):
 			self.call_heartbeat(self.token)
 
 	def bound_pilot(self, region_id: int | None = None) -> str:
-		"""A pilot with a Virtual Machine in a region, which is what a datum token is addressed to.
+		"""A pilot with a Virtual Machine that Atlas has bound in a region. Returns its Atlas name,
+		the resource ID of its datum token.
 
 		The region id is unique per Region, so each test gets its own rather than
 		colliding with whatever the site already holds."""
@@ -87,6 +88,7 @@ class TestPilotAPI(IntegrationTestCase):
 			{
 				"doctype": "Virtual Machine",
 				"resource_id": f"vm-{self.region}",
+				"atlas_vm_id": f"vm-atlas-{self.region}",
 				"team": self.team,
 				"region": self.region,
 				"status": "Running",
@@ -94,7 +96,7 @@ class TestPilotAPI(IntegrationTestCase):
 		).insert(ignore_permissions=True)
 		frappe.db.set_value("Pilot Credential", "api-pilot-1", "server", server.name)
 
-		return server.name
+		return server.atlas_vm_id
 
 	def reporting_region(self, service_endpoint: str, status: str = "Available") -> str:
 		"""A bound pilot whose region has reported where its telemetry host serves."""
@@ -150,12 +152,12 @@ class TestPilotAPI(IntegrationTestCase):
 	def test_the_token_carries_the_scope_resource_and_write_access(self):
 		"""Datum stamps every row with `resource_id` and reads both claims off the token
 		through `Identity.from_claims`. Nothing sits in front of it to translate one."""
-		server = self.bound_pilot()
+		atlas_vm_id = self.bound_pilot()
 
 		claims = jwt.decode(self.call_datum_token(self.token)["token"], options={"verify_signature": False})
 
 		self.assertEqual(claims["scope"], DATUM_SCOPE)
-		self.assertEqual(claims["resource_id"], server)
+		self.assertEqual(claims["resource_id"], atlas_vm_id)
 		self.assertEqual(claims["access"], ["write"])
 		self.assertNotIn("vm_access", claims)
 

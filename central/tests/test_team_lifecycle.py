@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -51,7 +51,9 @@ class TestTeamLifecycle(IntegrationTestCase):
 		frappe.set_user(self.owner)
 		return {check["key"]: check["count"] for check in get_team_archive_checks(self.team.name)["checks"]}
 
-	def add_invoice(self, status: str, period_end: str, total: float = 0) -> None:
+	def add_invoice(
+		self, status: str, period_end: str, total: float = 0, due_date: str | None = None
+	) -> None:
 		frappe.get_doc(
 			{
 				"doctype": "Invoice",
@@ -60,6 +62,7 @@ class TestTeamLifecycle(IntegrationTestCase):
 				"status": status,
 				"period_end": period_end,
 				"total": total,
+				"due_date": due_date,
 			}
 		).db_insert()
 
@@ -115,19 +118,22 @@ class TestTeamLifecycle(IntegrationTestCase):
 		self.assertEqual((blockers["snapshots"], blockers["buckets"], blockers["add_ons"]), (1, 2, 1))
 
 	def test_unpaid_invoices_block_but_the_current_month_draft_does_not(self):
-		self.add_invoice("Draft", today())
+		self.add_invoice("Outstanding", today())
 		self.add_invoice("Paid", add_months(today(), -2))
 		self.assertEqual(self.blockers()["invoices"], 0)
 
-		self.add_invoice("Overdue", add_months(today(), -1))
-		self.add_invoice("Draft", add_months(get_first_day(today()), -1))
+		self.add_invoice("Overdue", add_months(today(), -1), due_date=add_months(today(), -1))
+		self.add_invoice("Outstanding", add_months(get_first_day(today()), -1))
 		self.assertEqual(self.blockers()["invoices"], 2)
 
+		self.add_invoice("Outstanding", today(), due_date=today())
+		self.assertEqual(self.blockers()["invoices"], 3)
+
 	def test_this_months_charges_block_until_the_team_has_a_payment_method(self):
-		self.add_invoice("Draft", today())
+		self.add_invoice("Outstanding", today())
 		self.assertEqual(self.blockers()["final_bill"], 0)
 
-		self.add_invoice("Draft", today(), total=120)
+		self.add_invoice("Outstanding", today(), total=120)
 		self.assertEqual(self.blockers()["final_bill"], 1)
 
 		frappe.get_doc({"doctype": "Payment Method", "team": self.team.name, "status": "Active"}).db_insert()
@@ -160,22 +166,15 @@ class TestTeamLifecycle(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Team", self.team.name, "status"), "Active")
 		self.assertTrue(can(self.admin, self.team.name, "team:edit"))
 
-	def test_archive_stops_every_live_ai_key_and_revokes_the_old_ones(self):
-		keys = [
-			{"name": "old-key", "status": "active", "revocable_at": "2020-01-01T00:00:00Z"},
-			{"name": "new-key", "status": "active", "revocable_at": "2999-01-01T00:00:00Z"},
-			{"name": "gone-key", "status": "revoked", "revocable_at": "2020-01-01T00:00:00Z"},
-		]
+	def test_archive_tells_grove_the_team_is_closing_and_nothing_else(self):
 		client = MagicMock()
-		client.get_figures.return_value = {"keys": keys}
 		with (
 			patch("central.services.ai.get_ai_service", return_value="AI-SERVICE"),
 			patch("central.services.ai.GroveClient.from_settings", return_value=client),
 		):
 			stop_team_keys(self.team.name)
 
-		client.update_caps.assert_called_once_with(self.team.name, {"old-key": 0, "new-key": 0})
-		client.revoke_key.assert_called_once_with(self.team.name, "old-key")
+		self.assertEqual(client.method_calls, [call.archive_team(self.team.name)])
 
 	def test_a_member_cannot_change_the_status_by_saving_the_team(self):
 		frappe.set_user(self.owner)

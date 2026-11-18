@@ -5,6 +5,7 @@
 import frappe
 
 from central.billing.api import admin
+from central.billing.revenue import credits
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	ensure_atlas_instance,
@@ -101,15 +102,25 @@ class TestAdminGating(AdminTestBase):
 		self.assertEqual(entry.reference_type, "Admin")
 		self.assertEqual(entry.note, "goodwill")
 
+	def test_debit_over_the_balance_is_refused_with_a_message(self):
+		admin.adjust_team_credits(TEAM_A, 10, "Credit", currency="INR", note="goodwill")
+		with self.assertRaises(credits.InsufficientCredits):
+			admin.adjust_team_credits(TEAM_A, 50, "Debit", currency="INR", note="clawback")
+		self.assertIn("exceeds wallet balance", frappe.get_message_log()[-1]["message"])
+
 
 class TestAggregates(AdminTestBase):
 	def test_summary_billed_collected_outstanding(self):
 		self._invoice(TEAM_A, 1000, status="Paid")
-		self._invoice(TEAM_B, 500, status="Open", paid=0)
+		invoice = self._invoice(TEAM_B, 500, status="Outstanding", paid=0)
 		s = admin.get_summary("2099-01-01", "2099-01-31")
 		self.assertEqual(s["total_billed"], 1500)
 		self.assertEqual(s["total_collected"], 1000)
-		self.assertEqual(s["outstanding"], 500)
+		# An invoice not yet issued is not owed.
+		self.assertEqual(s["outstanding"], 0)
+
+		frappe.db.set_value("Invoice", invoice, "due_date", "2099-02-15")
+		self.assertEqual(admin.get_summary("2099-01-01", "2099-01-31")["outstanding"], 500)
 
 	def test_cluster_and_team_breakdown(self):
 		self._invoice(TEAM_A, 1000, cluster="ap-south-1")
@@ -132,7 +143,7 @@ class TestAggregates(AdminTestBase):
 
 class TestPanels(AdminTestBase):
 	def test_payment_analytics_success_rate_and_reasons(self):
-		inv = self._invoice(TEAM_A, 100, status="Open", paid=0)
+		inv = self._invoice(TEAM_A, 100, status="Outstanding", paid=0)
 		# retry_number is part of the attempt's gateway key, so each attempt on one
 		# invoice carries its own — as the charge path does.
 		for retry, (status, code) in enumerate(

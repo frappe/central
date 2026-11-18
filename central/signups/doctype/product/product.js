@@ -25,9 +25,13 @@ frappe.ui.form.on("Product", {
 		frm.add_custom_button(__("Preview Email"), () => choose_email(frm, preview_email), __("Emails"));
 		frm.add_custom_button(__("Send Test Email"), () => choose_email(frm, send_test_email), __("Emails"));
 
-		// Regional images, sites and the report reach across every team, which only a System Manager may.
-		if (frappe.user.has_role("System Manager")) {
+		// The preview reads a region as the system tenant, which Frappe staff may and a Product Operator may not.
+		if (frappe.user.has_role(["System Manager", "Staff Viewer"])) {
 			frm.add_custom_button(__("Preview Trial Images"), () => choose_region(frm));
+		}
+
+		// Sites and the report reach across every team, which only a System Manager may.
+		if (frappe.user.has_role("System Manager")) {
 			frm.add_custom_button(__("Sites"), () => frappe.set_route("List", "Site", { product: frm.doc.name }), __("View"));
 			frm.add_custom_button(__("Trial Sites Report"), () => frappe.set_route("query-report", "Trial Sites"), __("View"));
 		}

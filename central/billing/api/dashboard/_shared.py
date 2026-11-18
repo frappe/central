@@ -28,6 +28,7 @@ from central.billing.doctype.billing_profile.billing_profile import (
 from central.billing.doctype.billing_profile.billing_profile import (
 	require_billing_profile,
 )
+from central.billing.doctype.payment_method.payment_method import held_method_filters
 from central.iam import can
 
 # Tier caps (max_spend) are stored in INR; convert to the team's billing currency
@@ -119,7 +120,7 @@ def _has_money_activity(team: str) -> bool:
 	so a wallet can't end up holding mixed-currency value."""
 	return bool(
 		frappe.db.exists("Credit Ledger Entry", {"team": team})
-		or frappe.db.exists("Payment Method", {"team": team})
+		or frappe.get_all("Payment Method", filters={"team": team}, or_filters=held_method_filters(), limit=1)
 		or frappe.db.exists("Invoice", {"team": team})
 	)
 
@@ -252,7 +253,7 @@ def _describe_line(team: str, li) -> dict:
 		# support and the cluster logs know it as. A friendly name is optional and
 		# may be absent or duplicated; this never is.
 		row["server_id"] = li.subscription_resource
-		# Hourly lines come from a churn day (multiple resizes within 24h): they're
+		# Hourly lines come from a start, plan-change or stop day: they're
 		# tied to one calendar date, so name it. Daily lines span a range within the
 		# period — the invoice already carries the period dates, so no suffix.
 		# Say WHEN, not just how long. A month with a resize in it is several lines
@@ -298,8 +299,8 @@ def _server_name(resource_id: str | None) -> str | None:
 def _billed_window(li) -> str | None:
 	"""The span a line covers, in the words someone would use for it.
 
-	Whole days read as a date range ("1–13 Aug"); a churn date reads as the clock
-	hours on that date ("14 Aug, 20:00–24:00"), because that is the day a config
+	Whole days read as a date range ("1–13 Aug"); a plan-change date reads as the clock
+	hours on that date ("14 Aug, 20:00–24:00"), because that is the day a plan
 	changed and the hours are the whole reason it is billed differently.
 	"""
 	start, end = li.get("period_from"), li.get("period_to")

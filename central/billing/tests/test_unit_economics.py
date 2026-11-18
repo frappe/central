@@ -59,14 +59,7 @@ def seed_fleet():
 	make_server("team-ue-internal", "ue-internal", 4)
 	make_metal_server()
 
-	frappe.get_doc(
-		{
-			"doctype": "Tax Profile",
-			"team": "team-ue-internal",
-			"is_internal": 1,
-			"internal_reason": "Ours",
-		}
-	).insert(ignore_permissions=True)
+	frappe.db.set_value("Billing Profile", "team-ue-internal", {"is_internal": 1, "internal_reason": "Ours"})
 	frappe.get_doc(
 		{
 			"doctype": "Credit Ledger Entry",

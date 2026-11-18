@@ -8,7 +8,7 @@ import frappe
 from frappe import _
 from frappe.rate_limiter import rate_limit
 
-from central.billing import authz
+from central.billing import authz, settings
 from central.billing.api.dashboard._shared import (
 	_default_team,
 	_has_money_activity,
@@ -21,7 +21,12 @@ from central.billing.api.dashboard._shared import (
 	_team_resource_count,
 	currency_for_country,
 )
-from central.billing.revenue import gst_status
+from central.billing.doctype.billing_profile.billing_profile import (
+	DEFAULT_PAYMENT_DAY,
+	LAST_PAYMENT_DAY,
+	PAYMENT_DAY_CHANGES_PER_CYCLE,
+)
+from central.billing.revenue import dunning, gst_status
 
 
 @frappe.whitelist()
@@ -46,12 +51,16 @@ def get_billing_profile(team: str | None = None) -> dict:
 	  exists, so the UI disables the currency picker.
 	- `supported_currencies` — the allowed set (gateway-backed; not stored on the
 	  profile).
+	- `gst_state_missing` — an Indian profile with no state; its GST is IGST until one is set.
+	- `igst_rate` — the GST rate charged as IGST while the state is missing; None when
+	  the state is set or no GST is charged.
 	- `payment_method_required`, `welcome_credit`, `open_trial` — see `signups.credit.get_purchase_state`.
 
 	The stored fields (currency, legal name, address, GSTIN, …) come straight off
 	the doc for the edit forms; the derived fields drive routing and locking.
 	"""
 	from central.billing.gateways.registry import supported_currencies
+	from central.billing.payments.profile import igst_rate, is_state_missing
 	from central.signups.credit import get_purchase_state
 
 	team = _resolve_team(team)
@@ -69,6 +78,8 @@ def get_billing_profile(team: str | None = None) -> dict:
 			"currency_locked": _has_money_activity(team),
 			"supported_currencies": supported_currencies(),
 			"gst_lapsed": gst_status.standing(team).lapsed,
+			"gst_state_missing": is_state_missing(team),
+			"igst_rate": igst_rate(team),
 			**get_purchase_state(team),
 		}
 	)
@@ -183,20 +194,42 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 
 @frappe.whitelist()
 def get_billing_settings(team: str | None = None) -> dict:
-	"""Alert thresholds. (Payment mode was removed — billing is credits-first-then-
-	card for every team, so there is no prepaid/postpaid switch.)"""
+	"""Alert thresholds, the payment day, and the ladder days the payment day form explains."""
 	team = _resolve_team(team)
+	limits = {
+		"last_payment_day": LAST_PAYMENT_DAY,
+		"payment_day_changes_per_cycle": PAYMENT_DAY_CHANGES_PER_CYCLE,
+		"suspension_day": settings.suspension_day(),
+		"last_payment_day_with_retries": dunning.get_last_payment_day_with_retries(),
+	}
 	if not frappe.db.exists("Billing Profile", team):
-		return {"team": team, "min_balance": 0, "spend_alert_threshold": 0}
+		return {
+			"team": team,
+			"min_balance": 0,
+			"spend_alert_threshold": 0,
+			"payment_day": DEFAULT_PAYMENT_DAY,
+			"payment_day_changes_left": PAYMENT_DAY_CHANGES_PER_CYCLE,
+			**limits,
+		}
 	p = frappe.get_doc("Billing Profile", team)
-	return {"team": team, "min_balance": p.min_balance, "spend_alert_threshold": p.spend_alert_threshold}
+	return {
+		"team": team,
+		"min_balance": p.min_balance,
+		"spend_alert_threshold": p.spend_alert_threshold,
+		"payment_day": p.payment_day,
+		"payment_day_changes_left": p.get_payment_day_changes_left(),
+		**limits,
+	}
 
 
 @frappe.whitelist(methods=["POST"])
 def save_billing_settings(
-	team: str | None = None, min_balance: float | None = None, spend_alert_threshold: float | None = None
+	team: str | None = None,
+	min_balance: float | None = None,
+	spend_alert_threshold: float | None = None,
+	payment_day: int | None = None,
 ) -> dict:
-	"""Update the low-balance / spend alert thresholds."""
+	"""Update the low-balance / spend alert thresholds and the payment day."""
 	team = _resolve_team(team, authz.MANAGE)
 	if frappe.db.exists("Billing Profile", team):
 		doc = frappe.get_doc("Billing Profile", team)
@@ -206,6 +239,9 @@ def save_billing_settings(
 		doc.min_balance = frappe.utils.flt(min_balance)
 	if spend_alert_threshold is not None:
 		doc.spend_alert_threshold = frappe.utils.flt(spend_alert_threshold)
+	if payment_day is not None:
+		doc.change_payment_day(payment_day)
+	# The team's billing:manage capability was checked above; Billing Profile has no team role.
 	doc.save(ignore_permissions=True)
 	return {"saved": True}
 
@@ -214,10 +250,11 @@ def save_billing_settings(
 def get_collection_status(team: str | None = None) -> dict:
 	"""Collection mode + the "Action Required" banner feed (ADR 0005, #50).
 
-	Re-checks an e-mandate team against the ₹15,000 silent-debit threshold using the
-	month-to-date forecast (so we warn before the bill lands), then returns the state
-	the banner renders from: the mode, whether action is required and why, the
-	threshold, and the numbers (projected total, wallet balance, shortfall).
+	Returns the state the banner renders from: the mode, whether action is required
+	and why, the threshold, the numbers (projected total, wallet balance, shortfall),
+	and `top_up_due`: the credit to add before the next payment date when the card or
+	UPI would be asked for more than its limit (#191). The forecast only informs: a
+	team moves to Action Required when a bill is charged, never on this read.
 
 	It also carries `mandate_gap_note`: the networks no rail will auto-charge. This
 	is the screen where a customer decides how they want to pay, so it is the honest
@@ -228,16 +265,46 @@ def get_collection_status(team: str | None = None) -> dict:
 	from central.billing.payments import collection_mode, instruments
 	from central.billing.revenue import credits
 
-	projected = frappe.utils.flt(get_forecast(team).get("projected_total"))
-	st = collection_mode.evaluate(team, projected_amount=projected)
+	forecast = get_forecast(team)
+	projected = frappe.utils.flt(forecast.get("projected_total"))
+	st = collection_mode.status(team)
 	wallet = frappe.utils.flt(credits.get_balance(team)["balance"])
 	return {
 		**st,
+		"top_up_due": None if st["action_required"] else _top_up_due(team, projected),
 		"projected_total": projected,
+		"tax_note": forecast["tax_note"],
+		# The tax the amounts the limit caps include, as the Action Required notice names it.
+		"limit_tax_note": forecast["limit_tax_note"],
 		"wallet_balance": wallet,
-		"shortfall": max(0.0, frappe.utils.flt(projected - wallet, 2)),
+		"shortfall": forecast["shortfall"],
 		"currency": _team_currency(team),
 		"mandate_gap_note": instruments.mandate_gap_note(_team_currency(team)),
+	}
+
+
+def _top_up_due(team: str, projected: float) -> dict | None:
+	"""The top-up the banner asks for before the next payment date (#191)."""
+	from central.billing.payments import top_up_reminders
+
+	due = top_up_reminders.get_top_up_due(team, forecast=projected)
+	if not due:
+		return None
+	# `labels` are formatted as the reminder email shows them, so both read the same.
+	return {
+		**{
+			key: due[key]
+			for key in (
+				"amount",
+				"amount_with_gst",
+				"tax_label",
+				"date",
+				"limit",
+				"has_method",
+				"includes_earlier_gst",
+			)
+		},
+		"labels": top_up_reminders.format_due(due),
 	}
 
 
@@ -284,10 +351,12 @@ def get_trust_tier(team: str | None = None) -> dict:
 	promotion criteria — so a customer can see what unlocks more headroom.
 	"""
 	from central.billing.catalog import entitlements
+	from central.billing.catalog.subscriptions import team_run_rate
 
 	team = _resolve_team(team)
 	currency = _team_currency(team)
-	current_tier = entitlements.get_team_caps(team).tier
+	caps = entitlements.get_team_caps(team)
+	current_tier = caps.tier
 
 	# The ladder carries per-currency thresholds; everything below reads the row
 	# for THIS team's currency, so caps are native (no FX conversion).
@@ -314,7 +383,7 @@ def get_trust_tier(team: str | None = None) -> dict:
 	)
 	# First/last paid only look at rows with a real settlement time. An invoice paid
 	# before `paid_at` existed has no reliable timestamp — falling back to its
-	# creation would understate first_paid_at (it can sit Draft/Open for days before
+	# creation would understate first_paid_at (it can sit Outstanding for days before
 	# actually settling), so it's excluded from tenure rather than guessed at.
 	timed_rows = sorted((r for r in paid_rows if r.paid_at), key=lambda r: r.paid_at)
 	first_paid_at = timed_rows[0].paid_at if timed_rows else None
@@ -344,6 +413,10 @@ def get_trust_tier(team: str | None = None) -> dict:
 		"current": level_view(current),
 		"next": level_view(nxt),
 		"is_top_tier": nxt is None,
+		# What the server-create check compares: the limit (with any override) and the
+		# monthly cost before tax of what runs now.
+		"spending_limit": frappe.utils.flt(caps.max_spend),
+		"running_monthly": team_run_rate(team),
 		"progress": {
 			"resources_used": resources_used,
 			"paid_invoices": paid_invoices,

@@ -8,9 +8,10 @@ from frappe import _
 from frappe.utils.caching import request_cache
 
 OPERATOR_BYPASS_ROLE = "System Manager"
+STAFF_VIEWER_ROLE = "Staff Viewer"
 
 # The revision of the capability taxonomy. Bump it with every change (see CAPABILITIES.md).
-CAPABILITY_VERSION = 6
+CAPABILITY_VERSION = 7
 
 # Granting a key implies each capability in its value, because acting on a resource needs
 # seeing it. Every grant is closed under these before it is checked.
@@ -22,6 +23,7 @@ CAP_IMPLICATIONS = {
 	"server:resize": ("server:view",),
 	"server:snapshot": ("server:view",),
 	"server:ssh-key": ("server:view",),
+	"server:wireguard": ("server:view",),
 	"server:console": ("server:view",),
 	"service:manage": ("service:view",),
 }
@@ -71,11 +73,17 @@ def _user_has_operator_bypass(user: str) -> bool:
 	return OPERATOR_BYPASS_ROLE in frappe.get_roles(user)
 
 
+def is_staff_read(user: str, ptype: str | None) -> bool:
+	"""A Staff Viewer reads every team's records in Desk. It grants no capability and no write on
+	team records. The DocType permissions decide which DocTypes and fields it reads."""
+	return ptype in ("read", "select") and STAFF_VIEWER_ROLE in frappe.get_roles(user)
+
+
 def get_all_capabilities() -> list[str]:
 	return frappe.get_all("Capability", pluck="name", order_by="name")
 
 
-def get_user_team_names(user: str) -> list[str]:
+def get_user_team_names(user: str, statuses: tuple[str, ...] = ("Active",)) -> list[str]:
 	team = frappe.qb.DocType("Team")
 	member = frappe.qb.DocType("Team Member")
 
@@ -90,7 +98,7 @@ def get_user_team_names(user: str) -> list[str]:
 			& (member.parentfield == "members")
 			& (member.user == user)
 			& (member.status == "Active")
-			& (team.status == "Active")
+			& team.status.isin(statuses)
 		)
 		.orderby(team.name)
 	).run(as_dict=True)
@@ -98,9 +106,9 @@ def get_user_team_names(user: str) -> list[str]:
 	return [row.name for row in rows]
 
 
-def is_active_team_member(user: str, team: str) -> bool:
+def is_active_team_member(user: str, team: str, statuses: tuple[str, ...] = ("Active",)) -> bool:
 	"""
-	Whether `user` is an active member of the active team `team`. A scoped
+	Whether `user` is an active member of team `team` in one of `statuses`. A scoped
 	existence check — cheaper than resolving grants or listing every team.
 	"""
 
@@ -118,7 +126,7 @@ def is_active_team_member(user: str, team: str) -> bool:
 			& (member.user == user)
 			& (member.status == "Active")
 			& (team_doc.name == team)
-			& (team_doc.status == "Active")
+			& team_doc.status.isin(statuses)
 		)
 		.limit(1)
 	)
@@ -126,13 +134,33 @@ def is_active_team_member(user: str, team: str) -> bool:
 	return bool(query.run())
 
 
-def resolve_team(user: str, team: str | None = None) -> str:
-	"""The team to act on: the one given, else the user's sole active team. With
+def get_team_names_with_role(role: str, teams: list[str]) -> list[str]:
+	"""The teams among `teams` where at least one member holds `role`."""
+	return frappe.get_all(
+		"Team Member",
+		filters={"parenttype": "Team", "role": role, "parent": ("in", teams)},
+		pluck="parent",
+		distinct=True,
+	)
+
+
+def get_active_team_member_users(team: str) -> list[str]:
+	"""The users with an Active membership in `team`."""
+	return frappe.get_all(
+		"Team Member",
+		filters={"parenttype": "Team", "parentfield": "members", "parent": team, "status": "Active"},
+		pluck="user",
+		distinct=True,
+	)
+
+
+def resolve_team(user: str, team: str | None = None, statuses: tuple[str, ...] = ("Active",)) -> str:
+	"""The team to act on: the one given, else the user's sole team in `statuses`. With
 	zero or many teams and none specified, the caller must pick one."""
 	if team:
 		return team
 
-	teams = get_user_team_names(user)
+	teams = get_user_team_names(user, statuses)
 	if len(teams) != 1:
 		frappe.throw(_("Specify a team."), frappe.ValidationError)
 
@@ -302,6 +330,22 @@ def get_allowed_servers(user: str, capability: str) -> dict[str, str | frozenset
 			allowed[team] = frozenset(scopes)
 
 	return allowed
+
+
+def get_capability_gate(capability_field, server_field, team: str, user: str):
+	"""A query builder condition for the team rows `user` may see. A row with no required
+	capability is visible to every member. A team-wide grant sees a row it has the
+	capability for. A grant scoped to servers sees a row only about one of those servers."""
+	gate = capability_field.isnull() | (capability_field == "")
+	capabilities = {cap for grant in resolve_user_grants(user).get(team, []) for cap in grant["caps"]}
+	for capability in sorted(capabilities):
+		servers = get_allowed_servers(user, capability)[team]
+		if servers == ALL_SERVERS:
+			gate = gate | (capability_field == capability)
+		else:
+			gate = gate | ((capability_field == capability) & server_field.isin(sorted(servers)))
+
+	return gate
 
 
 def get_server_capabilities(user: str, team: str, server: str) -> list[str]:

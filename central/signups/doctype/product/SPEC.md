@@ -8,7 +8,7 @@ The Signups module holds Product, so it can move into its own app later.
 
 ## Configuration
 
-System Managers and Product Operators create and edit products in Desk. Only a System Manager deletes one. See [Access](#access).
+System Managers, Staff Viewers, and Product Operators create and edit products in Desk. Only a System Manager or a Staff Viewer deletes one. See [Access](#access).
 
 | Field | Rule |
 |---|---|
@@ -25,6 +25,9 @@ System Managers and Product Operators create and edit products in Desk. Only a S
 | Trial Deletion Days | Days a stopped trial site is kept before its server is terminated. 0 uses Central Settings, Trial Deletion Days. |
 | Use Product Branding in Emails | Off uses Frappe Cloud's logo and name in emails. On uses the product's Logo and Title. See [Emails](#emails). |
 | Email Notes | One extra paragraph for each lifecycle email about a site of this product. See [Emails](#emails). |
+| Reply-To Address | The address that gets replies to emails about a site of this product, such as an inbox that the sales CRM reads. Empty keeps the sender address. See [Emails](#emails). |
+| Hide Plan Specs | Hides the vCPU, memory and disk line under each plan on a site of this product. See [Plans](#plans). |
+| Plan Notes | A short tag for each plan, which the site's plan list shows on a site of this product. See [Plans](#plans). |
 
 Example: Product Key `raven`, Title `Raven`, Signup App `raven`, Frappe Version `version-16`. The signup link is `/dashboard/signup?product=raven`.
 
@@ -74,16 +77,17 @@ A System Manager gives a Frappe team member the **Product Operator** role. The r
 |---|---|---|
 | System Manager | Create, read, edit, delete every product | Everything |
 | Product Operator | Create, read and edit every product, and use Open Signup Page, Preview Email and Send Test Email | Files, to upload the logo. The Signups workspace shows them Product only. |
+| Staff Viewer | Create, read, edit and delete every product, and use Open Signup Page, Preview Email, Send Test Email and Preview Trial Images | See [Staff Desk Access](../../../../spec/IAM.md#staff-desk-access). |
 
 A Product Operator does not get Region, Image Offering, Site, Team or billing records, the Trial Sites report, or Preview Trial Images. Each of them reaches across every team, and only a System Manager may do that. To check an image, a Product Operator asks a System Manager. Those records belong to customer teams, and only a System Manager reads them across teams.
 
 ## Emails
 
-Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#operation). A product changes them in three ways.
+Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#operation). A product changes them in four ways.
 
 **Branding.** With **Use Product Branding in Emails** on, the email header shows the product's Logo and Title instead of Frappe Cloud's. The code email also names the product, such as "123456 is your Raven signup code". The lifecycle emails of the product's sites use the same header. The logo must be a public file, because an email client loads it without a session. The footer still says that the person is a member of a Frappe Cloud team.
 
-**Getting started.** With a **Getting Started URL**, the `site_ready` and `trial_unopened` emails show a **Get started** button that opens the site, and a **View docs** button to that page. Use the product's own guide or docs page, so the product team can change it without a change in Central. The address must start with `https://`. The `site_ready` subject also names the product, such as "Your Raven site is ready".
+**Getting started.** With a **Getting Started URL**, the `site_ready` and `trial_unopened` emails show a **Get started** button that opens the site, and a **Documentation** button to that page. Use the product's own guide or docs page, so the product team can change it without a change in Central. The address must start with `https://`. The `site_ready` subject also names the product, such as "Your Raven site is ready".
 
 **Action links.** Email actions use the destinations below. Email previews use a sample site URL. In-app actions use the console routes.
 
@@ -96,6 +100,8 @@ Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#ope
 
 **Email Notes.** Each row adds text under the standard text of one email, only for sites of this product. Separate paragraphs with a blank line. Use it for product advice, such as what to do first. Central keeps the standard text, the dates and the button, so a note cannot change the trial terms.
 
+**Replies.** With a **Reply-To Address**, every email about a site of this product sets that address as Reply-To. A customer who replies to a trial email then reaches the product team, for example an inbox that the CRM reads to create a lead. The sender stays notifications@frappecloud.com. **Send Test Email** uses the same Reply-To.
+
 | Email | Example note for Raven |
 |---|---|
 | `site_ready` | Create a channel and invite your team. |
@@ -106,6 +112,21 @@ Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#ope
 | `trial_ended` | Add a payment method to start your Raven site again. |
 
 A note is plain text. Central escapes it, so HTML shows as text. Add at most one note for each email. Central also escapes the product title and every other value in an email, because a Product Operator or a Pilot writes them.
+
+## Plans
+
+A plan keeps one title and one price everywhere: in the site's plan list, on the Cloud dashboard and on the invoice. A product cannot rename a plan. It can add a **Plan Note** that tells its users who the plan suits. The site's plan list shows it as a tag next to the plan title, so keep it to a few words.
+
+Each row names a Plan and a few words of plain text. Add at most one note for each plan. The site's plan list, `billing_api.get_plan_options`, returns each plan with a `note`: the note of the server's product for that plan, or `null`. The server's product is the product of its sites. A server with no product site, or with sites of more than one product, gets no notes.
+
+| Plan | Example note for Raven |
+|---|---|
+| Standard | Up to 50 users |
+| Pro | Up to 200 users |
+
+A plan without a note still shows in the list, with its title and specs.
+
+With **Hide Plan Specs** on, `get_plan_options` and `get_billing_summary` return an empty `subtitle` on a site of this product, so the site's plan list and billing card show the title, the note and the price only. `get_billing_summary` still returns `specs`, because the usage meters read them. The Cloud dashboard and invoices still show the specs. Add a note to each plan that the product shows, because the title and price then tell the plans apart.
 
 ## Signup funnel
 

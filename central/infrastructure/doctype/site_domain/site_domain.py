@@ -14,7 +14,7 @@ from frappe.utils import now_datetime
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
 from central.infrastructure.doctype.region.atlas_connection import is_auto_routed_label
 from central.infrastructure.doctype.region.region import Region
-from central.integrations.proxy import ProxyError
+from central.integrations.proxy import ProxyError, get_pre_authorized_zone
 
 if TYPE_CHECKING:
 	from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
@@ -318,25 +318,22 @@ class SiteDomain(Document):
 		return f"proxy.{Region.get_zone(self.region)}"
 
 	def verify_ownership(self, credential: PilotCredential) -> None:
-		"""Refuse a custom domain until its DNS proves that the customer controls it."""
+		"""Refuse a custom domain until its TXT record proves control and it reaches the region's proxy."""
 		token = frappe.cache.get_value(self.get_verification_key(credential))
 		if not token:
 			frappe.throw(
 				_("Generate the DNS records for {0} first.").format(self.domain), DomainNotVerifiedError
 			)
 
-		if token not in _resolve(f"{VERIFICATION_RECORD}.{self.domain}", "TXT"):
+		if token not in _resolve_txt(f"{VERIFICATION_RECORD}.{self.domain}"):
 			frappe.throw(
 				_("The TXT record for {0} is not set yet.").format(self.domain), DomainNotVerifiedError
 			)
 
-		# An apex cannot hold a CNAME and DNS providers flatten it, so only a subdomain is checked.
-		# TODO: replace this CNAME check with /.well-known/pre-authorize, served by the proxy.
-		if not is_apex(self.domain) and self.get_proxy_host() not in _resolve(self.domain, "CNAME"):
+		# The proxy answers with its zone, so a flattened apex or a CDN in front passes too.
+		if get_pre_authorized_zone(self.domain) != Region.get_zone(self.region):
 			frappe.throw(
-				_("The CNAME record for {0} does not point to {1} yet.").format(
-					self.domain, self.get_proxy_host()
-				),
+				_("{0} does not point to {1} yet.").format(self.domain, self.get_proxy_host()),
 				DomainNotVerifiedError,
 			)
 
@@ -367,24 +364,16 @@ def remove_server_routes(server: str) -> None:
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each outcome if a later route crashes the job
 
 
-def is_apex(domain: str) -> bool:
-	"""True when the domain is the root of its own DNS zone, such as example.com."""
-	return dns.resolver.zone_for_name(domain).to_text().rstrip(".").lower() == domain
-
-
-def _resolve(name: str, record_type: str) -> list[str]:
-	"""The values of one DNS record set, normalized for comparison. Empty when the name has none."""
+def _resolve_txt(name: str) -> list[str]:
+	"""The TXT values of one name. Empty when the name has none."""
 	try:
-		answer = dns.resolver.resolve(name, record_type)
+		answer = dns.resolver.resolve(name, "TXT")
 	except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
 		return []
 	except dns.exception.DNSException as exception:
 		frappe.throw(_("Could not look up {0}: {1}").format(name, str(exception)), DomainNotVerifiedError)
 
-	if record_type == "TXT":
-		return [b"".join(record.strings).decode() for record in answer]
-
-	return [record.to_text().rstrip(".").lower() for record in answer]
+	return [b"".join(record.strings).decode() for record in answer]
 
 
 def on_doctype_update():

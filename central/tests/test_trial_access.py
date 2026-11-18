@@ -34,6 +34,7 @@ class TestTrialServerAccess(TrialOnAMachine):
 		with self.set_user(self.member):
 			for open_access in (
 				lambda: self.machine().set_ssh_keys([]),
+				lambda: self.machine().set_rescue_mode(True),
 				lambda: get_console_url(self.machine(), "ssh"),
 				lambda: self.machine().get_bench_login_url(self.member),
 			):

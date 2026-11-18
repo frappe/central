@@ -17,12 +17,15 @@ import {
 	loadStripe,
 	type Stripe,
 	type StripeCardElement,
+	type StripeError,
 } from '@stripe/stripe-js'
 import { useCall } from 'frappe-ui'
 import { ref } from 'vue'
 import { API, method } from '@/api/methods'
+import { useSetupWait } from '@/composables/useSetupWait'
 import { getErrorMessage, successToast } from '@/lib/feedback'
-import { stripeCardElementStyle } from '@/lib/gateway'
+import { isCancelledIntent, stripeCardElementStyle } from '@/lib/gateway'
+import { __ } from '@/lib/translate'
 
 interface CardSetupOrder {
 	client_secret?: string
@@ -32,6 +35,8 @@ interface CardSetupOrder {
 interface ConfirmCardResult {
 	payment_method: string
 	status: string
+	// Why the card failed its check, and what the customer can do instead.
+	message?: string
 }
 
 interface MountOptions {
@@ -49,7 +54,7 @@ export function useAddStripeCard({
 		method: 'POST',
 		immediate: false,
 	})
-	const confirm = useCall<ConfirmCardResult, Record<string, unknown>>({
+	const confirm = useCall<ConfirmCardResult, { payment_method?: string }>({
 		url: method(API.confirmCard),
 		method: 'POST',
 		immediate: false,
@@ -61,6 +66,41 @@ export function useAddStripeCard({
 	let stripe: Stripe | null = null
 	let card: StripeCardElement | null = null
 	let orderPromise: Promise<CardSetupOrder | null> | null = null
+	let setupTeam = ''
+	const { closedAttemptMessage } = useSetupWait()
+
+	// useCall.submit() resolves void — read the order off `.data` once it settles.
+	function startSetup(): Promise<CardSetupOrder | null> {
+		return initiate
+			.submit({ team: setupTeam })
+			.then(() => initiate.data)
+			.catch(() => null)
+	}
+
+	// The server closed this setup after too many failed attempts. Say the wait, or
+	// ask for a fresh start; nothing new is opened on the customer's behalf.
+	async function explainClosedSetup(): Promise<string> {
+		return closedAttemptMessage(
+			setupTeam,
+			__('This attempt was closed. Start again to add your card.'),
+		)
+	}
+
+	// A form mistake keeps Stripe's own field text. A bank refusal is explained by
+	// Central, which reads the reason from Stripe and words it with the next step.
+	async function explainSetupError(
+		setupError: StripeError,
+		paymentMethod: string | undefined,
+	): Promise<string> {
+		const stripeText = setupError.message ?? 'Could not add card'
+		if (setupError.type !== 'card_error' || !paymentMethod) return stripeText
+		// A failed lookup must not hide the refusal, so it falls back to Stripe's text.
+		const explained = await confirm
+			.submit({ payment_method: paymentMethod })
+			.then(() => !confirm.error && confirm.data?.message)
+			.catch(() => '')
+		return explained || stripeText
+	}
 
 	// Load Stripe.js and mount the card Element straight away. The SetupIntent (a
 	// server→Stripe round-trip) is kicked off in parallel and awaited only at
@@ -83,11 +123,8 @@ export function useAddStripeCard({
 
 		// Swallow here so a reject doesn't become an unhandled rejection if the user
 		// cancels before submitting; submit() turns the null into a clean message.
-		// useCall.submit() resolves void — read the order off `.data` once it settles.
-		orderPromise = initiate
-			.submit({ team })
-			.then(() => initiate.data)
-			.catch(() => null)
+		setupTeam = team
+		orderPromise = startSetup()
 		card = stripe.elements().create('card', {
 			hidePostalCode: true,
 			style: stripeCardElementStyle(),
@@ -118,7 +155,10 @@ export function useAddStripeCard({
 					type: 'card',
 					card,
 				})
-			if (pmError) throw pmError
+			if (pmError) {
+				error.value = await explainSetupError(pmError, order.payment_method)
+				return
+			}
 
 			const { error: setupError } = await stripe.confirmCardSetup(
 				order.client_secret,
@@ -126,13 +166,23 @@ export function useAddStripeCard({
 					payment_method: paymentMethod.id,
 				},
 			)
-			if (setupError) throw setupError
+			if (setupError && isCancelledIntent(setupError)) {
+				const closed = await explainClosedSetup()
+				if (card) error.value = closed
+				return
+			}
+			if (setupError) {
+				error.value = await explainSetupError(setupError, order.payment_method)
+				return
+			}
 
 			await confirm.submit({ payment_method: order.payment_method })
 			if (confirm.error) throw confirm.error
 			const res = confirm.data
 			if (!res || res.status !== 'Active') {
-				error.value = "Couldn't verify that card. Try a different one"
+				// A failed or expired setup carries the server's reason.
+				error.value =
+					res?.message ?? __("Couldn't verify that card. Try a different one")
 				return
 			}
 			successToast('Card added')

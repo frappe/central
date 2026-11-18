@@ -106,13 +106,6 @@ def set_onboarding_step(team: str, step: str, status: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
-def skip_onboarding(team: str) -> dict[str, Any]:
-	"""Skip every onboarding step the owner has not answered yet. Owner only."""
-	frappe.get_doc("Team", team).skip_onboarding()
-	return {"skipped": True}
-
-
-@frappe.whitelist(methods=["POST"])
 @require_capability("team:edit", _lt("You can't rename this team. Ask a team admin to review your access."))
 def rename_team(team: str, team_name: str) -> dict[str, Any]:
 	"""Rename a team. Team.validate re-checks team:edit on save."""

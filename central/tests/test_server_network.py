@@ -5,9 +5,10 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.api.activity import team_activity
 from central.api.servers import open_console, server_overview
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
-from central.infrastructure.doctype.virtual_machine.firewall import SYSTEM_INBOUND_RULES
+from central.infrastructure.doctype.virtual_machine.firewall import DEFAULT_INBOUND_RULES
 from central.integrations.resource_actions import _create_payload
 from central.resource_actions import validate_guest_input
 from central.server_models import MAXIMUM_USER_DATA_BYTES, CreateServerInput
@@ -53,7 +54,9 @@ class TestCreationNetworkPayload(TestCase):
 	def test_every_new_server_gets_the_web_server_rules(self, _idle) -> None:
 		firewall = _create_payload(creation_request())["firewall"]
 
-		self.assertEqual(firewall["inbound"][: len(SYSTEM_INBOUND_RULES)], SYSTEM_INBOUND_RULES)
+		defaults = [rule.model_dump() for rule in DEFAULT_INBOUND_RULES]
+		self.assertEqual(firewall["inbound"][: len(defaults)], defaults)
+		self.assertNotIn({"protocol": "any", "ports": "", "cidrs": ["fdac::/16"]}, firewall["inbound"])
 		self.assertEqual(
 			[rule["ports"] for rule in firewall["inbound"] if rule["protocol"] == "tcp"],
 			["22", "80", "443"],
@@ -160,13 +163,48 @@ class TestServerConsole(IntegrationTestCase):
 		finally:
 			frappe.set_user("Administrator")
 
+	def console_events(self) -> list[tuple[str, str | None]]:
+		return [
+			(event.event, event.actor)
+			for event in frappe.get_all(
+				"Activity Event",
+				filters={"server": self.server.name, "event": ("like", "server.%_console_opened")},
+				fields=["event", "actor"],
+				order_by="creation",
+			)
+		]
+
+	def team_events_for(self, user: str) -> list[str]:
+		frappe.set_user(user)
+		try:
+			return [event["sentence"] for event in team_activity(team=self.team.name)["events"]]
+		finally:
+			frappe.set_user("Administrator")
+
 	def test_owner_gets_a_single_use_ssh_console_url(self):
 		self.assertEqual(self.open_as(self.owner), {"url": CONSOLE_URL})
 		self.get_console_url.assert_called_once_with("vm-00001", mode="ssh")
+		self.assertEqual(self.console_events(), [("server.ssh_console_opened", self.owner)])
 
 	def test_owner_gets_a_single_use_tty_console_url(self):
 		self.assertEqual(self.open_as(self.owner, mode="tty"), {"url": CONSOLE_URL})
 		self.get_console_url.assert_called_once_with("vm-00001", mode="tty")
+		self.assertEqual(self.console_events(), [("server.tty_console_opened", self.owner)])
+
+	def test_only_a_member_who_can_open_the_console_sees_it_opened(self):
+		self.open_as(self.owner)
+
+		sentence = "{actor} opened the SSH console of {resource}"
+		self.assertIn(sentence, self.team_events_for(self.owner))
+		self.assertNotIn(sentence, self.team_events_for(self.viewer))
+
+	def test_an_operator_who_opens_the_console_is_named_as_the_actor(self):
+		operator = ensure_user("console.operator@example.test")
+		frappe.get_doc("User", operator).add_roles("System Manager")
+
+		self.open_as(operator, mode="tty")
+
+		self.assertEqual(self.console_events(), [("server.tty_console_opened", operator)])
 
 	def test_refused_ssh_points_to_tty_without_switching_mode(self):
 		self.get_console_url.side_effect = AtlasRejected("SSH is unavailable.")
@@ -174,6 +212,7 @@ class TestServerConsole(IntegrationTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "serial console"):
 			self.open_as(self.owner)
 		self.get_console_url.assert_called_once_with("vm-00001", mode="ssh")
+		self.assertEqual(self.console_events(), [])
 
 	def test_refused_tty_reports_the_atlas_rejection(self):
 		self.get_console_url.side_effect = AtlasRejected("The console is unavailable.")
@@ -206,6 +245,7 @@ class TestServerConsole(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			self.open_as(self.viewer)
 		self.get_console_url.assert_not_called()
+		self.assertEqual(self.console_events(), [])
 
 	def test_another_team_cannot_open_the_console(self):
 		with self.assertRaises(frappe.PermissionError):
@@ -214,6 +254,7 @@ class TestServerConsole(IntegrationTestCase):
 		with self.assertRaises(frappe.DoesNotExistError):
 			self.open_as(self.outsider, team=self.other_team.name)
 		self.get_console_url.assert_not_called()
+		self.assertEqual(self.console_events(), [])
 
 	def test_console_needs_a_running_server(self):
 		self.server.db_set("status", "Stopped")

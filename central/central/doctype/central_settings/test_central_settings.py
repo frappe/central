@@ -99,7 +99,8 @@ class IntegrationTestCentralSettings(IntegrationTestCase):
 
 		links = frappe.get_cached_doc("Central Settings").help_links()
 
-		self.assertEqual(links, {"support_ticket_url": url, "feedback_url": None})
+		self.assertEqual(links["support_ticket_url"], url)
+		self.assertIsNone(links["feedback_url"])
 
 	def test_app_rollout_rejects_steps_out_of_range(self):
 		for fieldname, value in (
@@ -143,3 +144,13 @@ class IntegrationTestCentralSettings(IntegrationTestCase):
 		settings = frappe.get_doc("Central Settings")
 		settings.app_rollout_max_percent = 0
 		settings.save()
+
+	def test_help_links_offer_in_app_tickets_once_the_helpdesk_is_configured(self):
+		settings = frappe.get_doc("Central Settings")
+		settings.helpdesk_url = "https://support.test"
+		settings.helpdesk_api_key = "key"
+		settings.helpdesk_api_secret = "secret"
+		self.assertTrue(settings.help_links()["in_app_tickets"])
+
+		settings.helpdesk_url = ""
+		self.assertFalse(settings.help_links()["in_app_tickets"])

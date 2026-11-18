@@ -14,6 +14,7 @@ from central.billing.api.admin._shared import (
 	_to_inr,
 )
 from central.billing.authz import require_operator
+from central.billing.doctype.invoice.invoice import is_owed, owed_filters
 
 
 @frappe.whitelist()
@@ -23,14 +24,13 @@ def get_summary(from_date: str | None = None, to_date: str | None = None) -> dic
 	invoices = frappe.get_all(
 		"Invoice",
 		filters=[["invoice_type", "=", "Billable"], *_period_filter("period_start", from_date, to_date)],
-		fields=["status", "total", "amount_paid", "currency"],
+		fields=["status", "total", "amount_paid", "currency", "due_date"],
 	)
 	billed = sum(_to_inr(i.total, i.currency) for i in invoices)
 	collected = sum(_to_inr(i.amount_paid, i.currency) for i in invoices)
+	# Owed only: an invoice not yet issued is not a receivable.
 	outstanding = sum(
-		_to_inr(i.total, i.currency) - _to_inr(i.amount_paid, i.currency)
-		for i in invoices
-		if i.status in ("Open", "Overdue")
+		_to_inr(i.total, i.currency) - _to_inr(i.amount_paid, i.currency) for i in invoices if is_owed(i)
 	)
 	by_status = {}
 	for i in invoices:
@@ -141,17 +141,15 @@ def get_payment_analytics(from_date: str | None = None, to_date: str | None = No
 
 @frappe.whitelist()
 def get_overdue_aging(now: str | None = None) -> dict:
-	"""Outstanding Open/Overdue invoices bucketed by days overdue."""
+	"""Outstanding and Overdue invoices bucketed by days overdue."""
 	require_operator()
 	today = frappe.utils.getdate(now)
 	buckets = {label: {"count": 0, "amount": 0.0} for label, _lo, _hi in AGING_BUCKETS}
 	for inv in frappe.get_all(
 		"Invoice",
-		filters=[["status", "in", ["Open", "Overdue"]], ["invoice_type", "=", "Billable"]],
+		filters=[*owed_filters(), ["invoice_type", "=", "Billable"]],
 		fields=["total", "amount_paid", "due_date"],
 	):
-		if not inv.due_date:
-			continue
 		days = (today - frappe.utils.getdate(inv.due_date)).days
 		if days < 0:
 			continue
@@ -198,19 +196,19 @@ def list_all_invoices(status: str | None = None, team: str | None = None, limit:
 	"""Global invoice list (admin) with optional status/team filters — the
 	drill-down target for the Collected / Outstanding cards.
 
-	`status` accepts a literal Invoice status (Paid/Open/Overdue/Draft/…) or the
-	pseudo-filters `outstanding` (Open+Overdue) and `paid`.
+	`status` accepts a literal Invoice status (Paid/Outstanding/Overdue/…) or the
+	pseudo-filters `outstanding` (issued and still owed) and `paid`.
 	"""
 	require_operator()
-	filters = {"invoice_type": "Billable"}
+	filters = [["invoice_type", "=", "Billable"]]
 	if team:
-		filters["team"] = team
+		filters.append(["team", "=", team])
 	if status == "outstanding":
-		filters["status"] = ["in", ["Open", "Overdue"]]
+		filters += owed_filters()
 	elif status == "paid":
-		filters["status"] = "Paid"
+		filters.append(["status", "=", "Paid"])
 	elif status:
-		filters["status"] = status.title()
+		filters.append(["status", "=", status.title()])
 	rows = frappe.get_all(
 		"Invoice",
 		filters=filters,

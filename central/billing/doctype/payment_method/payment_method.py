@@ -5,6 +5,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing.payments import decline
+
 
 class PaymentMethod(Document):
 	def validate(self):
@@ -34,7 +36,50 @@ class PaymentMethod(Document):
 				frappe.ValidationError,
 			)
 
+	def set_instrument_fingerprint(self, gateway_fingerprint: str | None) -> None:
+		"""Keep the gateway's id for the card, UPI ID or account behind this method. It is
+		namespaced by gateway, because each gateway (and each Stripe account) has its own ids."""
+		self.instrument_fingerprint = f"{self.gateway}:{gateway_fingerprint}" if gateway_fingerprint else None
+
+	def record_failure(self, failure: decline.Failure) -> None:
+		"""Keep the gateway's reason for the latest failed setup or check of this method."""
+		self.failed_attempts = frappe.utils.cint(self.failed_attempts) + 1
+		self.last_failed_at = frappe.utils.now_datetime()
+		self.update(decline.failure_fields(failure))
+
+	def get_confirmation(self) -> dict:
+		"""What a confirm route answers. A failed or expired setup says why, in words for the customer."""
+		result = {"payment_method": self.name, "status": self.status}
+		if self.status == "Failed":
+			result["message"] = decline.method_failure_message(
+				self.failure_code, self.decline_code, self.method_type
+			)
+		elif is_expired_setup(self):
+			result["message"] = _("This setup expired. Start again to add it.")
+		return result
+
+
+def held_method_filters() -> dict:
+	"""The `or_filters` that keep the methods a team holds. An abandoned setup stays on
+	record as Cancelled with no gateway id, so the setup funnel can count it, but it
+	never held a card or a mandate."""
+	return {"status": ["!=", "Cancelled"], "gateway_method_id": ["is", "set"]}
+
+
+def is_expired_setup(method) -> bool:
+	"""True for a setup that expired before it was ever validated."""
+	return method.status == "Expired" and not method.validated_at
+
+
+def without_expired_setups(rows: list) -> list:
+	"""The rows, less the setups that expired before they were ever validated."""
+	return [row for row in rows if not is_expired_setup(row)]
+
 
 def on_doctype_update() -> None:
 	# The billing run, its dashboards and the money reports filter on these.
 	frappe.db.add_index("Payment Method", ["team", "status"])
+	# A failed hosted card setup webhook finds its card by this.
+	frappe.db.add_index("Payment Method", ["setup_intent_id"])
+	# The wait after failed setups reads a user's own methods.
+	frappe.db.add_index("Payment Method", ["owner"])

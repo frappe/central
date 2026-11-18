@@ -156,6 +156,12 @@ class TestProductEmailSettings(IntegrationTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "at most one note"):
 			self.product("raven-notes", email_notes=notes).insert()
 
+	def test_one_note_for_each_plan(self):
+		notes = [{"plan": "plan-2vcpu", "note": "One"}, {"plan": "plan-2vcpu", "note": "Two"}]
+
+		with self.assertRaisesRegex(frappe.ValidationError, "at most one note for each plan"):
+			self.product("raven-plans", plan_notes=notes).insert()
+
 	def test_the_getting_started_page_must_be_https(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "https://"):
 			self.product("raven-start", getting_started_url="http://raven.example.test").insert()
@@ -270,7 +276,7 @@ class TestProductLifecycleEmails(SiteOnAMachine):
 
 		self.assertIn(f'fc-btn-primary" href="{self.site().url}/raven"', html)
 		self.assertIn('fc-btn-secondary" href="https://raven.example.test/start"', html)
-		self.assertLess(html.index("Get started"), html.index("View docs"))
+		self.assertLess(html.index("Get started"), html.index("Documentation"))
 
 	def test_welcome_emails_link_the_created_site_and_product_landing_route(self):
 		product = self.product(landing_route="/raven")
@@ -280,9 +286,17 @@ class TestProductLifecycleEmails(SiteOnAMachine):
 				html = self.email_for(product)
 				self.assertIn(f'href="{self.site().url}/raven"', html)
 
+	def test_replies_go_to_the_product_reply_to_address(self):
+		self.email_for(self.product(reply_to="sales@example.test"))
+		context = engine._resolve_context(self.team.name, self.event.name, {}, self.site().name, "Site")
+		with patch("central.notification.engine.frappe.sendmail") as sendmail:
+			engine.send_notification_emails(["Administrator"], self.event.name, context)
+
+		self.assertEqual(sendmail.call_args.kwargs["reply_to"], "sales@example.test")
+
 	def test_plain_site_ready_email_links_the_created_site(self):
 		context = engine._resolve_context(self.team.name, "site_ready", {}, self.site().name, "Site")
-		_, html = engine._notification_email(self.event, context)
+		_, html, _ = engine._notification_email(self.event, context)
 		self.assertIn(f'href="{self.site().url}"', html)
 
 	def test_site_emails_name_and_link_the_chosen_name(self):
@@ -300,7 +314,7 @@ class TestProductLifecycleEmails(SiteOnAMachine):
 
 		context = engine._resolve_context(self.team.name, "site_ready", None, site.name, "Site")
 		context["reference_title"] = engine._get_reference_title(self.team.name, "Site", site.name)
-		subject, html = engine._notification_email(self.event, context)
+		subject, html, _ = engine._notification_email(self.event, context)
 
 		self.assertEqual(subject, f"Site ready: {site.rename_target}")
 		self.assertIn(f"Site {site.rename_target} is ready.", html)

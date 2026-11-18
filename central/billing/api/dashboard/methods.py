@@ -6,6 +6,7 @@ setup, and fallback-order management. Gateway secrets are never returned.
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
@@ -17,20 +18,24 @@ from central.billing.api.dashboard._shared import (
 	_resolve_team,
 	_team_currency,
 )
+from central.billing.doctype.payment_method.payment_method import without_expired_setups
+from central.billing.payments import decline
 
 
 @frappe.whitelist()
 def list_payment_methods(team: str | None = None) -> list[dict]:
 	"""Payment methods — display fields only; gateway secrets are never returned.
 
-	Hides Cancelled methods and ones still mid-setup (Pending Validation): until a
-	card clears the micro-charge it isn't usable, isn't in the charge order, and
-	would only confuse the list (it has no label/expiry yet)."""
+	Hides Cancelled methods, ones still mid-setup (Pending Validation) and setups
+	that expired unfinished: until a card clears the micro-charge it isn't usable,
+	isn't in the charge order, and would only confuse the list (it has no
+	label/expiry yet). A card that expired after use stays listed."""
 	team = _resolve_team(team)
 	rows = frappe.get_all(
 		"Payment Method",
 		filters={"team": team, "status": ["not in", ["Cancelled", "Pending Validation"]]},
 		fields=[
+			"validated_at",
 			"name",
 			"method_type",
 			"status",
@@ -45,7 +50,10 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 		],
 		order_by="priority asc, creation asc",
 	)
-	return rows
+	listed = without_expired_setups(rows)
+	for row in listed:
+		del row["validated_at"]
+	return listed
 
 
 @frappe.whitelist()
@@ -104,6 +112,7 @@ def get_payment_method_options(team: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60, user_based=True)
 def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> dict:
 	"""Begin adding a card (gateway SetupIntent → client_secret). Real PAN is
 	collected client-side by the gateway SDK (PCI), never by our server."""
@@ -119,21 +128,42 @@ def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> 
 		return payments.initiate_payment_method_setup(team, gateway)
 
 
-@frappe.whitelist(methods=["POST"])
-def confirm_card(payment_method: str | None = None) -> dict:
-	"""Confirm a card the gateway SDK saved — runs the micro-charge validation.
+@frappe.whitelist()
+def get_setup_wait(team: str | None = None) -> dict:
+	"""How long the caller must wait before a new setup or top-up. It creates nothing."""
+	team = _resolve_team(team)
+	from central.billing.payments import setup_lockout
 
-	The card, its label, expiry and any India mandate are read from the gateway by the
-	setup this method was opened with, never taken from the request."""
+	wait = setup_lockout.wait_for(team, frappe.session.user)
+	if not wait:
+		return {"message": None, "seconds": None}
+	return {"message": setup_lockout.wait_message(wait), "seconds": int(wait.total_seconds())}
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60, user_based=True)
+def confirm_card(payment_method: str | None = None) -> dict:
+	"""Confirm a card the customer saved in the console card dialog.
+
+	1. The caller must hold billing manage on the method's team.
+	2. The card, its label, expiry, mandate and any refusal are read from the gateway
+	   by the setup this method was opened with, never taken from the request.
+	3. A saved card runs the micro-charge validation and answers its confirmation.
+	4. A card the bank refused at setup answers why and what to do next, and the
+	   method stays Pending Validation. The setup webhook records the failure."""
 	from central.billing.payments import payments
 
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
 	_require_manage(team)
-	method = payments.confirm_payment_method(payment_method)
-	return {"payment_method": method.name, "status": method.status}
+	try:
+		return payments.confirm_payment_method(payment_method).get_confirmation()
+	except payments.CardDeclinedAtSetup as declined:
+		frappe.clear_last_message()  # the reason goes back in the answer, not as a second alert
+		return {"payment_method": payment_method, "status": "Pending Validation", "message": str(declined)}
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60, user_based=True)
 def setup_payment_method_order(
 	team: str | None = None,
 	gateway: str | None = None,
@@ -185,8 +215,6 @@ def _fallback_reason(team: str, entry: dict | None, after_decline: bool) -> str 
 	field feeds the gateway comparison report, so a wrong value there is a wrong
 	answer to which rail authorises better.
 	"""
-	from central.billing.payments import decline
-
 	instrument_reason = entry["fallback_reason"] if entry else None
 	if not after_decline:
 		return instrument_reason
@@ -196,6 +224,7 @@ def _fallback_reason(team: str, entry: dict | None, after_decline: bool) -> str 
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60, user_based=True)
 def confirm_payment_method_order(
 	payment_method: str | None = None,
 	razorpay_payment_id: str | None = None,
@@ -216,7 +245,7 @@ def confirm_payment_method_order(
 			"razorpay_signature": razorpay_signature,
 		},
 	)
-	return {"payment_method": method.name, "status": method.status}
+	return method.get_confirmation()
 
 
 @frappe.whitelist(methods=["POST"])

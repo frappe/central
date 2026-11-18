@@ -8,10 +8,10 @@ Two phases, decoupled to avoid the 1st-of-month bottleneck:
     stale, compute day-weighted line items from Subscription Change segments
     (each Created/Plan Changed row opens a segment at its locked_rate snapshot,
     running until the next change, with the max(1, end-start) floor), and
-    create a `Draft`.
+    create an `Outstanding` invoice.
 
   Phase 2 (1st, light/parallel): one job per draft applies credits, claims the
-    `Draft -> Open` transition atomically (no invoice processed twice), and
+    start of collection atomically (no invoice processed twice), and
     leaves collection to the charge step (#10).
 
 Subscription Change already encodes both the time windows (effective_at per

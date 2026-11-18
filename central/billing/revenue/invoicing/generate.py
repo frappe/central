@@ -4,7 +4,7 @@
 
 Per team/subscription, compute day-weighted fixed lines (from Subscription
 Change rate-snapshot segments) plus metered overage, apply the commitment
-adjustment, and create a `Draft`. Idempotent per (team, period) — and idempotent
+adjustment, and create an `Outstanding` invoice. Idempotent per (team, period) — and idempotent
 *under concurrency*, which is a different and stronger claim (ADR 0018).
 
 The "does an invoice already exist?" read below is a fast path, not the guarantee.
@@ -20,8 +20,17 @@ import time
 
 import frappe
 
+from central.billing import settings
 from central.billing.catalog import commitments
+from central.billing.doctype.billing_run_team.billing_run_team import (
+	BELOW_MINIMUM,
+	INVOICED,
+	NOTHING_TO_BILL,
+	has_same_outcome,
+	record_outcome,
+)
 from central.billing.revenue.invoicing.lines import compute_line_items, team_line_items
+from central.billing.states import record_team_event
 
 
 def _live_invoice(team: str, period_start, period_end, for_update: bool = False) -> str | None:
@@ -142,7 +151,7 @@ def reconcile_subscription(subscription_doc):
 def generate_draft_invoice(subscription: str, period_start, period_end):
 	"""Reconcile-then-draft one subscription. Idempotent per (subscription, period).
 
-	Returns the (existing or newly created) Draft invoice name, or None when the
+	Returns the (existing or newly created) invoice name, or None when the
 	subscription had no billable runtime in the period.
 	"""
 	sub = frappe.get_doc("Subscription", subscription)
@@ -206,7 +215,7 @@ def _rate(team: str, lines: list[dict], period_start, period_end):
 			"doctype": "Invoice",
 			"team": team,
 			"invoice_type": invoice_type_for(team),
-			"status": "Draft",
+			"status": "Outstanding",
 			"period_start": period_start,
 			"period_end": period_end,
 			"currency": currency,
@@ -303,15 +312,40 @@ def _generate_team_invoice(team: str, period_start, period_end):
 	"""
 	existing = _live_invoice(team, period_start, period_end)
 	if existing:
+		record_outcome(team, period_end, INVOICED, invoice=existing)
 		return existing
 
 	rated = rate_team_period(team, period_start, period_end)
 	if not rated:
+		record_outcome(team, period_end, NOTHING_TO_BILL, reason="Nothing billable in this month.")
+		return None
+	if is_below_minimum(rated.payload):
+		_forgive(team, period_end, rated.payload)
 		return None
 
 	name = _insert_invoice(rated.payload)
 	commitments.mark_breached(rated.commitment)
+	record_outcome(team, period_end, INVOICED, invoice=name)
+	record_team_event(team, "Invoice Generated", "Invoice", reason=name, amount=rated.payload["total"])
 	return name
+
+
+def is_below_minimum(payload: dict) -> bool:
+	"""Whether the month totals less than the smallest amount worth invoicing in its currency."""
+	return frappe.utils.flt(payload["total"]) < settings.minimum_invoice_amount(payload["currency"])
+
+
+def _forgive(team: str, period_end, payload: dict) -> None:
+	"""Write off a month below the minimum. No invoice is made, and the amount stays on record."""
+	reason = (
+		f"{payload['currency']} {payload['total']} is below the minimum invoice amount and was written off."
+	)
+	if has_same_outcome(team, period_end, BELOW_MINIMUM, reason):
+		return
+	record_outcome(team, period_end, BELOW_MINIMUM, reason=reason)
+	record_team_event(
+		team, "Invoice Skipped Below Minimum", "Invoice", reason=reason, amount=payload["total"]
+	)
 
 
 _INVOICE_DEADLOCK_RETRIES = 5

@@ -95,10 +95,12 @@ currency** (rates live in standalone **Catalog Rate**, not on the Plan).
   spend caps a team climbs through. Caps resolve live (`catalog/entitlements.get_team_caps`);
   there is no per-team tier doctype.
 - **Tax Profile** per team drives GST (additive) / SEZ (zero-with-reason) / TDS (withholding)
-  — `revenue/tax.resolve_tax`. India GST codes live in `india_gst.py`.
+  — `revenue/tax.resolve_tax`. India GST codes live in `india_gst.py`. GST is mandatory for
+  an Indian team: its profile must be GST or zero-rated with a reason, and a team with no
+  profile is billed at the default GST rate. A team outside India needs no profile and pays no tax.
 
 ### Step 4 · Customer Team + Billing Profile
-Charging a card needs a **complete Billing Profile**. Its `currency` is the source of truth (gateway-backed, locks after first activity). Credit can fund server creation without a complete profile. The team's invoices are then held at Draft until the billing details arrive. A daily job reminds the team, and operators get an alert after `billing_details_grace_days`.
+Charging a card needs a **complete Billing Profile**. Its `currency` is the source of truth (gateway-backed, locks after first activity). Credit can fund server creation without a complete profile. The team's invoices then stay Outstanding with no due date (held) until the billing details arrive. A daily job reminds the team, and operators get an alert after `billing_details_grace_days`.
 ```bash
 pilot frappe --site central.localhost execute central.billing.payments.profile.create_or_update_billing_profile \
   --kwargs '{"team": "<TEAM>"}'
@@ -134,7 +136,7 @@ pilot frappe --site central.localhost execute central.billing.revenue.invoicing.
   --kwargs '{"period_start":"2026-06-01","period_end":"2026-06-30"}'
 ```
 Lines come from `invoicing/lines.compute_line_items` (day-weighted Subscription Change
-segments) + metered overage + commitment discount + tax. Result: **Invoice (Draft)**.
+segments) + metered overage + commitment discount + tax. Result: **Invoice (Outstanding, no due date)**.
 
 ### Step 8 · Open & collect (settle)
 ```bash
@@ -142,15 +144,14 @@ segments) + metered overage + commitment discount + tax. Result: **Invoice (Draf
 pilot frappe --site central.localhost execute central.billing.revenue.invoicing.open_drafts \
   --kwargs '{"cutoff":"2026-06-30"}'
 ```
-A Billable draft for a team without billing details stays Draft (`held: billing_details`). It is settled when the team completes its Billing Profile.
+A Billable invoice for a team without billing details keeps no due date (`held: billing_details`). It is settled when the team completes its Billing Profile.
 `open_and_collect` applies credits first, charges the card for the remainder, and flips
-Draft → Open → (on webhook) Paid. On a local bench you won't receive a live webhook — the
+Outstanding, due date set → (on webhook) Paid. On a local bench you won't receive a live webhook — the
 e2e suite delivers it via `tests/e2e.py:deliver_webhook` from a real captured txn id; for a
 manual demo, the seed path already shows Paid invoices.
 
 ### Step 9 · Dunning (unpaid path)
-Leave an invoice unpaid and run the daily job to walk the Day 1/3/7 retries → past_due →
-suspend:
+Leave an invoice unpaid and run the daily job to walk the retries after the payment date → past_due → suspend on the suspension date:
 ```bash
 pilot frappe --site central.localhost execute central.billing.revenue.dunning.run_dunning
 ```

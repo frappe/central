@@ -46,9 +46,9 @@ CATEGORIES = [
 		"configurator_builder": "VM Rungs",
 		"provision_target": "Server",
 		"sub_category_label": "Optimization profile",
-		"description": "Flat-rate compute bundles (vCPU + memory + disk + transfer).",
+		"description": "Flat-rate compute bundles (vCPU + memory + disk + transfer, with optional remote storage).",
 		"billing_type": "Fixed",
-		"allowed": ["Compute", "Memory", "Disk", "Transfer"],
+		"allowed": ["Compute", "Memory", "Disk", "Transfer", "Storage"],
 		# VM optimisation profiles carry the composed-config bounds (ADR 0009): the RAM
 		# ratio (GB per vCPU), the allowed vCPU steps, and the disk range the slider is
 		# bounded to. Storage/Memory Optimised share ratio 8; they differ by disk.

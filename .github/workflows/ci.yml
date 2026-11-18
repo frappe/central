@@ -19,11 +19,38 @@ jobs:
       - name: Every patch module is in patches.txt
         run: python3 scripts/check_patches.py
 
+  changes:
+    runs-on: ubuntu-latest
+    name: Test groups
+    outputs:
+      groups: ${{ steps.groups.outputs.groups }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Pick the test groups this change needs
+        id: groups
+        run: |
+          # Billing tests never run these modules. A link from billing to one of them makes billing run anyway.
+          skippable='investigator|www|oidc|support|geo'
+          unrelated="^(dashboard|docs|e2e|llm|\.claude)/|\.md\$|^central/($skippable)(/|\.py\$)"
+          if [ "${{ github.event_name }}" = pull_request ] \
+            && ! git grep -qE "central[./]($skippable)([^a-z_]|$)" -- central/billing \
+            && ! git diff --name-only HEAD^1 HEAD | grep -qvE "$unrelated"; then
+            echo 'groups=["core"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'groups=["core", "billing"]' >> "$GITHUB_OUTPUT"
+          fi
+
   tests:
     runs-on: ubuntu-latest
+    needs: changes
     strategy:
       fail-fast: false
-    name: Server
+      matrix:
+        group: ${{ fromJSON(needs.changes.outputs.groups) }}
+    name: Server tests (${{ matrix.group }})
 
     services:
       redis-cache:
@@ -108,6 +135,15 @@ jobs:
         working-directory: /home/runner/frappe-bench
         run: |
           bench --site test_site set-config allow_tests true
-          bench --site test_site run-tests --app central
+          cd sites && ../env/bin/python ../apps/central/scripts/run_test_group.py test_site ${{ matrix.group }}
         env:
           TYPE: server
+
+  server:
+    runs-on: ubuntu-latest
+    name: Server
+    needs: tests
+    if: always()
+    steps:
+      - name: Every server test build passed
+        run: test "${{ needs.tests.result }}" = "success"

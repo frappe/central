@@ -24,6 +24,7 @@ from central.infrastructure.doctype.virtual_machine.virtual_machine import Virtu
 from central.integrations import servers
 from central.integrations.atlas import AtlasClient
 from central.integrations.pilot import get_bootstrap_metadata
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 
 # A region stamps its own clock on a machine, so allow for a little drift when deciding
 # which machines are new enough to have come from this request.
@@ -270,6 +271,7 @@ def _finalize(request) -> None:
 				create_server_subscription(request, server_id)
 			PilotCredential.link_server(request.credential, server_id)
 			UserMailAccount.link_server(request.name, server_id)
+			AITrialKey.link_server(request.name, server_id)
 			request.db_set({"server": server_id, "resource_id": server_id})
 		# Finalize local ownership and billing together, independently of the next remote read.
 		frappe.db.commit()
@@ -326,7 +328,7 @@ def process_resize(action) -> None:
 		if not first_dispatch:
 			servers.observe_server(server)
 			server.reload()
-		if not _matches_shape(server, target):
+		if _needs_resize(server, target, configuration):
 			servers.resize_server(server, target)
 			server.reload()
 		if not _matches_shape(server, target):
@@ -349,8 +351,8 @@ def process_resize(action) -> None:
 	try:
 		from central.billing.catalog.subscriptions import apply_resize_billing
 
-		apply_resize_billing(action)
 		server.db_set("plan", configuration.plan, notify=False)
+		apply_resize_billing(action)
 	except Exception:
 		diagnostic = frappe.get_traceback()
 		frappe.db.rollback()
@@ -364,6 +366,13 @@ def process_resize(action) -> None:
 		return
 
 	action.transition("Succeeded")
+
+
+def _needs_resize(server: VirtualMachine, shape: dict, configuration) -> bool:
+	"""A converted trial's move has no subscription. Only the resize starts its server and turns
+	idle sleep off, so it runs even when the shape already matches. With a matching shape it
+	does not stop the server."""
+	return not configuration.subscription or not _matches_shape(server, shape)
 
 
 def _matches_shape(server: VirtualMachine, shape: dict) -> bool:

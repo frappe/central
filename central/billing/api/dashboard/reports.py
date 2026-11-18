@@ -24,6 +24,7 @@ import frappe
 from frappe import _
 
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
+from central.billing.doctype.invoice.invoice import is_issued, is_owed, owed_filters
 
 MAX_MONTHS = 36
 
@@ -44,7 +45,7 @@ def get_spend_history(team: str | None = None, months: int = 12) -> dict:
 			"status": ["!=", "Cancelled"],
 			"period_start": [">=", start],
 		},
-		fields=["name", "period_start", "total", "amount_paid", "status", "currency"],
+		fields=["name", "period_start", "subtotal", "total", "amount_paid", "status", "currency"],
 		order_by="period_start asc",
 	)
 
@@ -87,6 +88,7 @@ def get_statement(team: str | None = None, from_date: str | None = None, to_date
 			"amount_paid",
 			"output_tax_amount",
 			"expected_collection",
+			"due_date",
 		],
 		order_by="period_start asc",
 	)
@@ -109,7 +111,7 @@ def get_statement(team: str | None = None, from_date: str | None = None, to_date
 			sum(
 				frappe.utils.flt(i.expected_collection) - frappe.utils.flt(i.amount_paid)
 				for i in invoices
-				if i.status in ("Open", "Overdue")
+				if is_owed(i)
 			),
 			2,
 		),
@@ -119,6 +121,8 @@ def get_statement(team: str | None = None, from_date: str | None = None, to_date
 				"period_start": str(i.period_start),
 				"period_end": str(i.period_end),
 				"status": i.status,
+				"due_date": i.due_date,
+				"is_issued": is_issued(i),
 				"total": frappe.utils.flt(i.total),
 				"tax": frappe.utils.flt(i.output_tax_amount),
 				"credit_applied": frappe.utils.flt(i.credit_applied),
@@ -255,11 +259,18 @@ def export_csv(
 
 	rows = build(team, from_date, to_date)
 	buffer = io.StringIO()
-	csv.writer(buffer).writerows(rows)
+	csv.writer(buffer).writerows([[_safe_cell(cell) for cell in row] for row in rows])
 	frappe.response["type"] = "binary"
 	frappe.response["filename"] = f"{report}-{frappe.utils.getdate()}.csv"
 	frappe.response["filecontent"] = buffer.getvalue().encode("utf-8")
 	frappe.response["doctype"] = None
+
+
+def _safe_cell(value):
+	"""A text cell a spreadsheet would run as a formula is prefixed with a quote."""
+	if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+		return "'" + value
+	return value
 
 
 def _statement_csv(team, from_date, to_date) -> list[list]:
@@ -325,7 +336,8 @@ def _line_items(team: str, start) -> list[dict]:
 		_plan_family_map,
 	)
 
-	lines = billable_line_items({"team": team, "from_date": str(start)})
+	# A customer sees all its usage, including a month the company waived.
+	lines = billable_line_items({"team": team, "from_date": str(start), "include_internal_and_waived": 1})
 	family_of_plan = _plan_family_map({line["plan"] for line in lines})
 	family_of_rt = _metered_resource_family_map()
 
@@ -365,7 +377,8 @@ def _by_month(invoices, months: int, currency: str) -> list[dict]:
 	totals: dict[str, dict] = {}
 	for inv in invoices:
 		key = frappe.utils.getdate(inv.period_start).strftime("%Y-%m")
-		bucket = totals.setdefault(key, {"total": 0.0, "paid": 0.0})
+		bucket = totals.setdefault(key, {"subtotal": 0.0, "total": 0.0, "paid": 0.0})
+		bucket["subtotal"] += frappe.utils.flt(inv.subtotal)
 		bucket["total"] += frappe.utils.flt(inv.total)
 		bucket["paid"] += frappe.utils.flt(inv.amount_paid)
 
@@ -374,11 +387,12 @@ def _by_month(invoices, months: int, currency: str) -> list[dict]:
 	for offset in range(months - 1, -1, -1):
 		day = frappe.utils.add_months(today, -offset)
 		key = day.strftime("%Y-%m")
-		bucket = totals.get(key, {"total": 0.0, "paid": 0.0})
+		bucket = totals.get(key, {"subtotal": 0.0, "total": 0.0, "paid": 0.0})
 		out.append(
 			{
 				"month": key,
 				"label": day.strftime("%b"),
+				"subtotal": frappe.utils.flt(bucket["subtotal"], 2),
 				"total": frappe.utils.flt(bucket["total"], 2),
 				"paid": frappe.utils.flt(bucket["paid"], 2),
 				"currency": currency,
@@ -391,12 +405,12 @@ def _outstanding_before(team: str, before) -> float:
 	"""What was still unpaid when the window opened."""
 	rows = frappe.get_all(
 		"Invoice",
-		filters={
-			"team": team,
-			"invoice_type": "Billable",
-			"status": ["in", ("Open", "Overdue")],
-			"period_start": ["<", before],
-		},
+		filters=[
+			*owed_filters(),
+			["team", "=", team],
+			["invoice_type", "=", "Billable"],
+			["period_start", "<", before],
+		],
 		fields=["expected_collection", "amount_paid"],
 	)
 	return frappe.utils.flt(

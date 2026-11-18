@@ -1,34 +1,38 @@
 <script setup lang="ts">
-import { Alert } from 'frappe-ui'
-import { computed, ref } from 'vue'
-import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
+import { Alert, ScrollArea } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
 import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
 import CycleFacts from '@/components/billing/CycleFacts.vue'
 import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
 import EstimatedCard from '@/components/billing/EstimatedCard.vue'
+import GstStateBanner from '@/components/billing/GstStateBanner.vue'
 import GstStatusBanner from '@/components/billing/GstStatusBanner.vue'
 import LimitsCard from '@/components/billing/LimitsCard.vue'
 import OutstandingAlert from '@/components/billing/OutstandingAlert.vue'
 import PayingForCard from '@/components/billing/PayingForCard.vue'
 import PayingForPanel from '@/components/billing/PayingForPanel.vue'
-import PaymentMethodsCard from '@/components/billing/PaymentMethodsCard.vue'
 import PaymentSchedulePanel from '@/components/billing/PaymentSchedulePanel.vue'
 import ProjectsPanel from '@/components/billing/ProjectsPanel.vue'
-import RefundsCard from '@/components/billing/RefundsCard.vue'
 import SpendCard from '@/components/billing/SpendCard.vue'
-import StatementCard from '@/components/billing/StatementCard.vue'
-import StatementPanel from '@/components/billing/StatementPanel.vue'
-import StopBillingCard from '@/components/billing/StopBillingCard.vue'
 import TiersPanel from '@/components/billing/TiersPanel.vue'
 import TrialBillingBanner from '@/components/billing/TrialBillingBanner.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
+import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingReports } from '@/composables/useBillingReports'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { useCapabilities } from '@/composables/useCapabilities'
+import { useServerMapData } from '@/composables/useServerMapData'
+import { sessionReady, useSession } from '@/composables/useSession'
+import { fetchBillingSetup } from '@/data/billingSetup'
+import { parseTopupAmount } from '@/lib/topupAmount'
 
-const { complete, setupDialogOpen, requireSetup } = useBillingSetup()
+const { complete, profile, setupDialogOpen, requireSetup } = useBillingSetup()
+// Until the profile loads `complete` is false, so the banner waits for it.
+const needsDetails = computed(() => !!profile.value && !complete.value)
 const { currency, reloadMoney } = useBillingOverview()
 const reports = useBillingReports()
 
@@ -48,7 +52,6 @@ type Tray =
 	| 'payingFor'
 	| 'projects'
 	| 'tiers'
-	| 'statement'
 	| null
 
 const tray = ref<Tray>(null)
@@ -67,77 +70,117 @@ const showSchedule = trayModel('schedule')
 const showPayingFor = trayModel('payingFor')
 const showProjects = trayModel('projects')
 const showTiers = trayModel('tiers')
-const showStatement = trayModel('statement')
 
 const showTopup = ref(false)
+const topupAmount = ref<number>()
 
-const onAddCredits = () => {
+// The trial's Upgrade dialog opens here, so the customer stays on Billing.
+const { servers } = useServerMapData()
+const upgradeServerName = ref<string | null>(null)
+const upgradeServer = computed(
+	() =>
+		servers.value.find((row) => row.name === upgradeServerName.value) ?? null,
+)
+const showUpgrade = computed({
+	get: () => !!upgradeServer.value,
+	set: (open: boolean) => {
+		if (!open) upgradeServerName.value = null
+	},
+})
+
+const onAddCredits = (amount?: number) => {
+	topupAmount.value = amount
 	if (requireSetup()) showTopup.value = true
 }
+
+// A top-up reminder links here with its team and the amount; billing managers get the dialog.
+const route = useRoute()
+const router = useRouter()
+const { activeTeam, teams, setActiveTeam } = useSession()
+const { canManageBilling, reload: reloadCapabilities } = useCapabilities()
+
+const isOtherTeam = (team: unknown) =>
+	team !== undefined && team !== activeTeam.value
+
+async function openTopupLink(value: unknown) {
+	await sessionReady
+	const team = route.query.team
+	if (isOtherTeam(team) && teams.value.some((row) => row.name === team)) {
+		try {
+			// Switching reloads the page with the same link, now on its team.
+			setActiveTeam(team as string)
+			return
+		} catch {
+			// No browser storage: stay on this team and drop the link.
+		}
+	}
+
+	const { topup: _topup, team: _team, ...query } = route.query
+	router.replace({ query })
+	const amount = parseTopupAmount(value)
+	if (!amount || !activeTeam.value || isOtherTeam(team)) return
+	await Promise.all([fetchBillingSetup(activeTeam.value), reloadCapabilities()])
+	if (canManageBilling.value) onAddCredits(amount)
+}
+
+watch(
+	() => route.query.topup,
+	(value) => {
+		if (value !== undefined) void openTopupLink(value)
+	},
+	{ immediate: true },
+)
 </script>
 
 <template>
 	<div class="relative flex h-full min-h-0">
-		<div
-			class="grid min-w-0 flex-1 auto-rows-max grid-cols-[min(64rem,100%)] content-start justify-center gap-4 overflow-y-auto px-3 pb-24 pt-3 [container-type:inline-size] md:gap-5 md:px-6 md:pt-7"
-		>
-			<Alert
-				v-if="!complete"
-				theme="amber"
-				title="Add your billing details"
-				description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
-				:primary-action="{ label: 'Add billing details', onClick: () => { setupDialogOpen = true } }"
-			/>
-			<OutstandingAlert
-				:statement="reports.statement.data ?? null"
-				:attempts="reports.attempts.data ?? null"
-			/>
-			<CollectionActionBanner />
-			<TrialBillingBanner />
-			<GstStatusBanner @edit="setupDialogOpen = true" />
-
-			<section
-				class="grid overflow-hidden rounded-6 border border-outline-gray-1 bg-surface-base [@container_(min-width:46rem)]:grid-cols-[minmax(0,1fr)_19rem]"
-			>
-				<EstimatedCard
-					:active="showCycleBreakdown"
-					@open="showCycleBreakdown = true"
-					@open-tiers="showTiers = true"
-				/>
-				<CycleFacts
-					class="border-t border-outline-gray-1 [@container_(min-width:46rem)]:border-l [@container_(min-width:46rem)]:border-t-0"
-					:outstanding="outstanding"
-					:schedule-active="showSchedule"
-					:wallet-active="showWalletHistory"
-					@open-schedule="showSchedule = true"
-					@open-wallet="showWalletHistory = true"
-					@add-credit="onAddCredits"
-				/>
-			</section>
-
-			<SpendCard :reports="reports" />
-			<LimitsCard @open-tiers="showTiers = true" />
-			<PayingForCard
-				@open="showPayingFor = true"
-				@open-projects="showProjects = true"
-			/>
-
+		<ScrollArea class="min-w-0 flex-1">
 			<div
-				class="grid gap-4 md:gap-5 [@container_(min-width:50rem)]:grid-cols-2"
+				class="grid auto-rows-max grid-cols-[min(64rem,100%)] content-start justify-center gap-3 px-3 pb-24 pt-3 [container-type:inline-size] md:gap-4 md:px-6 md:pt-4 lg:pt-8"
 			>
-				<PaymentMethodsCard />
-				<BillingContactTaxCard @edit="setupDialogOpen = true" />
-			</div>
+				<OutstandingAlert
+					:statement="reports.statement.data ?? null"
+					:attempts="reports.attempts.data ?? null"
+				/>
+				<Alert
+					v-if="needsDetails"
+					theme="amber"
+					title="Add your billing details"
+					description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
+					:primary-action="{ label: 'Add billing details', onClick: () => { setupDialogOpen = true } }"
+				/>
+				<CollectionActionBanner @add-credit="onAddCredits" />
+				<TrialBillingBanner @upgrade="upgradeServerName = $event" />
+				<GstStatusBanner @edit="setupDialogOpen = true" />
+				<GstStateBanner @edit="setupDialogOpen = true" />
 
-			<StatementCard
-				:statement="reports.statement.data ?? null"
-				:loading="reports.statementLoading.value"
-				:export-url="reports.exportUrl('statement')"
-				@open="showStatement = true"
-			/>
-			<RefundsCard />
-			<StopBillingCard />
-		</div>
+				<div class="grid gap-3 md:gap-4 lg:grid-cols-3">
+					<EstimatedCard
+						class="rounded-6 border border-outline-gray-1 lg:col-span-2"
+						:active="showCycleBreakdown"
+						@open="showCycleBreakdown = true"
+						@open-tiers="showTiers = true"
+					/>
+					<CycleFacts
+						class="rounded-6 border border-outline-gray-1"
+						:outstanding="outstanding"
+						:wallet-active="showWalletHistory"
+						@open-schedule="showSchedule = true"
+						@open-wallet="showWalletHistory = true"
+						@add-credit="onAddCredits()"
+					/>
+				</div>
+
+				<PayingForCard
+					@open="showPayingFor = true"
+					@open-projects="showProjects = true"
+				/>
+
+				<SpendCard :reports="reports">
+					<LimitsCard @open-tiers="showTiers = true" />
+				</SpendCard>
+			</div>
+		</ScrollArea>
 
 		<WalletHistoryPanel v-model:open="showWalletHistory" />
 		<CycleBreakdownPanel v-model:open="showCycleBreakdown" />
@@ -145,13 +188,18 @@ const onAddCredits = () => {
 		<PayingForPanel v-model:open="showPayingFor" />
 		<ProjectsPanel v-model:open="showProjects" />
 		<TiersPanel v-model:open="showTiers" />
-		<StatementPanel
-			v-model:open="showStatement"
-			:statement="reports.statement.data ?? null"
-			:loading="reports.statementLoading.value"
-		/>
 	</div>
 
 	<EditBillingProfileDialog v-model="setupDialogOpen" />
-	<TopupDialog v-model="showTopup" :currency="currency" @done="reloadMoney" />
+	<TopupDialog
+		v-model="showTopup"
+		:currency="currency"
+		:initial-amount="topupAmount"
+		@done="reloadMoney"
+	/>
+	<ResizeServerDialog
+		v-model:open="showUpgrade"
+		:server="upgradeServer"
+		@resized="reloadMoney"
+	/>
 </template>

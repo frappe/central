@@ -20,7 +20,7 @@ const logging = computed(
 
 const description = computed(
 	() =>
-		'Keep prompts and model replies for a short time, so support can look into a failed request.' +
+		'Keep prompts and model replies, so support can look into a failed request.' +
 		(props.canManage ? '' : ' Ask a team admin to change this.'),
 )
 
@@ -44,7 +44,9 @@ const setLogging = async (enabled: boolean): Promise<void> => {
 		<SettingsRow title="Log prompts and outputs" :description="description">
 			<Switch
 				:model-value="logging"
-				:disabled="!canManage || requested !== null"
+				:disabled="
+					!canManage || !!ai?.spend?.suspended || requested !== null
+				"
 				@update:model-value="setLogging"
 			/>
 		</SettingsRow>

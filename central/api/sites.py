@@ -95,9 +95,11 @@ def create_trial_team(
 	utm_campaign: str | None = None,
 	referrer: str | None = None,
 	product: str | None = None,
+	team: str | None = None,
 ) -> dict:
-	"""Give a caller with no team a team before the trial funnel asks for a site name. The
-	browser sends how the signup first arrived, which the new team keeps."""
+	"""The team the trial funnel uses, before it asks for a site name: `team` when the caller can
+	create servers there, else another such team, else a new one. The browser sends how the
+	signup first arrived, which a new team keeps."""
 	from central.site_provisioning import create_trial_team as create
 
 	attribution = {
@@ -108,7 +110,7 @@ def create_trial_team(
 		"product": product,
 	}
 
-	return {"team": create(frappe.session.user, attribution)}
+	return {"team": create(frappe.session.user, attribution, team)}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -170,7 +172,10 @@ def login_site(name: str, product: str | None = None) -> dict:
 )
 def onboarding_status(team: str | None = None, product: str | None = None) -> dict:
 	"""Resume this product's site or creation within the authorized team, with the journey the
-	waiting page follows."""
+	waiting page follows, and whether a new site of this product would be a free trial."""
+	from central.signups.doctype.product.product import get_signup_product
+	from central.signups.eligibility import is_free_trial_creation
+
 	site, action = find_onboarding(team, product)
 	state = site_state(site, with_login=False) if site else None
 	creation = (
@@ -178,11 +183,15 @@ def onboarding_status(team: str | None = None, product: str | None = None) -> di
 		if not site and action and action.status in (*PENDING_STATES, "Failed", "Timed Out")
 		else None
 	)
+	is_free_trial = is_free_trial_creation(team, product)
 	if not state and not creation:
-		return {"site": None, "creation": None, "journey": None}
+		# A new site needs a product that still takes signups. A started one resumes regardless.
+		if product:
+			get_signup_product(product)
+		return {"site": None, "creation": None, "journey": None, "is_free_trial": is_free_trial}
 
 	journey = SetupJourney(action, site, state)
-	return {"site": state, "creation": creation, "journey": journey.as_dict()}
+	return {"site": state, "creation": creation, "journey": journey.as_dict(), "is_free_trial": is_free_trial}
 
 
 def find_onboarding(team: str | None, product: str | None) -> tuple[Site | None, frappe._dict | None]:

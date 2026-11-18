@@ -28,13 +28,27 @@ at the gateway and settles it through the same idempotent path.
 
 import frappe
 
+from central.billing.platform.jobs import each_isolated
+from central.billing.platform.records import save_billing_record
 from central.billing.states import transition
 
 _AMBIGUOUS = ("Initiated", "Authorised")
 _GATEWAY_SUCCESS = {"succeeded", "captured", "paid", "completed"}
-_GATEWAY_FAILED = {"failed", "canceled", "cancelled", "declined", "expired", "voided"}
+# Stripe leaves a declined charge at requires_payment_method; it will not complete. One at
+# requires_action can still complete if the customer authenticates, so it stays open (and
+# alerts after a day) rather than freeing the invoice for a second charge.
+_GATEWAY_FAILED = {
+	"failed",
+	"canceled",
+	"cancelled",
+	"declined",
+	"denied",
+	"expired",
+	"voided",
+	"requires_payment_method",
+}
 # A Captured attempt whose invoice sits in one of these lost its settlement webhook.
-_UNSETTLED_INVOICE = ("Open", "Overdue")
+_UNSETTLED_INVOICE = ("Outstanding", "Overdue")
 
 GRACE_MINUTES = 30
 ALERT_AFTER_HOURS = 24
@@ -42,9 +56,16 @@ ALERT_AFTER_HOURS = 24
 CHECKOUT_OPEN_HOURS = 24
 # A top-up nobody paid within this long is expired, so it stops being asked about.
 TOP_UP_EXPIRES_HOURS = 7 * 24
+# A top-up whose callback was lost is checked every few minutes while it is recent, so a
+# late webhook does not keep a paying customer waiting for the hourly sweep.
+RECENT_TOP_UP_HOURS = 2
+# A recent top-up is left this long for its callback or webhook before it is checked.
+RECENT_GRACE_MINUTES = 5
 # A gateway forgets an idempotency key after about a day. Inside that window, re-sending
 # a charge is deduped by the gateway; outside it, the same request would be a second one.
 KEY_REPLAY_HOURS = 24
+# A gateway can fail a refund after it reported it paid out; a lost webhook would hide that.
+COMPLETED_REFUND_RECHECK_DAYS = 30
 
 
 def _adapter(gateway: str):
@@ -62,8 +83,7 @@ def reconcile_attempt(attempt_name: str, now=None) -> dict:
 	# A charge the gateway said it would hold is not a charge nobody answered for.
 	# Stripe's India pre-debit window runs 26 hours by design, which is well past the
 	# point this job would otherwise call it stuck and wake someone up (ADR 0023).
-	now_dt = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
-	if attempt.gateway_hold_until and now_dt < frappe.utils.get_datetime(attempt.gateway_hold_until):
+	if attempt.is_held_by_gateway(now):
 		return {"attempt": attempt_name, "skipped": "gateway_hold", "until": str(attempt.gateway_hold_until)}
 
 	if not attempt.gateway_transaction_id:
@@ -75,7 +95,7 @@ def reconcile_attempt(attempt_name: str, now=None) -> dict:
 		_resolve_paid(attempt)
 		return {"attempt": attempt_name, "resolved": "paid", "gateway_status": status}
 	if status in _GATEWAY_FAILED:
-		_resolve_failed(attempt, f"gateway:{status}")
+		_resolve_failed(attempt, f"gateway_{status}", f"The gateway reports the payment as {status}.")
 		return {"attempt": attempt_name, "resolved": "Failed", "gateway_status": status}
 
 	# Still pending/unknown at the gateway — escalate if it has aged out.
@@ -127,7 +147,7 @@ def reconcile_captured_attempt(attempt_name: str, now=None) -> dict:
 	if not attempt.completed_at or not attempt.resolved_by:
 		attempt.completed_at = attempt.completed_at or frappe.utils.now_datetime()
 		attempt.resolved_by = attempt.resolved_by or "Reconciliation"
-		attempt.save(ignore_permissions=True)
+		save_billing_record(attempt)
 	return {"attempt": attempt_name, "resolved": "paid", "gateway_status": status, "settled": settled}
 
 
@@ -141,25 +161,59 @@ def run_reconciliation(now=None) -> list:
 		filters=[["status", "in", list(_AMBIGUOUS)], ["initiated_at", "<=", cutoff]],
 		pluck="name",
 	)
-	results = _reconcile_each(stuck, reconcile_attempt, now)
-	results += _reconcile_each(_captured_unsettled_attempts(cutoff), reconcile_captured_attempt, now)
+	results = each_isolated(
+		"Reconciliation", "Payment Attempt", stuck, lambda name: reconcile_attempt(name, now=now)
+	)
+
+	unsettled = _captured_unsettled_attempts(cutoff)
+	results += each_isolated(
+		"Reconciliation", "Payment Attempt", unsettled, lambda name: reconcile_captured_attempt(name, now=now)
+	)
 	results += reconcile_top_up_orders(now=now)
+	results += reconcile_pending_refunds()
 	return results
 
 
-def _reconcile_each(names: list[str], reconcile_one, now) -> list[dict]:
-	"""Reconcile each record on its own. A gateway that cannot answer for one record leaves
-	it for the next run. Each record asks the gateway before it writes, so none is half done."""
-	from central.billing.gateways.base import GatewayError
+def reconcile_pending_refunds() -> list[dict]:
+	"""Ask the gateway about every refund it accepted but had not paid out."""
+	names = frappe.get_all(
+		"Refund", filters={"status": "Pending", "gateway_refund_id": ["is", "set"]}, pluck="name"
+	)
+	return each_isolated("Refund reconciliation", "Refund", names, _reconcile_refund)
 
-	results = []
-	for name in names:
-		try:
-			results.append(reconcile_one(name, now=now))
-		except GatewayError:
-			frappe.log_error(title=f"Reconciliation could not reach the gateway for {name}")
-			results.append({"record": name, "unresolved": "gateway_error"})
-	return results
+
+def recheck_completed_refunds(now=None) -> list[dict]:
+	"""Ask the gateway again about each card refund completed in the recheck window, so a
+	refund it failed later is flagged even when that webhook never came. Runs daily: one
+	gateway call per refund per day is enough to catch a failure the webhook missed."""
+	now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
+	since = frappe.utils.add_to_date(now, days=-COMPLETED_REFUND_RECHECK_DAYS)
+	names = frappe.get_all(
+		"Refund",
+		filters={
+			"status": "Completed",
+			"completed_at": [">=", since],
+			"destination": "Source",  # a Wallet or Dispute refund never went through a gateway refund
+			"gateway_refund_id": ["is", "set"],
+		},
+		pluck="name",
+	)
+	return each_isolated("Refund recheck", "Refund", names, _reconcile_refund)
+
+
+def _reconcile_refund(name: str) -> dict:
+	from central.billing.gateways.base import GatewayUnsupported
+	from central.billing.payments import corrections
+
+	refund = frappe.get_doc("Refund", name)
+	gateway = frappe.db.get_value("Payment Attempt", refund.payment_attempt, "gateway")
+	try:
+		status = _adapter(gateway).get_refund_status(refund.gateway_refund_id)
+	except GatewayUnsupported:
+		return {"refund": name, "status": "unsupported"}
+	if status != "Pending" and corrections.settle_gateway_refund(refund, status) == "settled":
+		corrections.enqueue_steps(refund.invoice)
+	return {"refund": name, "status": status}
 
 
 def _captured_unsettled_attempts(cutoff) -> list:
@@ -223,7 +277,7 @@ def _resolve_checkout(attempt, age_hours: float) -> dict:
 		return {"attempt": attempt.name, "resolved": "paid", "reason": "checkout_paid"}
 	if age_hours < CHECKOUT_OPEN_HOURS:
 		return {"attempt": attempt.name, "unresolved": "awaiting_payer"}
-	_resolve_failed(attempt, "checkout never completed")
+	_resolve_failed(attempt, "checkout_abandoned", "The payer never completed the checkout.")
 	return {"attempt": attempt.name, "resolved": "Failed", "reason": "no_txn"}
 
 
@@ -231,17 +285,51 @@ def reconcile_top_up_orders(now=None) -> list[dict]:
 	"""Credit top-ups whose payment landed but whose callback and webhook were both lost,
 	and expire the ones nobody paid."""
 	now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
-	orders = frappe.get_all(
-		"Top-up Order",
-		filters={
-			"status": "Created",
-			"gateway_order_id": ["is", "set"],
-			"creation": ["<=", frappe.utils.add_to_date(now, minutes=-GRACE_MINUTES)],
-		},
-		pluck="name",
+	return _reconcile_top_ups(
+		"Top-up reconciliation",
+		_reconcile_top_up_order,
+		now,
+		since=None,
+		until=frappe.utils.add_to_date(now, minutes=-GRACE_MINUTES),
 	)
-	results = _reconcile_each(orders, _reconcile_top_up_order, now)
+
+
+def reconcile_recent_top_up_orders(now=None) -> list[dict]:
+	"""Credit recent top-ups whose payment landed before their callback or webhook."""
+	now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
+	return _reconcile_top_ups(
+		"Recent top-up reconciliation",
+		_reconcile_recent_top_up_order,
+		now,
+		since=frappe.utils.add_to_date(now, hours=-RECENT_TOP_UP_HOURS),
+		until=frappe.utils.add_to_date(now, minutes=-RECENT_GRACE_MINUTES),
+	)
+
+
+def _reconcile_top_ups(job: str, work, now, since, until) -> list[dict]:
+	"""Run `work` on each unpaid top-up order created in the window."""
+	filters = [
+		["status", "=", "Created"],
+		["gateway_order_id", "is", "set"],
+		["creation", "<=", until],
+	]
+	if since:
+		filters.append(["creation", ">=", since])
+	orders = frappe.get_all("Top-up Order", filters=filters, pluck="name")
+	results = each_isolated(job, "Top-up Order", orders, lambda name: work(name, now))
 	return [result for result in results if result]
+
+
+def _reconcile_recent_top_up_order(name: str, now) -> dict | None:
+	"""A gateway error is left to the next run, so an outage does not log one error per order."""
+	from central.billing.gateways.base import GatewayError
+
+	order = frappe.get_doc("Top-up Order", name)
+	try:
+		payment = _find_order_payment(order.gateway, order.gateway_order_id)
+	except GatewayError:
+		return None
+	return _credit_top_up(order, payment) if payment else None
 
 
 def _reconcile_top_up_order(name: str, now) -> dict | None:
@@ -287,16 +375,18 @@ def _resolve_paid(attempt, payment=None):
 	transition(attempt, "Captured", actor="reconciliation", correlation=attempt.invoice)
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Reconciliation"
-	attempt.save(ignore_permissions=True)
+	save_billing_record(attempt)
 	charges._settle_invoice(attempt, payment)
 
 
-def _resolve_failed(attempt, reason: str):
-	transition(attempt, "Failed", actor="reconciliation", correlation=attempt.invoice, reason=reason[:140])
+def _resolve_failed(attempt, failure_code: str, reason: str):
+	from central.billing.payments import charges
+
+	transition(attempt, "Failed", actor="reconciliation", correlation=attempt.invoice, reason=failure_code)
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Reconciliation"
-	attempt.failure_reason = reason[:140]
-	attempt.save(ignore_permissions=True)
+	charges.stamp_failure(attempt, {"failure_code": failure_code, "failure_reason": reason})
+	save_billing_record(attempt)
 
 
 def _alert_ops(attempt, gateway_status: str):

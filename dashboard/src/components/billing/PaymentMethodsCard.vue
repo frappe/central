@@ -11,10 +11,10 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, reportError, successToast } from '@/lib/feedback'
 import { money } from '@/lib/format'
-import type { CollectionStatus, PaymentMethod } from '@/types/billing'
+import { __ } from '@/lib/translate'
+import type { PaymentMethod } from '@/types/billing'
 
 // Payment methods — one ordered list of the ways an invoice gets settled. Each row
 // carries its own control, so the order is set where it is read rather than in a
@@ -30,10 +30,8 @@ import type { CollectionStatus, PaymentMethod } from '@/types/billing'
 // list is worth having to a team that only ever uses one card.
 //
 // Prepaid credits are the first entry because the engine spends them before it
-// charges anything (the credits waterfall, credits.md). Choosing credits as the
-// one charged first means the opposite of a fallback — it says *don't* auto-charge
-// what the balance can't cover — so the rows below then read "not charged" rather
-// than pretending to be rungs the engine would try.
+// charges anything (the credits waterfall, credits.md). When the wallet is short, the
+// methods below are charged in order, unless the team pays each invoice by hand.
 //
 // The card owns the calls and the destructive remove confirm (a local Dialog, since
 // this app mounts no global <Dialogs /> container).
@@ -41,7 +39,11 @@ const { activeTeam } = useSession()
 const { methods, credit, currency, reloadMethods, reloadMoney } =
 	useBillingOverview()
 const { canManageBilling } = useCapabilities()
-const { requireSetup } = useBillingSetup()
+const { complete: isSetupComplete } = useBillingSetup()
+// Until billing details are saved, the page's setup banner is the only way to pay.
+const canChangeMethods = computed(
+	() => canManageBilling.value && isSetupComplete.value,
+)
 
 const ordered = computed(() => methods.data ?? [])
 const loading = computed(() => methods.loading && !methods.data)
@@ -90,26 +92,6 @@ function detail(pm: PaymentMethod): string {
 
 const balance = computed(() => Number(credit.data?.balance ?? 0))
 
-// Which entry is charged first. Credits win whenever the team is prepaid; otherwise
-// the primary method does, and credits are still spent first by the engine — the
-// difference the customer feels is whether anything gets charged at all.
-const creditsFirst = computed(() => collectionMode.value === 'Prepaid')
-
-const collection = useCall<CollectionStatus, { team: string }>({
-	url: method(API.collectionStatus),
-	params: () => ({ team: activeTeam.value! }),
-	immediate: false,
-	refetch: true,
-})
-whenTeamReady(() => collection.reload())
-const collectionMode = computed(() => collection.data?.collection_mode ?? '')
-
-const setMode = useCall<unknown, { team: string; mode: string }>({
-	url: method(API.setCollectionMode),
-	method: 'POST',
-	immediate: false,
-})
-
 // The order is the whole point of this list, and it is the order the engine really
 // uses: an invoice applies credits first, then walks the methods until one goes
 // through (invoicing/lifecycle.py). So whatever leads is the primary and the rest
@@ -136,14 +118,9 @@ async function makeDefault(pm: PaymentMethod): Promise<void> {
 	try {
 		await setDefault.submit({ payment_method: pm.name })
 		if (setDefault.error) throw setDefault.error
-		// Charging this first only means something if anything is charged at all, so
-		// a prepaid team comes off prepaid by asking for it.
-		if (creditsFirst.value) {
-			await setMode.submit({ team: activeTeam.value!, mode: 'Auto Charge' })
-			if (setMode.error) throw setMode.error
-		}
-		successToast(`${pm.display_label || pm.method_type} is charged first`)
-		await collection.reload()
+		successToast(
+			__('{0} is now first in the order', [pm.display_label || pm.method_type]),
+		)
 		reloadMethods()
 	} catch (e) {
 		reportError(e)
@@ -193,17 +170,19 @@ async function move(pm: PaymentMethod, delta: number): Promise<void> {
 const showAdd = ref(false)
 const removeError = ref('')
 watch(pendingRemove, () => (removeError.value = ''))
-function onAdd(): void {
-	if (requireSetup()) showAdd.value = true
-}
 const showTopup = ref(false)
-const onTopUp = () => {
-	if (requireSetup()) showTopup.value = true
-}
 </script>
 
 <template>
-	<BillingCard title="Payment methods">
+	<BillingCard
+		title="Payment methods"
+		:description="
+			__(
+				'Invoices use credits first. When you pay automatically, payment methods are charged in the order shown.',
+			)
+		"
+		flat
+	>
 		<div v-if="loading" class="flex flex-col gap-2.5">
 			<Skeleton v-for="i in 2" :key="i" class="h-14 rounded-5" />
 		</div>
@@ -229,10 +208,10 @@ const onTopUp = () => {
 				</div>
 				<span v-if="hasCredits" class="text-sm text-ink-gray-5"> Primary </span>
 				<Button
-					v-if="canManageBilling"
+					v-if="canChangeMethods"
 					size="sm"
 					label="Top up"
-					@click="onTopUp"
+					@click="showTopup = true"
 				/>
 			</li>
 
@@ -256,7 +235,7 @@ const onTopUp = () => {
 							{{ pm.display_label || pm.method_type }}
 						</span>
 						<Badge
-							v-if="pm.reauth_required"
+							v-if="pm.reauth_required && pm.status === 'Active'"
 							theme="amber"
 							label="Re-auth needed"
 						/>
@@ -287,11 +266,11 @@ const onTopUp = () => {
 				/>
 			</li>
 
-			<li v-if="canManageBilling">
+			<li v-if="canChangeMethods">
 				<button
 					type="button"
 					class="flex w-full items-center gap-3 rounded-5 border border-dashed border-outline-gray-2 p-3 text-left transition-colors hover:bg-surface-gray-1"
-					@click="onAdd"
+					@click="showAdd = true"
 				>
 					<span
 						class="grid size-8 shrink-0 place-items-center rounded-4 border border-dashed border-outline-gray-2"
@@ -314,17 +293,6 @@ const onTopUp = () => {
 				</button>
 			</li>
 		</ul>
-
-		<p
-			v-if="!loading"
-			class="mt-auto flex items-start gap-1.5 pt-4 text-p-sm text-ink-gray-6"
-		>
-			<span
-				class="lucide-arrow-down-wide-narrow mt-0.5 size-3.5 shrink-0 text-ink-gray-4"
-				aria-hidden="true"
-			/>
-			Invoices use credits first, then payment methods in the order shown.
-		</p>
 
 		<ConfirmDialog
 			v-model:target="pendingRemove"

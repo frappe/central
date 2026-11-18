@@ -4,6 +4,8 @@ import { computed, ref, watch } from 'vue'
 import PaymentMethodFlow from '@/components/billing/PaymentMethodFlow.vue'
 import ChoiceCards from '@/components/common/ChoiceCards.vue'
 import ContactSupportLink from '@/components/common/ContactSupportLink.vue'
+import AppInputs from '@/components/servers/AppInputs.vue'
+import AppSelector from '@/components/servers/AppSelector.vue'
 import CreateServerButton from '@/components/servers/CreateServerButton.vue'
 import CreationStatusPanel from '@/components/servers/CreationStatusPanel.vue'
 import ImageOfferingSelector from '@/components/servers/ImageOfferingSelector.vue'
@@ -11,6 +13,7 @@ import PlanGroup from '@/components/servers/PlanGroup.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerNetworkOptions from '@/components/servers/ServerNetworkOptions.vue'
 import ServerSummary from '@/components/servers/ServerSummary.vue'
+import SpendingLimitNotice from '@/components/servers/SpendingLimitNotice.vue'
 import SSHKeysField from '@/components/servers/SSHKeysField.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useServerCreation } from '@/composables/useServerCreation'
@@ -62,6 +65,14 @@ const {
 	reloadSnapshots,
 	offering,
 	offeringOptions,
+	apps,
+	isApp,
+	app,
+	appRequirements,
+	appAnswers,
+	appRequirementsLoading,
+	appRequirementsError,
+	reloadAppRequirements,
 	imageId,
 	image,
 	imageOptions,
@@ -83,6 +94,7 @@ const {
 	submitting,
 	submitError,
 } = useServerCreation()
+
 const paymentFlow = ref<InstanceType<typeof PaymentMethodFlow> | null>(null)
 
 const { setBreadcrumbs } = useBreadcrumbs()
@@ -228,6 +240,16 @@ watch(
 								:description="imagesError"
 								:primary-action="{ label: 'Retry images', onClick: reloadImages }"
 							/>
+							<template v-else-if="isApp">
+								<p v-if="!apps.length" class="text-p-sm text-ink-gray-5">
+									No apps are available in this region yet. Select another image
+									or region.
+								</p>
+								<template v-else>
+									<h3 class="pt-2 text-sm-medium text-ink-gray-6">App</h3>
+									<AppSelector v-model="imageId" :apps="apps" />
+								</template>
+							</template>
 							<p
 								v-else-if="imageOptions.length < 2"
 								class="text-p-sm text-ink-gray-5"
@@ -238,7 +260,7 @@ watch(
 						</template>
 						<div class="grid gap-3 md:grid-cols-2">
 							<Select
-								v-if="source === 'image' && imageOptions.length > 1"
+								v-if="source === 'image' && !isApp && imageOptions.length > 1"
 								v-model="imageId"
 								label="Image build"
 								size="md"
@@ -246,6 +268,41 @@ watch(
 							/>
 							<SSHKeysField v-if="image" v-model="sshKeyIds" />
 						</div>
+					</section>
+
+					<section v-if="app" class="space-y-3">
+						<h2 class="text-base-semibold text-ink-gray-8">
+							{{ app.title }}
+							settings
+						</h2>
+						<p
+							v-if="appRequirementsLoading"
+							role="status"
+							class="text-p-sm text-ink-gray-5"
+						>
+							Loading app settings…
+						</p>
+						<Alert
+							v-else-if="appRequirementsError"
+							theme="red"
+							title="Couldn't load app settings"
+							:description="appRequirementsError"
+							:primary-action="{
+								label: 'Retry settings',
+								onClick: reloadAppRequirements,
+							}"
+						/>
+						<p
+							v-else-if="!appRequirements?.inputs.length"
+							class="text-p-sm text-ink-gray-5"
+						>
+							This app needs no settings.
+						</p>
+						<AppInputs
+							v-else
+							v-model="appAnswers"
+							:inputs="appRequirements.inputs"
+						/>
 					</section>
 
 					<section
@@ -292,7 +349,9 @@ watch(
 						<p v-if="!image" class="text-p-sm text-ink-gray-5">
 							{{ source === 'snapshot'
 									? 'Select a snapshot to see compatible plans.'
-									: 'Select an image build to see compatible plans.' }}
+									: isApp
+										? 'Select an app to see compatible plans.'
+										: 'Select an image build to see compatible plans.' }}
 						</p>
 						<p v-else-if="plansLoading" class="text-p-sm text-ink-gray-5">
 							Loading plans…
@@ -319,31 +378,12 @@ watch(
 							"
 						/>
 
-						<div
-							v-else-if="bracketExhausted"
-							class="rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
-						>
-							<p class="text-p-sm-medium text-ink-gray-8">
-								You've reached your spending limit
-							</p>
-							<p class="mt-1 text-p-sm text-ink-gray-5">
-								No plans fit your remaining spending limit in this region.
-								Remove a server to free some up, or
-								<ContactSupportLink
-									:context="{ Topic: 'Higher spending limit' }"
-								/>
-								to raise your limit.
-							</p>
-						</div>
-
-						<p v-else-if="nothingToShow" class="text-p-sm text-ink-gray-5">
-							No plans are available for this region within your current
-							spending limit. Select another region, or
-							<ContactSupportLink
-								:context="{ Topic: 'Higher spending limit' }"
-							/>
-							to review your limit.
-						</p>
+						<SpendingLimitNotice
+							v-else-if="bracketExhausted || nothingToShow"
+							:exhausted="bracketExhausted"
+							:available="available"
+							:currency="currency"
+						/>
 
 						<Tabs v-else-if="hasTabs" v-model="activeTab" :tabs="classTabs">
 							<template #tab-panel="{ tab }">

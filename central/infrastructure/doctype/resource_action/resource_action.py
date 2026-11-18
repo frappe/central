@@ -4,12 +4,15 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.billing.catalog.trials import is_trial_plan
+from central.central.doctype.activity_event.activity_event import ActivityEvent
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.server_models import ActionStatus, ResizeConfiguration, ServerCreation, SiteCreation
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 
 PENDING_STATES = ("Queued", "Dispatching", "Sent", "In Progress", "Uncertain")
 PENDING_LABEL = {
@@ -60,19 +63,28 @@ STATUS_FIELDS = (
 
 def action_status(row) -> ActionStatus:
 	"""The one shape a console reads an action in, built from a document or a query row."""
-	error = None
-	if row.error_code:
-		error = build_envelope(
-			row.error_code, action=row.action, message=row.error_message, remediation=row.remediation
-		)
-
 	return {
 		"action": row.name,
 		"status": row.status,
 		"resource_id": row.resource_id,
 		"title": row.title or row.resource_id or row.action,
-		"error": error,
+		"error": get_error(row),
 	}
+
+
+def get_error(row) -> dict | None:
+	"""The action's error envelope in the reader's language, from a document or a query row
+	with the STATUS_FIELDS. The record keeps only the copy that the catalog cannot rebuild."""
+	if not row.error_code:
+		return None
+
+	return build_envelope(
+		row.error_code,
+		action=row.action,
+		resource_id=row.resource_id,
+		message=row.error_message,
+		remediation=row.remediation,
+	)
 
 
 class ResourceAction(Document):
@@ -114,6 +126,7 @@ class ResourceAction(Document):
 		take_snapshot: DF.Check
 		team: DF.Link
 		title: DF.Data | None
+		user_data: DF.Password | None
 		vm_snapshot: DF.Link | None
 	# end: auto-generated types
 
@@ -190,6 +203,17 @@ class ResourceAction(Document):
 			)
 			self.capture_trial_event("trial_requested", region=self.region, **first_touch)
 
+	def before_validate(self) -> None:
+		"""Keep the user data out of the request a customer can read. It can hold the passwords
+		a customer typed for an app, so it goes to the encrypted `user_data` field."""
+		payload = frappe.parse_json(self.request_payload or "{}")
+		if not isinstance(payload, dict) or "user_data" not in payload:
+			return
+
+		if user_data := payload.pop("user_data"):
+			self.user_data = user_data
+		self.request_payload = payload
+
 	def validate(self) -> None:
 		if self.subdomain and (self.has_value_changed("subdomain") or self.has_value_changed("region")):
 			self.subdomain = normalize_domain(self.subdomain)
@@ -210,7 +234,10 @@ class ResourceAction(Document):
 		)
 
 	def get_configuration(self) -> ServerCreation:
-		return ServerCreation.model_validate(frappe.parse_json(self.request_payload))
+		payload = frappe.parse_json(self.request_payload)
+		if user_data := self.get_password("user_data", raise_exception=False):
+			payload["user_data"] = user_data
+		return ServerCreation.model_validate(payload)
 
 	def get_site_creation(self) -> SiteCreation | None:
 		"""The trial site part of a creation request. Older requests carry none."""
@@ -243,8 +270,7 @@ class ResourceAction(Document):
 			"last_checked_at": now,
 			"completed_at": now if status in TERMINAL_STATES else None,
 			"error_code": envelope["code"] if envelope else None,
-			"error_message": envelope["message"] if envelope else None,
-			"remediation": envelope["remediation"] if envelope else None,
+			**self._get_custom_copy(envelope),
 			"retriable": int(envelope["retriable"]) if envelope else 0,
 		}
 		if status in ("Queued", "Dispatching"):
@@ -253,13 +279,34 @@ class ResourceAction(Document):
 			values.update(self._diagnostic_values(diagnostic, diagnostic_title))
 
 		self.db_set(values, notify=notify)
+		if status != previous_status and status in TERMINAL_STATES:
+			ActivityEvent.record_action(self)
+		if status != previous_status and status == "Succeeded" and self.is_trial_upgrade():
+			from central.integrations.pilot import plan_includes_storage
+
+			if plan_includes_storage(self.get_resize_configuration().plan):
+				frappe.enqueue(
+					"central.integrations.pilot.attach_bundled_bucket",
+					server=self.server,
+					queue="long",
+					enqueue_after_commit=True,
+					job_id=f"bundled-bucket:{self.server}",
+					deduplicate=True,
+				)
 		if status != previous_status and status in ("Failed", "Timed Out"):
 			if self.action == "create":
 				# A creation the region never accepted leaves no machine to use its credential.
 				if not self.remote_vm_id:
 					PilotCredential.revoke_by_id(self.credential)
-				# No server will ever link the mailbox, so termination would not remove it.
+				# No server will ever link the mailbox, trial key or bucket, so termination would not release them.
 				UserMailAccount.queue_removal(resource_action=self.name, server=("is", "not set"))
+				AITrialKey.queue_revoke(resource_action=self.name, server=("is", "not set"))
+				if not self.server:
+					frappe.enqueue(
+						"central.integrations.pilot.delete_bundled_bucket",
+						action=self.name,
+						enqueue_after_commit=True,
+					)
 			self.queue_attention_notification(envelope)
 			if self.is_trial_creation:
 				self.capture_trial_event("trial_failed", status=status, error_code=self.error_code)
@@ -302,6 +349,14 @@ class ResourceAction(Document):
 	def is_trial_creation(self) -> bool:
 		return self.action == "create" and self.resource_type == "Site"
 
+	def is_trial_upgrade(self) -> bool:
+		"""Whether this resize moves a server from a trial plan to a paid plan."""
+		if self.action != "resize":
+			return False
+
+		configuration = self.get_resize_configuration()
+		return is_trial_plan(configuration.from_plan) and not is_trial_plan(configuration.plan)
+
 	def capture_trial_event(self, event: str, **properties) -> None:
 		"""Send this trial's step to the signup funnel, once per action."""
 		from central.signups.funnel import capture_trial_event
@@ -311,6 +366,20 @@ class ResourceAction(Document):
 			event, self.team, site.product if site else None, user=self.requested_by, **properties
 		)
 
+	def _get_custom_copy(self, envelope: dict | None) -> dict:
+		"""The envelope's message and remediation when they differ from the catalog copy. The
+		catalog copy is left out, so each reader gets it in their own language."""
+		if not envelope:
+			return {"error_message": None, "remediation": None}
+
+		catalog = build_envelope(envelope["code"], action=self.action, resource_id=self.resource_id)
+		return {
+			"error_message": envelope["message"] if envelope["message"] != catalog["message"] else None,
+			"remediation": envelope["remediation"]
+			if envelope["remediation"] != catalog["remediation"]
+			else None,
+		}
+
 	def queue_attention_notification(self, envelope: dict | None) -> None:
 		"""Notify once when an action reaches a terminal state that needs attention."""
 		from central.notification.engine import queue_event
@@ -319,11 +388,17 @@ class ResourceAction(Document):
 			"create": "provision_failure",
 			"resize": "resize_failed",
 		}.get(self.action, "server_action_required")
+		# Catalog copy goes as its code, so each reader gets the sentence in their own language.
 		queue_event(
 			self.team,
 			event_type,
-			message=envelope["message"] if envelope else _("The operation did not finish."),
-			context={"action": self.action, "title": self.title or self.resource_id or self.name},
+			message=self.error_message if envelope else _("The operation did not finish."),
+			context={
+				"action": self.action,
+				"title": self.title or self.resource_id or self.name,
+				"error_code": self.error_code,
+				"resource_id": self.resource_id,
+			},
 			reference_doctype=self.doctype,
 			reference_name=self.name,
 		)
@@ -370,6 +445,10 @@ class ResourceAction(Document):
 
 		self.enqueue()
 
+	def onload(self) -> None:
+		# The form shows the error in the operator's language, also when only the code is stored.
+		self.set_onload("error", get_error(self))
+
 	@frappe.whitelist(methods=["GET"])
 	def get_setup_timeline(self) -> list[dict]:
 		"""Each step a new site takes, with when it happened, so an operator sees where a signup
@@ -387,7 +466,7 @@ class ResourceAction(Document):
 			{
 				"label": _("Server created"),
 				"at": self.completed_at if self.status == "Succeeded" else None,
-				"error": (self.error_message or self.status) if failed else None,
+				"error": ((get_error(self) or {}).get("message") or self.status) if failed else None,
 			},
 			{"label": _("Site addressable"), "at": site.creation},
 			{"label": _("Site answered"), "at": site.ready_at},
@@ -435,6 +514,7 @@ class ResourceAction(Document):
 			[row.model_dump() for row in configuration.includes],
 			configuration.sub_category,
 			is_free_trial=bool(self.is_free_trial),
+			offering=configuration.offering,
 		)
 
 	@classmethod
@@ -461,6 +541,24 @@ class ResourceAction(Document):
 		)
 		return {row.resource_id: PENDING_LABEL[row.action] for row in rows}
 
+	@classmethod
+	def get_creators(cls, team: str) -> dict[str, dict]:
+		"""Who asked for each of the team's servers, by server name. A discovered server has none."""
+		action = frappe.qb.DocType("Resource Action")
+		user = frappe.qb.DocType("User")
+		# User is not readable by team members; the team filter scopes this read.
+		rows = (
+			frappe.qb.from_(action)
+			.left_join(user)
+			.on(user.name == action.requested_by)
+			.select(action.server, action.requested_by, user.full_name)
+			.where((action.team == team) & (action.action == "create") & action.server.isnotnull())
+			.run(as_dict=True)
+		)
+		return {
+			row.server: {"created_by": row.requested_by, "created_by_name": row.full_name} for row in rows
+		}
+
 
 def on_doctype_update() -> None:
 	frappe.db.add_unique("Resource Action", ["team", "request_key"])
@@ -468,4 +566,5 @@ def on_doctype_update() -> None:
 	frappe.db.add_index("Resource Action", ["team", "requested_by", "product", "creation"])
 	frappe.db.add_index("Resource Action", ["resource_id", "status"])
 	frappe.db.add_index("Resource Action", ["status", "modified"])
+	frappe.db.add_index("Resource Action", ["status", "completed_at"])
 	frappe.db.add_index("Resource Action", ["server", "action"])

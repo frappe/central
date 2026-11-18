@@ -467,7 +467,7 @@ class TestSiteRoutes(SiteOnAMachine):
 
 	def test_onboarding_follows_only_a_site_creation(self):
 		server_action = self.creation_action("Server")
-		self.assertEqual(onboarding_status(self.team.name), {"site": None, "creation": None, "journey": None})
+		self.assert_nothing_to_resume(onboarding_status(self.team.name))
 
 		site_action = self.creation_action("Site")
 		state = onboarding_status(self.team.name)
@@ -531,9 +531,7 @@ class TestSiteRoutes(SiteOnAMachine):
 		self.site().db_set("product", raven)
 		self.creation_action("Site", raven)
 
-		self.assertEqual(
-			onboarding_status(self.team.name, crm), {"site": None, "creation": None, "journey": None}
-		)
+		self.assert_nothing_to_resume(onboarding_status(self.team.name, crm))
 
 	def test_a_claimed_product_site_is_found_without_a_new_login(self):
 		product = self.signup_product("raven-return")
@@ -559,7 +557,7 @@ class TestSiteRoutes(SiteOnAMachine):
 	def test_a_plain_signup_does_not_resume_a_product_trial(self):
 		self.creation_action("Site", self.signup_product("raven-return"))
 
-		self.assertEqual(onboarding_status(self.team.name), {"site": None, "creation": None, "journey": None})
+		self.assert_nothing_to_resume(onboarding_status(self.team.name))
 
 	def test_a_terminated_product_site_does_not_block_a_new_trial(self):
 		product = self.signup_product("raven-return")
@@ -567,9 +565,7 @@ class TestSiteRoutes(SiteOnAMachine):
 		self.creation_action("Site", product)
 		self.server.db_set("status", "Terminated")
 
-		self.assertEqual(
-			onboarding_status(self.team.name, product), {"site": None, "creation": None, "journey": None}
-		)
+		self.assert_nothing_to_resume(onboarding_status(self.team.name, product))
 
 	def test_another_team_cannot_resume_a_product_site(self):
 		product = self.signup_product("raven-return")
@@ -581,6 +577,26 @@ class TestSiteRoutes(SiteOnAMachine):
 
 		with self.assertRaises(frappe.PermissionError):
 			onboarding_status(self.team.name, product)
+
+	def test_a_new_product_site_says_whether_it_is_free(self):
+		product = self.signup_product("raven-terms")
+
+		with patch("central.signups.eligibility.has_active_payment_method", return_value=False):
+			self.assertTrue(onboarding_status(self.team.name, product)["is_free_trial"])
+		with patch("central.signups.eligibility.has_active_payment_method", return_value=True):
+			self.assertFalse(onboarding_status(self.team.name, product)["is_free_trial"])
+
+	def test_a_disabled_product_refuses_a_new_site_but_resumes_a_started_one(self):
+		product = self.signup_product("raven-disabled")
+		frappe.db.set_value("Product", product, "enabled", 0)
+
+		with self.assertRaises(frappe.ValidationError):
+			onboarding_status(self.team.name, product)
+
+		self.site().db_set("product", product)
+		self.creation_action("Site", product)
+		with patch("central.api.sites.is_site_reachable", return_value=False):
+			self.assertEqual(onboarding_status(self.team.name, product)["site"]["name"], self.site().name)
 
 	def test_the_patch_records_the_product_of_existing_trial_actions(self):
 		from central.patches.v0_0.record_trial_action_product import execute
@@ -594,6 +610,9 @@ class TestSiteRoutes(SiteOnAMachine):
 		execute()
 
 		self.assertEqual(frappe.db.get_value("Resource Action", action, "product"), product)
+
+	def assert_nothing_to_resume(self, status: dict) -> None:
+		self.assertEqual((status["site"], status["creation"], status["journey"]), (None, None, None))
 
 	def signup_product(self, key: str) -> str:
 		return (

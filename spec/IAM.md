@@ -14,7 +14,7 @@ flowchart LR
 
 - Central is the global authority for users, Teams, roles, and capabilities. Every `server:*` decision is made here, before any regional call.
 - A region never sees a capability. Central signs a short-lived, tenant-scoped token for the call it is about to make; the region checks only that the token's tenant matches the resource's tenant. See [Integrations](INTEGRATIONS.md).
-- `System Manager` is the only authorization bypass.
+- `System Manager` is the only authorization bypass. `Staff Viewer` is the Desk role for Frappe employees. It grants no capability. See [Staff Desk Access](#staff-desk-access).
 
 ## Permission Model
 
@@ -69,9 +69,33 @@ A role grant applies to all resources (`resource_type = "*"`) or to one resource
 - A scoped grant must name a server or site of the same Team. The Owner role is always team-wide. A grant whose resource no longer belongs to the Team grants nothing.
 - `iam.can(user, team, capability, server=None)` answers the first two questions. Without `server`, it is the team-wide question. Routes that act on one server pass it. `iam.can_on_any_server` answers the list question.
 - The permission rules for Virtual Machine, Site, VM Snapshot, Resource Action, and Site Domain filter lists by the allowed servers and check the server on each record.
+- Team-scoped billing DocTypes (Invoice, Payment Attempt, Credit Ledger Entry, Top-up Order and the others in `hooks._BILLING_TEAM_RECORDS`) are for operators only in both layers: `billing_record_query_conditions` returns `1 = 0` and `billing_record_has_permission` returns False for everyone else, on their own Team too. Customers read billing through the billing API, which checks `billing:view` or `billing:manage` on the record's Team.
 - Pricing a resize reads the plans and the current configuration of one server. Those two billing reads accept `server:resize` on that server in place of `billing:view`.
 - A notification that is about a server records it in `Team Notification.server`. A scoped member sees and receives only the notifications for its servers.
+- Activity Event is for operators only in both layers. Customers read it through the activity API, which applies `iam.get_capability_gate` to each event's required capability and server.
 - The console reads each server's capabilities from the `capabilities` field on its row, so it shows only the actions that the member can do on that server.
+
+## Staff Desk Access
+
+Desk is for Frappe staff. Customers use the console. Desk access uses Frappe roles, role permissions, and permission levels.
+
+| Who | Setup | Desk access |
+|---|---|---|
+| Frappe Cloud staff | Role `System Manager` | Every DocType. Full operator bypass in Central IAM. |
+| Other Frappe employees | Role profile `Frappe Employee`, which holds `Central User` and `Staff Viewer` | Read only: Team, Site, and Virtual Machine of every team. Full access: Product and Email OAuth Provider. Preview Trial Images on a Product. Console access to their own teams. |
+| Product owners | Role `Product Operator` | Read, write, and create on Product. |
+| Customers | Role `Central User`, without desk access | None. They use the console. |
+
+- `Staff Viewer` has read permission at permission level 0 on Team, Site, and Virtual Machine. It has no write, create, delete, report, export, print, or share permission on them.
+- `Staff Viewer` has read, write, create, and delete permission on Product and Email OAuth Provider. These DocTypes hold no customer data. The Email OAuth Provider client secret is a Password field, so a `Staff Viewer` can replace it but cannot read it.
+- `Staff Viewer` can use Preview Trial Images on a Product. It has select permission on Region, so it can pick a region in a Link field. It cannot open a Region record.
+- Customer data fields are at permission level 2: Team `owner_user`, `members`, `utm_source`, `utm_medium`, `utm_campaign`, and `referrer`, and Virtual Machine `firewall_rules` and `ssh_keys`. `System Manager` and `Central User` read them. `Staff Viewer` alone does not.
+- The `has_permission` and `permission_query_conditions` rules of Team, Site, and Virtual Machine let a `Staff Viewer` read every record. All other permission types follow the normal rules, so a `Staff Viewer` cannot change these records.
+- `iam.can` and the API guards do not know `Staff Viewer`. A `Staff Viewer` that is not a team member gets no console access to other teams.
+- The `Frappe Employee` role profile holds `Central User`, so a staff member keeps console access to their own teams. `Central User` reads the customer data fields, so a staff member on the profile reads them on every team.
+- `users.ensure_staff_role_profile` creates the `Frappe Employee` role profile after migrate when it does not exist. It does not change an existing profile, so a change in Desk stays.
+- A role profile replaces all other roles of its users. Do not give a role profile to a user that needs roles that code adds, such as the Atlas roles from Warpgate access.
+- To add a DocType for staff, add a `Staff Viewer` read permission to the DocType and add the `Staff Viewer` rule to its permission functions.
 
 ## User And Invitation Flow
 
@@ -126,7 +150,7 @@ The console shows the onboarding dialog in two cases:
 1. The user is a member of no Team. The dialog asks for a Team name. This step cannot be skipped.
 2. The user owns the active Team, and the Team has a `Pending` onboarding step. `my_teams` returns these steps as `onboarding`.
 
-The owner answers each step with `set_onboarding_step` (`Done` or `Skipped`), or all at once with `skip_onboarding`. Only the current owner can answer. A Team created before onboarding existed has no rows, so its owner never sees the dialog.
+The owner answers each step with `set_onboarding_step` (`Done` or `Skipped`). The dialog has Back, Skip, and the step's own action. Back goes to an earlier step, but not to the Team name step. A step the owner goes back to keeps its recorded answer, unless the owner now completes it. Only the current owner can answer. A Team created before onboarding existed has no rows, so its owner never sees the dialog.
 
 ### Invitation email and join link
 

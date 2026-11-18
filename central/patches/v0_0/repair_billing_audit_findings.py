@@ -26,12 +26,12 @@ def mark_staging_teams_internal():
 	for team in frappe.get_all("Team", filters={"is_staging_trial": 1}, pluck="name"):
 		ensure_tax_profile(team)
 		frappe.db.set_value(
-			"Tax Profile",
+			"Billing Profile",
 			team,
 			{"is_internal": 1, "internal_reason": f"Staging-trial team, marked by the {AUDIT}."},
 		)
 		frappe.db.set_value("Team", team, "is_staging_trial", 0)
-	# set_value skips the Tax Profile hook that waives, so waive here, before any billing run.
+	# set_value skips the Billing Profile hook that waives, so waive here, before any billing run.
 	settle_internal_teams()
 
 

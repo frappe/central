@@ -44,8 +44,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
 	{
 		key: 'billing',
 		title: 'Add a payment method',
-		description:
-			'Saving a payment method does not charge it today. You can also add one later from Billing.',
+		description: 'You can also add one later from Billing.',
 		component: BillingStep,
 		isRequired: false,
 	},

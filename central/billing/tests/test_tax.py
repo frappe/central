@@ -2,12 +2,17 @@
 # For license information, please see license.txt
 """Tax — GST + SEZ; TDS withholding seam (issue #13)."""
 
-import frappe
+from unittest.mock import patch
 
+import frappe
+import requests
+
+from central.billing.ingester import gst
 from central.billing.revenue import invoicing, tax
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
+	billing_settings,
 	complete_billing_profile,
 	make_billing_subscription,
 	make_plan,
@@ -36,6 +41,7 @@ class TaxTestBase(IntegrationTestCase):
 
 	def _purge(self):
 		frappe.db.delete("Invoice", {"team": TEAM})
+		frappe.db.delete("Billing Profile", {"team": TEAM})
 		if frappe.db.exists("Tax Profile", TEAM):
 			frappe.db.delete("Tax Profile", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
@@ -49,12 +55,24 @@ class TaxTestBase(IntegrationTestCase):
 
 
 class TestOutputTax(TaxTestBase):
-	def test_no_profile_is_untaxed(self):
-		inv = self._invoice()
-		self.assertEqual(inv.output_tax_type, "None")
-		self.assertEqual(inv.output_tax_amount, 0)
-		self.assertEqual(inv.total, 1000.0)
-		self.assertEqual(inv.expected_collection, 1000.0)
+	def test_an_indian_team_with_no_profile_pays_the_default_gst(self):
+		frappe.db.delete("Tax Profile", {"team": TEAM})
+		with billing_settings(default_gst_rate=18):
+			inv = self._invoice()
+		self.assertEqual(inv.output_tax_type, "GST")
+		self.assertEqual(inv.output_tax_amount, 180.0)
+		self.assertEqual(inv.total, 1180.0)
+
+	def test_a_team_outside_india_with_no_profile_is_untaxed(self):
+		complete_billing_profile(TEAM, currency="USD")
+		frappe.db.delete("Tax Profile", {"team": TEAM})
+		block = tax.resolve_tax(TEAM, 1000)
+		self.assertEqual(block["output_tax_type"], "None")
+		self.assertEqual(block["output_tax_amount"], 0)
+
+	def test_an_indian_profile_without_gst_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			set_tax_profile(output_tax_type="None")
 
 	def test_gst_is_additive_to_total(self):
 		set_tax_profile(output_tax_type="GST", output_tax_rate=18)
@@ -110,10 +128,116 @@ class TestGstinStanding(TaxTestBase):
 
 	def test_lapsed_gstin_keeps_overseas_zero_rating(self):
 		self._gstin("Cancelled")
+		frappe.db.set_value("Billing Profile", TEAM, {"country": "United States", "currency": "USD"})
 		set_tax_profile(
 			output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="Overseas"
 		)
 		self.assertEqual(self._invoice().output_tax_amount, 0)
+
+
+class TestTaxLabel(TaxTestBase):
+	"""The GST named on top-ups and notices, as the invoice files it. The company is in Maharashtra."""
+
+	def setUp(self):
+		super().setUp()
+		complete_billing_profile(TEAM)
+		set_tax_profile(output_tax_type="GST", output_tax_rate=18)
+		_forget_company_state()
+		self.addCleanup(_forget_company_state)
+		self.read = self.enterContext(
+			patch("central.billing.ingester.gst.company_state_code", return_value="27")
+		)
+		self.enterContext(patch("central.billing.ingester.connection.enabled", return_value=True))
+		self.enterContext(patch.dict(frappe.conf, {"erpnext_url": "https://erp.invalid"}))
+		self.enterContext(
+			patch(
+				"central.billing.ingester.gst.accounting_settings",
+				return_value=frappe._dict(company_address="Frappe - Billing"),
+			)
+		)
+
+	def test_same_state_is_cgst_and_sgst(self):
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "CGST 9% + SGST 9%")
+
+	def test_other_state_is_igst(self):
+		frappe.db.set_value("Billing Profile", TEAM, "state", "Karnataka")
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "IGST 18%")
+
+	def test_no_state_is_igst(self):
+		frappe.db.set_value("Billing Profile", TEAM, "state", None)
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "IGST 18%")
+
+	def test_sez_is_named(self):
+		set_tax_profile(output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="SEZ")
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "No GST (SEZ)")
+
+	def test_sez_with_a_lapsed_gstin_names_the_gst_charged(self):
+		frappe.db.set_value("Billing Profile", TEAM, {"gstin": "27AAPFU0939F1ZV", "gst_status": "Cancelled"})
+		set_tax_profile(output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="SEZ")
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "CGST 9% + SGST 9%")
+
+	def test_outside_india_has_no_label(self):
+		complete_billing_profile(TEAM, currency="USD")
+		frappe.db.delete("Tax Profile", {"team": TEAM})
+		self.assertIsNone(tax.get_tax_names(TEAM)["tax_label"])
+
+	def test_the_company_state_is_read_once_a_day(self):
+		tax.get_tax_names(TEAM)["tax_label"]
+		tax.get_tax_names(TEAM)["tax_label"]
+		self.assertEqual(self.read.call_count, 1)
+
+	def test_a_failed_read_uses_the_last_known_state(self):
+		tax.get_tax_names(TEAM)["tax_label"]
+		frappe.cache.delete_value(gst.COMPANY_STATE_KEY)  # the day is over
+		self.read.side_effect = requests.ConnectionError
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "CGST 9% + SGST 9%")
+
+	def test_a_company_state_never_known_names_gst_only(self):
+		self.read.side_effect = requests.ConnectionError
+		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "GST 18%")
+
+	def test_a_failed_read_of_a_state_never_known_waits_an_hour(self):
+		self.read.side_effect = requests.ConnectionError
+		with patch("frappe.log_error") as log_error:
+			tax.get_tax_names(TEAM)["tax_label"]
+			self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "GST 18%")
+		self.assertEqual(self.read.call_count, 1)
+		self.assertEqual(log_error.call_count, 1)
+
+	def test_with_no_company_address_the_accounting_system_is_not_asked(self):
+		settings = frappe._dict(company_address=None)
+		with patch("central.billing.ingester.gst.accounting_settings", return_value=settings):
+			self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "GST 18%")
+		self.read.assert_not_called()
+
+	def test_with_no_accounting_url_the_accounting_system_is_not_asked(self):
+		with patch.dict(frappe.conf, {"erpnext_url": None}):
+			self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "GST 18%")
+		self.read.assert_not_called()
+
+	def test_with_the_sync_off_and_no_known_state_it_names_gst_only(self):
+		with patch("central.billing.ingester.connection.enabled", return_value=False):
+			self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "GST 18%")
+		self.read.assert_not_called()
+
+
+def _forget_company_state():
+	frappe.cache.delete_value(
+		[gst.COMPANY_STATE_KEY, gst.LAST_COMPANY_STATE_KEY, gst.MISSED_COMPANY_STATE_KEY]
+	)
+
+
+class TestNoEmptyAccountingRead(TaxTestBase):
+	def test_a_record_with_no_name_is_never_asked_for(self):
+		from central.billing.ingester import connection
+
+		with (
+			patch("central.billing.ingester.connection.enabled", return_value=True),
+			patch("central.billing.ingester.connection.requests.get") as get,
+		):
+			self.assertIsNone(connection.fetch("Address", None))
+			self.assertIsNone(connection.fetch("Address", ""))
+		get.assert_not_called()
 
 
 class TestWithholdingSeam(TaxTestBase):
@@ -126,15 +250,15 @@ class TestWithholdingSeam(TaxTestBase):
 		self.assertEqual(inv.expected_collection, 1080.0)  # total - tds
 
 	def test_paid_state_defined_against_expected_collection(self):
-		set_tax_profile(tds_applicable=1, tds_rate=10)
-		inv = self._invoice()  # total 1000, tds 100, expected 900
+		set_tax_profile(output_tax_type="GST", output_tax_rate=18, tds_applicable=1, tds_rate=10)
+		inv = self._invoice()  # total 1180, tds 100, expected 1080
 		# A TDS customer legally short-pays the collected amount → still paid.
 		inv.amount_paid = inv.expected_collection
 		inv.tds_certificate_received = 1
 		self.assertTrue(tax.is_paid(inv))
 
 	def test_mandate_ceiling_uses_gross_total(self):
-		set_tax_profile(tds_applicable=1, tds_rate=10)
+		set_tax_profile(output_tax_type="GST", output_tax_rate=18, tds_applicable=1, tds_rate=10)
 		inv = self._invoice()
 		# The mandate was authorised for the gross, not the TDS-reduced amount.
 		self.assertEqual(tax.mandate_ceiling_amount(inv), inv.total)
@@ -175,6 +299,44 @@ class TestOutputTaxFollowsTheCountry(IntegrationTestCase):
 		self._move_to("United States", "USD")
 
 		self.assertEqual(tax.resolve_tax(self.TEAM, 1000)["output_tax_amount"], 0)
+
+	def test_overseas_zero_rating_is_refused_for_india(self):
+		self._signup_from("India")
+		profile = frappe.get_doc("Tax Profile", self.TEAM)
+		profile.update({"zero_rated": 1, "zero_rating_reason": "Overseas"})
+		self.assertRaises(frappe.ValidationError, profile.save, ignore_permissions=True)
+
+	def test_overseas_zero_rating_is_refused_for_an_inr_team_abroad(self):
+		self._signup_from("India")
+		frappe.db.set_value("Billing Profile", self.TEAM, "country", "United States")
+		profile = frappe.get_doc("Tax Profile", self.TEAM)
+		profile.update({"zero_rated": 1, "zero_rating_reason": "Overseas"})
+		self.assertRaises(frappe.ValidationError, profile.save, ignore_permissions=True)
+
+	def test_an_older_overseas_row_in_india_still_saves_other_edits(self):
+		self._signup_from("India")
+		frappe.db.set_value("Tax Profile", self.TEAM, {"zero_rated": 1, "zero_rating_reason": "Overseas"})
+		profile = frappe.get_doc("Tax Profile", self.TEAM)
+		profile.tds_rate = 2
+		profile.save(ignore_permissions=True)
+		self.assertEqual(frappe.db.get_value("Tax Profile", self.TEAM, "tds_rate"), 2)
+
+	def test_changing_the_reason_to_overseas_in_india_is_refused(self):
+		self._signup_from("India")
+		frappe.db.set_value("Tax Profile", self.TEAM, {"zero_rated": 1, "zero_rating_reason": "SEZ"})
+		profile = frappe.get_doc("Tax Profile", self.TEAM)
+		profile.zero_rating_reason = "Overseas"
+		self.assertRaises(frappe.ValidationError, profile.save, ignore_permissions=True)
+
+	def test_a_profile_moved_into_india_is_no_longer_overseas(self):
+		self._signup_from("United States")
+		frappe.db.set_value("Tax Profile", self.TEAM, {"zero_rated": 1, "zero_rating_reason": "Overseas"})
+		self._move_to("India", "INR")
+
+		zero_rated, reason = frappe.db.get_value(
+			"Tax Profile", self.TEAM, ["zero_rated", "zero_rating_reason"]
+		)
+		self.assertFalse(zero_rated or reason)
 
 	def test_operator_tax_settings_survive_a_country_change(self):
 		self._signup_from("United States")

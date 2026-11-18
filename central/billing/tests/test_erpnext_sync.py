@@ -100,6 +100,17 @@ class TestIssue(SyncTestCase):
 		self.assertEqual(si["gst_category"], "Unregistered")
 		self.assertEqual(si["taxes_and_charges"], OUT_STATE)
 
+	def test_the_gst_charged_decides_the_template_not_the_standing_today(self):
+		billing_team(TEAM, gstin=GSTIN)
+		frappe.db.set_value("Tax Profile", TEAM, {"zero_rated": 1, "zero_rating_reason": "SEZ"})
+		erpnext_sync.sync_invoice(self._invoice(month=8))
+		self.assertEqual(self._sales_invoice()["taxes_and_charges"], IN_STATE)
+
+		frappe.db.set_value("Tax Profile", TEAM, {"zero_rated": 0, "zero_rating_reason": None})
+		erpnext_sync.sync_invoice(self._invoice(tax=0, month=9))
+		si = self._sales_invoice()
+		self.assertEqual((si["gst_category"], si["taxes_and_charges"], si["taxes"]), ("SEZ", None, []))
+
 	def test_overseas_team_carries_no_gst(self):
 		billing_team(TEAM, country="United States", state="California", currency="USD")
 		erpnext_sync.sync_invoice(self._invoice(currency="USD", subtotal=1000, tax=0))
@@ -250,7 +261,7 @@ class TestFailureIsolation(SyncTestCase):
 		cost = self._invoice(month=5)
 		frappe.db.set_value("Invoice", cost, "invoice_type", "Cost Report")
 		unpaid = self._invoice(month=6)
-		frappe.db.set_value("Invoice", unpaid, "status", "Open")
+		frappe.db.set_value("Invoice", unpaid, "status", "Outstanding")
 		self.assertEqual(erpnext_sync.sync_invoice(cost)["skipped"], "not_billable")
 		self.assertEqual(erpnext_sync.sync_invoice(unpaid)["skipped"], "not_paid")
 
@@ -268,7 +279,7 @@ class TestWhenItSyncs(SyncTestCase):
 		billing_team(TEAM, gstin=GSTIN)
 		frappe.db.set_value("Tax Profile", TEAM, {"output_tax_type": "GST", "output_tax_rate": 18})
 		inv = self._invoice(credit=0)
-		frappe.db.set_value("Invoice", inv, "status", "Draft")
+		frappe.db.set_value("Invoice", inv, "status", "Outstanding")
 		credits.grant_promotional_credits(TEAM, 20000, "INR")
 		with patch("central.billing.ingester.erpnext_sync.enqueue_invoice_sync") as enqueue:
 			self.assertEqual(open_and_collect(inv)["status"], "Paid")

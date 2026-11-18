@@ -7,7 +7,9 @@ from itertools import pairwise
 import frappe
 from frappe import _
 
-from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone
+from central.central.doctype.activity_event.activity_event import ActivityEvent
+from central.central.doctype.activity_event.tracked import CONSOLE
+from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone, build_envelope
 from central.iam import can_on_any_server
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
@@ -88,6 +90,7 @@ def observe_server(server: VirtualMachine) -> str:
 			"public_ipv6": (network.get("public_ipv6") or "").removesuffix("/128") or None,
 			"gateway_url": gateway,
 			"has_ipv4_internet": bool(network.get("ipv4_internet_access")),
+			"has_wireguard_access": bool(network.get("wireguard_gateway_access")),
 			**firewall.get_observed_firewall(network),
 		},
 	)
@@ -109,6 +112,36 @@ def observe_server(server: VirtualMachine) -> str:
 	return status
 
 
+def get_rescue_state(server: VirtualMachine) -> dict:
+	"""Read rescue state without changing Central's mirror or contacting the guest."""
+	client = get_client(server)
+	remote = client.get_vm(server.atlas_vm_id)
+	if remote.get("id") != server.atlas_vm_id or remote.get("tenant_id") != client.tenant_id:
+		raise AtlasConnectionError(_("Atlas returned a different server or Team."))
+
+	fields = ("is_rescue_mode_enabled", "is_in_rescue_mode")
+	if any(
+		field not in remote or (remote[field] is not None and type(remote[field]) is not bool)
+		for field in fields
+	):
+		raise AtlasConnectionError(_("Atlas returned an invalid rescue state."))
+
+	return {field: remote[field] for field in fields}
+
+
+def set_rescue_mode(server: VirtualMachine, enabled: bool) -> None:
+	"""Change only the boot selection; power remains a separate user action."""
+	from central.errors import AtlasRequestUncertain, throw_action_error
+
+	try:
+		get_client(server).set_rescue_mode(server.atlas_vm_id, enabled)
+	except AtlasRequestUncertain:
+		throw_action_error(
+			"OUTCOME_UNKNOWN",
+			remediation=_("Refresh rescue status before submitting another request."),
+		)
+
+
 def resize_server(server: VirtualMachine, shape: dict) -> None:
 	"""Apply a new size on Atlas, then start the server. Safe to repeat: every call sets
 	absolute values. A CPU or memory change stops the server first; a disk-only grow does not.
@@ -122,6 +155,19 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 	disk_mib = gigabytes_to_mebibytes(shape["disk_gigabytes"])
 
 	is_reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
+	rescue_selected = remote.get("is_rescue_mode_enabled") is True
+	in_rescue = remote.get("is_in_rescue_mode") is True
+	if (is_reshaping and (rescue_selected or in_rescue)) or (
+		in_rescue and compute.get("sleep_after_idle_seconds")
+	):
+		error = AtlasRejected(_("This resize cannot complete in rescue mode."))
+		error.envelope = build_envelope(
+			"ATLAS_REJECTED",
+			message=str(error),
+			remediation=_("Disable rescue mode and boot normally before making this resize."),
+		)
+		raise error
+
 	if is_reshaping:
 		# Atlas refuses to stop a sleeping VM, so wake it first.
 		if remote.get("current_state") == "paused":
@@ -222,11 +268,14 @@ def get_console_url(server: VirtualMachine, mode: ConsoleMode) -> str:
 		frappe.throw(_("Start the server before you open its console."))
 
 	try:
-		return get_client(server).get_console_url(server.atlas_vm_id, mode=mode)
+		url = get_client(server).get_console_url(server.atlas_vm_id, mode=mode)
 	except AtlasRejected:
 		if mode != "ssh":
 			raise
 		frappe.throw(_("SSH did not start on this server. Open the serial console (TTY) instead."))
+
+	ActivityEvent.record(server, f"server.{mode}_console_opened", CONSOLE)
+	return url
 
 
 def refresh_server(name: str) -> None:
@@ -249,6 +298,42 @@ def update_firewall(server: VirtualMachine, change: FirewallChange) -> None:
 	"""Change the firewall on Atlas, then read the result back."""
 	get_client(server).update_network(server.atlas_vm_id, {"firewall": firewall.get_atlas_firewall(change)})
 	observe_server(server)
+
+
+def remove_legacy_device_rules() -> None:
+	"""Remove the old rule that let every WireGuard VPN device pass the firewall, from every live
+	server. Safe to run again: a server without the rule is left as it is."""
+	servers = frappe.get_all(
+		"Virtual Machine",
+		filters={"status": ("!=", "Terminated"), "atlas_vm_id": ("is", "set")},
+		pluck="name",
+	)
+	for name in servers:
+		try:
+			remove_legacy_device_rule(frappe.get_doc("Virtual Machine", name))
+			frappe.db.commit()
+		except Exception:
+			# One unreachable region must not stop the rest. The log names the server to retry.
+			frappe.db.rollback()
+			frappe.log_error(
+				title=f"WireGuard VPN firewall rule not removed: {name}",
+				reference_doctype="Virtual Machine",
+				reference_name=name,
+			)
+
+
+def remove_legacy_device_rule(server: VirtualMachine) -> None:
+	"""Read the server's firewall from Atlas, then send it again without the old device rule."""
+	if observe_server(server) == "Terminated":
+		return
+
+	rules = frappe.parse_json(frappe.db.get_value("Virtual Machine", server.name, "firewall_rules")) or {}
+	inbound = rules.get("inbound") or []
+	if firewall.LEGACY_DEVICE_RULE not in inbound:
+		return
+
+	kept = [rule for rule in inbound if rule != firewall.LEGACY_DEVICE_RULE]
+	update_firewall(server, FirewallChange.model_validate({"inbound": kept}))
 
 
 def set_public_ip(server: VirtualMachine, version: int, is_attached: bool) -> bool:
@@ -284,6 +369,12 @@ def set_ipv4_internet(server: VirtualMachine, enabled: bool) -> None:
 	"""Turn IPv4 internet access on or off, then read the result back. Atlas keeps it on while
 	the server has a public IPv4."""
 	get_client(server).update_network(server.atlas_vm_id, {"ipv4_internet_access": enabled})
+	observe_server(server)
+
+
+def set_wireguard_access(server: VirtualMachine, enabled: bool) -> None:
+	"""Let the team's WireGuard devices reach the server or cut them off, then read the result back."""
+	get_client(server).update_network(server.atlas_vm_id, {"wireguard_gateway_access": enabled})
 	observe_server(server)
 
 
@@ -340,6 +431,16 @@ def get_metric_point(previous: dict, sample: dict, vcpus: float) -> dict:
 	is_up = previous["up"] and sample["up"]
 	compute, disk = sample["compute"], sample["disk"]
 
+	guest = sample.get("guest") or {}
+	if guest.get("system_state", "unreachable") != "unreachable":
+		# The guest's own view leaves out page cache that the host charges to the VM.
+		memory, filesystem = guest["memory"], guest["root_filesystem"]
+		memory_bytes = memory["total_bytes"] - memory["available_bytes"]
+		disk_used_bytes, disk_total_bytes = filesystem["used_bytes"], filesystem["size_bytes"]
+	else:
+		memory_bytes = compute["memory_bytes"]
+		disk_used_bytes, disk_total_bytes = disk["used_mib"] * MIB, disk["size_mib"] * MIB
+
 	def rate(section: str, key: str) -> float | None:
 		change = sample[section][key] - previous[section][key]
 		return change / seconds if is_up and change >= 0 else None
@@ -352,9 +453,9 @@ def get_metric_point(previous: dict, sample: dict, vcpus: float) -> dict:
 		"cpu_percent": None
 		if cpu_microseconds_per_second is None
 		else min(100, cpu_microseconds_per_second / 10_000 / (vcpus or 1)),
-		"memory_bytes": compute["memory_bytes"],
-		"disk_used_bytes": disk["used_mib"] * MIB,
-		"disk_total_bytes": disk["size_mib"] * MIB,
+		"memory_bytes": memory_bytes,
+		"disk_used_bytes": disk_used_bytes,
+		"disk_total_bytes": disk_total_bytes,
 		"disk_read_bytes_per_second": disk["read_bytes_per_second"],
 		"disk_write_bytes_per_second": disk["write_bytes_per_second"],
 		"received_bytes_per_second": rate("network", "received_bytes"),

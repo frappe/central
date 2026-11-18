@@ -2,11 +2,14 @@
 import { Alert, Avatar, Button, Dialog, Select, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import DialogScrollList from '@/components/common/DialogScrollList.vue'
 import { useRegions } from '@/composables/useRegions'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { teamParams } from '@/composables/useTeamScope'
 import { getErrorMessage } from '@/lib/feedback'
+import { getResourceOptions } from '@/lib/resourceScope'
+import { __ } from '@/lib/translate'
 import type {
 	ResourceType,
 	TeamMemberRoleAssignment,
@@ -64,23 +67,13 @@ const applyResourceKey = (row: TeamMemberRoleAssignment, key: string): void => {
 	row.resource_name = name || null
 }
 
-const resourceOptions = computed(() => {
-	const servers = registryCall.data?.servers ?? []
-	const sites = registryCall.data?.sites ?? []
-	return [
-		{ label: 'All resources', value: resourceKey('*', null) },
-		...servers.map((a) => ({
-			label: a.title || a.resource_id,
-			value: resourceKey('Server', a.name),
-			description: regionLabel(a.region),
-		})),
-		...sites.map((s) => ({
-			label: s.subdomain || s.name,
-			value: resourceKey('Site', s.name),
-			description: regionLabel(s.region),
-		})),
-	]
-})
+const resourceOptions = computed(() =>
+	getResourceOptions(
+		registryCall.data,
+		regionLabel,
+		rows.value.map((row) => resourceKey(row.resource_type, row.resource_name)),
+	),
+)
 
 const addRow = (): void => {
 	rows.value = [
@@ -144,31 +137,38 @@ const dialogOptions = computed(() => ({
 	size: 'lg' as const,
 	actions: [
 		{
-			label: 'Add role',
+			label: __('Add role'),
 			onClick: addRow,
 			class: 'mr-auto',
 			iconLeft: 'lucide-plus',
 		},
 		{
-			label: 'Save',
+			label: __('Save'),
 			variant: 'solid' as const,
 			disabled: !canSubmit.value,
 			onClick: submit,
 		},
 	],
 }))
+
+const updateAccessErrorTitle = __("Couldn't update access")
 </script>
 
 <template>
 	<Dialog
 		v-model="open"
-		title="Manage access"
+		:title="__('Manage access')"
 		:size="dialogOptions.size"
 		:actions="dialogOptions.actions"
 	>
 		<template #default>
-			<div class="space-y-4">
-				<Alert v-if="formError" theme="red" :title="formError" />
+			<div class="flex max-h-[calc(100vh-14rem)] flex-col gap-4">
+				<Alert
+					v-if="formError"
+					theme="red"
+					:title="updateAccessErrorTitle"
+					:description="formError"
+				/>
 				<div class="flex items-center gap-3">
 					<Avatar :label="member?.full_name" size="2xl" />
 					<div class="min-w-0">
@@ -182,49 +182,53 @@ const dialogOptions = computed(() => ({
 				</div>
 
 				<p class="text-p-sm text-ink-gray-5">
-					Assign roles to specific servers or sites, or to all resources.
+					{{ __('Assign roles to specific servers or sites, or to all resources.') }}
 				</p>
 
 				<Alert
 					v-if="dominatingIndex !== -1"
 					theme="blue"
-					title="Admin already covers everything"
+					:title="__('Admin already covers everything')"
 				/>
 
 				<Alert
 					v-if="shadowedIndexes.size"
 					theme="blue"
-					title="A role on all resources already covers the rest"
+					:title="__('A role on all resources already covers the rest')"
 				/>
 
-				<div class="space-y-2">
-					<div
-						v-for="(row, index) in rows"
-						:key="index"
-						class="flex items-center gap-2"
-						:class="{ 'opacity-50': dominatingIndex !== -1 && index !== dominatingIndex }"
-					>
-						<Select
-							v-model="row.role"
-							:options="roleOptions"
-							placeholder="Choose a role"
-							class="min-w-0 flex-1"
-						/>
-						<span class="shrink-0 text-p-sm text-ink-gray-5">on</span>
-						<Select
-							:model-value="resourceKey(row.resource_type, row.resource_name)"
-							:options="resourceOptions"
-							class="min-w-0 flex-1"
-							@update:model-value="applyResourceKey(row, $event as string)"
-						/>
-						<Button
-							variant="ghost"
-							icon="lucide-x"
-							label="Remove role"
-							@click="removeRow(index)"
-						/>
+				<DialogScrollList fill>
+					<div class="space-y-2">
+						<div
+							v-for="(row, index) in rows"
+							:key="index"
+							class="flex items-center gap-2"
+							:class="{ 'opacity-50': dominatingIndex !== -1 && index !== dominatingIndex }"
+						>
+							<Select
+								v-model="row.role"
+								:options="roleOptions"
+								:placeholder="__('Choose a role')"
+								class="min-w-0 flex-1"
+							/>
+							<span class="shrink-0 text-p-sm text-ink-gray-5"
+								>{{ __('on') }}</span
+							>
+							<Select
+								:model-value="resourceKey(row.resource_type, row.resource_name)"
+								:options="resourceOptions"
+								class="min-w-0 flex-1"
+								@update:model-value="applyResourceKey(row, $event as string)"
+							/>
+							<Button
+								variant="ghost"
+								icon="lucide-x"
+								:label="__('Remove role')"
+								@click="removeRow(index)"
+							/>
+						</div>
 					</div>
-				</div>
+				</DialogScrollList>
 			</div>
 		</template>
 	</Dialog>

@@ -100,13 +100,59 @@ class TestListInstances(IntegrationTestCase):
 				"memory_megabytes": 4096,
 				"disk_gigabytes": 40,
 				"frappe_version": "v15",
+				"image_offering": "ubuntu",
 			}
 		).insert(ignore_permissions=True)
 		frappe.set_user(self.owner)
 		servers = registry(team=self.team.name)["servers"]
 
 		self.assertEqual(len(servers), 1)
-		for field in ("name", "resource_id", "plan", "status", "region"):
+		for field in ("name", "resource_id", "plan", "status", "region", "has_wireguard_access"):
 			self.assertIn(field, servers[0])
 		self.assertEqual(servers[0].name, servers[0].resource_id)
 		self.assertEqual(servers[0].frappe_version, "v15")
+		self.assertEqual(servers[0].image_title, frappe.db.get_value("Image Offering", "ubuntu", "title"))
+
+	def test_registry_reports_who_created_each_server(self):
+		created = self._insert_server("li-created-vm")
+		discovered = self._insert_server("li-discovered-vm")
+		# Written without lifecycle hooks, which would call a region.
+		action = frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"resource_type": "Server",
+				"action": "create",
+				"team": self.team.name,
+				"server": created,
+				"requested_by": self.owner,
+				"correlation_id": frappe.generate_hash(),
+			}
+		)
+		action.name = frappe.generate_hash(length=10)
+		action.db_insert()
+
+		frappe.set_user(self.owner)
+		servers = {server.name: server for server in registry(team=self.team.name)["servers"]}
+
+		self.assertEqual(servers[created].created_by, self.owner)
+		self.assertEqual(
+			servers[created].created_by_name, frappe.db.get_value("User", self.owner, "full_name")
+		)
+		self.assertIsNone(servers[discovered].created_by)
+
+	def _insert_server(self, resource_id: str) -> str:
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Virtual Machine",
+					"resource_id": resource_id,
+					"team": self.team.name,
+					"region": self.active_region,
+					"title": resource_id,
+					"status": "Running",
+					"image_offering": "ubuntu",
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)

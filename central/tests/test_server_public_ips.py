@@ -4,7 +4,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import now_datetime
 
-from central.api.servers import set_server_ipv4_internet, set_server_public_ip
+from central.api.servers import set_server_ipv4_internet, set_server_public_ip, set_server_wireguard_access
 from central.billing.catalog.rate_card import ensure_component_rate_card
 from central.billing.revenue.invoicing.lines import _subscription_clusters
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
@@ -131,5 +131,24 @@ class TestPublicIPActions(PublicIPTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			set_server_ipv4_internet(self.team, self.server, enabled=0)
+
+		self.client.update_network.assert_not_called()
+
+	def test_wireguard_access_reaches_atlas_and_a_viewer_cannot_change_it(self):
+		frappe.db.set_value("Region", self.region, "has_wireguard_gateway", 1)
+		frappe.set_user(self.developer)
+		set_server_wireguard_access(self.team, self.server, enabled=1)
+		self.client.update_network.assert_called_once_with("vm-public-ip", {"wireguard_gateway_access": True})
+
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			set_server_wireguard_access(self.team, self.server, enabled=0)
+
+	def test_a_region_without_a_gateway_turns_on_no_wireguard_access(self):
+		frappe.db.set_value("Region", self.region, "has_wireguard_gateway", 0)
+		frappe.set_user(self.developer)
+
+		with self.assertRaises(frappe.ValidationError):
+			set_server_wireguard_access(self.team, self.server, enabled=1)
 
 		self.client.update_network.assert_not_called()

@@ -13,6 +13,8 @@ fixtures = [
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
 	# Warpgate signs in through the Central OpenID Connect provider and checks the Atlas roles.
 	# Product Operators create and edit products; only System Managers delete them.
+	# Staff Viewers read Team, Site and Virtual Machine in Desk, and manage Product and
+	# Email OAuth Provider.
 	{
 		"dt": "Role",
 		"filters": [
@@ -25,6 +27,7 @@ fixtures = [
 					"Atlas Warpgate Admin",
 					"Product Operator",
 					"App Rollout Alert",
+					"Staff Viewer",
 				],
 			]
 		],
@@ -48,16 +51,14 @@ website_user_home_page = "dashboard"
 
 # required_apps = []
 
-# Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "central",
-# 		"logo": "/assets/central/logo.png",
-# 		"title": "Central",
-# 		"route": "/central",
-# 		"has_permission": "central.api.permission.has_app_permission"
-# 	}
-# ]
+add_to_apps_screen = [
+	{
+		"name": "central",
+		"logo": "/assets/central/logo.svg",
+		"title": "Central",
+		"route": "/desk/central",
+	}
+]
 
 # Includes in <head>
 # ------------------
@@ -138,6 +139,7 @@ after_install = [
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
+	"central.billing.settings.ensure_minimum_invoice_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
 	"central.integrations.email_oauth.setup.ensure_email_oauth_providers",
 	"central.billing.navigation.ensure_workspace_sidebars",
@@ -197,6 +199,7 @@ doc_events = {
 	"User": {
 		"validate": "central.users.validate_user_image",
 		"after_insert": "central.users.grant_central_user_role",
+		"on_update": "central.infrastructure.doctype.wireguard_device.wireguard_device.remove_disabled_user_devices",
 	},
 	# A Billing Profile's level reaches Grove by the Webhook AI Settings keeps, with retries.
 	"Trust Tier Level": {
@@ -205,6 +208,58 @@ doc_events = {
 	},
 	"Payment Method": {
 		"on_update": "central.signups.credit.on_payment_method_update",
+	},
+	# Money records change only through billing code (central/billing/platform/records.py).
+	**{
+		doctype: {
+			"validate": "central.billing.platform.records.refuse_manual_edit",
+			"on_trash": "central.billing.platform.records.refuse_manual_delete",
+		}
+		for doctype in (
+			"Invoice",
+			"Payment Attempt",
+			"Refund",
+			"Credit Ledger Entry",
+			"Credit Wallet",
+			"Usage Rollup",
+			"Webhook Event",
+			"Billing Event",
+			"Top-up Order",
+		)
+	},
+	# Activity feed. Frappe writes a Version for each save of a tracked DocType, and the feed
+	# keeps the fields that central/central/doctype/activity_event/tracked.py lists.
+	"Version": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_version",
+	},
+	# A Version records no creation and no deletion, so these DocTypes record both themselves.
+	"VM Snapshot": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Site": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Site Domain": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team Role": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team Invitation": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
+	},
+	"Team SSH Key": {
+		"after_insert": "central.central.doctype.activity_event.activity_event.record_created",
+		"on_trash": "central.central.doctype.activity_event.activity_event.record_deleted",
 	},
 }
 
@@ -216,19 +271,27 @@ scheduler_events = {
 	"cron": {
 		"* * * * *": [
 			"central.infrastructure.doctype.warpgate_access.warpgate_access.revoke_ended_access",
+			"central.integrations.datum.publish_error_logs",
+			"central.integrations.metrics.publish_metrics",
 		],
 		"*/10 * * * *": [
 			# Repair observed state through scoped regional reads.
 			"central.integrations.servers.reconcile",
 			"central.infrastructure.doctype.region.cargo_connection.register_pending_cargo",
 		],
-		# Retry proxy routes that failed or never ran, up to the attempt limit.
+		# 09:00 system time (Asia/Kolkata): remind INR teams to top up before the payment date.
+		"0 9 * * *": ["central.billing.payments.top_up_reminders.run_top_up_reminders"],
 		"*/5 * * * *": [
+			# Credit a recent top-up whose callback and webhook are late.
+			"central.billing.payments.reconciliation.reconcile_recent_top_up_orders",
+			# Retry proxy routes that failed or never ran, up to the attempt limit.
 			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",
 			"central.infrastructure.doctype.site.site.record_ready_sites",
 			"central.infrastructure.doctype.site.site.poll_site_renames",
 			"central.infrastructure.doctype.vm_snapshot.vm_snapshot.sync_pending_snapshots",
 			"central.infrastructure.doctype.frappemail_service.frappemail_service.refill_mailboxes",
+			"central.services.doctype.ai_trial_key.ai_trial_key.refill_trial_keys",
+			"central.infrastructure.doctype.wireguard_device.wireguard_device.remove_pending_devices",
 		],
 	},
 	# Maintenance jobs run once per period at a time Frappe spreads across sites.
@@ -237,6 +300,7 @@ scheduler_events = {
 	],
 	"daily_long": [
 		"central.infrastructure.doctype.vm_snapshot.vm_snapshot.take_automatic_snapshots",
+		"central.billing.ingester.gst_state_backfill.record_missing_gst_states",
 	],
 	"daily": [
 		"central.identity.doctype.team_invitation.team_invitation.expire_pending_invitations",
@@ -253,14 +317,19 @@ scheduler_events = {
 		"central.billing.ingester.advance.sync_pending_advances",
 		"central.billing.revenue.storage_usage.record_storage_usage",
 		"central.billing.platform.invariants.run_invariant_audit",
+		"central.billing.payments.reconciliation.recheck_completed_refunds",
 	],
 	"hourly": [
 		"central.billing.revenue.invoicing.collect_due_invoices",
+		"central.billing.payments.collection.collect_on_payment_date",
 		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
 		"central.billing.payments.reconciliation.run_reconciliation",
 		"central.billing.payments.webhooks.retry_failed_webhooks",
+		"central.billing.payments.setup_expiry.expire_unfinished_setups",
+		"central.billing.payments.setup_expiry.retry_unfinished_releases",
 		"central.billing.platform.alerts.run_operator_alerts",
 		"central.signups.alerts.alert_failed_signups",
+		"central.notification.digest.send_due_digests",
 	],
 	"monthly": [
 		"central.billing.revenue.invoicing.draft_monthly_invoices",
@@ -278,6 +347,8 @@ after_migrate = [
 	"central.billing.navigation.ensure_workspace_sidebars",
 	# The Webhook that carries a team's tier to Grove, so an edit to its spec rolls out.
 	"central.services.doctype.ai_settings.ai_settings.sync_webhook",
+	"central.investigator.knowledge.load_knowledge_bases_after_migrate",
+	"central.users.ensure_staff_role_profile",
 ]
 
 # Testing
@@ -293,6 +364,7 @@ before_tests = [
 	"central.billing.gateways.setup.ensure_gateway_records",
 	"central.integrations.email_oauth.setup.ensure_email_oauth_providers",
 	"central.billing.navigation.ensure_workspace_sidebars",
+	"central.users.ensure_staff_role_profile",
 ]
 
 # Extend DocType Class
@@ -330,12 +402,13 @@ override_doctype_dashboards = {
 # Ignore links to specified DocTypes when deleting documents
 # -----------------------------------------------------------
 
-# ignore_links_on_delete = ["Communication", "ToDo"]
+# An event outlives the resource it describes.
+ignore_links_on_delete = ["Activity Event"]
 
 # Request Events
 # ----------------
 before_request = ["central.oidc.take_client_credentials"]
-# after_request = ["central.utils.after_request"]
+after_request = ["central.integrations.metrics.count_request"]
 
 # The OpenID Connect discovery document of the Central issuer.
 page_renderer = ["central.oidc.DiscoveryPage"]
@@ -371,8 +444,35 @@ page_renderer = ["central.oidc.DiscoveryPage"]
 
 # Authentication and authorization
 
+# Team-scoped billing records: operators only; customers use the billing API.
+_BILLING_TEAM_RECORDS = (
+	"Billing Event",
+	"Billing Notification Log",
+	"Billing Profile",
+	"Billing Projection Summary",
+	"Billing Run Team",
+	"Billing Scenario",
+	"Commitment",
+	"Credit Ledger Entry",
+	"Credit Wallet",
+	"Entitlement Token",
+	"Gateway Customer",
+	"Invoice",
+	"Payment Attempt",
+	"Payment Method",
+	"Project",
+	"Refund",
+	"Subscription",
+	"Subscription Change",
+	"Tax Profile",
+	"Top-up Order",
+	"Usage Rollup",
+)
+
 permission_query_conditions = {
 	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
+	"WireGuard Device": "central.permissions.wireguard_device_query_conditions",
+	"Firewall Ruleset": "central.permissions.firewall_ruleset_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
 	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
@@ -381,14 +481,19 @@ permission_query_conditions = {
 	"Team": "central.permissions.team_query_conditions",
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
 	"Team Notification": "central.permissions.team_notification_query_conditions",
+	"Activity Event": "central.permissions.activity_event_query_conditions",
 	"Team Role": "central.permissions.team_role_query_conditions",
+	"Notification Digest Setting": "central.permissions.notification_digest_setting_query_conditions",
 	"Team Service": "central.permissions.team_service_query_conditions",
 	"User Notification Preference": "central.permissions.user_notification_preference_query_conditions",
 	"VM Snapshot": "central.permissions.vm_snapshot_query_conditions",
+	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_query_conditions"),
 }
 
 has_permission = {
 	"Team SSH Key": "central.permissions.team_ssh_key_has_permission",
+	"WireGuard Device": "central.permissions.wireguard_device_has_permission",
+	"Firewall Ruleset": "central.permissions.firewall_ruleset_has_permission",
 	"Virtual Machine": "central.permissions.server_has_permission",
 	"Pilot Credential": "central.permissions.pilot_credential_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",
@@ -397,10 +502,13 @@ has_permission = {
 	"Team": "central.permissions.team_has_permission",
 	"Team Invitation": "central.permissions.team_invitation_has_permission",
 	"Team Notification": "central.permissions.team_notification_has_permission",
+	"Activity Event": "central.permissions.activity_event_has_permission",
 	"Team Role": "central.permissions.team_role_has_permission",
+	"Notification Digest Setting": "central.permissions.has_notification_digest_setting_permission",
 	"Team Service": "central.permissions.team_service_has_permission",
 	"User Notification Preference": "central.permissions.user_notification_preference_has_permission",
 	"VM Snapshot": "central.permissions.vm_snapshot_has_permission",
+	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_has_permission"),
 }
 
 # --------------------------------
@@ -415,11 +523,15 @@ export_python_type_annotations = True
 # Require all whitelisted methods to have type annotations
 require_type_annotated_api_methods = True
 
-# default_log_clearing_doctypes = {
-# 	"Logging DocType Name": 30  # days to retain logs
-# }
+# Days Log Settings keeps a record before its daily clean-up drops it.
+default_log_clearing_doctypes = {
+	"Activity Event": 365,
+	"AI Trial Key": 30,
+}
 
 # Translation
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
+
+flow_agents = ["central.investigator.agents.get_agents"]

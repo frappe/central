@@ -64,8 +64,8 @@ class BillingTestCase(IntegrationTestCase):
 	# raw deletes (frappe.db.delete) need no dependency ordering. Child rows need
 	# explicit cleanup because raw deletes do not run the parent document hooks.
 	_TRACKED = (
-		"Payment Attempt",
 		"Top-up Order",
+		"Payment Attempt",
 		"Refund",
 		"Credit Ledger Entry",
 		"Credit Wallet",
@@ -90,8 +90,11 @@ class BillingTestCase(IntegrationTestCase):
 		"User",
 		"Webhook Event",
 		"Notification Log",
+		"Billing Notification Log",
+		"Team Notification",
 		"Billing Event",
 		"Billing Run",
+		"Billing Run Team",
 	)
 
 	# Payment Gateway is a fixed roster (one row per adapter), not something a test
@@ -107,6 +110,7 @@ class BillingTestCase(IntegrationTestCase):
 
 	def run(self, result=None):
 		before = {doctype: set(frappe.get_all(doctype, pluck="name")) for doctype in self._TRACKED}
+		before["Comment"] = set(_payment_method_comments())
 		gateways = self._snapshot_gateways()
 		try:
 			# The bench config may point at a real accounting site; a test opts in.
@@ -167,6 +171,14 @@ class BillingTestCase(IntegrationTestCase):
 			frappe.db.delete(doctype, {"name": ["in", added]})
 		if removed_teams:
 			frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", removed_teams]})
+		# Notices, refund and release notes, and the "Deleted" note of a deleted method.
+		comments = list(set(_payment_method_comments()) - before["Comment"])
+		if comments:
+			frappe.db.delete("Comment", {"name": ["in", comments]})
+
+
+def _payment_method_comments() -> list[str]:
+	return frappe.get_all("Comment", filters={"reference_doctype": "Payment Method"}, pluck="name")
 
 
 # frappe.enqueue doesn't run inline in tests unless now=True, so patch it with this to
@@ -436,7 +448,20 @@ def complete_billing_profile(team, currency="INR"):
 	else:
 		doc = frappe.get_doc(values)
 	doc.save(ignore_permissions=True)
+	_ensure_untaxed_tax_profile(team)
 	return team
+
+
+def _ensure_untaxed_tax_profile(team: str) -> None:
+	"""Tests price without tax unless they set a Tax Profile. India must be GST, so its rate is 0."""
+	from central.billing.revenue.tax import is_indian_team
+
+	if frappe.db.exists("Tax Profile", team):
+		return
+	output_tax_type = "GST" if is_indian_team(team) else "None"
+	frappe.get_doc(
+		{"doctype": "Tax Profile", "team": team, "output_tax_type": output_tax_type, "output_tax_rate": 0}
+	).insert(ignore_permissions=True)
 
 
 def give_team_a_card(team, gateway="Stripe"):
@@ -471,6 +496,7 @@ def make_billing_subscription(team, cluster, plan, start_date=None, clear_change
 	currency = kwargs.pop("currency", "INR")
 	if not frappe.db.get_value("Billing Profile", team, "currency"):
 		complete_billing_profile(team, currency=currency)
+	_ensure_untaxed_tax_profile(team)
 	sub = subscriptions.create_subscription(
 		team=team, cluster=cluster, plan=plan, start_date=start_date, **kwargs
 	)
@@ -633,3 +659,18 @@ def stripe_intent(txn_id, event_type="payment_intent.succeeded", **fields):
 		"currency": (attempt.currency or "INR").lower(),
 		**fields,
 	}
+
+
+WEBHOOK_PROCESS_JOB = "central.billing.payments.webhooks.handle_webhook_event"
+WEBHOOK_COUNT_JOB = "central.billing.payments.webhooks.count_repeat_delivery"
+
+
+def processing_jobs(enqueue) -> int:
+	"""How many webhook processing jobs a patched `frappe.enqueue` was asked for."""
+	return sum(1 for call in enqueue.call_args_list if call.args[0] == WEBHOOK_PROCESS_JOB)
+
+
+def run_repeat_counts(method, **kwargs):
+	"""Run the repeat-count job inline and leave the processing job queued."""
+	if method == WEBHOOK_COUNT_JOB:
+		run_enqueued_inline(method, **kwargs)

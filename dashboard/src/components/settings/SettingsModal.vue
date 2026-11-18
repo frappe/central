@@ -15,7 +15,7 @@ import { computed, watch } from 'vue'
 import { useMyInvitations } from '@/composables/useMyInvitations'
 import { useMyProfile } from '@/composables/useMyProfile'
 import {
-	type SettingsTabDef,
+	SETTINGS_GROUPS,
 	settingsOpen,
 	settingsTab,
 	useSettingsTabs,
@@ -31,13 +31,10 @@ const { count: invitationCount } = useMyInvitations()
 // What's yours and what the team's are different kinds of setting, so they get
 // their own sections rather than one long list.
 const groups = computed(() => {
-	const order: SettingsTabDef['group'][] = ['Account', 'Administration']
-	return order
-		.map((group) => ({
-			label: group,
-			items: tabs.value.filter((tab) => tab.group === group),
-		}))
-		.filter((group) => group.items.length > 0)
+	return SETTINGS_GROUPS.map((group) => ({
+		label: group,
+		items: tabs.value.filter((tab) => tab.group === group),
+	})).filter((group) => group.items.length > 0)
 })
 
 // Losing a tab you can no longer reach shouldn't leave an empty content pane.

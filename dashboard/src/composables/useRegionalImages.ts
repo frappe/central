@@ -5,6 +5,7 @@ import { useSession } from '@/composables/useSession'
 import { getErrorMessage } from '@/lib/feedback'
 import { formatUnixTime } from '@/lib/format'
 import type {
+	App,
 	ImageOffering,
 	ImageSelection,
 	RegionalImage,
@@ -51,6 +52,25 @@ const newestRelease = (images: RegionalImage[]): RegionalImage | undefined =>
 		)[0]
 
 export type ImageSource = 'image' | 'snapshot'
+
+/** The offering whose builds are Cargo's apps rather than Atlas's catalog. */
+export const APPS_OFFERING = 'apps'
+
+// An app boots from its Atlas image, so it stands in for an image build. Central
+// checks the image against the offering's tags when the server is created.
+function appAsImage(app: App): RegionalImage {
+	return {
+		id: app.snapshot_id,
+		title: app.title,
+		architecture: '',
+		rootfs_size_mib: 0,
+		created_at: 0,
+		tags: {
+			application: app.application,
+			os_version: app.os_version ?? '',
+		},
+	}
+}
 
 // A snapshot restores into a server of its source's kind, so it stands in for an image
 // build. Its tags are empty: Central applies the source offering's tags itself.
@@ -127,6 +147,7 @@ export function useRegionalImages(
 
 	const offerings = ref<ImageOffering[]>([])
 	const images = ref<RegionalImage[]>([])
+	const apps = ref<App[]>([])
 	const offering = ref('')
 	const imageId = ref('')
 	const loading = ref(false)
@@ -138,6 +159,7 @@ export function useRegionalImages(
 		const team = activeTeam.value
 		const atlas = region.value
 		images.value = []
+		apps.value = []
 		imageId.value = ''
 		error.value = ''
 		loading.value = false
@@ -157,6 +179,19 @@ export function useRegionalImages(
 				return
 			}
 			if (!offering.value) return
+
+			// The user picks an app card, so none is selected for them.
+			if (offering.value === APPS_OFFERING) {
+				const built = await frappeRequest<App[]>({
+					url: methodV1(API.listApps),
+					method: 'GET',
+					params: { team, region: atlas },
+				})
+				if (current !== generation) return
+				apps.value = built
+				images.value = built.map(appAsImage)
+				return
+			}
 
 			const builds: RegionalImage[] = []
 			let offset: number | null = 0
@@ -208,6 +243,13 @@ export function useRegionalImages(
 			? { offering: offering.value, image_id: image.value.id }
 			: null
 	})
+	const isApp = computed(() => offering.value === APPS_OFFERING)
+	const app = computed<App | null>(
+		() =>
+			(source.value === 'image' &&
+				apps.value.find((item) => item.snapshot_id === imageId.value)) ||
+			null,
+	)
 	const isPlainImage = computed(() => offering.value === 'ubuntu')
 	// A build with an app installed gets its own offering later.
 	const buildChoices = computed(() =>
@@ -255,6 +297,9 @@ export function useRegionalImages(
 		offerings,
 		offering,
 		images,
+		apps,
+		isApp,
+		app,
 		imageId,
 		image,
 		selection,

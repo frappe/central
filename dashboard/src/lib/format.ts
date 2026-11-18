@@ -26,14 +26,11 @@ export function money(
 	return `${currencySymbol(currency)}${major}`
 }
 
+/** "$12.50" to the cent; a positive amount under half a cent reads "<$0.01", not "$0.00". */
 export function usd(amount: number | null | undefined): string {
 	const value = Number(amount ?? 0)
-	return value.toLocaleString(undefined, {
-		style: 'currency',
-		currency: 'USD',
-		minimumFractionDigits: 2,
-		maximumFractionDigits: value > 0 && value < 1 ? 4 : 2,
-	})
+	if (value > 0 && value < 0.005) return '<$0.01'
+	return value.toLocaleString(undefined, { style: 'currency', currency: 'USD' })
 }
 
 /** Signed amount for ledgers: "+ ₹5,000.00" / "− ₹5,003.20". */

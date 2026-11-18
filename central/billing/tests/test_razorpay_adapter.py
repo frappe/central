@@ -11,6 +11,7 @@ import requests
 from central.billing.gateways.razorpay_adapter import RazorpayAdapter
 from central.billing.tests.gateway_contract import GatewayAdapterContract
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import complete_billing_profile, ensure_team
 
 
 def make_razorpay_gateway(currencies=(("INR", 1),)):
@@ -61,24 +62,81 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		invoice = frappe._dict(
 			amount=40.0, currency="INR", customer_id="cust_x", name="INV-1", order_id="order_x"
 		)
-		method = frappe._dict(gateway_method_id="token_x")
+		team = complete_billing_profile(ensure_team("rzp-adapter-team"))
+		method = frappe._dict(gateway_method_id="token_x", team=team)
 		return invoice, method, "PA-R-001"
 
 	@contextmanager
-	def charge_succeeds(self, txn_id="txn_ok"):
+	def _recurring_payment(self, **payment):
+		"""createRecurring answers with ids only; the payment entity carries the outcome."""
 		with self._client() as c:
 			c.order.payments.return_value = {"items": []}
-			c.payment.createRecurring.return_value = {"id": txn_id, "status": "captured"}
+			c.payment.createRecurring.return_value = {"razorpay_payment_id": payment["id"]}
+			c.payment.fetch.return_value = payment
+			yield c
+
+	@contextmanager
+	def charge_succeeds(self, txn_id="txn_ok"):
+		with self._recurring_payment(id=txn_id, status="captured"):
 			yield
 
 	@contextmanager
 	def charge_declines(self, code="card_declined"):
+		with self._recurring_payment(id="pay_failed", status="failed", error_code=code):
+			yield
+
+	def test_a_recurring_debit_sends_the_payers_email_and_contact(self):
+		adapter = self.make_adapter()
+		invoice, method, key = self.make_charge_inputs()
+		with self.charge_succeeds():
+			adapter.charge(invoice, method, key)
+		body = self._mock.payment.createRecurring.call_args.args[0]
+		self.assertEqual((body["email"], body["contact"]), ("billing@test.example", "9999999999"))
+
+	def test_a_debit_still_in_progress_is_held_not_failed(self):
+		adapter = self.make_adapter()
+		invoice, method, key = self.make_charge_inputs()
+		with self._recurring_payment(id="pay_async", status="created"):
+			result = adapter.charge(invoice, method, key)
+		self.assertFalse(result.success)
+		self.assertEqual(result.gateway_transaction_id, "pay_async")
+		self.assertTrue(result.hold_until)
+
+	def test_a_refused_request_is_not_a_decline(self):
+		from central.billing.payments import decline
+
+		adapter = self.make_adapter()
+		invoice, method, key = self.make_charge_inputs()
 		with self._client() as c:
 			c.order.payments.return_value = {"items": []}
-			err = razorpay.errors.BadRequestError("Payment was declined")
-			err.code = code
-			c.payment.createRecurring.side_effect = err
-			yield
+			c.payment.createRecurring.side_effect = razorpay.errors.BadRequestError(
+				"The contact field is required."
+			)
+			result = adapter.charge(invoice, method, key)
+		self.assertEqual(result.failure_code, decline.REQUEST_REFUSED)
+		self.assertFalse(decline.is_retryable_later(result.failure_code, None))
+
+	def test_a_payer_without_a_phone_is_refused_before_the_gateway(self):
+		from central.billing.payments import decline
+
+		adapter = self.make_adapter()
+		invoice, method, key = self.make_charge_inputs()
+		frappe.db.set_value("Billing Profile", method.team, "phone", None)
+		with self._client() as c:
+			c.order.payments.return_value = {"items": []}
+			result = adapter.charge(invoice, method, key)
+		self.assertEqual(result.failure_code, decline.REQUEST_REFUSED)
+		c.payment.createRecurring.assert_not_called()
+
+	def test_a_resumed_charge_returns_its_payment_even_without_a_phone(self):
+		adapter = self.make_adapter()
+		invoice, method, key = self.make_charge_inputs()
+		frappe.db.set_value("Billing Profile", method.team, "phone", None)
+		with self._client() as c:
+			c.order.payments.return_value = {"items": [{"id": "pay_first", "status": "captured"}]}
+			result = adapter.charge(invoice, method, key)
+		self.assertTrue(result.success)
+		self.assertEqual(result.gateway_transaction_id, "pay_first")
 
 	@contextmanager
 	def charge_times_out(self):
@@ -134,6 +192,22 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 			adapter.refund(payment_attempt, amount, reason, "REF-0001")
 		header = self._mock.payment.refund.call_args.kwargs["headers"]["X-Refund-Idempotency"]
 		self.assertEqual(len(header), 40)
+
+	def test_the_sdk_sends_the_refund_idempotency_header(self):
+		"""Drives the real SDK client, so a change to its refund signature fails here."""
+		adapter = self.make_adapter()
+		payment_attempt, amount, reason = self.make_refund_inputs()
+		client = razorpay.Client(auth=("rzp_test_key", "rzp_test_secret"))
+		response = MagicMock(status_code=200)
+		response.json.return_value = {"id": "rfnd_sdk", "status": "processed"}
+		with (
+			patch.object(RazorpayAdapter, "_client", return_value=client),
+			patch.object(client.session, "post", return_value=response) as post,
+		):
+			result = adapter.refund(payment_attempt, amount, reason, "REF-0002")
+
+		self.assertEqual(result.gateway_refund_id, "rfnd_sdk")
+		self.assertEqual(len(post.call_args.kwargs["headers"]["X-Refund-Idempotency"]), 40)
 
 	def make_refund_inputs(self):
 		payment_attempt = frappe._dict(gateway_transaction_id="pay_charged")
@@ -285,3 +359,90 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		with self._client() as c:
 			c.invoice.fetch.return_value = {"status": "authenticated"}
 			self.assertEqual(adapter.get_mandate_status("order_x"), "authenticated")
+
+	def test_a_upi_mandate_is_fingerprinted_by_its_upi_id(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			fingerprint = adapter.read_instrument_fingerprint({"vpa": "Payer@OKICICI", "token_id": "token_x"})
+			c.token.fetch.assert_not_called()
+		self.assertEqual(fingerprint, "upi:payer@okicici")
+
+	def test_a_card_mandate_is_fingerprinted_by_its_token_card(self):
+		adapter = self.make_adapter()
+		card = {
+			"network": "RuPay",
+			"issuer": "UTIB",
+			"last4": "8950",
+			"expiry_month": 12,
+			"expiry_year": 2030,
+		}
+		with self._client() as c:
+			c.token.fetch.return_value = {"id": "token_x", "card": card}
+			payment = {"token_id": "token_x", "customer_id": "cust_x"}
+			fingerprint = adapter.read_instrument_fingerprint(payment)
+			c.token.fetch.assert_called_once_with("cust_x", "token_x")
+		self.assertEqual(fingerprint, "card:RuPay:UTIB:8950:12:2030")
+
+	def test_an_unreadable_token_gives_no_fingerprint(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.token.fetch.side_effect = razorpay.errors.BadRequestError("no such token")
+			payment = {"token_id": "token_x", "customer_id": "cust_x"}
+			self.assertIsNone(adapter.read_instrument_fingerprint(payment))
+
+	def test_a_setup_order_reads_finished_only_once_a_token_is_authorised(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.order.payments.return_value = {"items": [{"id": "pay_1", "status": "failed"}]}
+			self.assertEqual(adapter.read_finished_setup("order_1"), {})
+			payment = {"id": "pay_2", "status": "captured", "token_id": "token_2", "customer_id": "cust_2"}
+			c.order.payments.return_value = {"items": [payment]}
+			saved = adapter.read_finished_setup("order_1")
+		c.order.payments.assert_called_with("order_1")
+		self.assertEqual(saved, {"payment_method": "token_2", "customer": "cust_2", "payment": payment})
+
+	def test_a_refunded_setup_payment_still_reads_its_token(self):
+		adapter = self.make_adapter()
+		payment = {"id": "pay_3", "status": "refunded", "token_id": "token_3", "customer_id": "cust_3"}
+		with self._client() as c:
+			c.order.payments.return_value = {"items": [payment]}
+			saved = adapter.read_finished_setup("order_1")
+		self.assertEqual(saved, {"payment_method": "token_3", "customer": "cust_3", "payment": payment})
+
+	def test_a_failed_setup_read_is_a_gateway_error(self):
+		from central.billing.gateways.base import GatewayError, GatewayTimeout
+
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.order.payments.side_effect = requests.exceptions.ConnectionError("down")
+			with self.assertRaises(GatewayTimeout):
+				adapter.read_finished_setup("order_1")
+			c.order.payments.side_effect = razorpay.errors.BadRequestError("no such order")
+			with self.assertRaises(GatewayError):
+				adapter.read_finished_setup("order_1")
+
+	def test_a_setup_order_razorpay_does_not_have_reads_as_not_finished(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.order.payments.side_effect = razorpay.errors.BadRequestError("The id provided does not exist")
+			self.assertEqual(adapter.read_finished_setup("order_gone"), {})
+
+	def test_removing_a_saved_token_cancels_it(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			adapter.remove_saved_method("token_2", customer_reference="cust_2")
+		c.token.cancel.assert_called_once_with("cust_2", "token_2")
+
+	def test_a_token_already_cancelled_or_gone_counts_as_removed(self):
+		adapter = self.make_adapter()
+		for message in ("Token is already cancelled", "The id provided does not exist"):
+			with self._client() as c:
+				c.token.cancel.side_effect = razorpay.errors.BadRequestError(message)
+				adapter.remove_saved_method("token_2", customer_reference="cust_2")
+
+	def test_another_refusal_to_cancel_a_token_raises(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.token.cancel.side_effect = razorpay.errors.BadRequestError("Customer is blocked")
+			with self.assertRaises(razorpay.errors.BadRequestError):
+				adapter.remove_saved_method("token_2", customer_reference="cust_2")

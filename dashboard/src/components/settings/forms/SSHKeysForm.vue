@@ -1,28 +1,46 @@
 <script setup lang="ts">
-import { Alert, Button } from 'frappe-ui'
-import { ref } from 'vue'
+import { Alert, Button, TextInput } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import Table from '@/components/common/Table.vue'
 import SSHKeyDialog from '@/components/servers/SSHKeyDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useSession } from '@/composables/useSession'
 import { useTeamSSHKeys } from '@/composables/useTeamSSHKeys'
 import { getErrorMessage, successToast } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 import type { TeamSSHKey } from '@/types/sshKeys'
 
 const COLUMNS = [
-	{ key: 'title', label: 'Key', class: 'w-full max-w-0' },
-	{ key: 'server_count', label: 'Servers' },
+	{ key: 'title', label: __('Key'), class: 'w-full max-w-0' },
+	{ key: 'server_count', label: __('Servers'), class: 'text-right' },
 	{ key: 'actions', label: '', class: 'w-10 pr-1' },
 ]
 
 const { keys, loading, error, reload, create, rotate, retry, remove } =
 	useTeamSSHKeys()
 const { canManageSSHKeys } = useCapabilities()
+const { activeTeam } = useSession()
 
 const adding = ref(false)
 const rotating = ref<TeamSSHKey | null>(null)
 const actionError = ref('')
+
+const keyQuery = ref('')
+
+watch(activeTeam, () => {
+	keyQuery.value = ''
+})
+
+const visibleKeys = computed(() => {
+	const query = keyQuery.value.trim().toLowerCase()
+	if (!query) return keys.value
+
+	return keys.value.filter((key) =>
+		[key.title, key.fingerprint].join(' ').toLowerCase().includes(query),
+	)
+})
 
 const rotateSelected = async (
 	_title: string,
@@ -31,7 +49,7 @@ const rotateSelected = async (
 	if (!rotating.value) return
 
 	await rotate(rotating.value.name, publicKey)
-	successToast('Key rotation queued for selected servers')
+	successToast(__('Key rotation queued for selected servers'))
 }
 
 const retrySelected = async (key: TeamSSHKey): Promise<void> => {
@@ -39,7 +57,7 @@ const retrySelected = async (key: TeamSSHKey): Promise<void> => {
 
 	try {
 		await retry(key.name)
-		successToast(`Retry queued for ${key.title}`)
+		successToast(__('Retry queued for {0}', [key.title]))
 	} catch (failure) {
 		actionError.value = getErrorMessage(
 			failure,
@@ -49,8 +67,11 @@ const retrySelected = async (key: TeamSSHKey): Promise<void> => {
 }
 
 const deleteSelected = async (key: TeamSSHKey): Promise<void> => {
+	const keyName = [key.title]
 	if (
-		!confirm(`Delete ${key.title}? It must first be removed from every server.`)
+		!confirm(
+			__('Delete {0}? It must first be removed from every server.', keyName),
+		)
 	)
 		return
 
@@ -58,7 +79,7 @@ const deleteSelected = async (key: TeamSSHKey): Promise<void> => {
 
 	try {
 		await remove(key.name)
-		successToast(`${key.title} deleted`)
+		successToast(__('{0} deleted', [key.title]))
 	} catch (failure) {
 		actionError.value = getErrorMessage(failure, "The key couldn't be deleted.")
 	}
@@ -70,14 +91,14 @@ const getActions = (key: TeamSSHKey) =>
 				...(key.last_sync_error
 					? [
 							{
-								label: 'Retry sync',
+								label: __('Retry sync'),
 								icon: 'lucide-refresh-cw',
 								onClick: () => retrySelected(key),
 							},
 						]
 					: []),
 				{
-					label: 'Rotate key',
+					label: __('Rotate key'),
 					icon: 'lucide-refresh-cw',
 					onClick: () => {
 						rotating.value = key
@@ -87,7 +108,7 @@ const getActions = (key: TeamSSHKey) =>
 					? []
 					: [
 							{
-								label: 'Delete',
+								label: __('Delete'),
 								icon: 'lucide-trash-2',
 								theme: 'red' as const,
 								onClick: () => deleteSelected(key),
@@ -99,6 +120,9 @@ const getActions = (key: TeamSSHKey) =>
 const closeRotation = (open: boolean): void => {
 	if (!open) rotating.value = null
 }
+
+const updateSshKeysErrorTitle = __("Couldn't update your SSH keys")
+const keysLoadErrorTitle = __("Keys couldn't load")
 </script>
 
 <template>
@@ -106,34 +130,39 @@ const closeRotation = (open: boolean): void => {
 		<Teleport defer to="#settings-actions-ssh-keys">
 			<Button
 				v-if="canManageSSHKeys && keys.length"
-				label="Add"
+				:label="__('Add')"
 				icon-left="lucide-plus"
 				@click="adding = true"
 			/>
 		</Teleport>
 
-		<Alert v-if="actionError" theme="red" :title="actionError" />
+		<Alert
+			v-if="actionError"
+			theme="red"
+			:title="updateSshKeysErrorTitle"
+			:description="actionError"
+		/>
 
 		<EmptyState
 			v-if="error"
 			icon="lucide-cloud-off"
-			title="Keys couldn't load"
+			:title="keysLoadErrorTitle"
 			:description="error"
 		>
 			<template #action>
-				<Button label="Retry" @click="reload" />
+				<Button :label="__('Retry')" @click="reload" />
 			</template>
 		</EmptyState>
 
 		<EmptyState
 			v-else-if="!loading && !keys.length"
 			icon="lucide-key-round"
-			title="No SSH keys yet"
-			description="Add a public key, then use it when you create servers."
+			:title="__('No SSH keys yet')"
+			:description="__('Add a public key, then use it when you create servers.')"
 		>
 			<template v-if="canManageSSHKeys" #action>
 				<Button
-					label="Add SSH key"
+					:label="__('Add SSH key')"
 					icon-left="lucide-plus"
 					@click="adding = true"
 				/>
@@ -141,7 +170,36 @@ const closeRotation = (open: boolean): void => {
 		</EmptyState>
 
 		<template v-else>
-			<Table :columns="COLUMNS" :rows="keys" height="h-auto">
+			<TextInput
+				v-if="keys.length"
+				v-model="keyQuery"
+				type="search"
+				:placeholder="__('Search keys')"
+				:aria-label="__('Search SSH keys')"
+			>
+				<template #prefix>
+					<span
+						class="lucide-search size-4 text-ink-gray-5"
+						aria-hidden="true"
+					/>
+				</template>
+			</TextInput>
+
+			<p
+				v-if="keys.length && !visibleKeys.length"
+				class="py-4 text-p-sm text-ink-gray-6"
+			>
+				{{ __('No key matches “{0}”.', [keyQuery.trim()]) }}
+				<button
+					type="button"
+					class="text-p-sm-medium text-ink-gray-8 underline"
+					@click="keyQuery = ''"
+				>
+					{{ __('Clear search') }}
+				</button>
+			</p>
+
+			<Table v-else :columns="COLUMNS" :rows="visibleKeys" height="h-auto">
 				<template #title="{ row }">
 					<div class="space-y-1 py-2">
 						<p class="truncate text-base text-ink-gray-8">{{ row.title }}</p>
@@ -169,7 +227,10 @@ const closeRotation = (open: boolean): void => {
 				</template>
 
 				<template #actions="{ row }">
-					<RowActionsMenu :options="getActions(row)" label="SSH key actions" />
+					<RowActionsMenu
+						:options="getActions(row)"
+						:label="__('SSH key actions')"
+					/>
 				</template>
 			</Table>
 		</template>
@@ -177,7 +238,7 @@ const closeRotation = (open: boolean): void => {
 		<SSHKeyDialog
 			v-model="adding"
 			:save="create"
-			@saved="successToast('SSH key added')"
+			@saved="successToast(__('SSH key added'))"
 		/>
 
 		<SSHKeyDialog

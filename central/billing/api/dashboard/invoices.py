@@ -23,9 +23,13 @@ from central.billing.api.dashboard._shared import (
 	_resolve_team,
 	_team_currency,
 )
+from central.billing.doctype.billing_profile.billing_profile import get_payment_date
+from central.billing.doctype.invoice.invoice import is_issued
 from central.billing.doctype.top_up_order.top_up_order import TopupOrder
 from central.billing.gateways.base import VerifiedPayment
-from central.billing.revenue import credits
+from central.billing.payments import setup_lockout
+from central.billing.revenue import credits, tax
+from central.billing.revenue.invoicing import wallet_draw
 
 
 @frappe.whitelist()
@@ -56,12 +60,12 @@ def get_forecast(team: str | None = None) -> dict:
 	subtotal = frappe.utils.flt(invoice.get("subtotal"))
 	projected_total = frappe.utils.flt(invoice.get("total"))
 	credit_balance = frappe.utils.flt(credits.get_balance(team)["balance"])
-	shortfall = max(0.0, frappe.utils.flt(projected_total - credit_balance, 2))
 	currency = projection["currency"] or _team_currency(team)
-	tax = {
-		"output_tax_amount": frappe.utils.flt(invoice.get("output_tax_amount")),
-		"output_tax_type": invoice.get("output_tax_type"),
-	}
+	tax_amount = frappe.utils.flt(invoice.get("output_tax_amount"))
+	collectable = frappe.utils.flt(invoice.get("expected_collection"))
+	# This month's bill is charged on next month's payment date.
+	pay_on = get_payment_date(team, frappe.utils.add_days(month_end, 1))
+	shortfall = wallet_draw.get_wallet_shortfall(team, currency, collectable, tax_amount, pay_on)
 
 	return {
 		"period_start": str(month_start),
@@ -78,9 +82,12 @@ def get_forecast(team: str | None = None) -> dict:
 		"measured": frappe.utils.flt(invoice.get("measured")),
 		"estimated": frappe.utils.flt(invoice.get("estimated")),
 		"has_estimates": bool(invoice.get("has_estimates")),
-		"tax_amount": tax["output_tax_amount"],
-		"tax_type": tax["output_tax_type"],
+		"tax_amount": tax_amount,
+		"tax_type": invoice.get("output_tax_type"),
+		**_tax_names(team, projection["invoice"]),
 		"credit_balance": credit_balance,
+		# What is collected after TDS, the amount the shortfall is measured against.
+		"expected_collection": collectable,
 		"shortfall": shortfall,
 		"days_remaining": (month_end - today).days,
 		"currency": currency,
@@ -88,6 +95,17 @@ def get_forecast(team: str | None = None) -> dict:
 		"credit_alert": shortfall > 0,
 		# Spell out each service/plan + metered overage driving the projection.
 		"line_items": [_describe_line(team, frappe._dict(li)) for li in line_items],
+	}
+
+
+def _tax_names(team: str, invoice: dict | None) -> dict:
+	"""Names the forecast's tax from the projected bill it totals, None without one. The
+	limit note stays on the team's tax today: it describes an off-session limit, not this bill."""
+	names = tax.TaxNames(team)
+	return {
+		"tax_label": names.label(invoice) if invoice else None,
+		"tax_note": names.note(invoice) if invoice else None,
+		"limit_tax_note": tax.get_tax_names(team)["limit_tax_note"],
 	}
 
 
@@ -310,16 +328,19 @@ def list_invoices(team: str | None = None) -> list[dict]:
 			"currency",
 			"due_date",
 			"erpnext_invoice",
+			*tax.LABEL_FIELDS,
 		],
 		order_by="period_start desc",
 	)
+	names = tax.TaxNames(team)
 	for row in rows:
 		row["has_pdf"] = bool(row.pop("erpnext_invoice"))
+		row["tax_note"] = names.note(row)
 	return rows
 
 
 @frappe.whitelist(methods=["GET"])
-@rate_limit(limit=30, seconds=60 * 60)
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def download_invoice_pdf(name: str) -> None:
 	"""The customer's copy of the statutory invoice, as ERPNext renders it."""
 	from central.billing.ingester.erpnext_sync import sales_invoice_pdf
@@ -378,12 +399,17 @@ def get_invoice(name: str) -> dict:
 		"output_tax_rate": doc.output_tax_rate,
 		"output_tax_amount": doc.output_tax_amount,
 		"zero_rating_reason": doc.zero_rating_reason,
+		# Named from the invoice's own rate and zero-rating, so an issued invoice keeps its tax.
+		"tax_label": tax.TaxNames(doc.team).label(doc),
+		"tax_reason": tax.TaxNames.reason(doc),
 		"total": doc.total,
 		"credit_applied": doc.credit_applied,
 		"advance_tax_applied": doc.advance_tax_applied,
 		"expected_collection": doc.expected_collection,
 		"amount_paid": doc.amount_paid,
 		"due_date": str(doc.due_date) if doc.due_date else None,
+		"hold_reason": doc.hold_reason,
+		"is_issued": is_issued(doc),
 		"has_pdf": bool(doc.erpnext_invoice),
 		"payment_in_progress": payment_in_progress,
 		"paid_with": paid_with,
@@ -583,18 +609,25 @@ def credit_ledger(team: str | None = None, limit: int = 50) -> list[dict]:
 			"reference_type",
 			"reference_name",
 			"advance_id",
+			"gateway_payment_id",
 		],
 		order_by="creation desc",
 		limit=limit,
 	)
+	# Each top-up is named from the GST it was paid with, not the team's tax today.
+	names = tax.TaxNames(team)
 	for row in rows:
 		# A top-up booked in the accounting system has a receipt to download.
 		row["has_receipt"] = bool(row.pop("advance_id"))
+		# Only money paid in through a gateway carries a real GST rate; returned
+		# credit carries back a share of GST whose ratio is not a rate.
+		is_top_up = bool(row.pop("gateway_payment_id"))
+		row["tax_label"] = names.paid_label(row.amount, row.tax_amount) if is_top_up else None
 	return rows
 
 
 @frappe.whitelist(methods=["GET"])
-@rate_limit(limit=30, seconds=60 * 60)
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def download_topup_receipt(name: str) -> None:
 	"""The receipt voucher for a wallet top-up, as the accounting system renders it."""
 	from central.billing.ingester.advance import receipt_pdf
@@ -612,13 +645,16 @@ def download_topup_receipt(name: str) -> None:
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def pay_invoice(invoice: str | None = None) -> dict:
 	"""Postpaid one-off settlement of an outstanding invoice (team-scoped)."""
+	# The payment date holds back automatic charges only. A customer who clicks Pay may pay early.
 	team = frappe.db.get_value("Invoice", invoice, "team")
 	_require_manage(team)
 	from central.billing.payments import charges
 
-	return charges.pay_invoice(invoice)
+	# Over the silent ceiling the customer is sent to checkout; the team keeps its mode.
+	return charges.pay_invoice(invoice, on_session=True)
 
 
 @frappe.whitelist()
@@ -656,9 +692,11 @@ def get_fallback_offer(invoice: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def pay_invoice_checkout(invoice: str | None = None) -> dict:
 	"""Open an on-session gateway checkout to pay an invoice yourself
 	(collection_mode = manual_checkout). Any amount — on-session has no ₹15k limit."""
+	# The payment date holds back automatic charges only. A customer who clicks Pay may pay early.
 	team = frappe.db.get_value("Invoice", invoice, "team")
 	_require_manage(team)
 	from central.billing.payments import charges
@@ -667,6 +705,7 @@ def pay_invoice_checkout(invoice: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def confirm_invoice_checkout(
 	attempt: str | None = None,
 	razorpay_order_id: str | None = None,
@@ -712,10 +751,13 @@ def get_topup_options(team: str | None = None) -> dict:
 		"publishable_key": publishable_key,
 		# GST charged on top of a top-up, as a percentage. 0 where none applies.
 		"gst_rate": frappe.utils.flt(credits.top_up_gst_rate(team) * 100, 2),
+		# The GST named as invoices name it ("IGST 18%", "No GST (SEZ)"); None with no GST.
+		"tax_label": tax.get_tax_names(team)["tax_label"],
 	}
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def create_topup_order(
 	team: str | None = None,
 	amount: float | None = None,
@@ -741,16 +783,15 @@ def create_topup_order(
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
 		frappe.throw(_("Top-up amount must be greater than zero."), frappe.ValidationError)
+	# Before the gateway customer is minted, so a locked team makes no gateway call.
+	setup_lockout.check(team, frappe.session.user)
 	currency = _team_currency(team)
 	gw, display_paypal = _top_up_gateway(currency, gateway, method, instrument)
 	from central.billing.gateways.registry import get_adapter
 
 	gw_doc = frappe.get_doc("Payment Gateway", gw)
 	adapter = get_adapter(gw_doc)
-	# Mint-or-reuse the team's customer at this gateway *before* the order, so the
-	# top-up attaches to the one customer every later charge reuses (the card #05 and
-	# mandate #08 paths share this same Gateway Customer row). ensure_gateway_customer
-	# commits the row the instant it mints, so a failed order can't orphan it.
+	# The team's one gateway customer, committed on mint so a failed order can't orphan it.
 	from central.billing.gateways.base import customer_safe_gateway_errors
 	from central.billing.payments.payments import ensure_gateway_customer
 
@@ -825,6 +866,7 @@ def _top_up_gateway(
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def confirm_topup(
 	team: str | None = None,
 	amount: float | None = None,

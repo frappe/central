@@ -11,6 +11,10 @@ stored and a background job is enqueued.
 
 import frappe
 from frappe import _
+from frappe.query_builder.functions import Coalesce
+
+from central.billing.platform import metrics
+from central.billing.platform.records import save_billing_record
 
 # A failed event is retried hourly until it has failed this many times; then it waits for
 # an operator, whom the failed-webhook alert has been paging since the first failure.
@@ -18,6 +22,9 @@ MAX_TRIES = 5
 # A Received event older than this lost its job (a worker restart), so the sweep runs it.
 STALE_RECEIVED_MINUTES = 15
 RETRY_BATCH = 200
+
+# Events that finish (or fail) a refund the gateway accepted as pending.
+REFUND_EVENTS = ("charge.refund.updated", "refund.failed", "refund.processed", "PAYMENT.CAPTURE.REFUNDED")
 
 
 @frappe.whitelist(allow_guest=True)
@@ -38,6 +45,34 @@ def razorpay() -> dict:
 	)
 
 
+# nosemgrep: guest-whitelisted-method -- process_webhook verifies PayPal's signature before anything else.
+@frappe.whitelist(allow_guest=True)
+def paypal() -> dict:
+	return process_webhook(
+		"Paypal",
+		frappe.request.get_data(),
+		dict(frappe.request.headers),
+	)
+
+
+# Where Central stores each id a gateway can name in an event.
+_GATEWAY_REFERENCES = (
+	("Payment Attempt", "name"),
+	("Payment Attempt", "gateway_transaction_id"),
+	("Payment Attempt", "gateway_order_id"),
+	("Top-up Order", "name"),
+	("Top-up Order", "gateway_order_id"),
+	("Top-up Order", "gateway_payment_id"),
+	("Payment Method", "gateway_method_id"),
+	("Payment Method", "gateway_customer_id"),
+	("Payment Method", "gateway_mandate_id"),
+	("Payment Method", "setup_reference"),
+	("Payment Method", "setup_intent_id"),
+	("Refund", "gateway_refund_id"),
+	("Gateway Customer", "gateway_customer_id"),
+)
+
+
 def process_webhook(adapter_key: str, payload: bytes, headers: dict) -> dict:
 	gateway = _resolve_gateway(adapter_key)
 	adapter = gateway.get_adapter()
@@ -49,9 +84,27 @@ def process_webhook(adapter_key: str, payload: bytes, headers: dict) -> dict:
 
 	body = payload.decode() if isinstance(payload, bytes) else payload
 	event = adapter.parse_webhook_event(frappe.parse_json(body), headers)
+	if not is_central_event(adapter, event.payload):
+		# Frappe Cloud v1 shares these gateway accounts, so its events reach this endpoint too.
+		metrics.emit("billing.webhook_of_another_product", gateway=gateway.name, event_type=event.event_type)
+		frappe.local.response.http_status_code = 200
+		return {"ok": True, "stored": False}
 	_store_and_enqueue(gateway, event, payload)
 	frappe.local.response.http_status_code = 200
 	return {"ok": True, "event": event.gateway_event_id}
+
+
+def is_central_event(adapter, payload: dict) -> bool:
+	"""Whether the event names a record Central stored. Reconciliation recovers a payment
+	whose event arrives before its gateway id is saved."""
+	references = adapter.webhook_references(payload)
+	if references is None:
+		return True
+	if not references:
+		return False
+	return any(
+		frappe.db.exists(doctype, {field: ["in", list(references)]}) for doctype, field in _GATEWAY_REFERENCES
+	)
 
 
 def _resolve_gateway(adapter_key: str):
@@ -68,14 +121,15 @@ def _resolve_gateway(adapter_key: str):
 
 
 def _store_and_enqueue(gateway, event, payload: bytes):
-	"""Idempotent store keyed on gateway_event_id; replays no-op (no second job).
+	"""Idempotent store keyed on gateway_event_id; a replay only counts the delivery (no second job).
 
 	The unique constraint on gateway_event_id is the real guard: under a
 	concurrent flood two requests can both pass the exists() check, so the losing
-	insert is caught (DuplicateEntryError) and treated as an already-stored
+	insert is caught (a unique-key error) and treated as an already-stored
 	replay — exactly one row, exactly one enqueued job.
 	"""
 	if frappe.db.exists("Webhook Event", {"gateway_event_id": event.gateway_event_id}):
+		_enqueue_repeat_count(event.gateway_event_id)
 		return
 
 	try:
@@ -85,14 +139,36 @@ def _store_and_enqueue(gateway, event, payload: bytes):
 				"gateway": gateway.name,
 				"gateway_event_id": event.gateway_event_id,
 				"event_type": event.event_type,
+				"occurred_at": event.occurred_at,
+				"delivery_id": event.delivery_id,
+				"deliveries": 1,
 				"raw_payload": payload.decode() if isinstance(payload, bytes) else payload,
 				"status": "Received",
 			}
 		).insert(ignore_permissions=True)
-	except frappe.DuplicateEntryError:
+	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
+		_enqueue_repeat_count(event.gateway_event_id)
 		return  # lost the race — another request stored it first
 
 	_enqueue_event(doc.name)
+
+
+def _enqueue_repeat_count(gateway_event_id: str) -> None:
+	"""Count a repeat in a job: the event's own job may hold its row lock for a while.
+	There is no job id, so every repeat is counted."""
+	frappe.enqueue(
+		"central.billing.payments.webhooks.count_repeat_delivery",
+		gateway_event_id=gateway_event_id,
+		enqueue_after_commit=True,
+	)
+
+
+def count_repeat_delivery(gateway_event_id: str) -> None:
+	"""A gateway retries an event it thinks we missed, so repeats show a delivery problem."""
+	event = frappe.qb.DocType("Webhook Event")
+	frappe.qb.update(event).set(event.deliveries, Coalesce(event.deliveries, 1) + 1).where(
+		event.gateway_event_id == gateway_event_id
+	).run()
 
 
 def _enqueue_event(event_name: str) -> None:
@@ -113,7 +189,14 @@ def handle_webhook_event(event_name: str):
 	A handler that raises leaves nothing half-written: its work is rolled back, the
 	event is marked Failed with the error, and `retry_failed_webhooks` tries it again.
 	`platform.alerts.failed_webhooks` pages an operator while it stays Failed. It runs as
-	a background job, which commits the Failed mark because this returns normally."""
+	a background job, which commits the Failed mark because this returns normally.
+
+	A slow job and the retry sweep can reach the same event. The row lock makes the
+	second wait, and it then finds the event already applied."""
+	status = frappe.db.get_value("Webhook Event", event_name, "status", for_update=True)
+	if status not in ("Received", "Failed"):
+		return {"handled": False, "reason": "already_applied"}
+
 	save_point = "apply_webhook_event"
 	frappe.db.savepoint(save_point)
 	try:
@@ -132,9 +215,11 @@ def _dispatch(event_name: str):
 	"""Charge settlement (Open -> Paid) lives in charges.apply_webhook, mandate
 	lifecycle in mandates.apply_mandate_event, and card events in
 	payments.apply_payment_method_event."""
-	from central.billing.payments import charges, mandates, payments
+	from central.billing.payments import charges, corrections, mandates, payments
 
 	event_type = frappe.db.get_value("Webhook Event", event_name, "event_type") or ""
+	if event_type in REFUND_EVENTS:
+		return corrections.apply_refund_event(event_name)
 	if event_type.startswith("mandate."):
 		return mandates.apply_mandate_event(event_name)
 	if event_type.startswith(("payment_method.", "setup_intent.")):
@@ -150,8 +235,7 @@ def _mark_failed(event_name: str, error: str) -> None:
 		transition(event, "Failed", actor="webhook", correlation=event.gateway_event_id)
 	event.error = error[-2000:]
 	event.retry_count = (event.retry_count or 0) + 1
-	# The webhook job runs as Guest or the system; nobody else writes a Webhook Event.
-	event.save(ignore_permissions=True)
+	save_billing_record(event)
 
 
 def retry_failed_webhooks() -> list[str]:

@@ -6,6 +6,7 @@ from frappe.utils import add_days, getdate, now_datetime, nowdate
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.integrations.resource_actions import process_resize
 from central.integrations.servers import observe_server
 from central.resource_actions import submit_command, validate_trial_site
 from central.signups import credit, eligibility, trial
@@ -68,6 +69,19 @@ class TrialOnAMachine(SiteOnAMachine):
 		complete_billing_profile(self.team.name, currency="USD")
 		plan = make_plan("trial-lifecycle-plan", rates=[{"cluster": "", "currency": "USD", "rate": rate}])
 		frappe.db.set_value("Virtual Machine", self.server.name, "plan", plan)
+
+	def trial_comments(self) -> str:
+		return "\n".join(
+			frappe.get_all(
+				"Comment",
+				filters={
+					"reference_doctype": "Site",
+					"reference_name": self.site().name,
+					"comment_type": "Info",
+				},
+				pluck="content",
+			)
+		)
 
 
 class TestTrialLifecycle(TrialOnAMachine):
@@ -139,11 +153,11 @@ class TestTrialLifecycle(TrialOnAMachine):
 		self.assertFalse(eligibility.is_free_trial_creation(self.team.name, None))
 
 	def test_a_team_that_has_paid_before_gets_no_free_trial(self):
-		invoice = frappe.get_doc({"doctype": "Invoice", "team": self.team.name, "status": "Draft"})
+		invoice = frappe.get_doc({"doctype": "Invoice", "team": self.team.name, "status": "Outstanding"})
 		invoice.db_insert()
 		self.assertTrue(eligibility.is_free_trial_creation(self.team.name, "raven"))
 
-		invoice.db_set("status", "Overdue")
+		invoice.db_set("due_date", frappe.utils.nowdate())
 		self.assertFalse(eligibility.is_free_trial_creation(self.team.name, "raven"))
 
 	def test_a_team_with_a_subscription_gets_no_free_trial(self):
@@ -342,6 +356,55 @@ class TestTrialLifecycle(TrialOnAMachine):
 		VirtualMachine.ensure_subscription_enabled.assert_called()
 		self.assert_conversion_queued()
 
+	def test_a_trial_plan_converts_by_moving_to_the_paid_plan_before_it_is_billed(self):
+		from central.billing.tests.utils import make_plan
+
+		self.price_trial(15)
+		frappe.db.set_value("Plan", "trial-lifecycle-plan", "available_on_trial", 1)
+		small, large = make_plan("trial-lifecycle-small"), make_plan("trial-lifecycle-large")
+		choices = [{"name": small}, {"name": large}]
+		plan_choices = self.enterContext(
+			patch("central.signups.trial.Trial.get_plan_choices", return_value=choices)
+		)
+
+		self.assertEqual(trial.Trial(self.site()).get_conversion_plan(), small)
+		self.site().db_set("conversion_plan", large)
+		with patch("central.signups.trial.has_active_payment_method", return_value=True):
+			trial.convert_team(self.team.name)
+
+		# The trial plan is never billed: the subscription opens once the server runs the paid plan.
+		self.assertTrue(trial.is_billing_deferred(self.server.name))
+		# The move goes to the plan checked at conversion, even after the catalog changes.
+		plan_choices.return_value = []
+		trial.finish_conversion(self.site().name)
+		move = frappe.get_doc("Resource Action", {"server": self.server.name, "action": "resize"})
+		configuration = move.get_resize_configuration()
+		self.assertEqual((configuration.plan, configuration.subscription), (large, None))
+
+		# A shape that already matches still runs the resize, which starts the server and ends idle sleep.
+		self.server.db_set(configuration.shape.model_dump())
+		VirtualMachine.ensure_subscription_enabled.reset_mock()
+		with patch("central.integrations.servers.resize_server") as resize_server:
+			process_resize(move)
+
+		resize_server.assert_called_once()
+		VirtualMachine.ensure_subscription_enabled.assert_called_once()
+		self.assertEqual(frappe.db.get_value("Virtual Machine", self.server.name, "plan"), large)
+		self.assertFalse(trial.is_billing_deferred(self.server.name))
+
+	def test_a_chosen_plan_that_is_no_longer_offered_holds_the_trial(self):
+		self.price_trial(15)
+		frappe.db.set_value("Plan", "trial-lifecycle-plan", "available_on_trial", 1)
+		self.site().db_set("conversion_plan", "trial-lifecycle-plan")
+		self.enterContext(patch("central.signups.trial.Trial.get_plan_choices", return_value=[]))
+
+		with patch("central.signups.trial.has_active_payment_method", return_value=True):
+			trial.convert_team(self.team.name)
+
+		site = self.site()
+		self.assertEqual(site.trial_state, "Active")
+		self.assertIn("no longer offered", site.trial_error)
+
 	def test_a_trial_above_the_spending_limit_stays_a_trial_until_the_limit_is_raised(self):
 		self.price_trial(30)
 		self.headroom.return_value = 20
@@ -489,12 +552,29 @@ class TestTrialLifecycle(TrialOnAMachine):
 				"days_left",
 				"deletes_on",
 				"plan",
+				"app",
 			},
 		)
 		# The reserved rate is older than the catalog; the subscription charges the catalog rate.
 		self.assertEqual(
-			status["plan"], {"title": "trial-lifecycle-plan", "monthly_rate": 40, "currency": "USD"}
+			status["plan"],
+			{
+				"name": "trial-lifecycle-plan",
+				"title": "trial-lifecycle-plan",
+				"monthly_rate": 40,
+				"currency": "USD",
+			},
 		)
+
+	def test_the_in_app_trial_status_names_the_app_the_trial_is_for(self):
+		product = frappe.get_doc(
+			{"doctype": "Product", "product_key": "crm-trial", "title": "CRM", "signup_app": "crm"}
+		).insert()
+
+		self.assertIsNone(trial.get_trial_status(self.server.name)["app"])
+
+		self.site().db_set("product", product.name)
+		self.assertEqual(trial.get_trial_status(self.server.name)["app"], "crm")
 
 	def test_resize_options_say_the_trial_blocks_a_resize(self):
 		from central.billing.api.dashboard.catalog import get_composed_config
@@ -612,6 +692,48 @@ class TestTrialLifecycle(TrialOnAMachine):
 			self.site().end_trial_now()
 
 		self.assertEqual(self.site().trial_state, "Ended")
+
+	def test_an_operator_converts_a_trial_without_a_payment_method(self):
+		self.price_trial(30)
+
+		with patch.object(trial.Trial, "enqueue_job"):
+			self.site().convert_trial()
+
+		self.assertEqual(self.site().trial_state, "Converted")
+		self.assertIn("converted the trial", self.trial_comments())
+
+	def test_an_operator_conversion_keeps_the_spending_limit(self):
+		self.price_trial(30)
+		self.headroom.return_value = 10
+
+		with self.assertRaisesRegex(frappe.ValidationError, "spending limit"):
+			self.site().convert_trial()
+
+	def test_ending_a_trial_keeps_its_ai_key(self):
+		with (
+			patch.object(trial.Trial, "enqueue_job"),
+			patch.object(trial.AITrialKey, "queue_revoke") as revoke,
+		):
+			self.site().end_trial_now()
+
+		revoke.assert_not_called()
+
+	def test_converting_a_trial_hands_its_ai_key_to_the_team_and_notes_a_trial_without_one(self):
+		with (
+			patch.object(trial.Trial, "enqueue_job"),
+			patch.object(trial.AITrialKey, "queue_convert", return_value=True) as convert,
+		):
+			trial.Trial(self.site()).convert()
+		convert.assert_called_once_with(self.server.name)
+		self.assertNotIn("AI key", self.trial_comments())
+
+		self.site().db_set("trial_state", "Active")
+		with (
+			patch.object(trial.Trial, "enqueue_job"),
+			patch.object(trial.AITrialKey, "queue_convert", return_value=False),
+		):
+			trial.Trial(self.site()).convert()
+		self.assertIn("no live AI key to hand over", self.trial_comments())
 
 	def test_only_an_operator_changes_a_trial(self):
 		with self.set_user("Guest"), self.assertRaises(frappe.PermissionError):

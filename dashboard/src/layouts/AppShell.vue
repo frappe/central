@@ -32,8 +32,13 @@ import {
 	searchOpen,
 	useSearchShortcut,
 } from '@/composables/useSearch'
-import { useSession } from '@/composables/useSession'
+import { useSession, useTeamRemovalRealtime } from '@/composables/useSession'
 import { useSettingsShortcut } from '@/composables/useSettings'
+import {
+	supportDialogContext,
+	supportDialogOpen,
+	supportDialogTab,
+} from '@/composables/useSupport'
 import { teamSwitcherOpen } from '@/composables/useTeamSwitcher'
 
 const SearchDialog = defineAsyncComponent(
@@ -41,7 +46,17 @@ const SearchDialog = defineAsyncComponent(
 )
 const searchMounted = ref(false)
 
+const SupportDialog = defineAsyncComponent(
+	() => import('@/components/support/SupportDialog.vue'),
+)
+// Mount the dialog on first use: it reads the team's server and site lists.
+const supportMounted = ref(false)
+watch(supportDialogOpen, (isOpen) => {
+	if (isOpen) supportMounted.value = true
+})
+
 useNotificationsRealtime()
+useTeamRemovalRealtime()
 const { isActiveTeamSuspended } = useSession()
 useSearchShortcut()
 useSettingsShortcut()
@@ -158,5 +173,11 @@ onUnmounted(() => {
 	<ToastProvider />
 	<SettingsModal v-if="!isMobile" />
 	<SearchDialog v-if="searchMounted" v-model:open="searchOpen" />
+	<SupportDialog
+		v-if="supportMounted"
+		v-model:open="supportDialogOpen"
+		v-model:tab="supportDialogTab"
+		:context="supportDialogContext"
+	/>
 	<OnboardingDialog />
 </template>

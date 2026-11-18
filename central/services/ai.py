@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 import frappe
 
 from central.integrations.grove import GroveClient
@@ -31,22 +29,10 @@ def enable(team: str) -> str:
 
 
 def stop_team_keys(team: str) -> None:
-	"""Stop every live key of a team that is closing. Each cap goes to 0 first, which Grove allows at
-	any time, so no key spends again. Then the keys old enough to revoke are revoked."""
-	if not get_ai_service(team):
-		return
-
-	client = GroveClient.from_settings()
-	live = [key for key in client.get_figures(team)["keys"] if key["status"] == "active"]
-	if not live:
-		return
-
-	client.update_caps(team, {key["name"]: 0 for key in live})
-	# Grove sends UTC timestamps such as "2026-10-06T10:30:00Z".
-	now = datetime.now(UTC)
-	for key in live:
-		if datetime.fromisoformat(key["revocable_at"].replace("Z", "+00:00")) <= now:
-			client.revoke_key(team, key["name"])
+	"""Tell Grove that a team is closing. Grove revokes every live key; what else closing takes is
+	Grove's to decide."""
+	if get_ai_service(team):
+		GroveClient.from_settings().archive_team(team)
 
 
 def set_team_suspended(team: str, suspended: bool) -> None:
@@ -129,16 +115,11 @@ def get_day_totals(usage: dict) -> list[dict]:
 	return [{"day": day, **fields} for day, fields in totals.items()]
 
 
-def get_models(geography: str | None = None) -> list[dict]:
-	"""What a new key in `geography` (Grove's default when None) starts with: the published
-	models of its default group, what each takes and gives, and the API surfaces it answers on."""
-	return shape_models(GroveClient.from_settings().list_models(geography=geography))
-
-
-def get_key_models(team: str, key: str) -> list[dict]:
-	"""The models Grove lets one key call, as its geography serves them. Grove decides; Central
-	only shows them."""
-	return shape_models(GroveClient.from_settings().list_models(team, key))
+def get_models(team: str, geography: str | None = None) -> list[dict]:
+	"""The published models a key of `team` in `geography` (Grove's default when None) may call,
+	what each takes and gives, and the API surfaces it answers on. Grove decides; Central only
+	shows them."""
+	return shape_models(GroveClient.from_settings().list_models(team=team, geography=geography))
 
 
 def shape_models(rows: list[dict]) -> list[dict]:
@@ -146,7 +127,10 @@ def shape_models(rows: list[dict]) -> list[dict]:
 		{
 			"name": row["name"],
 			"provider": row.get("provider"),
+			"provider_display_name": row.get("provider_display_name"),
 			"model_id": row.get("model_id"),
+			"display_name": row.get("display_name"),
+			"zero_data_retention": bool(row.get("zero_data_retention")),
 			"input_modalities": row.get("input_modalities", []),
 			"output_modalities": row.get("output_modalities", []),
 			"dialects": row["dialects"],

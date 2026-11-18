@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import urlsplit
 
 import frappe
 import requests
@@ -85,12 +86,26 @@ class GroveClient:
 		self.call("grove.api.teams.rename_tier", old=old, new=new)
 
 	def provision_key(
-		self, team: str, title: str, geography: str | None = None, cap: int | None = None
+		self,
+		team: str,
+		title: str | None,
+		geography: str | None = None,
+		cap: int | None = None,
+		expiry: str | None = None,
+		model_groups: list[str] | None = None,
 	) -> dict:
 		"""Mint a key in `geography` (Grove's default when None) with `cap` whole USD to spend a
-		month (0 when None: refused until it gets one): its `name`, `geography`, `gateway_url`
+		month (0 when None: refused until it gets one), untitled when `title` is None, retiring by
+		`expiry` (one of Grove's rules: Never, 1 Day, 7 Days, 14 Days, 30 Days; Never when None)
+		counted from the mint; what it may call is the team's, set at Grove, plus `model_groups`,
+		Grove Model Groups of its geography it is in on top: its `name`, `geography`, `gateway_url`
 		and `api_key`. The secret is never sent again."""
-		return self.call("grove.api.keys.provision_key", team=team, title=title, geography=geography, cap=cap)
+		body = {"team": team, "title": title, "geography": geography, "cap": cap}
+		if expiry:
+			body["expiry"] = expiry
+		if model_groups:
+			body["model_groups"] = model_groups
+		return self.call("grove.api.keys.provision_key", **body)
 
 	def update_caps(self, team: str, caps: dict[str, int]) -> list[dict]:
 		"""Set several keys' monthly caps at once, {key: whole USD}; Grove saves all or none. →
@@ -100,19 +115,29 @@ class GroveClient:
 	def revoke_key(self, team: str, key: str) -> None:
 		self.call("grove.api.keys.revoke_key", team=team, key=key)
 
-	def list_models(
-		self, team: str | None = None, key: str | None = None, geography: str | None = None
-	) -> list[dict]:
-		"""What a new key in `geography` (Grove's default when None) starts with: the published
-		models of its default group. With `team` and `key`, what that one key may call."""
-		return self.call("grove.api.catalog.available_models", team=team, key=key, geography=geography) or []
+	def archive_team(self, team: str) -> list[str]:
+		"""Tell Grove that `team` is closing: Grove revokes every live key, suspended or not. → the
+		names revoked."""
+		return self.call("grove.api.teams.archive_team", team=team) or []
+
+	def transfer_key(self, team: str, key: str, to_team: str, title: str) -> dict:
+		"""Hand a key of `team` to `to_team`, titled `title`: the same credential, the trial's rules
+		gone (no expiry; what it may call is `to_team`'s); cap, geography and rate limits as minted.
+		Grove counts it against `to_team` like a mint and answers a key `to_team` already holds as
+		it is. → the key as `get_figures` lists it."""
+		return self.call("grove.api.keys.transfer_key", team=team, key=key, to_team=to_team, title=title)
+
+	def list_models(self, team: str, geography: str | None = None) -> list[dict]:
+		"""The published models the team's keys may call in `geography` (Grove's default when
+		None): the team's own reach, never one key's."""
+		return self.call("grove.api.catalog.available_models", team=team, geography=geography) or []
 
 	def list_geographies(self) -> list[dict]:
 		"""Where a key may be minted: `name`, `label`, `endpoint` (None while the geography has no
 		gateway; a key minted there is refused), `is_default`."""
 		return self.call("grove.api.catalog.geographies") or []
 
-	def get_figures(self, team: str) -> dict:
+	def get_figures(self, team: str, timeout: tuple[int, int] = TIMEOUT) -> dict:
 		"""What the console shows, as one entry Grove keeps until something moves it (a record lands,
 		a correction, a key or the team saved, its tier edited) and 30 minutes at most, so every
 		page shows one moment. `spend` in USD: `month_spent`, `capped` (Σ live caps) and
@@ -120,7 +145,7 @@ class GroveClient:
 		spend: what a raise is checked against) against `spend_limit`; `max_keys`; `suspended`.
 		`keys`: the team's keys, newest first, masked, each with its cap, this month's spend and effective
 		rate limits. `usage`: this month across every key, as `get_usage` answers it."""
-		return self.call("grove.api.usage.figures", team=team)
+		return self.call("grove.api.usage.figures", timeout=timeout, team=team)
 
 	def pull_usage(self, team: str) -> dict:
 		"""Ask Grove to pull the team's usage from its gateways now. Grove allows 2 an hour per
@@ -151,14 +176,27 @@ class GroveClient:
 			pulled_until=pulled_until,
 		)
 
-	def call(self, method: str, **body) -> dict | list:
+	def call(self, method: str, timeout: tuple[int, int] = TIMEOUT, **body) -> dict | list:
 		try:
 			response = requests.post(
-				f"{self.base_url}/api/method/{method}", json=body, headers=self.headers, timeout=TIMEOUT
+				f"{self.base_url}/api/method/{method}", json=body, headers=self.headers, timeout=timeout
 			)
 		except (requests.ConnectionError, requests.Timeout) as e:
 			raise GroveUnavailable(_("Grove can't be reached right now.")) from e
 		return read(response)
+
+
+def get_key_balance(gateway_url: str, api_key: str) -> dict:
+	"""What a key has left of its cap and has `spent` over its window, in USD to the cent, as its
+	gateway counts it live. The key's own secret is the credential, so any holder can ask."""
+	parts = urlsplit(gateway_url)
+	response = requests.get(
+		f"{parts.scheme}://{parts.netloc}/v1/key/balance",
+		headers={"Authorization": f"Bearer {api_key}"},
+		timeout=(3, 5),
+	)
+	response.raise_for_status()
+	return response.json()
 
 
 def read(response: requests.Response) -> dict | list:

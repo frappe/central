@@ -42,7 +42,7 @@
    "fieldname": "available_on_trial",
    "fieldtype": "Check",
    "label": "Available on Trial",
-   "description": "Offer this plan to staging-trial teams. If no plan is flagged, trials are not narrowed and every otherwise-eligible plan qualifies."
+   "description": "A trial plan: a free trial site starts on it, and no paid server is created on it or resized to it. A trial on it moves to a paid plan when it converts. If no plan is flagged, trials are not narrowed and every otherwise-eligible plan qualifies."
   },
   {
    "default": "Monthly",

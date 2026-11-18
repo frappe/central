@@ -72,27 +72,30 @@ class TestTrialPlanSelection(IntegrationTestCase):
 		self.assertEqual(image_shape(includes, image)["disk_mib"], 51200)
 		self.assertEqual(frappe.db.get_value("Team", self.team.name, "is_staging_trial"), 0)
 
-	def test_unmarked_plan_stays_available_for_paid_servers(self):
-		catalog = get_server_plans(self.team.name, cluster="par-2")
-		plans = {row["plan"] for rows in catalog["plans"].values() for row in rows}
-		self.assertEqual(plans, {self.small_plan, self.trial_plan})
+	def test_a_paid_server_is_never_offered_a_trial_plan(self):
+		for catalog in (
+			get_server_plans(self.team.name, cluster="par-2"),
+			get_server_plans(self.team.name, cluster="par-2", for_resize=1),
+		):
+			plans = {row["plan"] for rows in catalog["plans"].values() for row in rows}
+			self.assertEqual(plans, {self.small_plan})
 
 	def test_staging_team_still_selects_marked_plan(self):
 		self.team.db_set("is_staging_trial", 1)
-		self.assertEqual(get_cheapest_trial_plan(self.team.name, "par-2"), self.trial_plan)
+		self.assertEqual(get_cheapest_trial_plan(self.team.name, "par-2", "pilot"), self.trial_plan)
 
 	def test_no_marked_eligible_plan_does_not_fall_back_to_paid_plan(self):
 		frappe.db.set_value("Plan", self.trial_plan, "available_on_trial", 0)
-		self.assertIsNone(get_cheapest_trial_plan(self.team.name, "par-2"))
+		self.assertIsNone(get_cheapest_trial_plan(self.team.name, "par-2", "pilot"))
 
 	def test_disabled_trial_plan_is_not_selected(self):
 		frappe.db.set_value("Plan", self.trial_plan, "is_active", 0)
-		self.assertIsNone(get_cheapest_trial_plan(self.team.name, "par-2"))
+		self.assertIsNone(get_cheapest_trial_plan(self.team.name, "par-2", "pilot"))
 
 	def test_trial_flag_does_not_bypass_team_or_region_eligibility(self):
-		self.assertIsNone(get_cheapest_trial_plan(self.team.name, "other-region"))
+		self.assertIsNone(get_cheapest_trial_plan(self.team.name, "other-region", "pilot"))
 		self.caps.allowed_plans = [self.small_plan]
-		self.assertIsNone(get_cheapest_trial_plan(self.team.name, "par-2"))
+		self.assertIsNone(get_cheapest_trial_plan(self.team.name, "par-2", "pilot"))
 
 
 class TestConvertedTrialPlanFloor(IntegrationTestCase):
@@ -142,13 +145,13 @@ class TestConvertedTrialPlanFloor(IntegrationTestCase):
 		).db_insert()
 		return server
 
-	def test_the_floor_is_the_trial_plan_of_a_converted_trial_only(self):
+	def test_the_floor_is_the_plan_a_trial_server_started_on(self):
 		from central.signups.trial import get_trial_plan_floor
 
-		self.assertEqual(
-			get_trial_plan_floor(self.add_trial("Converted")), {"Compute": 0.5, "Memory": 1, "Disk": 12.5}
-		)
-		self.assertIsNone(get_trial_plan_floor(self.add_trial("Active")))
+		floor = {"Compute": 0.5, "Memory": 1, "Disk": 12.5}
+		self.assertEqual(get_trial_plan_floor(self.add_trial("Active")), floor)
+		self.assertEqual(get_trial_plan_floor(self.add_trial("Converted")), floor)
+		self.assertIsNone(get_trial_plan_floor("server-without-trial"))
 
 	def test_the_plan_menu_leaves_out_plans_below_the_floor(self):
 		caps = frappe._dict(max_spend=10000, allowed_plans=None, allowed_clusters=None, tier="Entry")
@@ -156,9 +159,9 @@ class TestConvertedTrialPlanFloor(IntegrationTestCase):
 		with (
 			patch("central.billing.catalog.server_plans.get_team_caps", return_value=caps),
 			patch("central.billing.catalog.server_plans.get_team_currency", return_value="INR"),
-			patch("central.billing.catalog.server_plans._get_trial_plan_floor", return_value=floor),
+			patch("central.signups.trial.get_trial_plan_floor", return_value=floor),
 		):
-			menu = get_server_plans("floor-team", exclude_subscription="floor-subscription", for_resize=1)
+			menu = get_server_plans("floor-team", server="floor-server", for_resize=1)
 
 		offered = {row["plan"] for rows in menu["plans"].values() for row in rows}
 		self.assertIn(self.trial_plan, offered)

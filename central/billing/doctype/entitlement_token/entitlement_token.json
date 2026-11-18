@@ -28,7 +28,8 @@
    "options": "Team",
    "in_list_view": 1,
    "label": "Team",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "default": "0",
@@ -95,7 +96,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-02 00:00:00.000000",
+ "modified": "2026-10-25 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Entitlement Token",

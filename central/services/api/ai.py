@@ -5,6 +5,7 @@ from frappe.utils.translations import _lt
 
 from central.integrations.grove import GroveClient, GroveUnavailable
 from central.services import ai
+from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.signups.access import require_service_access
 from central.utils.guards import require_capability
 
@@ -15,7 +16,6 @@ KEY_FIELDS = (
 	"title",
 	"status",
 	"creation",
-	"revocable_at",
 	"masked",
 	"geography",
 	"gateway_url",
@@ -31,13 +31,15 @@ KEY_FIELDS = (
 @require_capability("service:view", VIEW_DENIED)
 def get_ai(team: str | None = None) -> dict:
 	"""Whether AI is on for the team and, when it is, its spend and limits, this month's usage
-	and the geographies a key may be minted in. `unavailable` while Grove is down or in
-	maintenance: the page says so, and the keys keep working at the gateways."""
+	and the geographies a key may be minted in. `key_handover_pending` while a converted trial's
+	key is on its way to the team: no key is created until it lands. `unavailable` while Grove is
+	down or in maintenance: the page says so, and the keys keep working at the gateways."""
 	if not ai.get_ai_service(team):
 		return {"enabled": False}
 
 	try:
-		return {"enabled": True, **ai.get_overview(team)}
+		pending = AITrialKey.is_handover_pending(team)
+		return {"enabled": True, "key_handover_pending": pending, **ai.get_overview(team)}
 	except GroveUnavailable:
 		return {"enabled": True, "unavailable": True}
 
@@ -62,36 +64,34 @@ def list_api_keys(team: str | None = None) -> list[dict]:
 
 @frappe.whitelist(methods=["POST"])
 @require_capability("service:manage", MANAGE_DENIED)
-def create_api_key(
-	team: str | None = None, label: str | None = None, geography: str | None = None, cap: int | None = None
-) -> dict:
-	"""Mint a key for the team in `geography` (Grove's default when none) with `cap` whole USD
-	to spend a month (none: the key is refused until it gets one), and return its secret.
-	This is the only time it is shown. `models` is what it may call, for the quickstart."""
+def create_api_key(label: str, geography: str, cap: int, team: str | None = None) -> dict:
+	"""Mint a key for the team in `geography` with `cap` whole USD to spend a month, and return
+	its secret. This is the only time it is shown. `models` is what it may call, for the quickstart.
+	Refused while a converted trial's key is on its way to the team."""
 	require_ai(team)
-	label = (label or "").strip()
+	if AITrialKey.is_handover_pending(team):
+		frappe.throw(_("Your trial's API key is being moved to this team. Try again in a few minutes."))
+	label = label.strip()
 	if not label:
 		frappe.throw(_("Enter a name for the API key so you can identify it later."))
-
-	client = GroveClient.from_settings()
-	key = client.provision_key(
-		team, label, geography or None, whole_dollars(cap) if cap is not None else None
-	)
+	if not geography:
+		frappe.throw(_("Pick a geography for the API key."))
+	key = GroveClient.from_settings().provision_key(team, label, geography, whole_dollars(cap))
 	return {
 		"name": key["name"],
 		"label": label,
 		"geography": key["geography"],
 		"gateway_url": key["gateway_url"],
 		"api_key": key["api_key"],
-		"models": key_models_or_none(team, key["name"]),
+		"models": _get_models(team, key["geography"]),
 	}
 
 
-def key_models_or_none(team: str, key: str) -> list[dict]:
+def _get_models(team: str, geography: str) -> list[dict]:
 	"""The models for the quickstart, or none: the secret is shown once, and a failed read of what
 	the key may call must not cost it. The Grove client has logged the failure already."""
 	try:
-		return ai.get_key_models(team, key)
+		return ai.get_models(team, geography)
 	except frappe.ValidationError:
 		frappe.clear_last_message()
 		return []
@@ -110,12 +110,14 @@ def set_api_key_caps(team: str | None = None, caps: dict[str, int] | None = None
 	return [{field: row.get(field) for field in KEY_FIELDS} for row in rows]
 
 
-def whole_dollars(cap: int | float | str) -> int:
-	"""A monthly cap is whole US dollars. The console's inputs step by one; a fraction that
-	still arrives is refused, not rounded. Grove takes the figure as given."""
+def whole_dollars(cap: int | float | str | None) -> int:
+	"""A monthly cap is whole US dollars, at least 1: a key at 0 is refused by its gateway. The
+	console's inputs step by one; a fraction that still arrives is refused, not rounded."""
 	value = flt(cap)
 	if value != int(value):
 		frappe.throw(_("A cap is whole US dollars."))
+	if value < 1:
+		frappe.throw(_("Set a monthly cap of at least $1: a key without one is refused."))
 	return int(value)
 
 
@@ -142,9 +144,9 @@ def pull_usage(team: str | None = None) -> dict:
 @frappe.whitelist(methods=["GET"])
 @require_capability("service:view", VIEW_DENIED)
 def get_models(team: str | None = None, geography: str | None = None) -> list[dict]:
-	"""What a key in `geography` (Grove's default when none) starts with: its default group."""
+	"""The models the team's keys may call in `geography` (Grove's default when none)."""
 	require_ai(team)
-	return ai.get_models(geography or None)
+	return ai.get_models(team, geography or None)
 
 
 @frappe.whitelist(methods=["POST"])

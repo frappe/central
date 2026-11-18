@@ -163,6 +163,11 @@ class AtlasClient:
 
 		return self._request("POST", f"{path}/actions/{action}")
 
+	def set_rescue_mode(self, name: str, enabled: bool) -> dict:
+		"""Select the image for the next cold boot without restarting the VM."""
+		action = "enable-rescue-mode" if enabled else "disable-rescue-mode"
+		return self._request("POST", f"virtual-machines/{quote(name, safe='')}/actions/{action}")
+
 	def resize(self, name: str, cpu_millicores: int, memory_mib: int, disk_mib: int) -> dict:
 		"""Set CPU, memory and disk in one call, and turn idle shutdown off. Atlas takes a
 		resource change only on a stopped VM, resizes it in place or moves it to a host that
@@ -240,6 +245,15 @@ class AtlasClient:
 		base_url, _region_id = self._configuration()
 
 		return f"{base_url}/vm_console#token={quote(token, safe='')}"
+
+	def create_investigation(self, problem: str, context: dict | None, requested_by: str | None) -> dict:
+		"""Hand a problem to the region's read-only investigator. Atlas works on it in the background."""
+		payload = {"problem": problem, "context": context, "requested_by": requested_by}
+		return self._request("POST", "investigations", payload=payload)
+
+	def get_investigation(self, investigation_id: str) -> dict:
+		"""The status, report, and scrubbed tool log of one investigation."""
+		return self._get(f"investigations/{quote(investigation_id, safe='')}")
 
 	def check_connection(self) -> None:
 		response = self._get("images", params={"limit": 1})

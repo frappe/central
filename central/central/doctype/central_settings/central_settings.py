@@ -34,6 +34,7 @@ class CentralSettings(Document):
 		app_rollout_minimum_servers: DF.Int
 		app_rollout_start_percent: DF.Percent
 		app_rollout_step_percent: DF.Percent
+		articles_enabled: DF.Check
 		central_id: DF.Int
 		common_site_config: DF.JSON | None
 		disk_iops: DF.Int
@@ -53,6 +54,9 @@ class CentralSettings(Document):
 		github_client_secret: DF.Password | None
 		github_private_key: DF.Password | None
 		github_webhook_secret: DF.Password | None
+		helpdesk_api_key: DF.Data | None
+		helpdesk_api_secret: DF.Password | None
+		helpdesk_url: DF.Data | None
 		included_transfer_gb: DF.Int
 		invitation_expiry_days: DF.Int
 		invitation_resend_cooldown_minutes: DF.Int
@@ -162,11 +166,19 @@ class CentralSettings(Document):
 			"firewall": bool(self.enable_firewall),
 		}
 
-	def help_links(self) -> dict[str, str | None]:
-		"""The console's Help menu links for window boot. An empty URL hides its menu item."""
+	def help_links(self) -> dict[str, str | bool | None]:
+		"""The console's Help menu links for window boot. An empty URL hides its menu item.
+		`in_app_tickets` is true once the Helpdesk URL, key and secret are all set.
+		`articles_enabled` makes the ticket dialog search help articles before it offers a ticket."""
 		return {
 			"support_ticket_url": self.support_ticket_url or None,
 			"feedback_url": self.feedback_url or None,
+			"articles_enabled": bool(self.articles_enabled),
+			"in_app_tickets": bool(
+				self.helpdesk_url
+				and self.helpdesk_api_key
+				and self.get_password("helpdesk_api_secret", raise_exception=False)
+			),
 		}
 
 	def require_new_server_network_options(

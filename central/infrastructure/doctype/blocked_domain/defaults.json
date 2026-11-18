@@ -15,7 +15,7 @@
   "ssh", "stage", "staging", "stat", "static", "stats", "status", "subdomain", "support",
   "system", "task", "tasks", "test", "test1", "test2", "test3", "tests", "tmp", "tools",
   "update", "upload", "usage", "user", "username", "web", "webmail", "webmaster", "website",
-  "websites", "ww", "www", "www1", "www2", "www3", "www4", "www5", "www6", "www7", "wwww"
+  "websites", "wireguard", "ww", "www", "www1", "www2", "www3", "www4", "www5", "www6", "www7", "wwww"
  ],
- "Prefix": ["proxy-", "s3-svc", "s3-admin-svc", "cargo-pilot", "central"]
+ "Prefix": ["proxy-", "wireguard-", "s3-svc", "s3-admin-svc", "cargo-pilot", "central"]
 }

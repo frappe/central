@@ -84,8 +84,10 @@ class TestTrialSignup(TrialOnAMachine):
 
 		result = install_trial_app(self.product.name, self.team.name)
 
-		self.assertEqual(result["site"], "site.local")
-		self.assertIn(f"/sites/{self.site().rename_target}/apps", self.pilot.call_args_list[0].args[3])
+		# The bench no longer knows the image name, so the renamed name is tried next.
+		self.assertEqual(result["site"], self.site().rename_target)
+		self.assertIn("/sites/site.local/apps", self.pilot.call_args_list[0].args[3])
+		self.assertIn(f"/sites/{self.site().rename_target}/apps", self.pilot.call_args_list[1].args[3])
 
 	def test_an_ended_trial_gets_no_new_app(self):
 		self.site().db_set("trial_state", "Ended")

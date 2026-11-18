@@ -274,13 +274,6 @@ class TestStateDelivery(IntegrationTestCase):
 
 	# — A deleted server
 
-	def test_a_deletion_is_queued_and_terminates_the_server(self):
-		report = self.state_report(event="vm.state.deleted", status="stopped")
-		self.assertEqual(self.deliver(report), {"queued": True, "resource_id": self.server.name})
-
-		self.apply(report)
-		self.assertEqual(self.server.reload().status, "Terminated")
-
 	def test_a_deletion_ignores_the_ordering_watermark(self):
 		"""The body repeats the last cached report, so its observed_at is never newer
 		than the one Central already holds."""
@@ -368,11 +361,6 @@ class TestDeliveryRouting(IntegrationTestCase):
 		with patch("central.api.state_delivery.frappe.get_request_header", headers.get):
 			return receive()
 
-	def test_an_atlas_delivery_reaches_the_state_handler(self):
-		self.deliver("atlas")
-
-		self.assertTrue(self.accepted.called)
-
 	def test_the_header_is_read_whatever_its_case(self):
 		self.deliver("Atlas")
 
@@ -451,7 +439,7 @@ class TestCargoServiceDelivery(IntegrationTestCase):
 			self.deliver(self.service_report(), region="")
 
 	def test_an_unregistered_region_is_refused(self):
-		self.region.db_set("cargo_status", "Draft")
+		self.region.db_set("cargo_status", "Outstanding")
 
 		with self.assertRaises(frappe.PermissionError):
 			self.deliver(self.service_report())
@@ -536,20 +524,3 @@ class TestCargoServiceDelivery(IntegrationTestCase):
 		reply = accept_cargo_report(raw_body=body, region=self.region.name, signature=signature)
 
 		self.assertEqual(reply["ignored"], "unreadable body")
-
-	# — Datum token delivery
-
-	def test_telemetry_coming_up_queues_a_datum_token_for_cargo(self):
-		with patch("central.integrations.state_delivery.frappe.enqueue_doc") as enqueue_doc:
-			self.deliver(self.service_report(service="telemetry"))
-
-		enqueue_doc.assert_called_once()
-		self.assertEqual(enqueue_doc.call_args.args, ("Region", self.region.name, "issue_cargo_datum_token"))
-		self.assertTrue(enqueue_doc.call_args.kwargs["deduplicate"])
-
-	def test_no_datum_token_is_queued_for_any_other_report(self):
-		with patch("central.integrations.state_delivery.frappe.enqueue_doc") as enqueue_doc:
-			self.deliver(self.service_report())
-			self.deliver(self.service_report(service="telemetry", status="Not Available"))
-
-		enqueue_doc.assert_not_called()

@@ -16,7 +16,7 @@ from central.billing.revenue.invoicing.lifecycle import reissue_invoice
 
 # Statuses a correction may touch. A Paid invoice is money already taken and is a
 # refund's problem, not a reissue's.
-CORRECTABLE = ("Draft", "Open", "Overdue")
+CORRECTABLE = ("Outstanding", "Overdue")
 
 
 def affected_invoices(resource_type: str, period_start, period_end) -> list[str]:

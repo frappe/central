@@ -10,6 +10,16 @@ import { submitOrThrow } from '@/lib/frappeCall'
 import type { RefreshResponse } from '@/types/api'
 import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
 
+const LOADING_MESSAGES = [
+	'Filing the flight plan…',
+	'Running preflight checks…',
+	'Warming up the engines…',
+	'Taxiing to the runway…',
+	'Waiting for clearance…',
+	'Getting ready for takeoff…',
+	'Brewing your coffee…',
+]
+
 type BenchLinkResponse = { url: string }
 type SiteLinkResponse = { url: string | null; login_url: string | null }
 type TeamParams = { team: string }
@@ -47,6 +57,13 @@ export type VirtualMachineRow = Pick<
 > &
 	ServerAccess & {
 		pending_action?: string | null
+		plan_title?: string | null
+		image_title?: string | null
+		image_description?: string | null
+		has_wireguard_access?: 0 | 1
+		creation?: string
+		created_by?: string | null
+		created_by_name?: string | null
 		/** The server's Pilot audience, which a link from that Pilot names it by. */
 		pilot_audience?: string | null
 	}
@@ -146,8 +163,12 @@ function openLoadingTab(
 	target = '_blank',
 	features = '',
 ): { tab: Window | null; loadingUrl: string } {
+	const message =
+		LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]
 	const loadingUrl = URL.createObjectURL(
-		new Blob([signingInHtml], { type: 'text/html' }),
+		new Blob([signingInHtml.replace('{{ message }}', message)], {
+			type: 'text/html',
+		}),
 	)
 	return { tab: window.open(loadingUrl, target, features), loadingUrl }
 }

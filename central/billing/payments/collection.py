@@ -22,19 +22,64 @@ event-driven, not a synchronous try/except cascade:
   A hard decline (expired, lost, fraud, revoked mandate) is never charged again.
 """
 
+from datetime import datetime
+
 import frappe
+from frappe import _
 
 from central.billing.payments import charges, decline
 
 
 def ordered_methods(team: str) -> list:
-	"""A team's chargeable methods, primary first. Skips non-active and methods
-	whose mandate needs re-authorisation."""
+	"""A team's chargeable methods, primary first. A mandate awaiting re-authorisation
+	stays in: `collection_mode.method_limit` holds it to its own maximum."""
 	return frappe.get_all(
 		"Payment Method",
-		filters={"team": team, "status": "Active", "reauth_required": 0},
+		filters={"team": team, "status": "Active"},
 		order_by="priority asc, creation asc",
-		fields=["name", "gateway", "priority"],
+		fields=["name", "gateway", "priority", "mandate_max_amount", "display_label", "method_type"],
+	)
+
+
+def next_method_for_amount(inv, earlier: set | None = None, skipped: set | None = None):
+	"""The next method to charge the invoice's amount on. While some method left on file can
+	take the amount off-session, one that cannot is passed over. `inv` carries name, team,
+	currency and expected_collection."""
+	from central.billing.payments import collection_mode
+
+	amount = inv.expected_collection
+	is_covered = collection_mode.is_within_off_session_limit(inv.team, amount, invoice=inv.name)
+	passed_over = set(skipped or ())
+	while method := next_method_for(inv.name, inv.team, earlier, skip=passed_over):
+		if not is_covered or collection_mode.is_within_method_limit(method, inv.currency, amount):
+			return method
+		passed_over.add(method.name)
+	return None
+
+
+def get_teams_with_retry_rail(teams: set[str]) -> set[str]:
+	"""The teams dunning can charge off-session before any attempt: the collection mode allows a
+	debit (`collection_mode.is_debit_allowed`) and a chargeable method is on file (`ordered_methods`).
+	Two queries for any number of teams."""
+	from central.billing.payments import collection_mode
+
+	if not teams:
+		return set()
+	held = frappe.get_all(
+		"Billing Profile",
+		filters={"name": ["in", list(teams)], "collection_mode": ["in", collection_mode.DEBIT_HELD_MODES]},
+		pluck="name",
+	)
+	allowed = teams.difference(held)
+	if not allowed:
+		return set()
+	return set(
+		frappe.get_all(
+			"Payment Method",
+			filters={"team": ["in", list(allowed)], "status": "Active"},
+			pluck="team",
+			distinct=True,
+		)
 	)
 
 
@@ -60,12 +105,38 @@ def _failed_methods_for(invoice: str, earlier: set | None = None) -> set:
 	}
 
 
-def next_method_for(invoice: str, team: str, earlier: set | None = None):
+def get_methods_left(team: str, invoice: str | None = None) -> list:
+	"""The team's chargeable methods, less any whose decline on `invoice` no later round
+	can clear."""
+	methods = ordered_methods(team)
+	if not invoice:
+		return methods
+	failed = _failed_methods_for(invoice, attempts_of(invoice))
+	return [m for m in methods if m.name not in failed]
+
+
+def method_for_amount(team: str, currency: str | None, amount: float, invoice: str | None = None):
+	"""The method a charge of `amount` lands on: the first, primary first, whose limit covers
+	it. None when no method left can take it off-session."""
+	from central.billing.payments import collection_mode
+
+	return next(
+		(
+			m
+			for m in get_methods_left(team, invoice)
+			if collection_mode.is_within_method_limit(m, currency, amount)
+		),
+		None,
+	)
+
+
+def next_method_for(invoice: str, team: str, earlier: set | None = None, skip: set | None = None):
 	"""The next untried, chargeable method for this invoice, or None if exhausted.
-	`earlier` starts a new round, as in `_failed_methods_for`."""
-	failed = _failed_methods_for(invoice, earlier)
+	`earlier` starts a new round, as in `_failed_methods_for`. `skip` holds methods that
+	cannot be charged in this run."""
+	passed_over = _failed_methods_for(invoice, earlier) | (skip or set())
 	for method in ordered_methods(team):
-		if method.name not in failed:
+		if method.name not in passed_over:
 			return method
 	return None
 
@@ -94,43 +165,151 @@ def _ask_for_another_method(inv) -> None:
 	)
 
 
-def collect_invoice(invoice: str, new_round: bool = False) -> dict:
+def collect_invoice(invoice: str, new_round: bool = False, now: datetime | str | None = None) -> dict:
 	"""Charge the next untried method; rotate immediately on a synchronous decline.
 
 	Idempotent and safe to re-enter (from settlement, a webhook failure, or a
 	dunning retry): the in-flight guard + invoice row lock in charges.pay_invoice
 	prevent a double charge, and the per-invoice failed-set guarantees each method
-	is tried at most once per round. `new_round` starts a dunning retry round.
+	is tried at most once per round. `new_round` starts a dunning retry round, and
+	`now` is the clock a pre-debit window is read against.
 	"""
+	from central.billing.payments import collection_mode
 	from central.billing.revenue.tax import is_internal_team
 
 	inv = frappe.get_doc("Invoice", invoice)
 	if is_internal_team(inv.team):
 		return {"collected": False, "reason": "internal_team"}
 	earlier = attempts_of(invoice) if new_round else None
-
+	skipped = set()
 	while True:
-		if in_flight := charges.in_flight_attempt(invoice):
-			return {"collected": False, "reason": "attempt_in_flight", "attempt": in_flight}
+		# A team that pays by hand, or is asked to choose, is never charged off-session: not
+		# after a notice it switched past, nor after a failed mandate paused it mid-run.
+		if not collection_mode.is_debit_allowed(inv.team):
+			return {"collected": False, "reason": "debit_held"}
+		outcome = _charge_next_method(inv, earlier, skipped, now)
+		if outcome is not None:
+			return outcome
 
-		method = next_method_for(invoice, inv.team, earlier)
-		if not method:
-			# Every method has failed (or there are none) — leave it for dunning, and
-			# ask the customer for another way to pay. Off-session there is nobody to
-			# offer the other rail to in the moment, so the ask has to arrive as a
-			# notification instead (ADR 0022 §5, ADR 0023).
-			_ask_for_another_method(inv)
-			return {"collected": False, "reason": "no_method"}
 
-		result = charges.pay_invoice(invoice, method.name, method.gateway)
+def collect_on_payment_date(now: datetime | str | None = None) -> list[dict]:
+	"""Hourly: charge on the payment date, and remind the day before.
 
-		# A synchronous decline: rotate to the next method now (immediate fallback) —
-		# but only when the decline is final. An ambiguous failure may still settle at
-		# the gateway, and charging a second method on top of it pays one invoice
-		# twice; reconciliation resolves those instead (ADR 0022).
-		if result.get("status") == "Failed":
-			if not decline.is_terminal(result.get("failure_code")):
-				return {"collected": False, "reason": "ambiguous_failure", "attempt": result.get("attempt")}
-			continue
+	1. Make the first debit on each pre-debit rail whose window has opened (`emandate.charge_due`).
+	2. Start collection on each invoice that has reached its payment date, or will reach
+	   it tomorrow, and has no payment attempt. A rail that owes a pre-debit notice sends
+	   it a day early. An invoice that missed its payment date is still picked up.
+	3. Retry each invoice whose ladder has the single retry, 24 hours after its first charge
+	   failed (`dunning.run_single_retries`).
+	4. Remind each team whose invoice is charged tomorrow (`payment_notices`).
+
+	Step 1 runs first. An invoice it charged has an attempt, so step 2 skips it.
+	"""
+	from central.billing.payments import emandate, payment_notices
+	from central.billing.revenue import dunning
+
+	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
+	debited = emandate.charge_due(now=now_dt)
+	collected = _collect_first_charges(now_dt)
+	retried = dunning.run_single_retries(now_dt)
+	reminded = payment_notices.send_payment_reminders(now_dt)
+	return [*debited, *collected, *retried, *reminded]
+
+
+def _collect_first_charges(now_dt: datetime) -> list[dict]:
+	"""Start collection on every owed invoice whose payment date is tomorrow or earlier and
+	that has no payment attempt yet."""
+	from central.billing.doctype.invoice.invoice import owed_filters
+	from central.billing.platform.jobs import each_isolated
+
+	waiting = frappe.get_all(
+		"Invoice",
+		filters=[
+			*owed_filters(),
+			["invoice_type", "=", "Billable"],
+			["expected_collection", ">", 0],
+			["payment_date", "<=", frappe.utils.add_days(now_dt.date(), 1)],
+		],
+		pluck="name",
+	)
+	tried = set(
+		frappe.get_all("Payment Attempt", filters={"invoice": ["in", waiting]}, pluck="invoice")
+		if waiting
+		else []
+	)
+	return each_isolated(
+		"Collect on payment date",
+		"Invoice",
+		[name for name in waiting if name not in tried],
+		lambda name: {"invoice": name, **collect_invoice(name, now=now_dt)},
+	)
+
+
+def payment_starts_at(inv) -> datetime:
+	"""The first moment the invoice may be debited: the start of its payment date."""
+	# Every opened invoice gets a payment date, so a missing one is corrupt data. It must
+	# not read as today and let the card be charged early.
+	if not inv.get("payment_date"):
+		frappe.throw(
+			_("Invoice {0} is open but has no payment date.").format(inv.name), frappe.ValidationError
+		)
+	return frappe.utils.get_datetime(inv.payment_date)
+
+
+def _is_before_payment_date(inv, gateway: str, now: datetime | str | None = None) -> bool:
+	"""Whether a debit on `gateway` must still wait for the invoice's payment date.
+
+	1. On or after the payment date, no rail waits.
+	2. Before it, a rail that owes a pre-debit notice goes on, so the notice goes out no
+	   earlier than 24 hours before. Its debit window never opens before the payment date.
+	3. Before it, every other rail waits.
+	"""
+	from central.billing.payments import emandate
+
+	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
+	return now_dt < payment_starts_at(inv) and not emandate.is_notice_required(inv, gateway)
+
+
+def _charge_next_method(
+	inv, earlier: set | None, skipped: set, now: datetime | str | None = None
+) -> dict | None:
+	"""Try the next method once. Returns the outcome to stop on, or None to rotate to the
+	next method (a final decline, or a rail that cannot debit now, added to `skipped`)."""
+	from central.billing.payments import emandate
+
+	if in_flight := charges.in_flight_attempt(inv.name):
+		return {"collected": False, "reason": "attempt_in_flight", "attempt": in_flight}
+
+	method = next_method_for_amount(inv, earlier, skipped)
+	if not method:
+		# Every method has failed (or there are none) — leave it for dunning, and
+		# ask the customer for another way to pay. Off-session there is nobody to
+		# offer the other rail to in the moment, so the ask has to arrive as a
+		# notification instead (ADR 0022 §5, ADR 0023).
+		_ask_for_another_method(inv)
+		return {"collected": False, "reason": "no_method"}
+
+	if _is_before_payment_date(inv, method.gateway, now):
+		return {"collected": False, "reason": "before_payment_date"}
+
+	# Every off-session debit on a rail that owes a pre-debit notice waits for it, whichever
+	# path asked for it: the billing run, a dunning retry or a webhook.
+	predebit, notice = emandate.await_predebit(inv.name, method.gateway, now)
+	if predebit == emandate.Predebit.WAIT:
+		return {"collected": False, "reason": "awaiting_predebit_window", **notice}
+	if predebit == emandate.Predebit.ROTATE:
+		skipped.add(method.name)
+		return None
+
+	result = charges.pay_invoice(inv.name, method.name, method.gateway)
+
+	# A synchronous decline: rotate to the next method now (immediate fallback) —
+	# but only when the decline is final. An ambiguous failure may still settle at
+	# the gateway, and charging a second method on top of it pays one invoice
+	# twice; reconciliation resolves those instead (ADR 0022).
+	if result.get("status") != "Failed":
 		# Captured (awaiting webhook), in-flight, or a transient timeout: stop here.
 		return result
+	if not decline.is_terminal(result.get("failure_code")):
+		return {"collected": False, "reason": "ambiguous_failure", "attempt": result.get("attempt")}
+	return None

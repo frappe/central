@@ -512,6 +512,32 @@ class TestServiceAPI(IntegrationTestCase):
 			500,
 		)
 
+	def test_a_lower_total_is_refused(self):
+		"""The credential sits on the customer's server, so a total may only go up."""
+		self.subscribe_service(plan=self.plan, cluster="mumbai")
+		self.report_usage(service="PDF API", quantity=500, cluster="mumbai")
+		with self.assertRaisesRegex(frappe.ValidationError, "only increase"):
+			self.report_usage(service="PDF API", quantity=0, cluster="mumbai")
+
+	def test_a_lower_total_is_refused_after_the_terms_are_corrected(self):
+		"""A correction moves the billed total to a new row; the refusal follows it."""
+		from central.billing.revenue.metering import override_terms
+
+		subject = self.subscribe_service(plan=self.plan, cluster="mumbai")["service_subject"]
+		self.report_usage(service="PDF API", quantity=500, cluster="mumbai")
+		original = frappe.db.get_value("Usage Rollup", {"resource_id": subject}, "name")
+		head = override_terms(original, rate=1.0, reason="test")
+
+		with self.assertRaisesRegex(frappe.ValidationError, "only increase"):
+			self.report_usage(service="PDF API", quantity=100, cluster="mumbai")
+		self.report_usage(service="PDF API", quantity=600, cluster="mumbai")
+		self.assertEqual(frappe.utils.flt(frappe.db.get_value("Usage Rollup", head, "quantity")), 600)
+
+	def test_negative_usage_is_refused(self):
+		self.subscribe_service(plan=self.plan, cluster="mumbai")
+		with self.assertRaises(frappe.ValidationError):
+			self.report_usage(service="PDF API", quantity=-10, cluster="mumbai")
+
 	def test_global_service_reports_from_any_cluster(self):
 		# A globally-priced service is subscribed once with no cluster; a caller on any
 		# cluster (or none) reports to that one team-wide subject.
@@ -554,6 +580,26 @@ class TestServiceAPI(IntegrationTestCase):
 			frappe.utils.get_last_day(frappe.utils.nowdate()),
 		)
 		self.assertTrue(any(l["subscription_resource"] == subject and l["amount"] == 600.0 for l in lines))
+
+	def test_a_global_service_bills_whether_its_blank_cluster_is_null_or_empty(self):
+		from central.billing.revenue.metering import metered_line_items, metered_line_items_for_clusters
+
+		live = _make_metered_family(
+			"SM Live Family", "PDF Live", "SM PDF Live Plan", pricing_mode="Live", rate=2.0
+		)
+		subject = self.subscribe_service(live, cluster=None)["service_subject"]
+		self.report_usage(service="PDF Live", quantity=300)
+		start = frappe.utils.get_first_day(frappe.utils.nowdate())
+		end = frappe.utils.get_last_day(frappe.utils.nowdate())
+		for stored in (None, ""):
+			frappe.db.set_value("Usage Rollup", {"resource_id": subject}, "cluster", stored)
+			for asked in (None, ""):
+				lines = metered_line_items(self.TEAM, asked, start, end)
+				self.assertEqual(
+					[(l["subscription_resource"], l["amount"]) for l in lines], [(subject, 600.0)]
+				)
+			lines = metered_line_items_for_clusters(self.TEAM, ["mumbai", None], start, end)
+			self.assertEqual([l["subscription_resource"] for l in lines], [subject])
 
 	def test_report_usage_for_unsubscribed_service_is_rejected(self):
 		# A caller can only report for a service ITS OWN team is subscribed to — there is

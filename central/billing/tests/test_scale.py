@@ -15,6 +15,7 @@ import time
 
 import frappe
 
+from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.platform import invariants
 from central.billing.revenue import invoicing
 from central.billing.revenue.invoicing import run as run_module
@@ -104,5 +105,5 @@ class TestBillingRunAtScale(BillingTestCase):
 		invoicing.generate_draft_invoices(*PERIOD)
 		invoicing.open_drafts(PERIOD[1])
 
-		still_draft = frappe.db.count("Invoice", {"team": ["in", self.teams], "status": "Draft"})
+		still_draft = frappe.db.count("Invoice", [*unissued_filters(), ["team", "in", self.teams]])
 		self.assertEqual(still_draft, 0)

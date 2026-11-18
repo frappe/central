@@ -60,6 +60,6 @@ class TestProvisionOpensSegment(IntegrationTestCase):
 		inv = frappe.get_doc("Invoice", name)
 		# A full June on the locked ₹3200 plan → a non-zero draft generated straight
 		# from Central's own billing segment, with no agent in the loop.
-		self.assertEqual(inv.status, "Draft")
+		self.assertEqual(inv.status, "Outstanding")
 		self.assertGreater(inv.subtotal, 0)
 		self.assertTrue(inv.items)

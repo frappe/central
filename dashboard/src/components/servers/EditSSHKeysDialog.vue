@@ -5,6 +5,7 @@ import { API, method } from '@/api/methods'
 import SSHKeysField from '@/components/servers/SSHKeysField.vue'
 import { useSession } from '@/composables/useSession'
 import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 import type { ServerSSHKey } from '@/types/servers'
 
 interface Props {
@@ -58,15 +59,17 @@ async function save(): Promise<void> {
 	open.value = false
 	emit('saved')
 }
+
+const updateSshKeysErrorTitle = __("Couldn't update the SSH keys")
 </script>
 
 <template>
 	<Dialog
 		v-model="open"
-		title="Edit SSH keys"
+		:title="__('Edit SSH keys')"
 		:actions="[
 			{
-				label: 'Save',
+				label: __('Save'),
 				variant: 'solid',
 				disabled: !isChanged,
 				loading: keysCall.loading,
@@ -76,14 +79,19 @@ async function save(): Promise<void> {
 	>
 		<template #default>
 			<div class="space-y-4">
-				<Alert v-if="error" theme="red" :title="error" />
+				<Alert
+					v-if="error"
+					theme="red"
+					:title="updateSshKeysErrorTitle"
+					:description="error"
+				/>
 
 				<SSHKeysField v-model="selected" />
 
 				<p class="text-p-sm text-ink-gray-5">
 					{{ selected.length
-							? 'The change applies at the next sign-in. Open sessions stay connected.'
-							: 'With no key, only the web console in Actions can sign in.' }}
+							? __('The change applies at the next sign-in. Open sessions stay connected.')
+							: __('With no key, only the web console in Actions can sign in.') }}
 				</p>
 			</div>
 		</template>

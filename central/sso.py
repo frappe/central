@@ -11,8 +11,7 @@ from central.central.doctype.central_sso_settings.central_sso_settings import (
 	CentralSSOSettings,
 )
 
-# Pilot ends an admin session when its login token expires, so this is the session length.
-BENCH_LOGIN_TTL = 60 * 60
+BENCH_API_TTL = 5 * 60  # Central mints a fresh bearer for every call to a pilot
 SITE_LOGIN_TTL = 5 * 60  # a single-use assertion that a site exchanges for its own session
 BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
 DATUM_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fetches on 401 / near expiry
@@ -35,6 +34,11 @@ def mint_proxy_token(region_id: int) -> str:
 def mint_cargo_token(region_id: int) -> str:
 	"""Mint a credential for the object storage routes of one regional Cargo host."""
 	return _mint_regional_token(region_id, f"atlas-cargo:{region_id}", "bucket:*")
+
+
+def mint_wireguard_token(region_id: int) -> str:
+	"""Mint a credential for the peer routes of one regional WireGuard gateway."""
+	return _mint_regional_token(region_id, f"atlas-wg-gateway:{region_id}", "peers:read peers:update")
 
 
 def mint_datum_token(region_id: int, resource_id: str) -> str:
@@ -91,8 +95,15 @@ def jwks_url() -> str:
 
 def mint_bench_login(audience: str) -> str:
 	"""A single-use admin SID that opens a bench. The bench verifies it against the JWKS
-	and checks `aud` equals its own audience id."""
-	return _mint(audience, "bench", BENCH_LOGIN_TTL, {"sub": "admin"})
+	and checks `aud` equals its own audience id. Pilot ends the session when it expires, so
+	its TTL is the session length set in Central SSO Settings."""
+	settings = frappe.get_cached_doc("Central SSO Settings")
+	return _mint(audience, "bench", settings.bench_session_seconds, {"sub": "admin"})
+
+
+def mint_bench_api_token(audience: str) -> str:
+	"""The bearer Central presents on a server-to-server call to a bench."""
+	return _mint(audience, "bench", BENCH_API_TTL, {"sub": "admin"})
 
 
 def mint_site_login(audience: str, site: str, user: str | None = None, full_name: str | None = None) -> str:

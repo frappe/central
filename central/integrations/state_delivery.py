@@ -75,19 +75,6 @@ def accept_cargo_report(raw_body: bytes, region: str | None, signature: str | No
 		return _ignored(f"unsupported status '{status}'")
 
 	detail = ServiceDetail.record_report(cargo, service, status, report.get("service_endpoint"))
-
-	# Cargo reports telemetry Available again when its Datum token nears expiry.
-	if service == "telemetry" and status == "Available":
-		frappe.enqueue_doc(
-			"Region",
-			cargo,
-			"issue_cargo_datum_token",
-			queue="short",
-			job_id=f"cargo-datum-token:{cargo}",
-			deduplicate=True,
-			enqueue_after_commit=True,
-		)
-
 	return {"recorded": True, "service_detail": detail}
 
 

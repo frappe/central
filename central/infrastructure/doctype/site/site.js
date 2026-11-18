@@ -66,6 +66,16 @@ function add_trial_actions(form) {
 				),
 			__('Trial'),
 		)
+	if (['Active', 'Ended'].includes(state))
+		form.add_custom_button(
+			__('Convert Trial'),
+			() =>
+				frappe.confirm(
+					__('Convert this trial now? Billing starts on the paid plan, without a payment method, and a stopped server starts again.'),
+					() => form.call('convert_trial').then(() => form.reload_doc()),
+				),
+			__('Trial'),
+		)
 	if (state === 'Active')
 		form.add_custom_button(
 			__('End Trial Now'),

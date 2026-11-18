@@ -28,10 +28,16 @@ def _enter_test_mode() -> None:
 	"""Gate, then elevate. These endpoints are called by an unauthenticated test
 	harness (allow_guest) and must create/delete teams and users across permission
 	hooks, so they run as Administrator. The ONLY thing that makes that safe is the
-	`allow_tests` gate — it is never set on a production site, so this whole surface
-	is unreachable there. Checked first, before any elevation."""
-	if not frappe.conf.get("allow_tests"):
-		frappe.throw(_("e2e seed endpoints require `allow_tests` on the site."), frappe.PermissionError)
+	`allow_tests` gate, read from this site's own config — it is never set on a production
+	site, so this whole surface is unreachable there. Checked first, before any elevation."""
+	# Read from this site's own config: a bench-wide `allow_tests` in common_site_config
+	# (often set on staging) must not open these endpoints on every site of the bench.
+	own_config = frappe.get_file_json(frappe.get_site_path("site_config.json"))
+	if not own_config.get("allow_tests"):
+		frappe.throw(
+			_("e2e seed endpoints require `allow_tests` in this site's site_config.json."),
+			frappe.PermissionError,
+		)
 	frappe.set_user("Administrator")
 
 
@@ -79,6 +85,18 @@ def seed(scenario: str = "profile_pending", currency: str = "INR") -> dict:
 		"currency": currency,
 		"scenario": scenario,
 	}
+
+
+@frappe.whitelist(methods=["POST"])
+def reopen_onboarding(team: str) -> None:
+	"""Put the signed-in owner's onboarding steps back to pending."""
+	if frappe.db.get_value("Team", team, "owner_user") != frappe.session.user:
+		frappe.throw(_("Only the team owner can reopen its onboarding."), frappe.PermissionError)
+	_enter_test_mode()
+	seeded_team = frappe.get_doc("Team", team)
+	for row in seeded_team.onboarding_steps:
+		row.status = "Pending"
+	seeded_team.save()
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -235,6 +253,7 @@ def save_test_card(team: str, token: str = "tok_visa") -> dict:
 	return {"payment_method": name, "gateway": gateway, "gateway_method_id": pm.id}
 
 
+# nosemgrep: guest-whitelisted-method -- _enter_test_mode refuses every site without allow_tests.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def make_invoice(team: str, total: float = 1180, currency: str | None = None, link_card: int = 0) -> dict:
 	"""Create a Draft Billable invoice (subtotal + tax = total) the waterfall can
@@ -276,7 +295,7 @@ def make_invoice(team: str, total: float = 1180, currency: str | None = None, li
 				"doctype": "Invoice",
 				"team": team,
 				"invoice_type": "Billable",
-				"status": "Draft",
+				"status": "Outstanding",
 				"subscription": subscription,
 				"period_start": "2026-06-01",
 				"period_end": "2026-06-30",
@@ -548,7 +567,7 @@ def _seed_invoices(team: str, currency: str) -> None:
 	tax_type = "GST" if currency == "INR" else "VAT"
 	for status, period, paid in (
 		("Paid", ("2026-05-01", "2026-05-31"), True),
-		("Open", ("2026-06-01", "2026-06-30"), False),
+		("Outstanding", ("2026-06-01", "2026-06-30"), False),
 	):
 		frappe.get_doc(
 			{

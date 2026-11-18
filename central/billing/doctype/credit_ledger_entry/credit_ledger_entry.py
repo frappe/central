@@ -14,6 +14,16 @@ from frappe.model.document import Document
 
 
 class CreditLedgerEntry(Document):
+	def after_insert(self):
+		if self.entry_type != "Credit" or frappe.utils.flt(self.amount) <= 0:
+			return
+		# After commit, so the job reads this credit. The invoice and wallet locks keep two runs apart.
+		frappe.enqueue(
+			"central.billing.revenue.invoicing.lifecycle.settle_with_new_credit",
+			team=self.team,
+			enqueue_after_commit=True,
+		)
+
 	def validate(self):
 		if not self.is_new():
 			frappe.throw(

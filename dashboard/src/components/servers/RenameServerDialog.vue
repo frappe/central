@@ -5,6 +5,7 @@ import { API, method } from '@/api/methods'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
 import { getErrorMessage, successToast } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 
 interface Props {
 	server: VirtualMachineRow
@@ -54,19 +55,21 @@ async function save(): Promise<void> {
 	})
 	if (renameCall.error) return
 
-	successToast('Server renamed')
+	successToast(__('Server renamed'))
 	open.value = false
 	emit('renamed')
 }
+
+const renameServerErrorTitle = __("Couldn't rename the server")
 </script>
 
 <template>
 	<Dialog
 		v-model="open"
-		title="Rename server"
+		:title="__('Rename server')"
 		:actions="[
 			{
-				label: 'Save',
+				label: __('Save'),
 				variant: 'solid',
 				disabled: !canSave,
 				onClick: save,
@@ -75,11 +78,16 @@ async function save(): Promise<void> {
 	>
 		<template #default>
 			<div class="space-y-4">
-				<Alert v-if="error" theme="red" :title="error" />
+				<Alert
+					v-if="error"
+					theme="red"
+					:title="renameServerErrorTitle"
+					:description="error"
+				/>
 
 				<TextInput
 					v-model="title"
-					label="Name"
+					:label="__('Name')"
 					maxlength="140"
 					autofocus
 					@keyup.enter="save"

@@ -13,3 +13,12 @@ def check_accounting_setup() -> list[dict]:
 	"""What exists in the accounting system and what does not. Writes nothing."""
 	authz.require_operator()
 	return setup.check()
+
+
+@frappe.whitelist()
+def get_manual_setup_gaps() -> list[dict]:
+	"""The Billing Settings values an operator must set by hand, for the workspace banner."""
+	from central.billing.platform import readiness
+
+	authz.require_operator()
+	return [{"check": gap.check, "detail": gap.detail} for gap in readiness.get_manual_setup_gaps()]

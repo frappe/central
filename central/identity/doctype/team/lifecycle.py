@@ -1,6 +1,8 @@
 import frappe
 from frappe import _
 
+from central.central.doctype.activity_event.activity_event import ActivityEvent
+from central.central.doctype.activity_event.tracked import EventKind
 from central.identity.doctype.team.archive import get_archive_blockers
 
 
@@ -121,4 +123,7 @@ class TeamLifecycle:
 			else _("{0} impersonated the team owner. Reason: {1}")
 		)
 		self.add_comment("Info", comment.format(frappe.session.user, reason))
+		ActivityEvent.record(
+			self, "team.impersonated", EventKind("impersonated", "team", "team:manage_members")
+		)
 		return f"/dashboard/servers?view_as={self.name}"

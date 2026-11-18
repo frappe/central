@@ -1,53 +1,83 @@
 <script setup lang="ts">
-import { Alert, Button, SettingsRow, Switch, useCall } from 'frappe-ui'
+import {
+	Alert,
+	Badge,
+	Button,
+	Select,
+	SettingsRow,
+	Skeleton,
+	Switch,
+	TimePicker,
+	useCall,
+} from 'frappe-ui'
 import { computed, reactive, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import EmptyState from '@/components/common/EmptyState.vue'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
+import { __ } from '@/lib/translate'
+import type {
+	NotificationCategory as Category,
+	NotificationFrequency,
+	NotificationPreference as Preference,
+	UserNotificationPreferences,
+} from '@/types/billing'
 
 // Per-user notification preferences, one row per category. Email delivery and the
 // in-app feed toggle independently. Opt-out model: a category with no saved row is
-// enabled for both (see engine._email_enabled and the feed's in_app filter), so
+// enabled for both (see the notification engine and the feed's in_app filter), so
 // every switch defaults to on and we only persist the user's explicit choices.
-type Category = 'Billing' | 'Server' | 'Team' | 'Trial'
-type Channels = { email: boolean; in_app: boolean }
-
-interface Preference {
-	category: Category
-	email_enabled: boolean | number
-	in_app_enabled: boolean | number
+interface Channels {
+	email: boolean
+	in_app: boolean
+	frequency: NotificationFrequency
+	muted: string[]
 }
 
 const CATEGORIES: { key: Category; label: string; hint: string }[] = [
 	{
 		key: 'Billing',
-		label: 'Billing',
+		label: __('Billing'),
 		hint: 'Payments, invoices, credit balance and mandates.',
 	},
 	{
 		key: 'Server',
-		label: 'Servers',
+		label: __('Servers'),
 		hint: 'Server lifecycle, resizes and health.',
 	},
 	{
 		key: 'Team',
-		label: 'Team',
+		label: __('Team'),
 		hint: 'Invitations, role changes and membership.',
 	},
 	{
 		key: 'Trial',
-		label: 'Trial',
+		label: __('Trial'),
 		hint: 'When a free trial ends, stops and is deleted.',
 	},
 ]
 
+const FREQUENCIES = [
+	{ label: __('Instantly'), value: 'Instant' },
+	{ label: __('Daily digest'), value: 'Daily' },
+	{ label: __('Weekly digest'), value: 'Weekly' },
+]
+
+const formatHour = (hour: number) => `${String(hour).padStart(2, '0')}:00`
+
 function defaults(): Record<Category, Channels> {
+	const channels = () => ({
+		email: true,
+		in_app: true,
+		frequency: 'Instant' as NotificationFrequency,
+		muted: [],
+	})
 	return {
-		Billing: { email: true, in_app: true },
-		Server: { email: true, in_app: true },
-		Team: { email: true, in_app: true },
-		Trial: { email: true, in_app: true },
+		Billing: channels(),
+		Server: channels(),
+		Team: channels(),
+		Trial: channels(),
 	}
 }
 
@@ -59,6 +89,10 @@ function toMap(prefs: Preference[] | undefined): Record<Category, Channels> {
 			map[p.category] = {
 				email: Boolean(Number(p.email_enabled)),
 				in_app: Boolean(Number(p.in_app_enabled)),
+				frequency: p.frequency,
+				muted: p.events
+					.filter((event) => !event.email_enabled)
+					.map((event) => event.event_type),
 			}
 		}
 	}
@@ -66,10 +100,13 @@ function toMap(prefs: Preference[] | undefined): Record<Category, Channels> {
 }
 
 const state = reactive<Record<Category, Channels>>(defaults())
+const digestHour = ref<number | null>(null)
 const formError = ref('')
+const expanded = ref<Category | null>(null)
 watch(state, () => (formError.value = ''), { deep: true })
+watch(digestHour, () => (formError.value = ''))
 
-const load = useCall<{ preferences: Preference[] }, { team: string }>({
+const load = useCall<UserNotificationPreferences, { team: string }>({
 	url: method(API.notificationPreferences),
 	params: teamParams,
 	immediate: false,
@@ -81,42 +118,77 @@ watch(
 	() => load.data,
 	(data) => {
 		const map = toMap(data?.preferences)
-		for (const { key } of CATEGORIES) {
-			state[key].email = map[key].email
-			state[key].in_app = map[key].in_app
-		}
+		Object.assign(state, map)
+		digestHour.value = data?.digest_hour ?? null
 	},
 	{ immediate: true },
 )
 
 const save = useCall<
 	{ saved: boolean },
-	{ team: string; preferences: Preference[] }
+	{ team: string; preferences: Preference[]; digest_hour?: number }
 >({
 	url: method(API.saveNotificationPreferences),
 	method: 'POST',
 	immediate: false,
 })
 
-const dirty = computed(() => {
-	const loaded = toMap(load.data?.preferences)
-	return CATEGORIES.some(
-		({ key }) =>
-			loaded[key].email !== state[key].email ||
-			loaded[key].in_app !== state[key].in_app,
-	)
-})
+const dirty = computed(
+	() =>
+		JSON.stringify(toMap(load.data?.preferences)) !== JSON.stringify(state) ||
+		digestHour.value !== load.data?.digest_hour,
+)
+
+const digestTime = computed(() =>
+	digestHour.value == null ? '' : formatHour(digestHour.value),
+)
+const visibleCategories = computed(() =>
+	CATEGORIES.filter(({ key }) => eventsOf(key).length),
+)
+const usesDigest = computed(() =>
+	visibleCategories.value.some(
+		({ key }) => state[key].email && state[key].frequency !== 'Instant',
+	),
+)
+
+function eventsOf(category: Category) {
+	return load.data?.catalog.find((c) => c.category === category)?.events ?? []
+}
+
+function toggleEvent(category: Category, eventType: string, on: boolean) {
+	const muted = state[category].muted.filter((name) => name !== eventType)
+	state[category].muted = on ? muted : [...muted, eventType]
+}
+
+function setDigestHour(value: string) {
+	const hour = Number.parseInt(value, 10)
+	if (Number.isInteger(hour) && hour >= 0 && hour <= 23) {
+		digestHour.value = hour
+	}
+}
 
 async function onSave(): Promise<void> {
 	try {
-		const preferences: Preference[] = CATEGORIES.map(({ key }) => ({
-			category: key,
-			email_enabled: state[key].email ? 1 : 0,
-			in_app_enabled: state[key].in_app ? 1 : 0,
-		}))
-		await submitOrThrow(save, { ...teamParams(), preferences })
+		const preferences: Preference[] = visibleCategories.value.map(
+			({ key }) => ({
+				category: key,
+				email_enabled: state[key].email ? 1 : 0,
+				in_app_enabled: state[key].in_app ? 1 : 0,
+				frequency: state[key].frequency,
+				events: state[key].muted
+					.filter((name) =>
+						eventsOf(key).some((event) => event.event_type === name),
+					)
+					.map((event_type) => ({ event_type, email_enabled: 0 })),
+			}),
+		)
+		await submitOrThrow(save, {
+			...teamParams(),
+			preferences,
+			digest_hour: digestHour.value ?? undefined,
+		})
 		await load.reload()
-		successToast('Notification preferences saved')
+		successToast(__('Notification preferences saved'))
 	} catch (e) {
 		formError.value = getErrorMessage(
 			e,
@@ -124,54 +196,153 @@ async function onSave(): Promise<void> {
 		)
 	}
 }
+
+const saveNotificationSettingsErrorTitle = __(
+	"Couldn't save your notification settings",
+)
+const notificationSettingsLoadErrorTitle = __(
+	"Notification settings couldn't load",
+)
 </script>
 
 <template>
 	<div class="mt-6">
-		<Alert v-if="formError" class="mb-4" theme="red" :title="formError" />
-		<!-- Column headers, aligned to the switch cells below: with two switches
-		     per row, naming the channel once beats repeating a label against
-		     every toggle. -->
-		<div
-			class="flex items-center justify-end gap-6 pb-1 text-p-sm text-ink-gray-5"
+		<Alert
+			v-if="formError"
+			class="mb-4"
+			theme="red"
+			:title="saveNotificationSettingsErrorTitle"
+			:description="formError"
+		/>
+		<EmptyState
+			v-if="load.error"
+			icon="lucide-cloud-off"
+			:title="notificationSettingsLoadErrorTitle"
+			:description="getErrorMessage(load.error, 'Try again in a moment.')"
 		>
-			<span class="w-12 text-center">Email</span>
-			<span class="w-12 text-center">In-app</span>
+			<template #action>
+				<Button :label="__('Retry')" @click="load.reload()" />
+			</template>
+		</EmptyState>
+		<div v-else-if="!load.data" class="space-y-2">
+			<Skeleton v-for="n in 4" :key="n" class="h-14 rounded-6" />
 		</div>
-
-		<div class="divide-y divide-outline-gray-1 border-t border-outline-gray-1">
-			<SettingsRow
-				v-for="cat in CATEGORIES"
-				:key="cat.key"
-				:title="cat.label"
-				:description="cat.hint"
-				label-for=""
+		<template v-else>
+			<!-- Column headers, aligned to the switch cells below: with two switches
+			     per row, naming the channel once beats repeating a label against
+			     every toggle. -->
+			<div
+				class="flex items-center justify-end gap-6 pb-1 text-p-sm text-ink-gray-5"
 			>
-				<div class="flex items-center gap-6">
-					<span class="flex w-12 justify-center">
-						<Switch
-							v-model="state[cat.key].email"
-							:aria-label="`Email notifications for ${cat.label}`"
-						/>
-					</span>
-					<span class="flex w-12 justify-center">
-						<Switch
-							v-model="state[cat.key].in_app"
-							:aria-label="`In-app notifications for ${cat.label}`"
-						/>
-					</span>
-				</div>
-			</SettingsRow>
-		</div>
+				<span class="w-12 text-center">{{ __('Email') }}</span>
+				<span class="w-12 text-center">{{ __('In-app') }}</span>
+			</div>
 
-		<div class="mt-4 flex justify-end">
-			<Button
-				variant="solid"
-				label="Save preferences"
-				:loading="save.loading"
-				:disabled="!dirty"
-				@click="onSave"
-			/>
-		</div>
+			<div
+				class="divide-y divide-outline-gray-1 border-t border-outline-gray-1"
+			>
+				<div v-for="cat in visibleCategories" :key="cat.key">
+					<SettingsRow :title="cat.label" :description="cat.hint">
+						<div class="flex items-center gap-6">
+							<span class="flex w-12 justify-center">
+								<Switch
+									v-model="state[cat.key].email"
+									:aria-label="__('Email notifications for {0}', [cat.label])"
+								/>
+							</span>
+							<span class="flex w-12 justify-center">
+								<Switch
+									v-model="state[cat.key].in_app"
+									:aria-label="__('In-app notifications for {0}', [cat.label])"
+								/>
+							</span>
+						</div>
+					</SettingsRow>
+
+					<div
+						v-if="state[cat.key].email"
+						class="flex flex-wrap items-center gap-2 pb-4"
+					>
+						<Select
+							v-model="state[cat.key].frequency"
+							class="w-40"
+							:options="FREQUENCIES"
+							:aria-label="__('Email frequency for {0}', [cat.label])"
+						/>
+						<Button
+							v-if="eventsOf(cat.key).length"
+							class="ml-auto"
+							variant="ghost"
+							:label="
+								expanded === cat.key
+									? __('Hide events')
+									: __('Choose events')
+							"
+							:aria-expanded="expanded === cat.key"
+							@click="
+								expanded = expanded === cat.key ? null : cat.key
+							"
+						/>
+					</div>
+
+					<ul
+						v-if="state[cat.key].email && expanded === cat.key"
+						class="mb-4 rounded-6 bg-surface-gray-1 px-3 py-1.5"
+					>
+						<li
+							v-for="event in eventsOf(cat.key)"
+							:key="event.event_type"
+							class="flex items-center gap-2 py-1.5 text-p-sm text-ink-gray-8"
+						>
+							<span class="flex-1">{{ event.title }}</span>
+							<Badge
+								v-if="event.is_critical"
+								theme="gray"
+								:label="__('Always sent')"
+							/>
+							<Switch
+								:model-value="
+									Boolean(event.is_critical) ||
+									!state[cat.key].muted.includes(event.event_type)
+								"
+								:disabled="Boolean(event.is_critical)"
+								:aria-label="__('Email for {0}', [event.title])"
+								@update:model-value="
+									toggleEvent(cat.key, event.event_type, $event)
+								"
+							/>
+						</li>
+					</ul>
+				</div>
+				<SettingsRow
+					v-if="usesDigest"
+					:title="__('Digest time')"
+					:description="__('Daily and weekly digests go out at this hour, {0}. Weekly digests go out on Monday.', [load.data?.time_zone])"
+				>
+					<TimePicker
+						class="w-28"
+						:model-value="digestTime"
+						:interval="60"
+						:typeable="false"
+						:aria-label="__('Digest time')"
+						@update:model-value="setDigestHour"
+					/>
+				</SettingsRow>
+			</div>
+
+			<p class="mt-3 text-p-sm text-ink-gray-5">
+				{{ __("Critical events, such as a failed payment or a server that is down, are always emailed, even when a category's email is off.") }}
+			</p>
+
+			<div class="mt-4 flex justify-end">
+				<Button
+					variant="solid"
+					:label="__('Save preferences')"
+					:loading="save.loading"
+					:disabled="!dirty"
+					@click="onSave"
+				/>
+			</div>
+		</template>
 	</div>
 </template>

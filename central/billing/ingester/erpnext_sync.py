@@ -16,7 +16,10 @@ nothing is ever read back from ERPNext into billing.
 import frappe
 
 from central.billing.ingester import connection, gst
+from central.billing.ingester.gst_state_backfill import state_at_issue
 from central.billing.ingester.settings import accounting_settings, invoice_series, receivable_account
+from central.billing.platform.jobs import each_isolated
+from central.billing.revenue.tax import has_gst_charged
 
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_SECONDS = 60  # 60s, 120s, 240s
@@ -128,7 +131,7 @@ def retry_failed_syncs(now=None) -> list:
 		],
 		pluck="name",
 	)
-	return [sync_invoice(name) for name in due]
+	return each_isolated("Accounting sync retry", "Invoice", due, sync_invoice)
 
 
 # --- ERPNext transport ------------------------------------------------------
@@ -144,6 +147,18 @@ def _customer_for(team: str) -> str:
 	return customer
 
 
+def _record_state_before_filing(inv) -> None:
+	"""An invoice issued before states were recorded is filed under its state at issue,
+	the same one the daily backfill would record, so the two never disagree.
+	Only for a new filing: an existing one is read by the backfill instead."""
+	if gst.is_state_recorded(inv) or inv.currency != "INR" or not has_gst_charged(inv):
+		return
+	inv.gst_state, inv.gst_state_recorded = state_at_issue(inv), 1
+	frappe.db.set_value(
+		"Invoice", inv.name, {"gst_state": inv.gst_state, "gst_state_recorded": 1}, update_modified=False
+	)
+
+
 def _issue(inv, customer: str) -> str:
 	"""The submitted Sales Invoice for this invoice: found if it exists, else created."""
 	existing = connection.find(
@@ -151,6 +166,7 @@ def _issue(inv, customer: str) -> str:
 	)
 	if existing:
 		return existing[0].name
+	_record_state_before_filing(inv)
 	return connection.post("api/resource/Sales Invoice", _build_sales_invoice(inv, customer)).name
 
 
@@ -160,9 +176,8 @@ def _build_sales_invoice(inv, customer: str) -> dict:
 	Usage paid with promotional credit is left out, so the Sales Invoice closes exactly
 	against the advances and the card payment."""
 	settings = accounting_settings()
-	tax = gst.treatment(inv.team)
-	# The GST on our invoice decides the rows. A lapsed GSTIN was billed as unregistered.
-	template = tax.template if frappe.utils.flt(inv.output_tax_amount) else None
+	tax = gst.treatment(inv.team, charged_tax=inv.output_tax_amount, invoice=inv)
+	template = tax.template
 	items = [_item(li, settings) for li in inv.items]
 	taxes = gst.tax_rows(template)
 	promotional = _promotional_part(inv)
@@ -289,11 +304,14 @@ def _advances(inv) -> list[dict]:
 
 def _card_attempt(inv):
 	"""The captured card or UPI payment that settled this invoice, if one did."""
+	from central.billing.payments.refunds import late_captured_attempts
+
 	if frappe.utils.flt(inv.amount_paid) <= 0:
 		return None
-	name = frappe.db.get_value(
-		"Payment Attempt", {"invoice": inv.name, "status": "Captured"}, "name", order_by="creation desc"
-	)
+	filters = {"invoice": inv.name, "status": "Captured"}
+	if late := late_captured_attempts(inv.name):
+		filters["name"] = ["not in", late]  # captured after the invoice was paid; never in the books
+	name = frappe.db.get_value("Payment Attempt", filters, "name", order_by="creation desc")
 	return frappe.get_doc("Payment Attempt", name) if name else None
 
 

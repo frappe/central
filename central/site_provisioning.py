@@ -7,7 +7,7 @@ from frappe import _
 
 from central.billing.catalog.server_plans import get_server_plans
 from central.billing.catalog.trials import trial_plan_names
-from central.iam import get_user_team_names, resolve_team
+from central.iam import can, get_user_team_names, resolve_team
 from central.identity.doctype.team.team import Team
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
 from central.integrations.images import list_images
@@ -47,18 +47,26 @@ def create_trial_site(team: str | None, subdomain: str, request_key: str, produc
 	)
 
 
-def create_trial_team(user: str, attribution: dict | None = None) -> str | None:
-	"""Create the first team of a user who starts the trial funnel with none.
+def create_trial_team(user: str, attribution: dict | None = None, team: str | None = None) -> str:
+	"""The team the trial funnel starts the site in.
 
-	The funnel cannot ask for a team name, so the team is named after the user. A
-	user who already has a team keeps it, and nothing is created."""
-	if get_user_team_names(user):
-		return None
+	1. `team`, the console's current team, when the user can create servers there.
+	2. Else the first other team where the user can.
+	3. Else a new team owned by the user. The funnel cannot ask for a name, so it is named
+	   after the user, and it skips the console's onboarding."""
+	if team and can(user, team, "server:create"):
+		return team
+	for name in get_user_team_names(user):
+		if can(user, name, "server:create"):
+			return name
 
 	full_name = frappe.db.get_value("User", user, "full_name") or user
 	team_name = _("{0}'s Team").format(full_name)
 
-	return Team.create_for_current_user(team_name, first_touch(**(attribution or {}))).name
+	team = Team.create_for_current_user(team_name, first_touch(**(attribution or {})))
+	# The product's app onboards a trial team, so the console's steps start skipped.
+	team.skip_onboarding()
+	return team.name
 
 
 def first_touch(
@@ -154,7 +162,7 @@ def trial_configuration(team: str, product: Product | None = None) -> dict:
 	offering = signup_offering()
 	has_plan = False
 	for region in trial_regions():
-		plan = get_cheapest_trial_plan(team, region)
+		plan = get_cheapest_trial_plan(team, region, offering)
 		if not plan:
 			continue
 
@@ -215,15 +223,17 @@ def signup_offering() -> str:
 	return (dedicated or offerings)[0].name
 
 
-def get_cheapest_trial_plan(team: str, region: str) -> str | None:
-	"""The cheapest marked trial plan in the Team's regional catalog, or None."""
+def get_cheapest_trial_plan(team: str, region: str, offering: str) -> str | None:
+	"""The cheapest marked trial plan the Team's regional catalog has for `offering`, or None."""
 	trial_plans = trial_plan_names()
 	if not trial_plans:
 		return None
 
 	plans = [
 		row
-		for rows in get_server_plans(team, cluster=region)["plans"].values()
+		for rows in get_server_plans(team, cluster=region, include_trial_plans=True, offering=offering)[
+			"plans"
+		].values()
 		for row in rows
 		if row["plan"] in trial_plans
 	]

@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import datetime
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -12,7 +13,7 @@ from central.billing.payments.webhooks import process_webhook
 from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import run_enqueued_inline
+from central.billing.tests.utils import processing_jobs, run_enqueued_inline, run_repeat_counts
 
 EVENT_ID = "evt_webhook_500"
 PAYLOAD = (
@@ -36,6 +37,9 @@ class TestStripeWebhookReceiver(IntegrationTestCase):
 	def setUp(self):
 		make_stripe_gateway()
 		frappe.db.delete("Webhook Event", {"gateway_event_id": EVENT_ID})
+		central_event = patch("central.billing.payments.webhooks.is_central_event", return_value=True)
+		central_event.start()
+		self.addCleanup(central_event.stop)
 
 	def _events(self):
 		return frappe.db.count("Webhook Event", {"gateway_event_id": EVENT_ID})
@@ -71,7 +75,7 @@ class TestStripeWebhookReceiver(IntegrationTestCase):
 
 		self.assertEqual(frappe.local.response.http_status_code, 200)
 		self.assertEqual(self._events(), 1)  # no duplicate
-		self.assertEqual(enqueue.call_count, 1)  # no second job
+		self.assertEqual(processing_jobs(enqueue), 1)  # no second job
 
 
 R_PAYLOAD = (
@@ -100,6 +104,9 @@ class TestRazorpayWebhookReceiver(IntegrationTestCase):
 
 	def setUp(self):
 		make_razorpay_gateway()
+		central_event = patch("central.billing.payments.webhooks.is_central_event", return_value=True)
+		central_event.start()
+		self.addCleanup(central_event.stop)
 		frappe.db.delete("Webhook Event", {"gateway_event_id": R_EVENT_ID})
 
 	def _events(self):
@@ -118,6 +125,54 @@ class TestRazorpayWebhookReceiver(IntegrationTestCase):
 			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
 			process_webhook("Razorpay", R_PAYLOAD, {**R_HEADERS, "X-Razorpay-Event-Id": "evt_forged_new"})
 		self.assertEqual(self._events(), 1)
+
+	def test_the_event_keeps_its_delivery_id_and_when_razorpay_raised_it(self):
+		with razorpay_signature(valid=True), patch("frappe.enqueue"):
+			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+
+		event = frappe.db.get_value(
+			"Webhook Event",
+			{"gateway_event_id": R_EVENT_ID},
+			["delivery_id", "occurred_at", "deliveries"],
+			as_dict=True,
+		)
+		self.assertEqual(event.delivery_id, "evt_razorpay_webhook_1")
+		raised = frappe.utils.convert_utc_to_system_timezone(datetime.datetime(2023, 11, 14, 22, 13, 20))
+		self.assertEqual(event.occurred_at, raised.replace(tzinfo=None))
+		self.assertEqual(event.deliveries, 1)
+
+	def _deliveries(self):
+		return frappe.db.get_value("Webhook Event", {"gateway_event_id": R_EVENT_ID}, "deliveries")
+
+	def test_a_repeat_delivery_is_counted_on_the_event(self):
+		with (
+			razorpay_signature(valid=True),
+			patch("frappe.enqueue", side_effect=run_repeat_counts) as enqueue,
+		):
+			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+
+		self.assertEqual(self._deliveries(), 3)
+		self.assertEqual(processing_jobs(enqueue), 1)
+
+	def test_a_repeat_that_loses_the_insert_race_is_counted(self):
+		exists = frappe.db.exists
+
+		def not_stored_yet(doctype, *args, **kwargs):
+			return False if doctype == "Webhook Event" else exists(doctype, *args, **kwargs)
+
+		with (
+			razorpay_signature(valid=True),
+			patch("frappe.enqueue", side_effect=run_repeat_counts) as enqueue,
+		):
+			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+			with patch.object(frappe.db, "exists", side_effect=not_stored_yet):
+				process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
+
+		self.assertEqual(self._events(), 1)
+		self.assertEqual(self._deliveries(), 2)
+		self.assertEqual(processing_jobs(enqueue), 1)
 
 	def test_invalid_signature_returns_400_with_zero_db_writes(self):
 		with razorpay_signature(valid=False), patch("frappe.enqueue") as enqueue:
@@ -176,7 +231,7 @@ class TestWalletTopupWebhookBackstop(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for doctype in ("Credit Ledger Entry", "Credit Wallet", "Top-up Order"):
+		for doctype in ("Credit Ledger Entry", "Credit Wallet", "Top-up Order", "Payment Method"):
 			frappe.db.delete(doctype, {"team": TOPUP_TEAM})
 		frappe.db.delete("Webhook Event", {"gateway": self.gateway})
 
@@ -244,6 +299,78 @@ class TestWalletTopupWebhookBackstop(IntegrationTestCase):
 		self.assertEqual(out["reason"], "topup_not_captured")
 		self.assertEqual(len(self._credits_for(pid)), 0)
 		self.assertEqual(frappe.db.get_value("Webhook Event", ev.name, "status"), "Ignored")
+
+	def _store_decline(self, payment_id, order_id):
+		event = self._store_event(payment_id, event_type="payment.failed", order_id=order_id, status="failed")
+		payload = json.loads(event.raw_payload)
+		payload["payload"]["payment"]["entity"].update(
+			error_code="BAD_REQUEST_ERROR",
+			error_reason="insufficient_balance",
+			error_description="The account has insufficient balance.",
+		)
+		event.db_set("raw_payload", json.dumps(payload))
+		return event.name
+
+	def test_a_declined_topup_payment_is_kept_on_the_order(self):
+		out = charges.apply_webhook(self._store_decline("pay_declined", "order_topup_wh"))
+
+		self.assertEqual(out["result"], "topup_declined")
+		order = frappe.get_doc("Top-up Order", self.order.name)
+		self.assertEqual(order.status, "Created")  # the payer can try again on it
+		self.assertEqual(
+			(order.failure_code, order.decline_code), ("BAD_REQUEST_ERROR", "insufficient_balance")
+		)
+		self.assertEqual(order.failed_attempts, 1)
+		self.assertEqual(credits.get_balance(TOPUP_TEAM)["balance"], 0)
+		self.assertEqual(self._declined_events(), ["BAD_REQUEST_ERROR"])
+
+	def _declined_events(self):
+		return frappe.get_all(
+			"Billing Event",
+			filters={"subject": self.order.name, "event_type": "Top-up Order Declined"},
+			pluck="reason",
+		)
+
+	def test_a_replayed_decline_counts_once(self):
+		event = self._store_decline("pay_replayed", "order_topup_wh")
+		charges.apply_webhook(event)
+		charges.apply_webhook(event)
+
+		self.assertEqual(frappe.db.get_value("Top-up Order", self.order.name, "failed_attempts"), 1)
+		self.assertEqual(len(self._declined_events()), 1)
+
+	def test_a_decline_counts_on_top_of_what_is_stored(self):
+		stale = frappe.get_doc("Top-up Order", self.order.name)
+		charges.apply_webhook(self._store_decline("pay_first", "order_topup_wh"))
+
+		stale.record_decline({"failure_code": "card_declined"}, "evt_second")  # a copy read before the first
+
+		self.assertEqual(frappe.db.get_value("Top-up Order", self.order.name, "failed_attempts"), 2)
+		self.assertEqual(sorted(self._declined_events()), ["BAD_REQUEST_ERROR", "card_declined"])
+
+	def test_a_declined_mandate_authorisation_is_kept_on_the_method(self):
+		method = frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TOPUP_TEAM,
+				"gateway": self.gateway,
+				"method_type": "UPI Autopay",
+				"status": "Pending Validation",
+				"setup_reference": "order_mandate_wh",
+			}
+		).insert(ignore_permissions=True)
+
+		out = charges.apply_webhook(self._store_decline("pay_mandate", "order_mandate_wh"))
+
+		self.assertEqual(out["result"], "setup_payment_declined")
+		method.reload()
+		self.assertEqual(method.status, "Pending Validation")
+		self.assertEqual(method.decline_code, "insufficient_balance")
+		self.assertTrue(
+			frappe.db.exists(
+				"Billing Event", {"subject": method.name, "event_type": "Payment Method Setup Failed"}
+			)
+		)
 
 	def test_notes_naming_a_team_credit_nothing(self):
 		"""Razorpay Checkout lets the payer set payment notes, so they decide nothing."""
@@ -347,3 +474,13 @@ class TestFailedWebhookIsKept(IntegrationTestCase):
 			"Webhook Event", self.event.name, {"status": "Failed", "retry_count": webhooks.MAX_TRIES}
 		)
 		self.assertNotIn(self.event.name, webhooks.retry_failed_webhooks())
+
+	def test_an_event_already_applied_is_not_applied_again(self):
+		"""A slow job and the sweep can both reach an event; the one that waits finds it done."""
+		from central.billing.payments import webhooks
+
+		frappe.db.set_value("Webhook Event", self.event.name, "status", "Processed")
+		with patch("central.billing.payments.charges.apply_webhook") as apply:
+			out = webhooks.handle_webhook_event(self.event.name)
+		apply.assert_not_called()
+		self.assertEqual(out["reason"], "already_applied")

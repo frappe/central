@@ -89,10 +89,11 @@ test('Contact support sits beside Copy server ID and names the server and its si
 		.map((option) => option.label)
 
 	assert.deepEqual([...labels], ['Copy server ID', 'Contact support'])
-	assert.deepEqual(
-		{ ...supportContexts[0] },
-		{ Server: 'acme (vm-1)', Site: 'acme.test' },
-	)
+	const [context] = supportContexts
+	assert.equal(context.Server, undefined)
+	assert.equal(context.Site, 'acme.test')
+	assert.equal(context.server.resource_id, 'vm-1')
+	assert.equal(context.server.title, 'acme')
 })
 
 test('a locked web console is one disabled row with the reason and no submenu', () => {
@@ -111,4 +112,27 @@ test('a locked web console is one disabled row with the reason and no submenu', 
 	assert.equal(row.disabled, true)
 	assert.equal('submenu' in row, false)
 	assert.equal(row.description, 'Not in the free trial.')
+})
+
+test('the server page menu offers Visit site and Resize', () => {
+	const server = {
+		resource_id: 'vm-1',
+		status: 'Running',
+		pending_action: null,
+		gateway_url: 'https://vm-1.example.test',
+	}
+	const labels = menu
+		.getServerMenuGroups(
+			server,
+			{ ...allowed, open: true, resize: true },
+			() => {},
+			{ site: 'acme.example.test', isOnServerPage: true },
+		)
+		.flat()
+		.map((option) => option.label)
+
+	assert.ok(labels.includes('Visit site'))
+	assert.ok(labels.includes('Open server'))
+	assert.ok(labels.includes('Resize'))
+	assert.equal(labels.includes('Overview'), false)
 })

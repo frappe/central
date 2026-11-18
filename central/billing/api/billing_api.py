@@ -14,13 +14,18 @@ from contextlib import contextmanager
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 from central.api.pilot import pilot_credential_auth
+from central.billing.api import server_billing
 from central.billing.api.dashboard._shared import (
 	_add_method_gateway,
 	_require_billing_setup,
 	_team_currency,
 )
+from central.billing.doctype.payment_method.payment_method import held_method_filters, without_expired_setups
+from central.billing.gateways import capabilities
+from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
 
 
 def _team() -> str:
@@ -45,6 +50,28 @@ def _as_operator():
 		yield
 	finally:
 		frappe.set_user(user)
+
+
+def _require_own_site_url(url: str) -> str:
+	"""A checkout returns the payer only to a site on the credential's own server, over
+	HTTPS, so the hosted page cannot be used to send them anywhere else."""
+	from urllib.parse import urlparse
+
+	parsed = urlparse(url or "")
+	host = (parsed.hostname or "").lower()
+	local = host == "localhost" or host.endswith(".localhost")
+	if host not in _own_hosts() or not (parsed.scheme == "https" or (local and parsed.scheme == "http")):
+		frappe.throw(_("The return address must be a site on this server."), frappe.ValidationError)
+	return url
+
+
+def _own_hosts() -> set[str]:
+	"""The hosts of the sites on the credential's server, with their custom domains."""
+	if not _server():
+		return set()
+	sites = frappe.get_all("Site", filters={"server": _server()}, pluck="name")
+	domains = frappe.get_all("Site Domain", filters={"site": ["in", sites]}, pluck="domain") if sites else []
+	return {host.lower() for host in [*sites, *domains]}
 
 
 def _server() -> str:
@@ -168,7 +195,9 @@ def _gateway_options(currency: str) -> list[dict]:
 		# Only offer a gateway that can actually process a payment — enabled AND its
 		# credentials validated. (In production `enabled` implies validated; this also
 		# filters out seed fixtures that skipped validation with fake keys.)
-		if gw and gw.is_enabled and gw.credentials_validated_at and gw.adapter_key not in seen:
+		if not (gw and capabilities.is_hosted_card_setup_allowed(gw.adapter_key, currency)):
+			continue
+		if gw.is_enabled and gw.credentials_validated_at and gw.adapter_key not in seen:
 			seen.add(gw.adapter_key)
 			out.append(
 				{
@@ -208,7 +237,8 @@ def _payment_method_rows(team: str) -> list[dict]:
 	rows = frappe.get_all(
 		"Payment Method",
 		{"team": team},
-		["name", "method_type", "display_label", "is_default", "status"],
+		["name", "method_type", "display_label", "is_default", "status", "validated_at"],
+		or_filters=held_method_filters(),
 		order_by="is_default desc, priority asc, creation asc",
 	)
 	return [
@@ -219,7 +249,7 @@ def _payment_method_rows(team: str) -> list[dict]:
 			"is_default": bool(r.is_default),
 			"status": r.status,
 		}
-		for r in rows
+		for r in without_expired_setups(rows)
 	]
 
 
@@ -238,6 +268,7 @@ def get_payment_gateways() -> list[dict]:
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60)
 @pilot_credential_auth
 def add_payment_method(
 	method_type: str = "Card", contact: str | None = None, gateway: str | None = None
@@ -279,6 +310,7 @@ def add_payment_method(
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60)
 @pilot_credential_auth
 def confirm_payment_method(
 	payment_method: str,
@@ -307,7 +339,7 @@ def confirm_payment_method(
 	else:
 		method = payments.confirm_payment_method(payment_method)
 
-	return {"payment_method": method.name, "status": method.status}
+	return method.get_confirmation()
 
 
 # ── Add a card via hosted setup checkout (Stripe) ─────────────────────────────
@@ -319,14 +351,16 @@ def confirm_payment_method(
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60)
 @pilot_credential_auth
 def create_payment_method_checkout(redirect_url: str, gateway: str | None = None) -> dict:
 	"""Start adding a card via hosted setup checkout. Returns `{checkout_url,
 	reference, gateway}`; redirect the payer to `checkout_url`, then poll
 	`confirm_payment_method_checkout`. Stripe only for now (hosted `setup` mode)."""
 	from central.billing.gateways.registry import get_adapter
-	from central.billing.payments import payments
+	from central.billing.payments import payments, setup_lockout
 
+	redirect_url = _require_own_site_url(redirect_url)
 	team = _team()
 	_require_billing_setup(team)
 	currency = _team_currency(team)
@@ -334,15 +368,20 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 	gw_doc = frappe.get_doc("Payment Gateway", gw.get("name"))
 	if gw_doc.adapter_key != "Stripe":
 		frappe.throw(frappe._("Hosted card setup is available on Stripe for now."), frappe.ValidationError)
+	if not capabilities.is_hosted_card_setup_allowed(gw_doc.adapter_key, currency):
+		frappe.throw(
+			frappe._("To bill in {0}, add your card through Razorpay.").format(currency),
+			frappe.ValidationError,
+		)
 
+	setup_lockout.check(team)
 	adapter = get_adapter(gw_doc)
-	payments._discard_abandoned_setups(team, gw_doc.name)  # reap prior never-finished attempts
+	payments._cancel_abandoned_setups(team, gw_doc.name)  # close prior never-finished attempts
 	customer = payments.ensure_gateway_customer(team, gw_doc.name, adapter)
 	session = adapter.create_setup_checkout_session(
 		customer, success_url=redirect_url, cancel_url=redirect_url
 	)
-	# Persist the checkout session on the pending row so the setup can be reconciled
-	# on return (or by a webhook) even if the poll below never runs.
+	# Kept on the pending row, so a webhook can reconcile the setup if the poll never runs.
 	method = frappe.get_doc(
 		{
 			"doctype": "Payment Method",
@@ -352,6 +391,7 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 			"status": "Pending Validation",
 			"gateway_customer_id": customer,
 			"setup_reference": session["session_id"],
+			"setup_intent_id": session.get("setup_intent_id"),
 		}
 	).insert(ignore_permissions=True)
 	reference = f"{gw_doc.name}|{session['session_id']}|{method.name}"
@@ -373,11 +413,12 @@ def _activate_setup(method_name: str) -> dict:
 	except payments.CardNotSaved:
 		frappe.clear_last_message()
 		return {"status": "pending", "active": False}
-	return {"status": method.status, "active": method.status == "Active", "label": method.display_label}
+	return {**method.get_confirmation(), "active": method.status == "Active", "label": method.display_label}
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=300, seconds=60 * 60)
 @pilot_credential_auth
 def confirm_payment_method_checkout(reference: str) -> dict:
 	"""Poll a hosted card setup. Once the gateway reports the card saved, store its
@@ -453,21 +494,20 @@ def reconcile_payment_setup() -> dict:
 @pilot_credential_auth
 def get_available_plans() -> dict:
 	"""Active plans the credential's server can switch to — priced for the team's currency
-	on the server's cluster, admitted by the trust tier, within remaining headroom.
-	Grouped by sub-category. The server is resolved from the credential (a pilot only sees
-	its own server's options)."""
-	from central.billing.api.dashboard.catalog import get_eligible_plans
+	on the server's cluster, sold for its image offering, admitted by the trust tier, within
+	remaining headroom. Grouped by sub-category. The server is resolved from the credential
+	(a pilot only sees its own server's options)."""
+	from central.billing.catalog.server_plans import get_server_plans
 
 	team = _team()
-	cluster = frappe.db.get_value("Virtual Machine", _server(), "region")
+	server = _server()
+	cluster = frappe.db.get_value("Virtual Machine", server, "region")
 	# No provisioned cluster → offer nothing; a cluster-less menu skips the
 	# allowed-clusters guard and would leak plans from other regions.
 	if not cluster:
 		return {"plans": {}}
-	# The delegated menu gates on the session user's capability; the pilot is a Guest
-	# session, so act as operator — the team is fixed from the verified credential.
-	with _as_operator():
-		return get_eligible_plans(cluster=cluster, team=team)
+	# The team and the server are fixed from the verified credential.
+	return get_server_plans(team, cluster=cluster, server=server)
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
@@ -478,16 +518,22 @@ def change_plan(plan: str | None = None) -> dict:
 	the current rate card and queues the VM reshape (stop→resize→start). The server is
 	resolved from the credential — a pilot can only resize its own server, never another
 	server on the same team. Returns `{queued, resized, progress_url}`; `progress_url` is the
-	public page that follows the change when the server runs one site."""
+	public page that follows the change when the server runs one site. On an open trial it keeps
+	the plan the site moves to when the trial converts, and resizes nothing yet."""
 	from central.billing.catalog.subscriptions import begin_resize
-	from central.signups.trial import get_trial_status
+	from central.signups.trial import Trial, is_conversion_starting
 
 	server = _server()
 	if not plan:
 		frappe.throw(frappe._("A plan is required."), frappe.ValidationError)
 	subscription = frappe.db.get_value("Subscription", {"team": _team(), "server_id": server}, "name")
-	if not subscription and get_trial_status(server):
-		frappe.throw(frappe._("Add a payment method to change this site's plan."), frappe.ValidationError)
+	if not subscription and (trial := Trial.find_open(server)):
+		# The server is fixed by the credential; the conversion this can start runs as the system.
+		with _as_operator():
+			Trial.load(trial.site.name, for_update=True).choose_plan(plan)
+		return {"queued": False, "resized": False, "progress_url": None}
+	if not subscription and is_conversion_starting(server):
+		frappe.throw(frappe._("This site is moving to its paid plan. Try again in a few minutes."))
 	if not subscription:
 		frappe.throw(
 			frappe._("No subscription for server {0} on this team.").format(server), frappe.ValidationError
@@ -572,6 +618,7 @@ def check_service_allowance(service: str, cluster: str | None = None) -> dict:
 	return service_allowance(team, subject)
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def report_usage(
@@ -605,6 +652,8 @@ def report_usage(
 		frappe.throw(
 			frappe._("Team is not subscribed to service {0}.").format(service), frappe.ValidationError
 		)
+	if frappe.utils.flt(quantity) < 0:
+		frappe.throw(frappe._("Usage cannot be negative."), frappe.ValidationError)
 
 	# Stamp the subject's authoritative billing context (team + its real cluster +
 	# currency) into the payload. A Live-priced family reads team/cluster/currency
@@ -625,7 +674,8 @@ def report_usage(
 			"period_end": period_end,
 			"idempotency_key": f"{subject}|{service}|{tag}",
 			"sequence": frappe.utils.cint(sequence),
-		}
+		},
+		refuse_lower=True,
 	)
 	return {"recorded": bool(key), "service_subject": subject}
 
@@ -674,14 +724,16 @@ _PROFILE_FIELDS = (
 @pilot_credential_auth
 def get_billing_profile() -> dict:
 	"""The team's billing profile (stored fields plus derived setup state:
-	complete / missing / currency_locked / supported_currencies)."""
+	complete / missing / currency_locked / supported_currencies), plus the `countries`
+	and `india_states` the address form picks from."""
+	from central.billing.api.dashboard.account import get_billing_geo
 	from central.billing.api.dashboard.account import get_billing_profile as _get
 
 	team = _team()
 	# The delegated read gates on the session user's capability; act as operator (team
 	# is fixed from the verified credential).
 	with _as_operator():
-		return _get(team)
+		return {**_get(team), **get_billing_geo()}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -709,12 +761,15 @@ def save_billing_profile(**fields) -> dict:
 def get_billing_summary(site: str | None = None) -> dict:
 	"""Everything the in-app Billing tab renders for this bench's server: current plan
 	(+ spec labels for the usage meters), the cycle estimate, the credit balance (with
-	an insufficient-balance flag), whether a payment method / profile exist, and the
-	site's open trial. `site` names the site on a server with several. Usage
-	percentages are filled in by the bench (host-local)."""
+	an insufficient-balance flag), this server's next bill with its breakdown and what
+	would stop the charge, whether a payment method / profile exist, and the site's open
+	trial and AI credit. `site` names the site on a server with several. Usage percentages are filled
+	in by the bench (host-local)."""
 	from central.billing.api.dashboard._shared import _profile_complete
 	from central.billing.api.dashboard.invoices import get_forecast
 	from central.billing.revenue import credits
+	from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
+	from central.signups.doctype.product.product import get_server_product
 	from central.signups.trial import get_trial_status
 
 	team, server = _team(), _server()
@@ -723,7 +778,10 @@ def get_billing_summary(site: str | None = None) -> dict:
 		fields = ["title", "plan", "vcpus", "memory_megabytes", "disk_gigabytes"]
 		row = frappe.db.get_value("Virtual Machine", server, fields, as_dict=True) or frappe._dict()
 		specs = _resolve_specs(row, row.plan)
-		subtitle = " · ".join(value for value in specs.values() if value)
+		product = get_server_product(server)
+		# The usage meters still read the specs, so only the line under the plan is hidden.
+		hide_specs = product and product.hide_plan_specs
+		subtitle = "" if hide_specs else " · ".join(value for value in specs.values() if value)
 		plan_title = frappe.db.get_value("Plan", row.plan, "title") if row.plan else None
 
 		forecast = get_forecast(team)
@@ -733,6 +791,7 @@ def get_billing_summary(site: str | None = None) -> dict:
 		# must not masquerade as the team's payment method on the summary.
 		methods = [m for m in _payment_method_rows(team) if m["status"] == "Active"]
 		default = next((m for m in methods if m["is_default"]), methods[0] if methods else None)
+		next_bill = server_billing.get_next_bill(team, server, forecast, currency)
 
 	return {
 		"currency": currency,
@@ -742,10 +801,30 @@ def get_billing_summary(site: str | None = None) -> dict:
 			"amount": _money(balance, currency),
 			"note": frappe._("Insufficient balance") if balance < projected else frappe._("Available credit"),
 			"warning": balance < projected,
+			"available": balance > 0,
 		},
+		"next_bill": next_bill,
 		"payment_method": {"label": default["label"], "name": default["name"]} if default else None,
 		"profile_complete": _profile_complete(team),
 		"trial": get_trial_status(server, site),
+		"ai_credits": AITrialKey.get_server_credits(server),
+		"plan_change": _pending_plan_change(server),
+	}
+
+
+def _pending_plan_change(server: str) -> dict | None:
+	"""The plan and waiting page of the server's pending resize, such as a converted trial's move
+	to its paid plan."""
+	action = frappe.db.get_value(
+		"Resource Action", {"resource_id": server, "action": "resize", "status": ["in", PENDING_STATES]}
+	)
+	if not action:
+		return None
+
+	plan = frappe.get_doc("Resource Action", action).get_resize_configuration().plan
+	return {
+		"plan": frappe.db.get_value("Plan", plan, "title") if plan else None,
+		"progress_url": _plan_change_url(server, {"queued": True, "action": action}),
 	}
 
 
@@ -762,10 +841,30 @@ def _estimate_note(forecast: dict) -> str | None:
 @pilot_credential_auth
 def get_plan_options() -> dict:
 	"""Plans this bench's server can switch to, flattened + priced for the Change-plan
-	list, plus the provider/region header and an insufficient-headroom flag."""
-	from central.billing.api.dashboard.catalog import get_eligible_plans
+	list, plus the provider/region header and an insufficient-headroom flag. On an open trial
+	they are the paid plans the site may move to, with `selected` the one it moves to. Each plan
+	carries the `note` of the server's product for it, or None, and no `subtitle` when the product
+	hides plan specs."""
+	from central.signups.doctype.product.product import get_server_product
+	from central.signups.trial import Trial
 
 	team, server = _team(), _server()
+	trial = Trial.find_open(server)
+	options = _trial_plan_options(trial) if trial else _paid_plan_options(team, server)
+
+	product = get_server_product(server)
+	notes = product.get_plan_notes() if product else {}
+	for plan in options["plans"]:
+		plan["note"] = notes.get(plan["name"])
+		if product and product.hide_plan_specs:
+			plan["subtitle"] = ""
+
+	return options
+
+
+def _paid_plan_options(team: str, server: str) -> dict:
+	from central.billing.api.dashboard.catalog import get_eligible_plans
+
 	row = (
 		frappe.db.get_value("Virtual Machine", server, ["region", "plan", "disk_gigabytes"], as_dict=True)
 		or frappe._dict()
@@ -836,6 +935,33 @@ def get_plan_options() -> dict:
 	}
 
 
+def _trial_plan_options(trial) -> dict:
+	with _as_operator():  # team + server fixed by credential
+		choices = trial.get_plan_choices()
+		selected = trial.get_conversion_plan()
+	currency = choices[0]["currency"] if choices else _team_currency(trial.site.team)
+	provider, region = _provider_region(frappe.db.get_value("Virtual Machine", trial.site.server, "region"))
+
+	return {
+		"currency": currency,
+		"provider": provider,
+		"region": region,
+		"current": None,
+		"selected": selected,
+		"plans": [
+			{
+				"name": choice["name"],
+				"title": choice["title"],
+				"subtitle": choice["specs"],
+				"price": frappe._("{0}/mo").format(_money(choice["monthly_rate"], currency)),
+				"is_current": False,
+			}
+			for choice in choices
+		],
+		"sufficient": bool(choices),
+	}
+
+
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def list_payment_methods() -> list[dict]:
@@ -855,6 +981,7 @@ def list_payment_methods() -> list[dict]:
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60)
 @pilot_credential_auth
 def create_topup_checkout(amount: float, redirect_url: str) -> dict:
 	"""Start a wallet top-up via hosted checkout. Returns `{checkout_url, reference,
@@ -862,6 +989,7 @@ def create_topup_checkout(amount: float, redirect_url: str) -> dict:
 	from central.billing.api.dashboard._shared import _gateway_for_currency
 	from central.billing.doctype.top_up_order.top_up_order import TopupOrder
 
+	redirect_url = _require_own_site_url(redirect_url)
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
 		frappe.throw(_("Top-up amount must be greater than zero."), frappe.ValidationError)
@@ -885,7 +1013,28 @@ def create_topup_checkout(amount: float, redirect_url: str) -> dict:
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def list_server_invoices() -> list[dict]:
+	"""This server's charges on each of the team's invoices, newest first."""
+	team, server = _team(), _server()
+	with _as_operator():  # team + server fixed by credential
+		return server_billing.get_server_invoices(team, server)
+
+
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60)
+@pilot_credential_auth
+def get_server_invoice_pdf(invoice: str) -> dict:
+	"""The PDF of an invoice that covers this server only, as base64."""
+	_assert_owns(frappe.db.get_value("Invoice", invoice, "team"))
+	return server_billing.get_server_invoice_pdf(_team(), _server(), invoice)
+
+
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60)
 @pilot_credential_auth
 def create_invoice_checkout(invoice: str, redirect_url: str) -> dict:
 	"""Start an on-session payment of an open invoice via hosted checkout. Returns
@@ -897,7 +1046,9 @@ def create_invoice_checkout(invoice: str, redirect_url: str) -> dict:
 		store_gateway_order,
 	)
 
+	redirect_url = _require_own_site_url(redirect_url)
 	_assert_owns(frappe.db.get_value("Invoice", invoice, "team"))
+	server_billing.assert_covers_only_server(_team(), _server(), invoice)
 	claim = _claim_on_session_attempt(invoice, None)
 	if not claim.get("created"):
 		frappe.throw(_("Invoice is not open for payment."), frappe.ValidationError)
@@ -953,6 +1104,7 @@ def _checkout_handles(gateway, session, purpose, target, amount, currency) -> di
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=300, seconds=60 * 60)
 @pilot_credential_auth
 def get_checkout_status(reference: str) -> dict:
 	"""Poll a hosted checkout. Returns `{status, success, message, ...}`.

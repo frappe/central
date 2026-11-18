@@ -59,9 +59,7 @@ class TestReadiness(IntegrationTestCase):
 
 	def test_internal_team_is_not_held_to_its_tier(self):
 		set_team_tier(TEAM, max_spend=500)
-		frappe.get_doc(
-			{"doctype": "Tax Profile", "team": TEAM, "is_internal": 1, "internal_reason": "Our own team"}
-		).insert(ignore_permissions=True)
+		frappe.db.set_value("Billing Profile", TEAM, {"is_internal": 1, "internal_reason": "Our own team"})
 		self.assertEqual(_found("T1"), [])
 
 	def test_unpriced_subscription_is_found(self):
@@ -134,7 +132,8 @@ class TestReadiness(IntegrationTestCase):
 		frappe.db.set_value("Virtual Machine", server, "status", "Running")
 		self.assertEqual(_found("S2"), [])
 
-		frappe.db.set_value("Subscription", self.subscription, "enabled", 0)
+		# An enabled subscription whose segment is paused bills nothing.
+		add_segment(self.subscription, "Paused", None, "2026-06-11 00:00:00")
 		self.assertEqual(len(_found("S2")), 1)
 
 	def test_terminated_server_still_billed_is_found(self):
@@ -142,7 +141,11 @@ class TestReadiness(IntegrationTestCase):
 		frappe.db.set_value("Virtual Machine", server, "status", "Terminated")
 		self.assertEqual(len(_found("S3")), 1)
 
+		# A disabled subscription still bills while its segment is open.
 		frappe.db.set_value("Subscription", self.subscription, "enabled", 0)
+		self.assertEqual(len(_found("S3")), 1)
+
+		add_segment(self.subscription, "Paused", None, "2026-06-11 00:00:00")
 		self.assertEqual(_found("S3"), [])
 
 	def test_promotional_credit_with_no_expiry_is_found(self):
@@ -215,7 +218,7 @@ class TestReadiness(IntegrationTestCase):
 				"period_start": period_end,
 				"period_end": period_end,
 				"currency": "INR",
-				"status": "Draft",
+				"status": "Outstanding",
 			}
 		).insert(ignore_permissions=True)
 		frappe.db.set_value("Invoice", invoice.name, "creation", frappe.utils.add_to_date(None, hours=-5))
@@ -240,3 +243,15 @@ class TestReadiness(IntegrationTestCase):
 	def test_readiness_gaps_reach_the_operator_alerts(self):
 		gaps = [a for a in alerts.readiness_gaps() if a["team"] == TEAM]
 		self.assertIn("readiness", {a["alert"] for a in gaps})
+
+
+class TestSubscriptionRegion(IntegrationTestCase):
+	def test_a_subscription_on_an_unknown_region_is_reported(self):
+		make_plan(PLAN)
+		subscription = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		frappe.db.set_value("Subscription", subscription, {"cluster": "gone-region", "enabled": 1})
+
+		found = [v for v in _found("S4") if v.subject == subscription]
+
+		self.assertEqual(len(found), 1)
+		self.assertIn("gone-region", found[0].detail)

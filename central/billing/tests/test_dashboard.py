@@ -4,6 +4,7 @@
 
 import frappe
 
+from central.billing import settings
 from central.billing.api import dashboard
 from central.billing.gateways.base import VerifiedPayment
 from central.billing.revenue import credits
@@ -148,7 +149,7 @@ class TestCustomerReads(CustomerDataBase):
 					"doctype": "Invoice",
 					"team": TEAM,
 					"invoice_type": "Billable",
-					"status": "Open",
+					"status": "Outstanding",
 					"period_start": "2026-05-01",
 					"period_end": "2026-05-31",
 					"currency": "INR",
@@ -200,6 +201,42 @@ class TestCustomerReads(CustomerDataBase):
 		# Gateway handle / secrets are not in the customer payload.
 		self.assertNotIn("gateway_method_id", rows[0])
 		self.assertNotIn("api_key", rows[0])
+		frappe.db.delete("Payment Method", {"team": TEAM})
+
+	def test_a_card_refused_at_setup_is_explained_from_the_gateway(self):
+		from central.billing.tests.test_payments import stub_adapter
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		method = frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": make_stripe_gateway().name,
+				"method_type": "Card",
+				"status": "Pending Validation",
+				"setup_reference": "seti_refused",
+			}
+		).insert(ignore_permissions=True)
+		refusal = {"setup_error": {"failure_code": "card_declined", "decline_code": "generic_decline"}}
+
+		frappe.local.message_log = []
+		with stub_adapter(card=refusal) as adapter:
+			out = dashboard.confirm_card(method.name)
+
+		self.assertEqual(frappe.local.message_log, [])  # no second alert beside the answer
+
+		adapter.read_saved_card.assert_called_once_with("seti_refused")
+		adapter.validate_payment_method.assert_not_called()
+		adapter.charge.assert_not_called()
+		self.assertEqual(out["status"], "Pending Validation")
+		self.assertEqual(
+			out["message"],
+			"Your bank declined the card. Try another card, or add credit to your account instead.",
+		)
+		# The setup webhook records the failure, so confirming writes nothing.
+		stored = frappe.db.get_value("Payment Method", method.name, ["status", "failure_code"], as_dict=True)
+		self.assertEqual(stored.status, "Pending Validation")
+		self.assertFalse(stored.failure_code)
 		frappe.db.delete("Payment Method", {"team": TEAM})
 
 	def test_credit_ledger_and_balance(self):
@@ -360,8 +397,41 @@ class TestTeamScoping(CustomerDataBase):
 				dashboard.save_billing_settings(team=team.name, min_balance=5000)
 			with self.assertRaises(frappe.PermissionError):
 				dashboard.create_topup_order(team=team.name, amount=100)
+			with self.assertRaises(frappe.PermissionError):
+				dashboard.set_collection_mode(team=team.name, mode="Manual Checkout")
 		finally:
 			frappe.set_user("Administrator")
+
+	def test_a_card_on_another_team_cannot_be_confirmed(self):
+		from central.billing.tests.test_payments import stub_adapter
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		user = make_user()
+		make_billing_team(user)
+		other_team = make_billing_team(make_user())
+		method = frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": other_team.name,
+				"gateway": make_stripe_gateway().name,
+				"method_type": "Card",
+				"status": "Pending Validation",
+				"setup_reference": "seti_other_team",
+			}
+		).insert(ignore_permissions=True)
+
+		frappe.set_user(user)
+		try:
+			with stub_adapter() as adapter:
+				with self.assertRaises(frappe.PermissionError):
+					dashboard.confirm_card(method.name)
+				with self.assertRaises(frappe.PermissionError):
+					dashboard.confirm_card("no-such-payment-method")
+		finally:
+			frappe.set_user("Administrator")
+
+		adapter.read_saved_card.assert_not_called()
+		self.assertEqual(frappe.db.get_value("Payment Method", method.name, "status"), "Pending Validation")
 
 
 class TestCustomerActions(CustomerDataBase):
@@ -419,6 +489,14 @@ class TestCustomerActions(CustomerDataBase):
 		s = dashboard.get_billing_settings(TEAM)
 		self.assertEqual(s["min_balance"], 5000)
 
+	def test_billing_settings_name_the_suspension_day_and_the_last_day_with_retries(self):
+		ladder = {"dunning_retry_interval_days": 2, "invoice_due_days": 7, "suspension_day": 15}
+		with settings.overridden(**ladder):
+			s = dashboard.get_billing_settings(TEAM)
+
+		self.assertEqual(s["suspension_day"], 15)
+		self.assertEqual(s["last_payment_day_with_retries"], 6)
+
 	def test_admin_without_team_falls_back(self):
 		from central.billing.catalog import subscriptions
 
@@ -456,6 +534,20 @@ class TestBillingCurrency(CustomerDataBase):
 		# A foreign country → USD.
 		dashboard.save_billing_profile(TEAM, country="Germany")
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "USD")
+
+	def test_an_abandoned_card_setup_does_not_lock_the_currency(self):
+		dashboard.save_billing_profile(TEAM, currency="INR", legal_name="Acme")
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": "Stripe",
+				"method_type": "Card",
+				"status": "Cancelled",
+			}
+		).insert(ignore_permissions=True, ignore_links=True)
+
+		self.assertFalse(dashboard.get_billing_profile(TEAM)["currency_locked"])
 
 	def test_currency_locks_after_money_activity(self):
 		from central.billing.revenue import credits
@@ -934,6 +1026,23 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 			},
 		)
 
+	def test_the_recharge_surface_names_the_gst(self):
+		from unittest.mock import patch
+
+		from central.billing.api.dashboard import invoices
+
+		self.addCleanup(
+			frappe.db.set_value,
+			"Tax Profile",
+			self.TEAM,
+			{"output_tax_rate": 0, "zero_rated": 0, "zero_rating_reason": None},
+		)
+		frappe.db.set_value("Tax Profile", self.TEAM, "output_tax_rate", 18)
+		with patch("central.billing.ingester.gst.cached_company_state_code", return_value="29"):
+			self.assertEqual(invoices.get_topup_options(self.TEAM)["tax_label"], "IGST 18%")
+		frappe.db.set_value("Tax Profile", self.TEAM, {"zero_rated": 1, "zero_rating_reason": "SEZ"})
+		self.assertEqual(invoices.get_topup_options(self.TEAM)["tax_label"], "No GST (SEZ)")
+
 	def test_tiles_name_their_networks_rather_than_saying_other(self):
 		"""A customer holding an unusual Visa must never read a tile as theirs by
 		accident, so no tile is labelled "Other cards"."""
@@ -1027,3 +1136,13 @@ class TestTheAmexAndDinersGapIsStatedUpfront(IntegrationTestCase):
 
 		frappe.db.set_value("Billing Profile", self.TEAM, "currency", "USD")
 		self.assertIsNone(account.get_collection_status(self.TEAM)["mandate_gap_note"])
+
+
+class TestCsvExportIsSafe(IntegrationTestCase):
+	def test_a_cell_a_spreadsheet_would_run_is_escaped(self):
+		from central.billing.api.dashboard.reports import _safe_cell
+
+		self.assertEqual(_safe_cell('=HYPERLINK("http://x")'), '\'=HYPERLINK("http://x")')
+		self.assertEqual(_safe_cell("@SUM(A1)"), "'@SUM(A1)")
+		self.assertEqual(_safe_cell("INV-2026-01"), "INV-2026-01")
+		self.assertEqual(_safe_cell(-12.5), -12.5)  # numbers are data, not formulas

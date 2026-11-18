@@ -1,0 +1,441 @@
+# Copyright (c) 2026, frappe and contributors
+# For license information, please see license.txt
+
+from typing import TYPE_CHECKING, Self
+
+import frappe
+from frappe import _
+from frappe.model.document import Document
+from frappe.model.naming import make_autoname
+from frappe.query_builder import Interval
+from frappe.query_builder.functions import Now
+from frappe.utils import add_to_date, cint, flt, now_datetime
+from frappe.utils.password import get_decrypted_password, remove_encrypted_password
+
+from central.integrations.grove import GroveClient, get_key_balance
+from central.notification.engine import queue_event
+
+if TYPE_CHECKING:
+	from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
+	from central.services.doctype.ai_settings.ai_settings import AISettings
+	from central.services.doctype.ai_trial_product.ai_trial_product import AITrialProduct
+
+# The one Grove Team every trial key is minted under.
+TRIAL_TEAM = "Central Trial"
+# One batch per run keeps the job short.
+REFILL_BATCH_SIZE = 50
+# A revoke or a hand-over Grove refused is tried again once the record has sat this long.
+RETRY_AFTER_MINUTES = 60
+# A hand-over that failed this many times is given up and the key revoked: the team mints its own.
+MAX_TRANSFER_ATTEMPTS = 3
+# The step a waiting status is retried with. A Conversion Failed record waits on its revoke.
+RETRIED = {
+	"Revoking": "revoke_at_grove",
+	"Converting": "convert_at_grove",
+	"Conversion Failed": "revoke_at_grove",
+}
+
+
+class AITrialKey(Document):
+	"""One Grove key minted ahead under Central Trial and held here with its secret, until a
+	free-trial server takes it in its boot config. The key carries no expiry at Grove. Central
+	revokes it when that creation fails, when the server is terminated or once AI Settings' Revokes
+	Automatically After days have passed since its assignment, and hands it to the team when the
+	trial converts, so the secret in the server's config keeps working; a hand-over that fails for
+	good ends in a revoke too."""
+
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		api_key: DF.Password | None
+		assigned_at: DF.Datetime | None
+		attempts: DF.Int
+		cap: DF.Currency
+		gateway_url: DF.Data | None
+		geography: DF.Data | None
+		grove_key: DF.Data
+		last_error: DF.SmallText | None
+		product: DF.Link | None
+		resource_action: DF.Link | None
+		revoked: DF.Check
+		server: DF.Link | None
+		status: DF.Literal[
+			"Available", "Assigned", "Converting", "Converted", "Conversion Failed", "Revoking", "Revoked"
+		]
+		team: DF.Link | None
+	# end: auto-generated types
+
+	@classmethod
+	def provision(cls, settings: AISettings, row: AITrialProduct) -> Self:
+		"""Mint one key into `row`'s product's pool, titled at Grove by this record's id (taken from the
+		series before the mint), in the product's Model Group on top of the team's when the row names one.
+		A crash between the mint and the insert leaves a capped key under the trial team titled by an id
+		no record carries; Grove Desk shows it."""
+		name = make_autoname(frappe.get_meta("AI Trial Key").autoname)
+		minted = GroveClient.from_settings().provision_key(
+			team=TRIAL_TEAM,
+			title=name,
+			geography=settings.trial_key_geography,
+			cap=cint(settings.trial_key_cap),
+			model_groups=[row.model_group] if row.model_group else None,
+		)
+		return frappe.get_doc(
+			{
+				"doctype": "AI Trial Key",
+				"grove_key": minted["name"],
+				"product": row.product,
+				"geography": minted["geography"],
+				"gateway_url": minted["gateway_url"],
+				"cap": cint(settings.trial_key_cap),
+				"api_key": minted["api_key"],
+			}
+		).insert(set_name=name)
+
+	@classmethod
+	def assign(cls, action: ResourceAction) -> Self | None:
+		"""The oldest ready key of the creation's product for a free trial; none for a paid one, an
+		empty pool or while assignment is paused. A retried creation keeps its key."""
+		if not action.is_free_trial:
+			return None
+
+		if name := frappe.db.get_value(
+			"AI Trial Key", {"resource_action": action.name, "status": "Assigned"}
+		):
+			return frappe.get_doc("AI Trial Key", name)
+
+		if frappe.db.get_single_value("AI Settings", "pause_key_assignment"):
+			return None
+
+		name = frappe.db.get_value(
+			"AI Trial Key",
+			{"status": "Available", "product": action.product},
+			order_by="creation asc",
+			for_update=True,
+			skip_locked=True,
+		)
+		if not name:
+			return None
+
+		key = frappe.get_doc("AI Trial Key", name)
+		key.db_set(
+			{
+				"status": "Assigned",
+				"resource_action": action.name,
+				"team": action.team,
+				"assigned_at": now_datetime(),
+			}
+		)
+
+		return key
+
+	def get_site_config(self) -> dict:
+		"""The common_site_config entry a site's apps read a Grove key from: the shape Pilot
+		writes for a team's own keys."""
+		return {
+			"ai_keys": [
+				{
+					"gateway_url": self.gateway_url,
+					"api_key": self.get_password("api_key"),
+				}
+			]
+		}
+
+	@classmethod
+	def get_server_credits(cls, server: str) -> dict | None:
+		"""The AI credit of the server's trial key, or None without a key or an answer. Kept a
+		minute, so a busy Billing panel or an outage costs one call a minute."""
+		key = frappe.db.get_value(
+			"AI Trial Key",
+			{"server": server},
+			["name", "status", "cap", "grove_key", "gateway_url", "team"],
+			as_dict=True,
+			order_by="creation desc",
+		)
+		if not key:
+			return None
+		if key.status in ("Revoking", "Revoked", "Conversion Failed"):
+			return {"state": "Ended", "window": "Total", "cap": flt(key.cap), "spent": None}
+
+		if (credits := frappe.cache.get_value(credits_cache_key(key.grove_key))) is None:
+			credits = cls.read_credits(key)
+			frappe.cache.set_value(credits_cache_key(key.grove_key), credits, expires_in_sec=60)
+		return credits or None
+
+	@staticmethod
+	def read_credits(key: frappe._dict) -> dict:
+		"""During the trial, the gateway's live count under the key's own secret. Once converted,
+		Central holds no secret, so Grove's figures for the team. {} on any failure: billing must
+		still load."""
+		try:
+			if key.status == "Converted":
+				figures = GroveClient.from_settings().get_figures(key.team, timeout=(3, 5))
+				row = next(row for row in figures["keys"] if row["name"] == key.grove_key)
+				# Grove refuses a hand-over between teams of one cap window, and the trial team's is Total.
+				return {
+					"state": "Active",
+					"window": "Monthly",
+					"cap": flt(row["cap"]),
+					"spent": flt(row["month_spent"]),
+				}
+
+			balance = get_key_balance(
+				key.gateway_url, get_decrypted_password("AI Trial Key", key.name, "api_key")
+			)
+			return {"state": "Active", "window": "Total", "cap": flt(key.cap), "spent": flt(balance["spent"])}
+		except frappe.ValidationError:
+			frappe.clear_last_message()
+		except Exception:
+			frappe.log_error(title=f"AI credits read failed for {key.name}")
+		return {}
+
+	@classmethod
+	def link_server(cls, resource_action: str, server: str) -> None:
+		frappe.db.set_value(
+			"AI Trial Key", {"resource_action": resource_action, "status": "Assigned"}, "server", server
+		)
+
+	@classmethod
+	def queue_convert(cls, server: str) -> bool:
+		"""Hand the live key of `server` to its team in the background: the trial converted. False
+		when it has none: a paid creation, a pool that was empty, or a key revoked when the trial
+		ended."""
+		name = frappe.db.get_value("AI Trial Key", {"server": server, "status": "Assigned"})
+		if not name:
+			return False
+		frappe.db.set_value("AI Trial Key", name, "status", "Converting")
+		frappe.enqueue(
+			"central.services.doctype.ai_trial_key.ai_trial_key.convert_trial_key",
+			name=name,
+			enqueue_after_commit=True,
+		)
+		return True
+
+	@classmethod
+	def is_handover_pending(cls, team: str) -> bool:
+		"""Whether a converted trial's key is still on its way to `team`. No key is minted for the
+		team meanwhile, so none takes the slot, the room or the title the hand-over needs."""
+		return bool(frappe.db.exists("AI Trial Key", {"team": team, "status": "Converting"}))
+
+	def convert_at_grove(self) -> None:
+		"""Hand the key to the team whose trial converted: AI on for the team, which registers it at
+		Grove, then Grove moves the key, titled by the site. Safe to repeat: Grove answers a key the
+		team already holds as it is."""
+		from central.services.ai import enable
+
+		site = self.converted_site()
+		enable(site.team)
+		GroveClient.from_settings().transfer_key(TRIAL_TEAM, self.grove_key, site.team, site.name)
+		# The team's key now: Central keeps no customer secret.
+		remove_encrypted_password("AI Trial Key", self.name, "api_key")
+		self.db_set(
+			{"status": "Converted", "team": site.team, "last_error": None, "api_key": None}, commit=True
+		)
+
+	def converted_site(self) -> frappe._dict:
+		"""The converted trial site on this key's server: its name is the key's title at Grove."""
+		return frappe.db.get_value(
+			"Site", {"server": self.server, "trial_state": "Converted"}, ["name", "team"], as_dict=True
+		)
+
+	def try_at_grove(self) -> None:
+		"""One try at the step the status waits on. A revoke is tried for as long as it takes (it
+		must land); a hand-over is given up after MAX_TRANSFER_ATTEMPTS and the key revoked instead.
+		A failed try writes the record — Grove's answer as `last_error`, and `modified`, which spaces
+		the retries."""
+		try:
+			getattr(self, RETRIED[self.status])()
+		except Exception as error:
+			frappe.log_error(title=f"Trial key {self.status.lower()} failed for {self.name}")
+			answer = str(error) or type(error).__name__
+			if RETRIED[self.status] == "revoke_at_grove":
+				self.db_set({"status": self.status, "last_error": answer})
+				return
+			self.note_failed_attempt(answer)
+
+	def note_failed_attempt(self, answer: str) -> None:
+		"""At the last attempt the record stops: Conversion Failed, with Grove's last answer as
+		`last_error`, and the key is revoked — the trial team's no longer, never the customer's.
+		`revoked` says when that landed; the status keeps the failure. The team is told once, here,
+		that the key will stop working and it creates its own."""
+		attempts = cint(self.attempts) + 1
+		if attempts < MAX_TRANSFER_ATTEMPTS:
+			self.db_set({"status": "Converting", "attempts": attempts, "last_error": answer})
+			return
+		self.db_set({"status": "Conversion Failed", "attempts": attempts, "last_error": answer})
+		site = self.converted_site()
+		reference = {"reference_doctype": "Site", "reference_name": site.name} if site else {}
+		queue_event(self.team, "ai_key_handover_failed", **reference)
+		frappe.enqueue(
+			"central.services.doctype.ai_trial_key.ai_trial_key.revoke_trial_key",
+			name=self.name,
+			enqueue_after_commit=True,
+		)
+
+	@property
+	def is_revoke_pending(self) -> bool:
+		return self.status == "Revoking" or (self.status == "Conversion Failed" and not self.revoked)
+
+	@classmethod
+	def queue_revoke(cls, **filters) -> int:
+		"""Mark the matching ready or assigned keys (or the status `filters` names) Revoking and queue
+		their revoke at Grove; the count. A Converted key is the team's now; a Conversion Failed one
+		is already on its way out."""
+		names = frappe.get_all(
+			"AI Trial Key",
+			filters={"status": ("in", ("Available", "Assigned")), **filters},
+			pluck="name",
+		)
+		for name in names:
+			frappe.db.set_value("AI Trial Key", name, "status", "Revoking")
+			frappe.enqueue(
+				"central.services.doctype.ai_trial_key.ai_trial_key.revoke_trial_key",
+				name=name,
+				enqueue_after_commit=True,
+			)
+		return len(names)
+
+	@frappe.whitelist(methods=["POST"])
+	def revoke(self) -> None:
+		if self.status not in ("Available", "Assigned"):
+			frappe.throw(_("Only an available or assigned key can be revoked."))
+
+		self.queue_revoke(name=self.name)
+
+	@frappe.whitelist(methods=["POST"])
+	def raise_cap(self, cap: float) -> None:
+		"""Lift the cap of a running trial's key at Grove. Only an Assigned record is one: End,
+		conversion and termination all move it on, and a converted key's cap is the team's to set."""
+		if self.status != "Assigned":
+			frappe.throw(_("Only the key of a running trial can have its cap raised."))
+		if flt(cap) <= flt(self.cap):
+			frappe.throw(_("The cap is {0} USD already; enter more.").format(self.cap))
+
+		GroveClient.from_settings().update_caps(TRIAL_TEAM, {self.grove_key: flt(cap)})
+		self.db_set("cap", flt(cap))
+		frappe.cache.delete_value(credits_cache_key(self.grove_key))
+
+	def on_trash(self) -> None:
+		# A record must outlive its live key, so that a failed revoke is retried.
+		if self.status != "Revoked" and not (self.status == "Conversion Failed" and self.revoked):
+			frappe.throw(_("Use Revoke Key. Only a revoked key record can be deleted."))
+
+	@staticmethod
+	def clear_old_logs(days: int = 30) -> None:
+		"""Log Settings, daily: a record whose revoke landed `days` ago is history. A Revoked record,
+		or a Conversion Failed one whose key is revoked, goes with its secret."""
+		key = frappe.qb.DocType("AI Trial Key")
+		revoked = (key.status == "Revoked") | ((key.status == "Conversion Failed") & (key.revoked == 1))
+		names = (
+			frappe.qb.from_(key)
+			.select(key.name)
+			.where(revoked & (key.modified < (Now() - Interval(days=days))))
+		).run(pluck=True)
+		if not names:
+			return
+
+		for name in names:
+			frappe.delete_doc("AI Trial Key", name)
+
+	def revoke_at_grove(self) -> None:
+		"""Safe to repeat: Grove answers a revoked key's revoke as done. A Conversion Failed record
+		keeps its status and ticks `revoked`."""
+		GroveClient.from_settings().revoke_key(TRIAL_TEAM, self.grove_key)
+		if self.status == "Conversion Failed":
+			self.db_set({"revoked": 1, "last_error": None}, commit=True)
+		else:
+			self.db_set({"status": "Revoked", "last_error": None}, commit=True)
+
+
+def credits_cache_key(grove_key: str) -> str:
+	return f"ai_trial_key_credits:{grove_key}"
+
+
+def revoke_trial_key(name: str) -> None:
+	"""The queued revoke. A refusal (Grove down) is kept on the record as
+	`last_error` and tried again hourly."""
+	key = frappe.get_doc("AI Trial Key", name)
+	if key.is_revoke_pending:
+		key.try_at_grove()
+
+
+@frappe.whitelist(methods=["POST"])
+def revoke_available_keys() -> int:
+	"""Desk, Revoke Available Keys: every ready key in the pools is queued for revoke at Grove. An
+	Assigned key stays; its trial runs on."""
+	frappe.has_permission("AI Trial Key", "write", throw=True)
+	return AITrialKey.queue_revoke(status="Available")
+
+
+def convert_trial_key(name: str) -> None:
+	key = frappe.get_doc("AI Trial Key", name)
+	if key.status == "Converting":
+		key.try_at_grove()
+
+
+def refill_trial_keys() -> None:
+	"""Scheduler, every 5 minutes: try the revokes and hand-overs Grove refused again, revoke the
+	keys past their days, then mint the keys each product's pool is missing, up to one batch across
+	them. Nothing while Central is not enrolled; the retries and the revokes run with the pools off
+	or paused too, the mint does not."""
+	settings = frappe.get_cached_doc("AI Settings")
+	if not settings.is_enrolled:
+		return
+
+	retry_stale()
+	revoke_expired_keys(settings)
+	if settings.pause_pool_refill:
+		return
+	budget = REFILL_BATCH_SIZE
+	for row in settings.trial_products:
+		ready = frappe.db.count("AI Trial Key", {"status": "Available", "product": row.product})
+		# The team is the operator's to make at Grove, with its cap window, which is fixed at the
+		# insert: until then every mint is refused and logged.
+		for _attempt in range(min(row.pool_size - ready, budget)):
+			try:
+				AITrialKey.provision(settings, row)
+			except Exception:
+				frappe.log_error(title="Trial key mint failed")
+				return
+			budget -= 1
+
+
+def retry_stale() -> None:
+	"""A Revoking, Converting or unrevoked Conversion Failed record left alone for an hour is tried
+	again. Why Grove refused is Grove's to say; each attempt writes the record, so `modified` spaces
+	the attempts."""
+	stale = add_to_date(now_datetime(), minutes=-RETRY_AFTER_MINUTES)
+	waiting = frappe.get_all(
+		"AI Trial Key",
+		filters={"status": ("in", ("Revoking", "Converting")), "modified": ("<", stale)},
+		pluck="name",
+	)
+	failed = frappe.get_all(
+		"AI Trial Key",
+		filters={"status": "Conversion Failed", "revoked": 0, "modified": ("<", stale)},
+		pluck="name",
+	)
+	for name in waiting + failed:
+		frappe.get_doc("AI Trial Key", name).try_at_grove()
+
+
+def revoke_expired_keys(settings: AISettings) -> None:
+	"""An Assigned key older than Revokes Automatically After since its assignment is revoked,
+	whatever its trial is doing: the trial runs on without AI. 0 turns this off."""
+	days = cint(settings.trial_key_revoke_after_days)
+	if not days:
+		return
+
+	# Only an Assigned key has an assignment: a `<` alone would also match the NULL of a ready
+	# key, which Frappe compares as the oldest date.
+	expired = frappe.get_all(
+		"AI Trial Key",
+		filters={"status": "Assigned", "assigned_at": ("<", add_to_date(now_datetime(), days=-days))},
+		pluck="name",
+	)
+	if expired:
+		AITrialKey.queue_revoke(name=("in", expired))

@@ -37,7 +37,7 @@ export interface ServerActions {
 	/** Sign in to the server's bench or site, which is an Administrator session. */
 	open: boolean
 	power: boolean
-	/** Change the firewall and public addresses. */
+	/** Change the firewall, public addresses, and WireGuard access. */
 	network?: boolean
 	resize: boolean
 	snapshot: boolean

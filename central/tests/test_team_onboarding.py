@@ -9,7 +9,6 @@ from central.api.teams import (
 	create_team,
 	invite_team_member,
 	set_onboarding_step,
-	skip_onboarding,
 )
 from central.billing.payments.provisioning import grant_welcome_credits
 from central.billing.tests.utils import billing_settings
@@ -95,12 +94,42 @@ class TestTeamCreation(IntegrationTestCase):
 		self.assertTrue(frappe.db.get_value("Team", team, "is_staging_trial"))
 		self.assertEqual(onboarding_steps(team), {"invite": "Pending", "start": "Pending"})
 
+	def test_trial_funnel_team_skips_the_console_onboarding(self):
+		team = create_trial_team(self.owner)
+
+		self.assertEqual(
+			onboarding_steps(team), {"invite": "Skipped", "billing": "Skipped", "start": "Skipped"}
+		)
+
 	def test_trial_funnel_creates_a_team_only_for_a_user_with_none(self):
 		team = create_trial_team(self.owner)
 
 		self.assertEqual(frappe.db.get_value("Team", team, "owner_user"), self.owner)
-		self.assertIsNone(create_trial_team(self.owner))
+		self.assertEqual(create_trial_team(self.owner), team)
 		self.assertEqual(frappe.db.count("Team", {"owner_user": self.owner}), 1)
+
+	def test_trial_funnel_keeps_the_current_team_only_where_the_user_can_create(self):
+		first = create_team("First Team")["name"]
+		second = create_team("Second Team")["name"]
+
+		self.assertEqual(create_trial_team(self.owner, team=second), second)
+		with set_user("Administrator"):
+			outsider_team = create_team("Outsider Team")["name"]
+		self.assertIn(create_trial_team(self.owner, team=outsider_team), (first, second))
+
+	@patch("frappe.sendmail")
+	def test_a_viewer_with_no_team_of_their_own_gets_one(self, _sendmail):
+		team = create_team("Inviting Team")["name"]
+		with set_user("Administrator"):
+			viewer = create_user("viewer")
+		invitation = invite_team_member(team, viewer, "Viewer")
+
+		with set_user(viewer):
+			accept_invitation(invitation)
+			own_team = create_trial_team(viewer, team=team)
+
+		self.assertNotEqual(own_team, team)
+		self.assertEqual(frappe.db.get_value("Team", own_team, "owner_user"), viewer)
 
 	@patch("frappe.sendmail")
 	def test_invited_member_reuses_the_team_without_another_welcome_grant(self, _sendmail):
@@ -112,7 +141,7 @@ class TestTeamCreation(IntegrationTestCase):
 
 		with set_user(member):
 			self.assertEqual(accept_invitation(invitation)["team"], team)
-			self.assertIsNone(create_trial_team(member))
+			self.assertEqual(create_trial_team(member), team)
 
 		self.assertFalse(frappe.db.exists("Team", {"owner_user": member}))
 		self.assertCountEqual(
@@ -185,7 +214,7 @@ class TestOnboardingSteps(IntegrationTestCase):
 	def test_owner_finishes_one_step_and_skips_the_rest(self):
 		frappe.set_user(self.owner)
 		set_onboarding_step(self.team, "billing", "Done")
-		skip_onboarding(self.team)
+		frappe.get_doc("Team", self.team).skip_onboarding()
 
 		self.assertEqual(
 			onboarding_steps(self.team), {"invite": "Skipped", "billing": "Done", "start": "Skipped"}
@@ -200,7 +229,7 @@ class TestOnboardingSteps(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			set_onboarding_step(self.team, "invite", "Skipped")
 		with self.assertRaises(frappe.PermissionError):
-			skip_onboarding(self.team)
+			frappe.get_doc("Team", self.team).skip_onboarding()
 		self.assertEqual(set(onboarding_steps(self.team).values()), {"Pending"})
 
 	def test_a_team_editor_cannot_change_onboarding_through_a_plain_save(self):
