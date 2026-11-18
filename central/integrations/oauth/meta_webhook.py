@@ -3,6 +3,7 @@ import hmac
 
 import frappe
 from frappe.integrations.doctype.webhook.webhook import get_next_retry, log_request, send_webhook_request
+from frappe.utils import add_to_date, now_datetime
 from frappe.utils.password import get_decrypted_password
 
 from central.integrations.oauth.oauth import PROVIDER
@@ -13,6 +14,8 @@ SITE_HANDLER_PATH = "/api/method/whatsapp.whatsapp.webhook.handler"
 CENTRAL_SIGNATURE_HEADER = "X-Frappe-Central-Signature"
 # First tries and Frappe's retries run here, apart from the default queue of Central's other webhooks
 QUEUE = "short"
+# The site saves its account only after Central saves the route, so a newer route's 410 is retried
+ROUTE_SETTLE_MINUTES = 10
 
 
 def is_verify_token(token: str) -> bool:
@@ -55,7 +58,7 @@ def relay(body: dict) -> None:
 def deliver(waba_id: str, body: dict) -> None:
 	"""First try to the WABA's site. A failed try is a Failed row on the "Meta to site" Webhook,
 	and Frappe's retry job sends its URL, headers and body again."""
-	site = frappe.db.get_value(ROUTE, waba_id, "site")
+	site, modified = frappe.db.get_value(ROUTE, waba_id, ["site", "modified"]) or (None, None)
 	if not site:  # disconnected after Meta's call
 		return
 	secret = get_decrypted_password(ROUTE, waba_id, "webhook_secret")
@@ -69,7 +72,10 @@ def deliver(waba_id: str, body: dict) -> None:
 		response = send_webhook_request(
 			"POST", url, headers, body, frappe.db.get_value("Webhook", WEBHOOK, "timeout")
 		)
-		if response.status_code == 410:  # the site no longer uses this WABA: stop sending it there
+		settled = modified < add_to_date(now_datetime(), minutes=-ROUTE_SETTLE_MINUTES)
+		if (
+			response.status_code == 410 and settled
+		):  # the site no longer uses this WABA: stop sending it there
 			delete_routes(name=waba_id, site=site)
 		else:
 			response.raise_for_status()

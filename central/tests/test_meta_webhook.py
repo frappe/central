@@ -173,6 +173,8 @@ class TestMetaWebhook(IntegrationTestCase):
 		self.assertEqual(self.logs(), [])
 
 	def test_a_410_from_the_site_deletes_the_route_and_is_not_retried(self):
+		old = add_to_date(now_datetime(), minutes=-11)
+		frappe.db.set_value(ROUTE, self.waba_id, "modified", old, update_modified=False)
 		with patch("requests.Session.request", return_value=site_reply(410)):
 			deliver(self.waba_id, meta_event(self.waba_id))
 
@@ -180,6 +182,16 @@ class TestMetaWebhook(IntegrationTestCase):
 		(log,) = self.logs()
 		self.assertEqual(log.status, "Delivered")
 		self.assertIsNone(frappe.db.get_value("Webhook Request Log", log.name, "next_retry"))
+
+	def test_a_410_for_a_route_saved_just_now_is_retried_and_keeps_the_route(self):
+		# the site saves its account only after Central's route, so it can answer 410 meanwhile
+		with patch("requests.Session.request", return_value=site_reply(410)):
+			deliver(self.waba_id, meta_event(self.waba_id))
+
+		self.assertTrue(frappe.db.exists(ROUTE, self.waba_id))
+		(log,) = self.logs()
+		self.assertEqual(log.status, "Failed")
+		self.assertGreater(frappe.db.get_value("Webhook Request Log", log.name, "next_retry"), now_datetime())
 
 	def test_a_terminated_server_frees_its_wabas_for_another_site_of_the_team(self):
 		server = frappe.get_doc("Virtual Machine", self.server)
