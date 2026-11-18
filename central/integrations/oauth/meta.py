@@ -8,6 +8,7 @@ from central.integrations.oauth.oauth import get_provider
 
 GRAPH_URL = "https://graph.facebook.com/v23.0"
 ROUTE = "Meta Webhook Route"
+PIN_MISMATCH = 133005  # Graph error code: the number has another two-step PIN
 
 
 def connect_whatsapp(access_token: str, team: str, server: str | None, site: str) -> dict:
@@ -17,21 +18,10 @@ def connect_whatsapp(access_token: str, team: str, server: str | None, site: str
 	waba_id = get_waba_id(access_token, config.client_id, config.get_password("client_secret"))
 	check_route(waba_id, site)
 
-	numbers = call_graph("GET", f"{waba_id}/phone_numbers", access_token)["data"]
-	if not numbers:
-		frappe.throw(
-			_("This WhatsApp Business Account has no phone number. Add one at Meta, then try again.")
-		)
-	# Embedded Signup adds one number to the account, so the first is the one just signed in
-	phone_id = numbers[0]["id"]
-
+	phone_id = get_new_phone_id(waba_id, access_token)
 	call_graph("POST", f"{waba_id}/subscribed_apps", access_token)
 	pin = f"{secrets.randbelow(10**6):06d}"
-	# register needs the number's current two-step PIN, if it has one: set ours first
-	call_graph("POST", phone_id, access_token, json={"pin": pin})
-	call_graph(
-		"POST", f"{phone_id}/register", access_token, json={"messaging_product": "whatsapp", "pin": pin}
-	)
+	register(phone_id, access_token, pin)
 
 	webhook_secret = secrets.token_urlsafe(32)
 	save_route(waba_id, team, server, site, webhook_secret)
@@ -52,6 +42,47 @@ def get_waba_id(access_token: str, app_id: str, app_secret: str) -> str:
 		if scope.get("scope") == "whatsapp_business_management" and scope.get("target_ids"):
 			return scope["target_ids"][0]
 	frappe.throw(_("Meta did not share a WhatsApp Business Account. Sign in again and pick one."))
+
+
+def get_new_phone_id(waba_id: str, access_token: str) -> str:
+	"""The number just signed in. Embedded Signup adds one number that is not on the Cloud API yet;
+	an account with a single number is that number signed in again."""
+	numbers = call_graph(
+		"GET", f"{waba_id}/phone_numbers", access_token, params={"fields": "id,platform_type"}
+	)["data"]
+	new = [n for n in numbers if n.get("platform_type") == "NOT_APPLICABLE"] or numbers
+	if not new:
+		frappe.throw(
+			_("This WhatsApp Business Account has no phone number. Add one at Meta, then try again.")
+		)
+	if len(new) > 1:
+		# a wrong guess would change the two-step PIN of, and re-register, a number in use
+		frappe.throw(
+			_(
+				"This WhatsApp Business Account has more than one phone number, and the one you added is not clear. Connect again and add a new number, or use an account with one number."
+			)
+		)
+	return new[0]["id"]
+
+
+def register(phone_id: str, access_token: str, pin: str) -> None:
+	"""Register the number for the Cloud API with `pin` as its two-step PIN. Its PIN is replaced
+	only when it already has another one, so a failed register leaves a number's PIN as it was."""
+	path, data = f"{phone_id}/register", {"messaging_product": "whatsapp", "pin": pin}
+	body = call_graph("POST", path, access_token, check=False, json=data)
+	if "error" not in body:
+		return
+	if body["error"].get("code") != PIN_MISMATCH:
+		refuse(body)
+	call_graph("POST", phone_id, access_token, json={"pin": pin})
+	body = call_graph("POST", path, access_token, check=False, json=data)
+	if "error" in body:
+		refuse(
+			body,
+			_(
+				"The number's two-step verification PIN was changed. Connect again: that sets a new PIN and finishes the setup."
+			),
+		)
 
 
 def check_route(waba_id: str, site: str) -> None:
@@ -98,7 +129,8 @@ def disconnect_whatsapp(waba_id: str, site: str) -> None:
 	frappe.delete_doc(ROUTE, waba_id, ignore_permissions=True)
 
 
-def call_graph(method: str, path: str, access_token: str, **kwargs) -> dict:
+def call_graph(method: str, path: str, access_token: str, check: bool = True, **kwargs) -> dict:
+	"""Call the Graph API. With `check` off, a refusal comes back as the body with its "error"."""
 	response = requests.request(
 		method,
 		f"{GRAPH_URL}/{path}",
@@ -108,7 +140,18 @@ def call_graph(method: str, path: str, access_token: str, **kwargs) -> dict:
 		**kwargs,
 	)
 	body = response.json()
-	if not response.ok:
-		# Graph's message says what failed and never holds a token or the PIN
-		frappe.throw(_("Meta refused the request: {0}").format(body.get("error", {}).get("message")))
+	if response.ok:
+		return body
+	body.setdefault("error", {})
+	if check:
+		refuse(body)
 	return body
+
+
+def refuse(body: dict, note: str = "") -> None:
+	# Graph's message says what failed and never holds a token or the PIN
+	frappe.throw(
+		" ".join(
+			filter(None, (_("Meta refused the request: {0}").format(body["error"].get("message")), note))
+		)
+	)

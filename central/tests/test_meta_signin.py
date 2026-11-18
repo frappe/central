@@ -126,19 +126,73 @@ class TestMetaSignIn(IntegrationTestCase):
 				("GET", "debug_token"),
 				("GET", f"{waba_id}/phone_numbers"),
 				("POST", f"{waba_id}/subscribed_apps"),
-				("POST", "phone-1"),
 				("POST", "phone-1/register"),
 			],
 		)
 		debug_token = graph.call_args_list[0].kwargs
 		self.assertEqual(debug_token["headers"]["Authorization"], "Bearer meta-app-id|meta-secret")
-		# the two-step PIN is set first, so register works for a number that already had one
-		self.assertEqual(graph.call_args_list[3].kwargs["json"], {"pin": result["pin"]})
-		self.assertEqual(graph.call_args_list[4].kwargs["json"]["pin"], result["pin"])
+		# a number with no two-step PIN gets ours from register: its PIN is not set on its own
+		self.assertEqual(graph.call_args_list[3].kwargs["json"]["pin"], result["pin"])
 
 		route = frappe.get_doc(ROUTE, waba_id)
 		self.assertEqual((route.team, route.server, route.site), (self.team, self.server, self.site))
 		self.assertEqual(route.get_password("webhook_secret"), result["webhook_secret"])
+
+	def test_meta_sign_in_picks_the_number_just_added_to_an_account_that_already_sends(self):
+		waba_id = self.sign_in()
+		numbers = [
+			{"id": "old-live", "platform_type": "CLOUD_API"},
+			{"id": "phone-1", "platform_type": "NOT_APPLICABLE"},
+		]
+
+		result, _post, graph = self.relay(waba_id, graph_reply=fake_graph(waba_id, phone_numbers=numbers))
+
+		self.assertEqual(result["phone_id"], "phone-1")
+		self.assertFalse([c for c in graph.call_args_list if "old-live" in c.args[1]])
+
+	def test_meta_sign_in_refuses_an_account_where_the_new_number_is_not_clear(self):
+		waba_id = self.sign_in()
+		numbers = [
+			{"id": "phone-1", "platform_type": "CLOUD_API"},
+			{"id": "phone-2", "platform_type": "CLOUD_API"},
+		]
+
+		with self.assertRaisesRegex(frappe.ValidationError, "more than one phone number"):
+			self.relay(waba_id, graph_reply=fake_graph(waba_id, phone_numbers=numbers))
+
+		self.assertEqual([c.args[0] for c in self.graph.call_args_list], ["GET", "GET"])
+		self.assertFalse(frappe.db.exists(ROUTE, waba_id))
+
+	def test_meta_sign_in_replaces_another_two_step_pin_only_when_register_needs_it(self):
+		waba_id = self.sign_in()
+		register = [pin_mismatch(), {"success": True}]
+
+		result, _post, graph = self.relay(waba_id, graph_reply=fake_graph(waba_id, register=register))
+
+		calls = [c.args[1].removeprefix(f"{GRAPH_URL}/") for c in graph.call_args_list[3:]]
+		self.assertEqual(calls, ["phone-1/register", "phone-1", "phone-1/register"])
+		self.assertEqual(graph.call_args_list[4].kwargs["json"], {"pin": result["pin"]})
+		self.assertTrue(frappe.db.exists(ROUTE, waba_id))
+
+	def test_meta_sign_in_keeps_the_pin_when_register_fails(self):
+		waba_id = self.sign_in()
+		limited = {"error": {"message": "rate limited", "code": 80008}}
+
+		with self.assertRaisesRegex(frappe.ValidationError, "rate limited") as refused:
+			self.relay(waba_id, graph_reply=fake_graph(waba_id, register=[limited]))
+
+		self.assertNotIn("PIN was changed", str(refused.exception))
+		self.assertNotIn(("POST", f"{GRAPH_URL}/phone-1"), [c.args for c in self.graph.call_args_list])
+		self.assertFalse(frappe.db.exists(ROUTE, waba_id))
+
+	def test_meta_sign_in_says_the_pin_changed_when_register_fails_after_it(self):
+		waba_id = self.sign_in()
+		register = [pin_mismatch(), {"error": {"message": "rate limited", "code": 80008}}]
+
+		with self.assertRaisesRegex(frappe.ValidationError, "PIN was changed"):
+			self.relay(waba_id, graph_reply=fake_graph(waba_id, register=register))
+
+		self.assertFalse(frappe.db.exists(ROUTE, waba_id))
 
 	def test_meta_sign_in_again_replaces_the_webhook_secret(self):
 		waba_id = self.sign_in()
@@ -224,8 +278,13 @@ class TestMetaSignIn(IntegrationTestCase):
 		self.assertTrue(meta_webhook_route_has_permission(frappe._dict(team=self.team)))
 
 
-def fake_graph(waba_id: str):
-	"""Meta's Graph API for one Embedded Signup: the WABA, its one number, and success for each change."""
+def pin_mismatch() -> dict:
+	return {"error": {"message": "Two step verification PIN Mismatch", "code": 133005}}
+
+
+def fake_graph(waba_id: str, phone_numbers: list | None = None, register: list | None = None):
+	"""Meta's Graph API for one Embedded Signup: the WABA, its one new number, and success for each change.
+	`register` lists the replies to register, one per call."""
 	replies = {
 		("GET", "debug_token"): {
 			"data": {
@@ -238,13 +297,18 @@ def fake_graph(waba_id: str):
 				],
 			}
 		},
-		("GET", f"{waba_id}/phone_numbers"): {"data": [{"id": "phone-1", "display_phone_number": "+1 555"}]},
+		("GET", f"{waba_id}/phone_numbers"): {
+			"data": phone_numbers or [{"id": "phone-1", "platform_type": "NOT_APPLICABLE"}]
+		},
 		("POST", f"{waba_id}/subscribed_apps"): {"success": True},
 		("POST", "phone-1"): {"success": True},
-		("POST", "phone-1/register"): {"success": True},
+		("POST", "phone-1/register"): register or [{"success": True}],
 	}
 
 	def reply(method: str, url: str, **kwargs):
-		return Mock(ok=True, json=Mock(return_value=replies[(method, url.removeprefix(f"{GRAPH_URL}/"))]))
+		body = replies[(method, url.removeprefix(f"{GRAPH_URL}/"))]
+		if isinstance(body, list):
+			body = body.pop(0) if len(body) > 1 else body[0]
+		return Mock(ok="error" not in body, json=Mock(return_value=body))
 
 	return reply
