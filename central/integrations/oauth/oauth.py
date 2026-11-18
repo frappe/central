@@ -92,9 +92,12 @@ def check_return_url(provider: str, return_url: str, team: str, server: str | No
 def get_host_site(hostname: str, team: str, server: str) -> str | None:
 	"""The team's site on `server` that answers on `hostname`: its own address or an active domain."""
 	filters = {"team": team, "server": server}
-	return frappe.db.exists("Site", {"name": hostname, **filters}) or frappe.db.get_value(
-		"Site Domain", {"name": hostname, "status": "Active", **filters}, "site"
-	)
+	if site := frappe.db.exists("Site", {"name": hostname, **filters}):
+		return site
+
+	# a Site Domain checks only the team of its site, so check the site's server here
+	site = frappe.db.get_value("Site Domain", {"name": hostname, "status": "Active", **filters}, "site")
+	return frappe.db.exists("Site", {"name": site, **filters}) if site else None
 
 
 def get_sign_in(state: str | None) -> dict | None:
