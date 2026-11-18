@@ -108,7 +108,7 @@ def get_ticket_options() -> list[dict]:
 
 def resolve_priority(issue_type: str) -> str | None:
 	"""A critical issue reaches support first. Every other ticket takes Helpdesk's default."""
-	return "Urgent" if issue_type in CRITICAL_ISSUES else None
+	return "Critical" if issue_type in CRITICAL_ISSUES else None
 
 
 def keep_own_ticket_links(tickets: list[dict]) -> list[dict]:

@@ -318,7 +318,7 @@ class TestSupportTickets(SupportTestCase):
 		frappe.set_user(self.owner)
 
 		create_ticket(self.team, "server", "Unreachable or down", description="Down.")
-		self.assertEqual(self.helpdesk.create_ticket.call_args.kwargs["priority"], "Urgent")
+		self.assertEqual(self.helpdesk.create_ticket.call_args.kwargs["priority"], "Critical")
 
 		create_ticket(self.team, "server", SERVER_ISSUE, description="Slow.")
 		self.assertIsNone(self.helpdesk.create_ticket.call_args.kwargs["priority"])
