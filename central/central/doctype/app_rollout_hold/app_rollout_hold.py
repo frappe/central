@@ -8,6 +8,8 @@ from frappe.model.document import Document
 
 # The length of a Data field.
 TEXT_LIMIT = 140
+# A failed migrate can log a long traceback, and a Small Text column holds 64 KB.
+ERROR_LIMIT = 10000
 
 
 class AppRolloutHold(Document):
@@ -54,8 +56,9 @@ class AppRolloutHold(Document):
 				continue
 
 			# The commit is the name, so a release already held, or released, keeps its row.
+			# The alert user has no create right, so every hold passes the checks above.
 			with savepoint(catch=frappe.DuplicateEntryError):
-				frappe.new_doc("App Rollout Hold").update(hold).insert()
+				frappe.new_doc("App Rollout Hold").update(hold).insert(ignore_permissions=True)
 
 	@staticmethod
 	def _get_hold(row: object) -> dict:
@@ -67,11 +70,14 @@ class AppRolloutHold(Document):
 			if not isinstance(value, str) or not 1 <= len(value) <= TEXT_LIMIT:
 				frappe.throw(_("An app rollout alert row needs {0} as text.").format(key))
 
-		failed = row.get("failed")
-		total = row.get("total")
-		for value in (failed, total):
-			if isinstance(value, bool) or not isinstance(value, int):
-				frappe.throw(_("An app rollout alert row needs failed and total as numbers."))
+		# Insights sends a count as a float when the query types it as a decimal.
+		for key in ("failed", "total"):
+			value = row.get(key)
+			if isinstance(value, bool) or not isinstance(value, int | float) or not float(value).is_integer():
+				frappe.throw(_("An app rollout alert row needs failed and total as whole numbers."))
+
+		failed = int(row["failed"])
+		total = int(row["total"])
 
 		if total < 1 or not 0 <= failed <= total:
 			frappe.throw(
@@ -86,7 +92,7 @@ class AppRolloutHold(Document):
 			"commit": row["to_commit"],
 			"failed": failed,
 			"total": total,
-			"error": row["error"] or "",
+			"error": (row["error"] or "")[:ERROR_LIMIT],
 			"held_at": frappe.utils.now_datetime(),
 		}
 

@@ -138,7 +138,7 @@ class CentralSettings(Document):
 	def get_common_site_config(self) -> dict:
 		return frappe.parse_json(self.common_site_config or "{}")
 
-	def app_rollout(self) -> dict[str, int | list[str]]:
+	def get_app_rollout(self) -> dict[str, int | list[str]]:
 		"""The steps Pilot uses to offer a new app update to more servers over time, and the
 		releases it must not offer."""
 		from central.central.doctype.app_rollout_hold.app_rollout_hold import AppRolloutHold
@@ -193,3 +193,18 @@ class CentralSettings(Document):
 		for is_refused, option in refusals:
 			if is_refused:
 				frappe.throw(_("{0} is not available for new servers yet.").format(option))
+
+
+def ensure_app_rollout_settings() -> None:
+	"""Store the default of each app rollout setting that was never stored. A saved Single does
+	not take a new field's default, and Pilot cannot read an empty step. A stored 0 is kept."""
+	singles = frappe.qb.DocType("Singles")
+	stored = (
+		frappe.qb.from_(singles)
+		.select(singles.field)
+		.where((singles.doctype == "Central Settings") & singles.field.like("app_rollout_%"))
+		.run(pluck=True)
+	)
+	for field in frappe.get_meta("Central Settings").fields:
+		if field.fieldname.startswith("app_rollout_") and field.default and field.fieldname not in stored:
+			frappe.db.set_single_value("Central Settings", field.fieldname, field.default)

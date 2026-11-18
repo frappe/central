@@ -82,7 +82,7 @@ def config() -> dict:
 	return {
 		"jwks_url": jwks_url(),
 		"audience_id": credential.audience_id,
-		"app_rollout": frappe.get_cached_doc("Central Settings").app_rollout(),
+		"app_rollout": frappe.get_cached_doc("Central Settings").get_app_rollout(),
 	}
 
 

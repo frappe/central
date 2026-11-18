@@ -37,6 +37,12 @@ class IntegrationTestAppRolloutHold(IntegrationTestCase):
 		)
 		self.assertEqual(AppRolloutHold.get_held_commits(), ["abc"])
 
+	def test_counts_sent_as_floats_are_held_and_a_long_error_is_cut(self):
+		AppRolloutHold.hold_failing_releases([failing_row("abc", failed=4.0, total=5.0, error="x" * 70000)])
+
+		hold = frappe.get_doc("App Rollout Hold", "abc")
+		self.assertEqual((hold.failed, hold.total, len(hold.error)), (4, 5, 10000))
+
 	def test_the_same_release_is_held_once(self):
 		AppRolloutHold.hold_failing_releases([failing_row("abc"), failing_row("abc")])
 		AppRolloutHold.hold_failing_releases([failing_row("abc")])
@@ -59,6 +65,7 @@ class IntegrationTestAppRolloutHold(IntegrationTestCase):
 			failing_row(""),
 			failing_row("x" * 141),
 			failing_row("abc", failed="4"),
+			failing_row("abc", failed=4.5),
 			failing_row("abc", total=True),
 			failing_row("abc", failed=6),
 			failing_row("abc", failed=-1),

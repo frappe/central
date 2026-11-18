@@ -17,19 +17,20 @@
   {"description": "One error from the failed updates.", "fieldname": "error", "fieldtype": "Small Text", "label": "Error", "read_only": 1}
  ],
  "links": [],
- "modified": "2026-10-26 08:00:00.000000",
+ "modified": "2026-11-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "App Rollout Hold",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
-  {"delete": 1, "export": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1},
-  {"create": 1, "role": "App Rollout Alert"}
+  {"delete": 1, "export": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
  ],
  "search_fields": "app",
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
+ "title_field": "app",
+ "show_title_field_in_link": 1,
  "track_changes": 1
 }
