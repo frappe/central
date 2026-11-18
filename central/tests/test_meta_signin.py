@@ -11,7 +11,15 @@ from frappe.utils import set_request
 from central.api.oauth import disconnect, relay_token, start
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.oauth.oauth import PROVIDER
-from central.integrations.oauth.meta import GRAPH_URL, ROUTE
+from central.integrations.oauth.meta import (
+	GRAPH_URL,
+	NO_PHONE_NUMBER,
+	NO_WABA,
+	PHONE_NUMBER_UNCLEAR,
+	PIN_CHANGED,
+	ROUTE,
+	WABA_IN_USE,
+)
 from central.integrations.oauth.setup import ensure_email_oauth_providers
 from central.permissions import meta_webhook_route_has_permission, meta_webhook_route_query_conditions
 from central.tests import test_email_oauth
@@ -172,7 +180,7 @@ class TestMetaSignIn(IntegrationTestCase):
 			{"id": "phone-2", "platform_type": "CLOUD_API"},
 		]
 
-		with self.assertRaisesRegex(frappe.ValidationError, "more than one phone number"):
+		with self.assertRaisesRegex(frappe.ValidationError, f"^{PHONE_NUMBER_UNCLEAR}$"):
 			self.relay(waba_id, graph_reply=fake_graph(waba_id, phone_numbers=numbers))
 
 		self.assertEqual([c.args[0] for c in self.graph.call_args_list], ["GET", "GET"])
@@ -196,7 +204,7 @@ class TestMetaSignIn(IntegrationTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "rate limited") as refused:
 			self.relay(waba_id, graph_reply=fake_graph(waba_id, register=[limited]))
 
-		self.assertNotIn("PIN was changed", str(refused.exception))
+		self.assertNotIn(PIN_CHANGED, str(refused.exception))
 		self.assertNotIn(("POST", f"{GRAPH_URL}/phone-1"), [c.args for c in self.graph.call_args_list])
 		self.assertFalse(frappe.db.exists(ROUTE, waba_id))
 
@@ -204,7 +212,7 @@ class TestMetaSignIn(IntegrationTestCase):
 		waba_id = self.sign_in()
 		register = [pin_mismatch(), {"error": {"message": "rate limited", "code": 80008}}]
 
-		with self.assertRaisesRegex(frappe.ValidationError, "PIN was changed"):
+		with self.assertRaisesRegex(frappe.ValidationError, f"^{PIN_CHANGED}$"):
 			self.relay(waba_id, graph_reply=fake_graph(waba_id, register=register))
 
 		self.assertFalse(frappe.db.exists(ROUTE, waba_id))
@@ -223,7 +231,7 @@ class TestMetaSignIn(IntegrationTestCase):
 		waba_id = self.sign_in()
 		self.route_to(waba_id, self.other_site())
 
-		with self.assertRaisesRegex(frappe.ValidationError, "already connected to another"):
+		with self.assertRaisesRegex(frappe.ValidationError, f"^{WABA_IN_USE}$"):
 			self.relay(waba_id)
 
 		# refused before Meta is changed for this site
@@ -249,9 +257,24 @@ class TestMetaSignIn(IntegrationTestCase):
 						self.route_to(waba_id, other_site)
 					return reply(method, url, **kwargs)
 
-				with self.assertRaisesRegex(frappe.ValidationError, "already connected to another"):
+				with self.assertRaisesRegex(frappe.ValidationError, f"^{WABA_IN_USE}$"):
 					self.relay(waba_id, graph_reply=route_meanwhile)
 				self.assertEqual(frappe.db.get_value(ROUTE, waba_id, "site"), other_site)
+
+	def test_meta_sign_in_refuses_an_account_with_no_waba_or_no_number(self):
+		for code, meta in ((NO_WABA, {"waba_scope": False}), (NO_PHONE_NUMBER, {"phone_numbers": []})):
+			with self.subTest(code=code):
+				waba_id = self.sign_in()
+				with self.assertRaisesRegex(frappe.ValidationError, f"^{code}$"):
+					self.relay(waba_id, graph_reply=fake_graph(waba_id, **meta))
+				self.assertNotIn("POST", [c.args[0] for c in self.graph.call_args_list])
+
+	def test_meta_refusal_codes_are_the_strings_the_site_matches(self):
+		# the WhatsApp app on the site maps these exact strings to its messages
+		self.assertEqual(
+			(WABA_IN_USE, NO_WABA, NO_PHONE_NUMBER, PHONE_NUMBER_UNCLEAR, PIN_CHANGED),
+			("waba_in_use", "no_waba", "no_phone_number", "phone_number_unclear", "pin_changed"),
+		)
 
 	def test_meta_sign_in_on_a_custom_domain_routes_to_its_site(self):
 		waba_id = self.sign_in(host=self.add_domain(self.site))
@@ -321,7 +344,9 @@ def pin_mismatch() -> dict:
 	return {"error": {"message": "Two step verification PIN Mismatch", "code": 133005}}
 
 
-def fake_graph(waba_id: str, phone_numbers: list | None = None, register: list | None = None):
+def fake_graph(
+	waba_id: str, phone_numbers: list | None = None, register: list | None = None, waba_scope: bool = True
+):
 	"""Meta's Graph API for one Embedded Signup: the WABA, its one new number, and success for each change.
 	`register` lists the replies to register, one per call."""
 	replies = {
@@ -331,13 +356,15 @@ def fake_graph(waba_id: str, phone_numbers: list | None = None, register: list |
 				"is_valid": True,
 				"granular_scopes": [
 					{"scope": "business_management"},
-					{"scope": "whatsapp_business_management", "target_ids": [waba_id]},
+					{"scope": "whatsapp_business_management", "target_ids": [waba_id] if waba_scope else []},
 					{"scope": "whatsapp_business_messaging", "target_ids": [waba_id]},
 				],
 			}
 		},
 		("GET", f"{waba_id}/phone_numbers"): {
-			"data": phone_numbers or [{"id": "phone-1", "platform_type": "NOT_APPLICABLE"}]
+			"data": [{"id": "phone-1", "platform_type": "NOT_APPLICABLE"}]
+			if phone_numbers is None
+			else phone_numbers
 		},
 		("POST", f"{waba_id}/subscribed_apps"): {"success": True},
 		("POST", "phone-1"): {"success": True},

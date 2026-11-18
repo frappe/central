@@ -10,6 +10,13 @@ GRAPH_URL = "https://graph.facebook.com/v23.0"
 ROUTE = "Meta Webhook Route"
 PIN_MISMATCH = 133005  # Graph error code: the number has another two-step PIN
 
+# Refusal codes: Pilot passes on only the error text, and the site shows its own message for each
+WABA_IN_USE = "waba_in_use"  # another site has the account
+NO_WABA = "no_waba"  # the sign-in shared no account
+NO_PHONE_NUMBER = "no_phone_number"
+PHONE_NUMBER_UNCLEAR = "phone_number_unclear"  # more than one number could be the new one
+PIN_CHANGED = "pin_changed"  # register failed after the PIN change: connecting again finishes it
+
 
 def connect_whatsapp(access_token: str, team: str, server: str | None, site: str) -> dict:
 	"""After Meta's code exchange: ready the signed-in WhatsApp Business Account (WABA) to send and
@@ -41,7 +48,7 @@ def get_waba_id(access_token: str, app_id: str, app_secret: str) -> str:
 	for scope in token["data"].get("granular_scopes", []):
 		if scope.get("scope") == "whatsapp_business_management" and scope.get("target_ids"):
 			return scope["target_ids"][0]
-	frappe.throw(_("Meta did not share a WhatsApp Business Account. Sign in again and pick one."))
+	refuse_with(NO_WABA)
 
 
 def get_new_phone_id(waba_id: str, access_token: str) -> str:
@@ -52,16 +59,10 @@ def get_new_phone_id(waba_id: str, access_token: str) -> str:
 	)["data"]
 	new = [n for n in numbers if n.get("platform_type") == "NOT_APPLICABLE"] or numbers
 	if not new:
-		frappe.throw(
-			_("This WhatsApp Business Account has no phone number. Add one at Meta, then try again.")
-		)
+		refuse_with(NO_PHONE_NUMBER)
 	if len(new) > 1:
 		# a wrong guess would change the two-step PIN of, and re-register, a number in use
-		frappe.throw(
-			_(
-				"This WhatsApp Business Account has more than one phone number, and the one you added is not clear. Connect again and add a new number, or use an account with one number."
-			)
-		)
+		refuse_with(PHONE_NUMBER_UNCLEAR)
 	return new[0]["id"]
 
 
@@ -77,12 +78,7 @@ def register(phone_id: str, access_token: str, pin: str) -> None:
 	call_graph("POST", phone_id, access_token, json={"pin": pin})
 	body = call_graph("POST", path, access_token, check=False, json=data)
 	if "error" in body:
-		refuse(
-			body,
-			_(
-				"The number's two-step verification PIN was changed. Connect again: that sets a new PIN and finishes the setup."
-			),
-		)
+		refuse_with(PIN_CHANGED)
 
 
 def check_route(waba_id: str, site: str) -> None:
@@ -92,12 +88,7 @@ def check_route(waba_id: str, site: str) -> None:
 
 def refuse_other_site(routed_site: str | None, site: str) -> None:
 	if routed_site and routed_site != site:
-		frappe.throw(
-			_(
-				"This WhatsApp Business Account is already connected to another Frappe Cloud site. Disconnect it there first."
-			),
-			title=_("Account in use"),
-		)
+		refuse_with(WABA_IN_USE)
 
 
 def save_route(waba_id: str, team: str, server: str | None, site: str, webhook_secret: str) -> None:
@@ -148,10 +139,11 @@ def call_graph(method: str, path: str, access_token: str, check: bool = True, **
 	return body
 
 
-def refuse(body: dict, note: str = "") -> None:
+def refuse_with(code: str) -> None:
+	# nosemgrep: frappe-missing-translate-function-python, central-untranslated-message -- a code the site matches on, never shown
+	frappe.throw(code)
+
+
+def refuse(body: dict) -> None:
 	# Graph's message says what failed and never holds a token or the PIN
-	frappe.throw(
-		" ".join(
-			filter(None, (_("Meta refused the request: {0}").format(body["error"].get("message")), note))
-		)
-	)
+	frappe.throw(_("Meta refused the request: {0}").format(body["error"].get("message")))
