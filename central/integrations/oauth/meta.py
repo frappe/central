@@ -116,16 +116,16 @@ def save_route(waba_id: str, team: str, server: str | None, site: str, webhook_s
 	route.save(ignore_permissions=True)
 
 
-def disconnect_whatsapp(waba_id: str, site: str) -> None:
-	"""Stop routing the WABA's webhooks. Only the site they go to can stop them."""
-	routed_site = frappe.db.get_value(ROUTE, waba_id, "site")
-	if not routed_site:
+def disconnect_whatsapp(waba_id: str, team: str, server: str | None) -> None:
+	"""Stop routing the WABA's webhooks. Only the server they go to can stop them."""
+	route = frappe.db.get_value(ROUTE, waba_id, ["team", "server"], as_dict=True)
+	if not route:
 		return
-	if routed_site != site:
+	if (route.team, route.server) != (team, server):
 		frappe.throw(
-			_("This WhatsApp Business Account is not connected to this site"), frappe.PermissionError
+			_("This WhatsApp Business Account is not connected to this server"), frappe.PermissionError
 		)
-	# a Pilot call: no signed-in user, the site was checked above
+	# a Pilot call: no signed-in user, the team and server were checked above
 	frappe.delete_doc(ROUTE, waba_id, ignore_permissions=True)
 
 

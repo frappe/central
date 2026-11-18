@@ -11,7 +11,6 @@ from frappe import _
 
 from central.api.pilot import pilot_credential_auth
 from central.iam import can
-from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.oauth.oauth import (
 	CALLBACK_PATH,
 	PROVIDER,
@@ -26,8 +25,6 @@ from central.integrations.oauth.oauth import (
 from central.integrations.oauth.meta import connect_whatsapp, disconnect_whatsapp
 
 LOGIN_PATH = "/dashboard/login"
-# Pilot sets this to the site it authenticated, so a site cannot speak for another
-SITE_HEADER = "X-Pilot-Site"
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
@@ -90,7 +87,7 @@ def site_params(note: dict, code: str | None, error: str | None, error_descripti
 		return {"error": error or "invalid_request", "error_description": error_description}
 	# the code goes only to the site's team, so a stranger's site never gets it (consent phishing)
 	if can(frappe.session.user, note["team"], "server:view", server=note["server"]):
-		remember_code_owner(code, note["team"], note["server"])
+		remember_code_owner(code, note)
 		return {"code": code}
 	return {"error": "not_team_member"}
 
@@ -117,8 +114,13 @@ def relay_token(
 ) -> dict:
 	"""Called by a site through its Pilot: swap a code or refresh token at the provider using Frappe Cloud's app secret."""
 	credential = frappe.local.pilot_credential
+	owner = {}
 	if grant_type == "authorization_code":  # initial exchange of the authorization code for a token
-		claim_code(code, credential.team, credential.server)
+		owner = claim_code(code, credential.team, credential.server)
+	# the site whose return URL the sign-in checked; a refresh or a domain with no site has none
+	site = owner.get("site")
+	if provider == "meta" and not site:
+		frappe.throw(_("This sign-in did not come from a site on this server"), frappe.PermissionError)
 	token = exchange_token(
 		provider,
 		grant_type,
@@ -128,7 +130,6 @@ def relay_token(
 		scope=scope,
 	)
 	if provider == "meta":
-		site = get_calling_site(credential)
 		return connect_whatsapp(token["access_token"], credential.team, credential.server, site)
 	return token
 
@@ -138,16 +139,5 @@ def relay_token(
 @pilot_credential_auth
 def disconnect(waba_id: str) -> None:
 	"""Called by a site through its Pilot when it deletes a WhatsApp account: stop sending it that account's Meta webhooks."""
-	disconnect_whatsapp(waba_id, get_calling_site(frappe.local.pilot_credential))
-
-
-def get_calling_site(credential: PilotCredential) -> str:
-	"""The site that made this call through its Pilot; it must be on the credential's server."""
-	site = frappe.get_request_header(SITE_HEADER)
-	if not (
-		site
-		and credential.server
-		and frappe.db.exists("Site", {"name": site, "team": credential.team, "server": credential.server})
-	):
-		frappe.throw(_("This call must come from a site on this server"), frappe.PermissionError)
-	return site
+	credential = frappe.local.pilot_credential
+	disconnect_whatsapp(waba_id, credential.team, credential.server)

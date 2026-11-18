@@ -43,10 +43,12 @@ def start_sign_in(
 	With `login_hint`, the provider goes to that account instead of asking which one."""
 	config = get_provider(provider)
 	check_return_url(provider, return_url, team, server)
+	# the calling site, so a sign-in needs no site name from Pilot
+	site = get_host_site(urlsplit(return_url).hostname, team, server)
 
 	frappe.cache.set_value(
 		note_key(state),
-		{"return_url": return_url, "team": team, "server": server},
+		{"return_url": return_url, "team": team, "server": server, "site": site},
 		expires_in_sec=NOTE_TTL,
 	)
 
@@ -87,6 +89,14 @@ def check_return_url(provider: str, return_url: str, team: str, server: str | No
 	)
 
 
+def get_host_site(hostname: str, team: str, server: str) -> str | None:
+	"""The team's site on `server` that answers on `hostname`: its own address or an active domain."""
+	filters = {"team": team, "server": server}
+	return frappe.db.exists("Site", {"name": hostname, **filters}) or frappe.db.get_value(
+		"Site Domain", {"name": hostname, "status": "Active", **filters}, "site"
+	)
+
+
 def get_sign_in(state: str | None) -> dict | None:
 	return frappe.cache.get_value(note_key(state)) if state else None
 
@@ -103,18 +113,20 @@ def note_key(state: str) -> str:
 	return f"email_oauth:{state}"
 
 
-def remember_code_owner(code: str, team: str, server: str | None) -> None:
-	"""Remember which server's sign-in got `code`, so only that server can swap it."""
-	frappe.cache.set_value(code_key(code), {"team": team, "server": server}, expires_in_sec=NOTE_TTL)
+def remember_code_owner(code: str, note: dict) -> None:
+	"""Remember which server's and site's sign-in got `code`, so only that server can swap it."""
+	owner = {"team": note["team"], "server": note["server"], "site": note.get("site")}
+	frappe.cache.set_value(code_key(code), owner, expires_in_sec=NOTE_TTL)
 
 
-def claim_code(code: str | None, team: str, server: str | None) -> None:
-	"""Single use: a code swaps only for the server whose sign-in got it."""
+def claim_code(code: str | None, team: str, server: str | None) -> dict:
+	"""Single use: a code swaps only for the server whose sign-in got it. Returns its owner."""
 	key = code_key(code or "")
 	owner = frappe.cache.get_value(key)
 	frappe.cache.delete_value(key)
-	if owner != {"team": team, "server": server}:
+	if not owner or (owner["team"], owner["server"]) != (team, server):
 		frappe.throw(_("This sign-in code was not given to this server"), frappe.PermissionError)
+	return owner
 
 
 def code_key(code: str) -> str:

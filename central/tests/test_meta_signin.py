@@ -9,6 +9,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import set_request
 
 from central.api.oauth import disconnect, relay_token, start
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.oauth.oauth import PROVIDER
 from central.integrations.oauth.meta import GRAPH_URL, ROUTE
 from central.integrations.oauth.setup import ensure_email_oauth_providers
@@ -24,19 +25,19 @@ class TestMetaSignIn(IntegrationTestCase):
 	enable_meta = test_email_oauth.TestEmailOAuth.enable_meta
 	call_callback = test_email_oauth.TestEmailOAuth.call_callback
 
-	def as_pilot(self, path: str, site: str | None = None):
-		headers = {"X-Pilot-Token": self.token} | ({"X-Pilot-Site": site} if site else {})
-		set_request(method="POST", path=path, headers=headers)
+	def as_pilot(self, path: str, token: str | None = None):
+		# no X-Pilot-Site header: Central takes the site from the sign-in
+		set_request(method="POST", path=path, headers={"X-Pilot-Token": token or self.token})
 
-	def sign_in(self) -> str:
-		"""A team member signs in to Meta for this site; returns the WABA ID Meta will report."""
+	def sign_in(self, host: str | None = None) -> str:
+		"""A team member signs in to Meta from `host` (this site by default); returns the WABA ID Meta will report."""
 		self.enable_meta()
 		self.as_pilot("/api/method/central.api.oauth.start")
 		start(
 			provider="meta",
 			state="state-1",
 			code_challenge="challenge-1",
-			return_url=f"https://{self.site}{WHATSAPP_CALLBACK}",
+			return_url=f"https://{host or self.site}{WHATSAPP_CALLBACK}",
 		)
 		self.call_callback(self.owner, state="state-1", code="meta-code")
 		frappe.set_user("Administrator")
@@ -45,7 +46,6 @@ class TestMetaSignIn(IntegrationTestCase):
 	def relay(
 		self,
 		waba_id: str,
-		site: str | None = None,
 		token_reply: tuple[int, dict] | None = None,
 		graph_reply=None,
 	):
@@ -57,7 +57,7 @@ class TestMetaSignIn(IntegrationTestCase):
 		graph.side_effect = graph_reply or fake_graph(waba_id)
 		self.graph = graph  # kept for a test whose relay raises
 
-		self.as_pilot("/api/method/central.api.oauth.relay_token", self.site if site is None else site)
+		self.as_pilot("/api/method/central.api.oauth.relay_token")
 		result = relay_token(
 			provider="meta", grant_type="authorization_code", code="meta-code", code_verifier="verifier-1"
 		)
@@ -67,6 +67,21 @@ class TestMetaSignIn(IntegrationTestCase):
 		frappe.get_doc(
 			{"doctype": ROUTE, "waba_id": waba_id, "team": self.team, "server": self.server, "site": site}
 		).insert()
+
+	def add_domain(self, site: str | None) -> str:
+		"""An active custom domain on this server, routed to `site`."""
+		domain = frappe.get_doc(
+			{
+				"doctype": "Site Domain",
+				"domain": f"shop-{frappe.generate_hash(length=6)}.example.com",
+				"team": self.team,
+				"region": frappe.db.get_value("Virtual Machine", self.server, "region"),
+				"server": self.server,
+				"site": site,
+			}
+		).insert(ignore_permissions=True)
+		domain.db_set("status", "Active")
+		return domain.name
 
 	def other_site(self) -> str:
 		return (
@@ -238,12 +253,21 @@ class TestMetaSignIn(IntegrationTestCase):
 					self.relay(waba_id, graph_reply=route_meanwhile)
 				self.assertEqual(frappe.db.get_value(ROUTE, waba_id, "site"), other_site)
 
-	def test_meta_sign_in_must_come_from_a_site_on_this_server(self):
-		for site in ("", "unknown.oauth.example.test"):
-			waba_id = self.sign_in()
-			with self.subTest(site=site), self.assertRaises(frappe.PermissionError):
-				self.relay(waba_id, site=site)
-			self.assertFalse(frappe.db.exists(ROUTE, waba_id))
+	def test_meta_sign_in_on_a_custom_domain_routes_to_its_site(self):
+		waba_id = self.sign_in(host=self.add_domain(self.site))
+
+		self.relay(waba_id)
+
+		self.assertEqual(frappe.db.get_value(ROUTE, waba_id, "site"), self.site)
+
+	def test_meta_sign_in_from_a_domain_with_no_site_is_refused_before_meta(self):
+		waba_id = self.sign_in(host=self.add_domain(None))
+
+		with self.assertRaises(frappe.PermissionError):
+			self.relay(waba_id)
+
+		self.assertFalse(self.graph.called)
+		self.assertFalse(frappe.db.exists(ROUTE, waba_id))
 
 	def test_meta_passes_on_an_expired_code_as_invalid_grant(self):
 		waba_id = self.sign_in()
@@ -254,16 +278,31 @@ class TestMetaSignIn(IntegrationTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "invalid_grant"):
 			self.relay(waba_id, token_reply=(400, expired))
 
-	def test_disconnect_drops_the_route_only_for_the_site_it_goes_to(self):
+	def test_disconnect_drops_the_route_only_for_the_team_and_server_it_goes_to(self):
 		waba_id = f"waba-{frappe.generate_hash(length=8)}"
 		self.route_to(waba_id, self.site)
+		other_server = frappe.get_doc(
+			{
+				"doctype": "Virtual Machine",
+				"resource_id": f"vm-{frappe.generate_hash(length=6)}",
+				"team": self.team,
+				"region": frappe.db.get_value("Virtual Machine", self.server, "region"),
+			}
+		).insert()
+		other_team = frappe.get_doc(
+			{"doctype": "Team", "team_name": "Other OAuth Team", "owner_user": self.owner}
+		).insert()
 
-		self.as_pilot("/api/method/central.api.oauth.disconnect", self.other_site())
-		with self.assertRaises(frappe.PermissionError):
-			disconnect(waba_id=waba_id)
-		self.assertTrue(frappe.db.exists(ROUTE, waba_id))
+		for team, server in ((self.team, other_server.name), (other_team.name, self.server)):
+			token = PilotCredential.mint(
+				team=team, pilot_credential_id=f"oauth-{frappe.generate_hash(length=6)}", server=server
+			)
+			self.as_pilot("/api/method/central.api.oauth.disconnect", token)
+			with self.subTest(team=team, server=server), self.assertRaises(frappe.PermissionError):
+				disconnect(waba_id=waba_id)
+			self.assertTrue(frappe.db.exists(ROUTE, waba_id))
 
-		self.as_pilot("/api/method/central.api.oauth.disconnect", self.site)
+		self.as_pilot("/api/method/central.api.oauth.disconnect")
 		disconnect(waba_id=waba_id)
 		self.assertFalse(frappe.db.exists(ROUTE, waba_id))
 		disconnect(waba_id=waba_id)  # a second call has nothing left to drop

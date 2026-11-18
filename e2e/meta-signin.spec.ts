@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test'
 
-// A site stops Central sending a WhatsApp Business Account's Meta webhooks through its Pilot.
-// The X-Pilot-Site header names the site only after Pilot's credential is checked, so the header
-// alone opens nothing. No seed data and no call to Meta.
+// A site connects and disconnects a WhatsApp Business Account through its Pilot.
+// Central takes the site from the sign-in and the Pilot credential, never from a header,
+// so a site header alone opens nothing. No seed data and no call to Meta.
 const SIZES = {
   desktop: { width: 1280, height: 800 },
   phone: { width: 390, height: 844 },
