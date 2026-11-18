@@ -164,7 +164,7 @@
    "options": "Email"
   },
   {
-   "description": "An extra paragraph for a lifecycle email about a site of this product, such as what to do first in site_ready.",
+   "description": "Extra text for a lifecycle email, such as what to do first.",
    "fieldname": "email_notes",
    "fieldtype": "Table",
    "label": "Email Notes",
@@ -194,7 +194,7 @@
  "index_web_pages_for_search": 1,
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-11-16 12:00:00.000000",
+ "modified": "2026-11-18 12:00:00.000000",
  "modified_by": "prathamesh@frappe.io",
  "module": "Signups",
  "name": "Product",

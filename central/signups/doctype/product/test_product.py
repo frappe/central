@@ -156,6 +156,26 @@ class TestProductEmailSettings(IntegrationTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "at most one note"):
 			self.product("raven-notes", email_notes=notes).insert()
 
+	def test_a_note_needs_content_in_its_format(self):
+		notes = [{"event_type": "site_ready", "note_format": "HTML", "note": "Only plain text"}]
+
+		with self.assertRaisesRegex(frappe.ValidationError, "Write the note for the site_ready email"):
+			self.product("raven-empty", email_notes=notes).insert()
+
+	def test_a_preview_leaves_the_unsaved_notes_as_they_are(self):
+		product = self.product("raven-unsaved").insert()
+		note_html = "<p>Hi</p><script>steal()</script>"
+		product.append(
+			"email_notes",
+			{"event_type": "site_ready", "note_format": "HTML", "note": "Plain", "note_html": note_html},
+		)
+
+		html = product.preview_email("site_ready")["html"]
+
+		self.assertNotIn("steal()", html)
+		self.assertEqual(product.email_notes[0].note, "Plain")
+		self.assertEqual(product.email_notes[0].note_html, note_html)
+
 	def test_one_note_for_each_plan(self):
 		notes = [{"plan": "plan-2vcpu", "note": "One"}, {"plan": "plan-2vcpu", "note": "Two"}]
 
@@ -197,7 +217,9 @@ class TestProductEmailSettings(IntegrationTestCase):
 			use_own_email_branding=1,
 			logo="/files/raven.png",
 			getting_started_url="https://raven.example.test/start",
-			email_notes=[{"event_type": "site_ready", "note": "Create a channel.\n\nInvite your team."}],
+			email_notes=[
+				{"event_type": "site_ready", "note": "<p>Create a channel.</p><p>Invite your team.</p>"}
+			],
 		).insert()
 		frappe.set_user(self.operator())
 
@@ -251,6 +273,20 @@ class TestProductLifecycleEmails(SiteOnAMachine):
 
 		self.assertIn("Create a &lt;b&gt;channel&lt;/b&gt; first.", html)
 		self.assertIn("Frappe Cloud", html)
+
+	def test_an_html_note_keeps_its_markup_without_scripts_or_forms(self):
+		note = {
+			"event_type": "site_ready",
+			"note_format": "HTML",
+			"note": "Left over from Standard",
+			"note_html": '<p onclick="steal()">Create a <b>channel</b> first.</p>'
+			'<script>steal()</script><form action="https://evil.example.test"><input name="p"></form>',
+		}
+		html = self.email_for(self.product(email_notes=[note]))
+
+		self.assertIn('<div class="fc-note"><p>Create a <b>channel</b> first.</p></div>', html)
+		for unsafe in ("steal()", "<form", "<input", "evil.example.test", "Left over"):
+			self.assertNotIn(unsafe, html)
 
 	def test_own_branding_shows_the_product_logo_and_title(self):
 		html = self.email_for(self.product(use_own_email_branding=1, logo="/files/raven.png"))

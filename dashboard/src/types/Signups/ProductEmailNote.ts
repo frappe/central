@@ -16,5 +16,7 @@ export interface ProductEmailNote {
 		| 'trial_ended'
 		| 'trial_deletion_soon'
 		| 'trial_converted'
-	note: string
+	note_format: 'Standard' | 'HTML'
+	note?: string
+	note_html?: string
 }
