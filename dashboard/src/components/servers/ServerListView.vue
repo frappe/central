@@ -253,7 +253,7 @@ const filters = computed<ListViewFilter[]>(() => [
 			<span class="flex min-w-0 items-center gap-3">
 				<Tooltip :text="imageLabel(row.server)">
 					<span
-						class="relative grid size-8 shrink-0 place-items-center rounded-4 bg-surface-gray-1 text-ink-gray-5"
+						class="relative grid size-8 shrink-0 place-items-center rounded-4 bg-surface-gray-2 text-ink-gray-5 dark:bg-surface-gray-1"
 					>
 						<ImageIcon class="size-4" :offering="row.server?.image_offering" />
 					</span>
