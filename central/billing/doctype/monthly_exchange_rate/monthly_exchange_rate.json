@@ -1,0 +1,97 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:{from_currency}-{to_currency}-{month}",
+ "creation": "2026-11-18 10:00:00.000000",
+ "description": "The exchange rate one month bills converted usage at, read once from the accounting system on the 1st and then fixed (ADR 0027).",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "month",
+  "from_currency",
+  "to_currency",
+  "column_break_rate",
+  "rate",
+  "rate_date",
+  "source"
+ ],
+ "fields": [
+  {
+   "fieldname": "month",
+   "fieldtype": "Date",
+   "label": "Month",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "The first day of the month the rate is used for."
+  },
+  {
+   "fieldname": "from_currency",
+   "fieldtype": "Link",
+   "label": "From Currency",
+   "options": "Currency",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "to_currency",
+   "fieldtype": "Link",
+   "label": "To Currency",
+   "options": "Currency",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "column_break_rate",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Float",
+   "label": "Rate",
+   "reqd": 1,
+   "precision": "9",
+   "non_negative": 1,
+   "in_list_view": 1,
+   "description": "One unit of the from currency in the to currency."
+  },
+  {
+   "fieldname": "rate_date",
+   "fieldtype": "Date",
+   "label": "Rate Date",
+   "description": "The date of the accounting system's rate. Earlier than the month when it had none for the 1st."
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Data",
+   "label": "Source",
+   "description": "The accounting system's Currency Exchange record the rate was read from."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-18 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Monthly Exchange Rate",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 0
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

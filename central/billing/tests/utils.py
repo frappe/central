@@ -76,6 +76,7 @@ class BillingTestCase(IntegrationTestCase):
 		"Entitlement Token",
 		"Commitment",
 		"Usage Day",
+		"Monthly Exchange Rate",
 		"Usage Rollup",
 		"Payment Method",
 		"Tax Profile",
