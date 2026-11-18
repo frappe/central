@@ -1,4 +1,4 @@
-"""Seed an Email OAuth Provider record for each provider Frappe Cloud can sign mailboxes in with."""
+"""Seed an OAuth Provider record for each provider Frappe Cloud can sign mailboxes in with."""
 
 import frappe
 

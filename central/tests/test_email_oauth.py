@@ -196,13 +196,24 @@ class TestEmailOAuth(IntegrationTestCase):
 		self.assertLessEqual(set(DEFAULT_PROVIDERS), set(frappe.get_all(PROVIDER, pluck="name")))
 		self.assertEqual(frappe.get_doc(PROVIDER, "microsoft").get_password("client_secret"), "ms-secret")
 
-	def test_rename_patch_leaves_a_renamed_site_alone(self):
+	def test_rename_patch_moves_secrets_left_under_the_old_name(self):
+		# A run that stopped after rename_doc committed leaves the secrets under the old name.
+		from frappe.query_builder import Table
+
 		from central.patches.v0_0.rename_email_oauth_provider_to_oauth_provider import execute
 
+		auth = Table("__Auth")
+		frappe.qb.update(auth).set(auth.doctype, "Email OAuth Provider").where(
+			(auth.doctype == PROVIDER) & (auth.name == "microsoft")
+		).run()
+		count = frappe.db.count(PROVIDER)
+
+		execute()
 		execute()
 
-		self.assertFalse(frappe.db.exists("DocType", "Email OAuth Provider"))
-		self.assertEqual(frappe.get_doc(PROVIDER, "microsoft").client_id, "ms-client-id")
+		self.assertEqual(frappe.get_doc(PROVIDER, "microsoft").get_password("client_secret"), "ms-secret")
+		self.assertEqual(frappe.db.count(PROVIDER), count)
+		self.assertFalse(frappe.db.exists("__Auth", {"doctype": "Email OAuth Provider"}))
 
 	# every Pilot endpoint
 

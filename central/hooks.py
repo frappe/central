@@ -14,7 +14,7 @@ fixtures = [
 	# Warpgate signs in through the Central OpenID Connect provider and checks the Atlas roles.
 	# Product Operators create and edit products; only System Managers delete them.
 	# Staff Viewers read Team, Site and Virtual Machine in Desk, and manage Product and
-	# Email OAuth Provider.
+	# OAuth Provider.
 	{
 		"dt": "Role",
 		"filters": [
