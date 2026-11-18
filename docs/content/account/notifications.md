@@ -51,7 +51,7 @@ If you change a category back to **Instantly**, you get one email with the updat
 
 Click **Choose events** under a category to turn email off for single events. You still see them in the console.
 
-Some events are critical, such as a failed payment or a server that is down. They show **Always sent**. Critical events are emailed at once, even when you choose a digest or turn **Email** off for the category.
+Some events are critical, such as a failed payment or a server that is down. They show **Always sent**. Critical events are emailed at once, even when you choose a digest. When a member turns **Email** or **In-app** off for the category, the member also stops getting critical events on that channel. The team owner always gets them by email and in the app. The console asks you to confirm before it turns off a channel that has critical events.
 
 ## See also
 

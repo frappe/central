@@ -12,6 +12,7 @@ import {
 } from 'frappe-ui'
 import { computed, reactive, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, successToast } from '@/lib/feedback'
@@ -155,6 +156,62 @@ function eventsOf(category: Category) {
 	return load.data?.catalog.find((c) => c.category === category)?.events ?? []
 }
 
+type Channel = 'email' | 'in_app'
+
+const offTarget = ref<{ category: Category; channel: Channel } | null>(null)
+const isTeamOwner = computed(() => Boolean(load.data?.is_team_owner))
+const offCriticalEvents = computed(() =>
+	offTarget.value
+		? eventsOf(offTarget.value.category).filter((event) => event.is_critical)
+		: [],
+)
+const offTitle = computed(() => {
+	if (!offTarget.value) return ''
+	const { category, channel } = offTarget.value
+	const label = CATEGORIES.find(({ key }) => key === category)?.label ?? ''
+	return channel === 'email'
+		? __('Turn off {0} emails?', [label])
+		: __('Turn off {0} in-app notifications?', [label])
+})
+const isLastChannel = computed(() => {
+	if (!offTarget.value || isTeamOwner.value) return false
+	const { category, channel } = offTarget.value
+	return !state[category][channel === 'email' ? 'in_app' : 'email']
+})
+const offMessage = computed(() => {
+	const isEmail = offTarget.value?.channel === 'email'
+	if (isTeamOwner.value)
+		return isEmail
+			? __(
+					'Regular emails stop. As the team owner, you still get these critical events by email:',
+				)
+			: __(
+					'Regular notifications stop showing in the app. As the team owner, you still see these critical events:',
+				)
+	return isEmail
+		? __('These critical events also stop reaching you by email:')
+		: __('These critical events also stop showing in the app:')
+})
+const offNote = computed(() => {
+	if (isTeamOwner.value || isLastChannel.value) return ''
+	return offTarget.value?.channel === 'email'
+		? __('You still see them in the app.')
+		: __('You still get them by email.')
+})
+
+function setChannel(category: Category, channel: Channel, on: boolean) {
+	if (on || !eventsOf(category).some((event) => event.is_critical)) {
+		state[category][channel] = on
+		return
+	}
+	offTarget.value = { category, channel }
+}
+
+function confirmOff(target: { category: Category; channel: Channel }) {
+	state[target.category][target.channel] = false
+	offTarget.value = null
+}
+
 function toggleEvent(category: Category, eventType: string, on: boolean) {
 	const muted = state[category].muted.filter((name) => name !== eventType)
 	state[category].muted = on ? muted : [...muted, eventType]
@@ -246,14 +303,16 @@ const notificationSettingsLoadErrorTitle = __(
 						<div class="flex items-center gap-6">
 							<span class="flex w-12 justify-center">
 								<Switch
-									v-model="state[cat.key].email"
+									:model-value="state[cat.key].email"
 									:aria-label="__('Email notifications for {0}', [cat.label])"
+									@update:model-value="setChannel(cat.key, 'email', $event)"
 								/>
 							</span>
 							<span class="flex w-12 justify-center">
 								<Switch
-									v-model="state[cat.key].in_app"
+									:model-value="state[cat.key].in_app"
 									:aria-label="__('In-app notifications for {0}', [cat.label])"
+									@update:model-value="setChannel(cat.key, 'in_app', $event)"
 								/>
 							</span>
 						</div>
@@ -331,7 +390,9 @@ const notificationSettingsLoadErrorTitle = __(
 			</div>
 
 			<p class="mt-3 text-p-sm text-ink-gray-5">
-				{{ __("Critical events, such as a failed payment or a server that is down, are always emailed, even when a category's email is off.") }}
+				{{ isTeamOwner
+						? __("As the team owner, you always get critical events, such as a failed payment or a server that is down, by email and in the app.")
+						: __("Critical events, such as a failed payment or a server that is down, reach you on each channel you keep on.") }}
 			</p>
 
 			<div class="mt-4 flex justify-end">
@@ -343,6 +404,56 @@ const notificationSettingsLoadErrorTitle = __(
 					@click="onSave"
 				/>
 			</div>
+
+			<ConfirmDialog
+				v-model:target="offTarget"
+				:title="offTitle"
+				:confirm-label="__('Turn off')"
+				size="md"
+				@confirm="confirmOff"
+			>
+				<div class="space-y-3 text-p-base text-ink-gray-7">
+					<p class="flex items-start gap-1.5">
+						<span
+							:class="[
+								isTeamOwner
+									? 'lucide-info text-ink-gray-5'
+									: 'lucide-triangle-alert text-ink-amber-6',
+								'mt-0.5 size-4 shrink-0',
+							]"
+							aria-hidden="true"
+						/>
+						{{ offMessage }}
+					</p>
+					<ul
+						class="divide-y divide-outline-gray-1 rounded-6 border border-outline-gray-2"
+					>
+						<li
+							v-for="event in offCriticalEvents"
+							:key="event.event_type"
+							class="flex items-center gap-2 px-3 py-2 text-sm text-ink-gray-8"
+						>
+							<span
+								:class="[
+									offTarget?.channel === 'email' ? 'lucide-mail' : 'lucide-bell',
+									'size-3.5 shrink-0 text-ink-gray-5',
+								]"
+								aria-hidden="true"
+							/>
+							{{ event.title }}
+						</li>
+					</ul>
+					<p v-if="offNote" class="text-p-sm text-ink-gray-5">
+						{{ offNote }}
+					</p>
+					<div
+						v-if="isLastChannel"
+						class="rounded-6 border border-outline-amber-2 bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-7"
+					>
+						{{ __("Email and in-app are both off, so you get no notice of these events.") }}
+					</div>
+				</div>
+			</ConfirmDialog>
 		</template>
 	</div>
 </template>

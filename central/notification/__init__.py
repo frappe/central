@@ -115,7 +115,13 @@ def _visible_conditions(tn, team: str, user: str, category: str | None) -> list:
 		pluck="category",
 	)
 	if disabled:
-		conds.append(tn.category.notin(disabled))
+		visible = tn.category.notin(disabled)
+		# The team owner keeps critical events with in-app off.
+		if frappe.db.get_value("Team", team, "owner_user") == user:
+			critical = frappe.get_all("Notification Event Type", filters={"is_critical": 1}, pluck="name")
+			if critical:
+				visible = visible | tn.event_type.isin(critical)
+		conds.append(visible)
 
 	return conds
 

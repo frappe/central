@@ -359,7 +359,12 @@ def _email_recipients(team, event, *, server=None, affected_user=None) -> list[s
 			if not event.required_cap or can(user, team, event.required_cap, server=server)
 		]
 	preferences = UserNotificationPreference.load_for_users(team, users)
-	return [user for user in users if _is_emailed_instantly(preferences.get((user, event.category)), event)]
+	owner = frappe.db.get_value("Team", team, "owner_user")
+	return [
+		user
+		for user in users
+		if _is_emailed_instantly(preferences.get((user, event.category)), event, is_owner=user == owner)
+	]
 
 
 def send_notification_emails(recipients: list[str], event_type: str, ctx: dict, message=None) -> None:
@@ -404,12 +409,14 @@ def publish_team_nudge(team: str) -> None:
 		)
 
 
-def _is_emailed_instantly(preference: dict | None, event: frappe._dict) -> bool:
+def _is_emailed_instantly(preference: dict | None, event: frappe._dict, is_owner: bool = False) -> bool:
 	"""No preference means yes. A digest event waits for the digest, which reads it from the feed.
 
 	The feed row is team-wide, so an Affected User event cannot wait for the digest."""
-	if preference is None or event.is_critical:
+	if preference is None:
 		return True
+	if event.is_critical:
+		return is_owner or bool(preference["email_enabled"])
 	if not preference["email_enabled"]:
 		return False
 	if not preference["events"].get(event.name, True):
