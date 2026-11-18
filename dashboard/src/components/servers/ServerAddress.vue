@@ -31,7 +31,7 @@ const siteHost = computed(() =>
 		</a>
 		<CopyableValue
 			v-else-if="row.server?.public_ipv4"
-			class="relative text-ink-gray-7"
+			class="relative"
 			:value="row.server.public_ipv4"
 			:label="__('IP address')"
 		/>
