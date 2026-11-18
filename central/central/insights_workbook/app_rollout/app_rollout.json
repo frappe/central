@@ -1,0 +1,600 @@
+{
+ "charts": {
+  "app-rollout-failed-and-succeeded-per-release": {
+   "chart_type": "Bar",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 10000,
+    "number_formats": {},
+    "x_axis": {
+     "dimension": {
+      "column_name": "release",
+      "data_type": "String",
+      "dimension_name": "Release"
+     }
+    },
+    "y_axis": {
+     "series": [
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "succeeded",
+        "data_type": "Decimal",
+        "measure_name": "Succeeded"
+       },
+       "type": "bar"
+      },
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "failed",
+        "data_type": "Decimal",
+        "measure_name": "Failed"
+       },
+       "type": "bar"
+      }
+     ],
+     "stack": true
+    }
+   },
+   "description": null,
+   "folder": null,
+   "info": null,
+   "name": "app-rollout-failed-and-succeeded-per-release",
+   "query": "app-rollout-release-results",
+   "sort_order": 0,
+   "title": "Failed and succeeded per release",
+   "workbook": "app-rollout"
+  },
+  "app-rollout-failed-updates": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": true
+     }
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "failed",
+      "data_type": "Decimal",
+      "id": "Failed updates",
+      "measure_name": "Failed updates"
+     }
+    ],
+    "number_formats": {
+     "Failed updates": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": null,
+   "name": "app-rollout-failed-updates",
+   "query": "app-rollout-update-totals",
+   "sort_order": 0,
+   "title": "Failed updates",
+   "workbook": "app-rollout"
+  },
+  "app-rollout-failure-rate": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": true
+     }
+    ],
+    "number_columns": [
+     {
+      "data_type": "Decimal",
+      "expression": {
+       "expression": "sum(failed) * 100 / sum(total)",
+       "type": "expression"
+      },
+      "id": "Failure rate",
+      "measure_name": "Failure rate"
+     }
+    ],
+    "number_formats": {
+     "Failure rate": {
+      "decimals": 1,
+      "suffix": "%"
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": null,
+   "name": "app-rollout-failure-rate",
+   "query": "app-rollout-update-totals",
+   "sort_order": 0,
+   "title": "Failure rate",
+   "workbook": "app-rollout"
+  },
+  "app-rollout-releases": {
+   "chart_type": "Table",
+   "config": {
+    "columns": [],
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 100,
+    "number_formats": {
+     "Failure rate": {
+      "decimals": 1,
+      "suffix": "%"
+     }
+    },
+    "rows": [
+     {
+      "column_name": "release",
+      "data_type": "String",
+      "dimension_name": "Release"
+     }
+    ],
+    "show_row_totals": false,
+    "values": [
+     {
+      "aggregation": "sum",
+      "column_name": "failed",
+      "data_type": "Decimal",
+      "measure_name": "Failed"
+     },
+     {
+      "aggregation": "sum",
+      "column_name": "total",
+      "data_type": "Decimal",
+      "measure_name": "Servers"
+     },
+     {
+      "aggregation": "max",
+      "column_name": "failure_rate",
+      "data_type": "Decimal",
+      "measure_name": "Failure rate"
+     }
+    ]
+   },
+   "description": null,
+   "folder": null,
+   "info": null,
+   "name": "app-rollout-releases",
+   "query": "app-rollout-release-results",
+   "sort_order": 0,
+   "title": "Releases",
+   "workbook": "app-rollout"
+  },
+  "app-rollout-releases-with-failures": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": true
+     }
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "has_failures",
+      "data_type": "Decimal",
+      "id": "Releases with failures",
+      "measure_name": "Releases with failures"
+     }
+    ],
+    "number_formats": {
+     "Releases with failures": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": null,
+   "name": "app-rollout-releases-with-failures",
+   "query": "app-rollout-update-totals",
+   "sort_order": 0,
+   "title": "Releases with failures",
+   "workbook": "app-rollout"
+  },
+  "app-rollout-servers-updated": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": true
+     }
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "total",
+      "data_type": "Decimal",
+      "id": "Servers updated",
+      "measure_name": "Servers updated"
+     }
+    ],
+    "number_formats": {
+     "Servers updated": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": null,
+   "name": "app-rollout-servers-updated",
+   "query": "app-rollout-update-totals",
+   "sort_order": 0,
+   "title": "Servers updated",
+   "workbook": "app-rollout"
+  },
+  "app-rollout-top-update-errors-2": {
+   "chart_type": "Row",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 10000,
+    "number_formats": {},
+    "x_axis": {
+     "dimension": {
+      "column_name": "error",
+      "data_type": "String",
+      "dimension_name": "Error"
+     }
+    },
+    "y_axis": {
+     "series": [
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "servers",
+        "data_type": "Decimal",
+        "measure_name": "Servers"
+       },
+       "type": "row"
+      }
+     ],
+     "stack": false
+    }
+   },
+   "description": null,
+   "folder": null,
+   "info": null,
+   "name": "app-rollout-top-update-errors-2",
+   "query": "app-rollout-top-update-errors",
+   "sort_order": 0,
+   "title": "Top update errors",
+   "workbook": "app-rollout"
+  },
+  "app-rollout-update-results-per-day-2": {
+   "chart_type": "Bar",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "limit": 10000,
+    "number_formats": {},
+    "x_axis": {
+     "dimension": {
+      "column_name": "day",
+      "data_type": "Date",
+      "dimension_name": "Day",
+      "granularity": "day"
+     }
+    },
+    "y_axis": {
+     "series": [
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "succeeded",
+        "data_type": "Decimal",
+        "measure_name": "Succeeded"
+       },
+       "type": "bar"
+      },
+      {
+       "measure": {
+        "aggregation": "sum",
+        "column_name": "failed",
+        "data_type": "Decimal",
+        "measure_name": "Failed"
+       },
+       "type": "bar"
+      }
+     ],
+     "stack": true
+    }
+   },
+   "description": null,
+   "folder": null,
+   "info": null,
+   "name": "app-rollout-update-results-per-day-2",
+   "query": "app-rollout-update-results-per-day",
+   "sort_order": 0,
+   "title": "Update results per day",
+   "workbook": "app-rollout"
+  }
+ },
+ "creation": "2026-10-25 18:36:52.766384",
+ "dashboards": {
+  "app-rollout-app-releases": {
+   "items": [
+    {
+     "filter_name": "App",
+     "filter_type": "String",
+     "icon": "type",
+     "layout": {
+      "h": 2,
+      "i": "item-filter-app",
+      "w": 4,
+      "x": 0,
+      "y": 0
+     },
+     "links": {
+      "app-rollout-failed-and-succeeded-per-release": "`app-rollout-release-results`.`app`",
+      "app-rollout-failed-updates": "`app-rollout-update-totals`.`app`",
+      "app-rollout-failure-rate": "`app-rollout-update-totals`.`app`",
+      "app-rollout-releases": "`app-rollout-release-results`.`app`",
+      "app-rollout-releases-with-failures": "`app-rollout-update-totals`.`app`",
+      "app-rollout-servers-updated": "`app-rollout-update-totals`.`app`",
+      "app-rollout-top-update-errors-2": "`app-rollout-top-update-errors`.`app`",
+      "app-rollout-update-results-per-day-2": "`app-rollout-update-results-per-day`.`app`"
+     },
+     "type": "filter"
+    },
+    {
+     "filter_name": "Commit",
+     "filter_type": "String",
+     "icon": "type",
+     "layout": {
+      "h": 2,
+      "i": "item-filter-commit",
+      "w": 4,
+      "x": 4,
+      "y": 0
+     },
+     "links": {
+      "app-rollout-failed-and-succeeded-per-release": "`app-rollout-release-results`.`to_commit`",
+      "app-rollout-failed-updates": "`app-rollout-update-totals`.`to_commit`",
+      "app-rollout-failure-rate": "`app-rollout-update-totals`.`to_commit`",
+      "app-rollout-releases": "`app-rollout-release-results`.`to_commit`",
+      "app-rollout-releases-with-failures": "`app-rollout-update-totals`.`to_commit`",
+      "app-rollout-servers-updated": "`app-rollout-update-totals`.`to_commit`",
+      "app-rollout-top-update-errors-2": "`app-rollout-top-update-errors`.`to_commit`",
+      "app-rollout-update-results-per-day-2": "`app-rollout-update-results-per-day`.`to_commit`"
+     },
+     "type": "filter"
+    },
+    {
+     "chart": "app-rollout-servers-updated",
+     "layout": {
+      "h": 5,
+      "i": "item-0",
+      "w": 5,
+      "x": 0,
+      "y": 2
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "app-rollout-failed-updates",
+     "layout": {
+      "h": 5,
+      "i": "item-1",
+      "w": 5,
+      "x": 5,
+      "y": 2
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "app-rollout-failure-rate",
+     "layout": {
+      "h": 5,
+      "i": "item-2",
+      "w": 5,
+      "x": 10,
+      "y": 2
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "app-rollout-releases-with-failures",
+     "layout": {
+      "h": 5,
+      "i": "item-3",
+      "w": 5,
+      "x": 15,
+      "y": 2
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "app-rollout-failed-and-succeeded-per-release",
+     "layout": {
+      "h": 12,
+      "i": "item-4",
+      "w": 10,
+      "x": 0,
+      "y": 7
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "app-rollout-update-results-per-day-2",
+     "layout": {
+      "h": 12,
+      "i": "item-5",
+      "w": 10,
+      "x": 10,
+      "y": 7
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "app-rollout-releases",
+     "layout": {
+      "h": 11,
+      "i": "item-6",
+      "w": 10,
+      "x": 0,
+      "y": 19
+     },
+     "type": "chart"
+    },
+    {
+     "chart": "app-rollout-top-update-errors-2",
+     "layout": {
+      "h": 11,
+      "i": "item-7",
+      "w": 10,
+      "x": 10,
+      "y": 19
+     },
+     "type": "chart"
+    }
+   ],
+   "name": "app-rollout-app-releases",
+   "title": "App Releases",
+   "vertical_compact_layout": 1,
+   "visible_to_roles": [
+    {
+     "role": "System Manager"
+    }
+   ],
+   "workbook": "app-rollout"
+  }
+ },
+ "docstatus": 0,
+ "doctype": "Insights Workbook",
+ "folders": [],
+ "idx": 0,
+ "is_standard": 1,
+ "modified": "2026-11-09 14:34:41.690060",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "app-rollout",
+ "owner": "Administrator",
+ "queries": {
+  "app-rollout-failing-app-releases": {
+   "folder": null,
+   "is_builder_query": 0,
+   "is_native_query": 1,
+   "is_script_query": 0,
+   "name": "app-rollout-failing-app-releases",
+   "operations": [
+    {
+     "data_source": "datum_clickhouse",
+     "raw_sql": "SELECT app, to_commit, countIf(status = 'failed') AS failed, count() AS total, anyIf(error, status = 'failed') AS error\nFROM\n(\n    SELECT\n        attributes['app'] AS app,\n        attributes['to_commit'] AS to_commit,\n        resource_id,\n        argMax(attributes['status'], ts) AS status,\n        argMax(message, ts) AS error\n    FROM logs\n    WHERE service = 'app_updates' AND attributes['app'] != '' AND attributes['to_commit'] != '' AND attributes['status'] IN ('success', 'failed') AND ts > now() - INTERVAL 7 DAY\n    GROUP BY app, to_commit, resource_id\n)\nGROUP BY app, to_commit\nHAVING failed > 0",
+     "type": "sql"
+    }
+   ],
+   "sort_order": 0,
+   "title": "Failing app releases",
+   "use_live_connection": 1,
+   "workbook": "app-rollout"
+  },
+  "app-rollout-release-results": {
+   "folder": null,
+   "is_builder_query": 0,
+   "is_native_query": 1,
+   "is_script_query": 0,
+   "name": "app-rollout-release-results",
+   "operations": [
+    {
+     "data_source": "datum_clickhouse",
+     "raw_sql": "SELECT concat(app, ' ', substring(to_commit, 1, 8)) AS release, app, to_commit, countIf(status = 'failed') AS failed, countIf(status = 'success') AS succeeded, count() AS total, round(100 * countIf(status = 'failed') / count(), 1) AS failure_rate, min(last_at) AS started_at\nFROM (SELECT attributes['app'] AS app, attributes['to_commit'] AS to_commit, resource_id,\n  argMax(attributes['status'], ts) AS status, argMax(message, ts) AS error, max(ts) AS last_at\nFROM logs WHERE service = 'app_updates' AND attributes['app'] != '' AND attributes['to_commit'] != '' AND attributes['status'] IN ('success', 'failed') AND ts > now() - INTERVAL 30 DAY\nGROUP BY app, to_commit, resource_id) GROUP BY release, app, to_commit ORDER BY started_at",
+     "type": "sql"
+    }
+   ],
+   "sort_order": 0,
+   "title": "Release results",
+   "use_live_connection": 1,
+   "workbook": "app-rollout"
+  },
+  "app-rollout-top-update-errors": {
+   "folder": null,
+   "is_builder_query": 0,
+   "is_native_query": 1,
+   "is_script_query": 0,
+   "name": "app-rollout-top-update-errors",
+   "operations": [
+    {
+     "data_source": "datum_clickhouse",
+     "raw_sql": "SELECT substring(error, 1, 70) AS error, app, to_commit, count() AS servers\nFROM (SELECT attributes['app'] AS app, attributes['to_commit'] AS to_commit, resource_id,\n  argMax(attributes['status'], ts) AS status, argMax(message, ts) AS error, max(ts) AS last_at\nFROM logs WHERE service = 'app_updates' AND attributes['app'] != '' AND attributes['to_commit'] != '' AND attributes['status'] IN ('success', 'failed') AND ts > now() - INTERVAL 30 DAY\nGROUP BY app, to_commit, resource_id) WHERE status = 'failed' GROUP BY error, app, to_commit ORDER BY servers DESC",
+     "type": "sql"
+    }
+   ],
+   "sort_order": 0,
+   "title": "Top update errors",
+   "use_live_connection": 1,
+   "workbook": "app-rollout"
+  },
+  "app-rollout-update-results-per-day": {
+   "folder": null,
+   "is_builder_query": 0,
+   "is_native_query": 1,
+   "is_script_query": 0,
+   "name": "app-rollout-update-results-per-day",
+   "operations": [
+    {
+     "data_source": "datum_clickhouse",
+     "raw_sql": "SELECT toDate(last_at) AS day, app, to_commit, countIf(status = 'failed') AS failed, countIf(status = 'success') AS succeeded\nFROM (SELECT attributes['app'] AS app, attributes['to_commit'] AS to_commit, resource_id,\n  argMax(attributes['status'], ts) AS status, max(ts) AS last_at\nFROM logs WHERE service = 'app_updates' AND attributes['app'] != '' AND attributes['to_commit'] != '' AND attributes['status'] IN ('success', 'failed') AND ts > now() - INTERVAL 30 DAY\nGROUP BY app, to_commit, resource_id) GROUP BY day, app, to_commit ORDER BY day",
+     "type": "sql"
+    }
+   ],
+   "sort_order": 0,
+   "title": "Update results per day",
+   "use_live_connection": 1,
+   "workbook": "app-rollout"
+  },
+  "app-rollout-update-totals": {
+   "folder": null,
+   "is_builder_query": 0,
+   "is_native_query": 1,
+   "is_script_query": 0,
+   "name": "app-rollout-update-totals",
+   "operations": [
+    {
+     "data_source": "datum_clickhouse",
+     "raw_sql": "SELECT app, to_commit, count() AS total, countIf(status = 'failed') AS failed, if(countIf(status = 'failed') > 0, 1, 0) AS has_failures\nFROM (SELECT attributes['app'] AS app, attributes['to_commit'] AS to_commit, resource_id,\n  argMax(attributes['status'], ts) AS status, argMax(message, ts) AS error, max(ts) AS last_at\nFROM logs WHERE service = 'app_updates' AND attributes['app'] != '' AND attributes['to_commit'] != '' AND attributes['status'] IN ('success', 'failed') AND ts > now() - INTERVAL 30 DAY\nGROUP BY app, to_commit, resource_id) GROUP BY app, to_commit",
+     "type": "sql"
+    }
+   ],
+   "sort_order": 0,
+   "title": "Update totals",
+   "use_live_connection": 1,
+   "workbook": "app-rollout"
+  }
+ },
+ "title": "App Rollout"
+}
