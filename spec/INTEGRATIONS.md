@@ -169,9 +169,26 @@ A region with **WireGuard Gateway** on serves customer devices at `https://wireg
 | Restore a region | `GET /v1/peers`, then `PUT /v1/peers` | Operator action on Region. Never retried by itself. |
 | Server access | `PATCH /virtual-machines/{id}/network` with `wireguard_gateway_access` | Needs `server:network`. Off by default. |
 
+## Compute settings
+
+Atlas owns the sleep and CPU burst settings of a VM. Central stores no copy. **Compute Settings** on the Virtual Machine form reads them from `GET /virtual-machines/{id}` and sends only the changed fields to `POST /virtual-machines/{id}/actions/resize`. Atlas takes these fields in any VM state. Use it for internal servers. A customer server that sleeps answers its first request late.
+
+| Field | Atlas field | Effect |
+| --- | --- | --- |
+| Sleep After Idle (seconds) | `sleep_after_idle_seconds` | Saves memory and stops the VM after this idle time. The next request wakes it. |
+| Deep Sleep After Idle (seconds) | `deep_sleep_after_idle_seconds` | Moves the saved memory to object storage. |
+| Coma After Idle (seconds) | `coma_after_idle_seconds` | Also moves the disk to object storage. It must be longer than deep sleep. |
+| Burstable | `is_burstable` | Lets the VM use CPU above its baseline. Off clears the baseline and the window. |
+| Baseline CPU (millicores) | `baseline_cpu_millicores` | CPU the VM can always use. Zero uses 20% of its CPU. |
+| Sliding Window (minutes) | `sliding_window_minutes` | How far back Atlas measures average CPU use. Zero uses 60. |
+
+Zero turns a setting off. Atlas refuses deep sleep and coma on a VM with more than 4 GiB of memory or 50 GiB of disk, and Desk shows its message. Atlas explains sleep in [Sleepy VMs](https://github.com/frappe/atlas/blob/develop/docs/compute/sleepy-vms.md).
+
+A resize turns all three sleep settings off. On a disk-only grow, Central turns sleep off before it grows the disk, because Atlas refuses a disk past the offload limit while deep sleep or coma is set.
+
 ## Termination protection
 
-A member with `server:terminate` can turn termination protection on or off with the lock button in the server header. Central sends `PATCH /virtual-machines/{id}/termination-protection` and stores the `is_termination_protected` value that Atlas returns on the Virtual Machine. Atlas does not report this value in a VM read, so the stored value changes only through this request. Central refuses a terminate request for a protected server before it queues a Resource Action, and Atlas also refuses to delete a protected VM.
+A member with `server:terminate` can turn termination protection on or off with the lock button in the server header, or in Desk with **Server > Turn On Termination Protection** on the Virtual Machine form. Central sends `PATCH /virtual-machines/{id}/termination-protection` and stores the `is_termination_protected` value that Atlas returns on the Virtual Machine. Atlas does not report this value in a VM read, so the stored value changes only through this request. Central refuses a terminate request for a protected server before it queues a Resource Action, and Atlas also refuses to delete a protected VM.
 
 ## Server operation contract
 
@@ -273,7 +290,7 @@ A restart completes when the region accepts it and Central then reads the server
 
 Opening Pilot uses a short-lived audience-bound token and the automatic admin name. Deny another Team's access.
 
-A System Manager has four more actions on the Virtual Machine form in Desk. Central records the first two as a Comment on the server.
+A System Manager has five more actions on the Virtual Machine form in Desk. Central records **Open Bench as Administrator**, **Revoke Pilot Access** and a changed **Compute Settings** as a Comment on the server.
 
 | Action | Effect |
 | --- | --- |
@@ -281,6 +298,7 @@ A System Manager has four more actions on the Virtual Machine form in Desk. Cent
 | **Revoke Pilot Access** | Revokes every Pilot Credential of the server, so its Pilot can no longer reach Central. |
 | **Retry Admin Domain** | Asks Pilot again for the admin hostname, when the server shows an admin domain error. |
 | **Web Console** | Opens an SSH session or the serial console (TTY) of a Running server, through `open_console`. |
+| **Compute Settings** | Reads and changes the sleep and CPU burst settings of a live server. See [compute settings](#compute-settings). |
 
 Pilot links back to its server in the console with `/dashboard/servers?pilot=<jwks_audience_id>&action=<action>`. The action is `overview` or `resize`; any other value opens the overview. A resize link opens the dialog only when the server can take a change and the user may resize it. The server list returns each server's active audience as `pilot_audience`, and the console matches the link against it. When the active Team does not hold that server, the console shows the server list and a message. On a fresh page, the link waits for the first server list load before it looks for the server.
 

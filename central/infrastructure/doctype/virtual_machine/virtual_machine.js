@@ -177,6 +177,25 @@ frappe.ui.form.on("Virtual Machine", {
 				__("Server"),
 			);
 		}
+		frm.add_custom_button(
+			frm.doc.is_termination_protected ? __("Turn Off Termination Protection") : __("Turn On Termination Protection"),
+			() =>
+				frappe
+					.call({
+						method: "central.api.servers.set_termination_protection",
+						args: {
+							team: frm.doc.team,
+							resource_id: frm.doc.resource_id,
+							enabled: frm.doc.is_termination_protected ? 0 : 1,
+						},
+						freeze: true,
+					})
+					.then((r) => !r.exc && frm.reload_doc()),
+			__("Server"),
+		);
+		if (frappe.user.has_role("System Manager") && frm.doc.atlas_vm_id) {
+			frm.add_custom_button(__("Compute Settings"), () => open_compute_settings(frm), __("Server"));
+		}
 		frm.add_custom_button(__("Start"), () => run(__("Start"), "start_server", "green"), __("Server"));
 		frm.add_custom_button(__("Stop"), () => run(__("Stop"), "stop_server", "orange"), __("Server"));
 		if (frm.doc.status === "Running") {
@@ -196,3 +215,70 @@ frappe.ui.form.on("Virtual Machine", {
 		);
 	},
 });
+
+async function open_compute_settings(frm) {
+	const response = await frm.call({ doc: frm.doc, method: "get_compute_settings", freeze: true });
+	if (response.exc || !response.message) return;
+
+	const dialog = new frappe.ui.Dialog({
+		title: __("Compute Settings"),
+		fields: [
+			{
+				fieldtype: "HTML",
+				options: `<p class="text-muted small">${__(
+					"The region keeps these settings. Zero turns a setting off. A plan resize turns sleep off again.",
+				)}</p>`,
+			},
+			{ fieldtype: "Section Break", label: __("Sleep") },
+			{
+				fieldname: "sleep_after_idle_seconds",
+				fieldtype: "Int",
+				label: __("Sleep After Idle (seconds)"),
+				description: __("Save memory and stop the server after this idle time. The next request wakes it."),
+			},
+			{
+				fieldname: "deep_sleep_after_idle_seconds",
+				fieldtype: "Int",
+				label: __("Deep Sleep After Idle (seconds)"),
+				description: __("Move saved memory to object storage. Needs at most 4 GiB memory and 50 GiB disk."),
+			},
+			{
+				fieldname: "coma_after_idle_seconds",
+				fieldtype: "Int",
+				label: __("Coma After Idle (seconds)"),
+				description: __("Also move the disk to object storage. Must be longer than deep sleep."),
+			},
+			{ fieldtype: "Section Break", label: __("CPU Burst") },
+			{ fieldname: "is_burstable", fieldtype: "Check", label: __("Burstable") },
+			{
+				fieldname: "baseline_cpu_millicores",
+				fieldtype: "Int",
+				label: __("Baseline CPU (millicores)"),
+				description: __("CPU the server can always use. Zero uses 20% of its CPU."),
+				depends_on: "is_burstable",
+			},
+			{
+				fieldname: "sliding_window_minutes",
+				fieldtype: "Int",
+				label: __("Sliding Window (minutes)"),
+				description: __("How far back average CPU use is measured. Zero uses 60."),
+				depends_on: "is_burstable",
+			},
+		],
+		primary_action_label: __("Save"),
+		async primary_action(values) {
+			const result = await frm.call({
+				doc: frm.doc,
+				method: "set_compute_settings",
+				args: { settings: { ...values, is_burstable: Boolean(values.is_burstable) } },
+				freeze: true,
+			});
+			if (result.exc) return;
+			dialog.hide();
+			frappe.show_alert({ message: __("Compute settings saved"), indicator: "green" }, 5);
+			frm.reload_doc();
+		},
+	});
+	dialog.set_values({ ...response.message, is_burstable: response.message.is_burstable ? 1 : 0 });
+	dialog.show();
+}

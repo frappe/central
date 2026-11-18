@@ -180,6 +180,20 @@ class FirewallChange(BaseModel):
 		return self
 
 
+class ComputeSettings(BaseModel):
+	"""A server's sleep and CPU burst settings, in the fields and units of Atlas. Zero turns a
+	setting off. Atlas checks the size limits and the order of the sleep times."""
+
+	model_config = ConfigDict(extra="forbid", strict=True)
+
+	sleep_after_idle_seconds: int = Field(ge=0)
+	deep_sleep_after_idle_seconds: int = Field(ge=0)
+	coma_after_idle_seconds: int = Field(ge=0)
+	is_burstable: bool
+	baseline_cpu_millicores: int = Field(ge=0)
+	sliding_window_minutes: int = Field(ge=0)
+
+
 class AppInput(TypedDict):
 	"""One entry of `inputs` in an app's template.yaml, as Cargo sends it."""
 
