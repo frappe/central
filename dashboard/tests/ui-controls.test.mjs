@@ -371,6 +371,9 @@ test('chart summary controls hide and restore one series while keeping a visible
 				}),
 			},
 			'@/lib/serverMetrics': metrics,
+			'@/composables/useChartZoom': loadSource(
+				'../src/composables/useChartZoom.ts',
+			),
 		},
 	).default
 	const chart = metrics.getMetricCharts(

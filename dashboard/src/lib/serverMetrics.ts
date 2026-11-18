@@ -118,6 +118,8 @@ export const formatSampleInterval = (seconds: number): string => {
 	return `${seconds} sec`
 }
 
+export const LONGEST_METRICS_SECONDS = 30 * 86400
+
 export const METRIC_PERIODS = [
 	{ label: '1 hour', short: '1h', value: '1h' },
 	{ label: '24 hours', short: '24h', value: '24h' },
