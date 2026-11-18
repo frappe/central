@@ -269,6 +269,8 @@ class TestMetaSignIn(IntegrationTestCase):
 
 				with self.assertRaisesRegex(frappe.ValidationError, f"^{WABA_IN_USE}$"):
 					self.relay(waba_id, graph_reply=route_meanwhile)
+				# Pilot sends the site every message, so the code must be the only one
+				self.assertEqual([m.message for m in frappe.local.message_log], [WABA_IN_USE])
 				self.assertEqual(frappe.db.get_value(ROUTE, waba_id, "site"), other_site)
 
 	def test_meta_sign_in_refuses_an_account_with_no_waba_or_no_number(self):

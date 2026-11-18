@@ -151,6 +151,8 @@ def call_graph(method: str, path: str, access_token: str, check: bool = True, **
 
 
 def refuse_with(code: str) -> None:
+	# the site matches the whole message, so an earlier step's message (an insert's "already exists") must not go with it
+	frappe.clear_messages()
 	# nosemgrep: frappe-missing-translate-function-python, central-untranslated-message -- a code the site matches on, never shown
 	frappe.throw(code)
 
