@@ -25,6 +25,7 @@ RESOURCE_TYPES = [
 	"IP",
 	"Snapshot",
 	"Tokens",
+	"AI Usage",
 	"Storage",
 	"Backup",
 	"Emails",
@@ -103,7 +104,7 @@ CATEGORIES = [
 		"pricing_mode": "Grandfathered",
 		"settlement_mode": "Postpaid Overage",
 		"reporting_mode": "Authoritative",
-		"allowed": ["Tokens"],
+		"allowed": ["Tokens", "AI Usage"],
 		"sub_categories": [],
 	},
 	{
@@ -204,6 +205,10 @@ def ensure_catalog_masters():
 
 	ensure_starter_plans()
 
+	from central.billing.catalog.plan_setup import ensure_ai_plan
+
+	ensure_ai_plan()
+
 
 # The billing mechanics a category's spec is authoritative for — reconciled onto an
 # existing Plan Category on every seed run so a family seeded before it carried these
@@ -243,10 +248,7 @@ def _ensure_category(spec):
 			}
 		).insert(ignore_permissions=True)
 	else:
-		doc = frappe.get_doc("Plan Category", spec["category_name"])
-		if any(doc.get(f) != behaviour[f] for f in _CATEGORY_BEHAVIOUR):
-			doc.update(behaviour)
-			doc.save(ignore_permissions=True)
+		_reconcile_category(frappe.get_doc("Plan Category", spec["category_name"]), spec, behaviour)
 	for sub in spec["sub_categories"]:
 		if not frappe.db.exists("Plan Sub-Category", sub["name"]):
 			ram_ratio = sub.get("ram_ratio")
@@ -263,3 +265,15 @@ def _ensure_category(spec):
 					"memory_ratio": f"1:{ram_ratio}" if ram_ratio else None,
 				}
 			).insert(ignore_permissions=True)
+
+
+def _reconcile_category(doc, spec, behaviour) -> None:
+	"""Bring an existing family's billing mechanics and resource types up to its spec."""
+	allowed = {row.resource_type for row in doc.allowed_resource_types}
+	missing = [rt for rt in spec["allowed"] if rt not in allowed]
+	if not missing and all(doc.get(f) == behaviour[f] for f in _CATEGORY_BEHAVIOUR):
+		return
+	doc.update(behaviour)
+	for rt in missing:
+		doc.append("allowed_resource_types", {"resource_type": rt})
+	doc.save(ignore_permissions=True)

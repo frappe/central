@@ -49,6 +49,7 @@ class TeamService(Document):
 
 			self.validate_one_ai_service()
 			register_team(self.team)
+			self.subscribe_ai()
 			return
 
 		if not self.is_bucket:
@@ -129,9 +130,21 @@ class TeamService(Document):
 		self.access_key = credentials["access_key"]
 		self.secret_access_key = credentials["secret_access_key"]
 
+	def subscribe_ai(self) -> None:
+		"""Bill the team's AI on the AI plan, once the team has a billing currency."""
+		if self.subscription or not has_billing_currency(self.team):
+			return
+		from central.billing.catalog.plan_setup import AI_PLAN
+
+		subscription = provision_service_subscription(
+			self.team, AI_PLAN, changed_by=self.flags.requested_by or frappe.session.user
+		)
+		self.subscription = subscription["subscription"]
+
 	def validate(self) -> None:
-		# AI is prepaid at Grove, so it has no subscription here.
-		if self.status == "Active" and not self.subscription and not self.is_ai:
+		# AI can be turned on before the team has a billing currency; it is subscribed once it has one.
+		waits_for_currency = self.is_ai and not has_billing_currency(self.team)
+		if self.status == "Active" and not self.subscription and not waits_for_currency:
 			frappe.throw(_("An active service must have a subscription."))
 
 		self.validate_bucket_region()
@@ -207,6 +220,10 @@ def get_storage_plan() -> str:
 		frappe.throw(_("The Object Storage Plan is not configured."))
 
 	return plan
+
+
+def has_billing_currency(team: str) -> bool:
+	return bool(frappe.db.get_value("Billing Profile", team, "currency"))
 
 
 def on_doctype_update():

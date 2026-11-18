@@ -326,6 +326,7 @@ scheduler_events = {
 	"hourly": [
 		"central.billing.revenue.invoicing.collect_due_invoices",
 		"central.billing.revenue.storage_bridge.read_storage_usage",
+		"central.billing.revenue.grove_bridge.read_ai_usage",
 		"central.billing.revenue.usage_recount.recount_changed",
 		"central.billing.payments.collection.collect_on_payment_date",
 		"central.billing.ingester.erpnext_sync.retry_failed_syncs",

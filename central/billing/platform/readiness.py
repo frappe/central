@@ -13,6 +13,7 @@ from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.india_gst import INDIA
 from central.billing.platform.invariants import Violation
 from central.billing.revenue import credits
+from central.billing.revenue.exchange_rates import check_converted_usage_has_a_rate
 
 STALLED_HOURS = 3
 
@@ -621,6 +622,7 @@ CHECKS = {
 	"S3": ("Terminated servers stop billing", check_terminated_servers_stop_billing),
 	"S4": ("Subscriptions name a known region", check_subscriptions_name_a_known_region),
 	"M1": ("Storage usage is read daily", check_storage_usage_is_recorded),
+	"M2": ("Converted usage has an exchange rate", check_converted_usage_has_a_rate),
 	"W1": ("Billed teams can pay", check_billed_teams_can_pay),
 	"W2": ("Promotional credit expires", check_promotional_credit_expires),
 	"X1": ("No staging trials outside staging", check_no_staging_trials_outside_staging),
