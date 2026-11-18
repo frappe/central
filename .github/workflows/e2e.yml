@@ -113,6 +113,9 @@ jobs:
           bench --site "$SITE" set-config stripe_publishable_key "$STRIPE_PUBLISHABLE_KEY"
           bench --site "$SITE" set-config razorpay_key_id "$RAZORPAY_KEY_ID"
           bench --site "$SITE" set-config razorpay_key_secret "$RAZORPAY_KEY_SECRET"
+          # e2e/meta-webhook.spec.ts: the verify token and app secret its fake Meta uses
+          bench --site "$SITE" set-config meta_webhook_verify_token e2e-meta-verify-token
+          bench --site "$SITE" execute frappe.client.set_value --args '["OAuth Provider", "meta", "client_secret", "e2e-meta-app-secret"]'
 
       - name: Seed catalog + payment gateways
         working-directory: /home/runner/frappe-bench
