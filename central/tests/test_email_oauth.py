@@ -9,15 +9,22 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import set_request
 
 from central.api.email_oauth import callback, get_active_providers, relay_token, start
+from central.api.oauth import get_active_providers as oauth_get_active_providers
+from central.api.oauth import start as oauth_start
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.integrations.email_oauth.email_oauth import PROVIDER, PROVIDER_UNAVAILABLE
+from central.integrations.email_oauth.email_oauth import (
+	PROVIDER,
+	PROVIDER_UNAVAILABLE,
+	SITE_CALLBACK_PATHS,
+)
 from central.integrations.email_oauth.setup import DEFAULT_PROVIDERS, ensure_email_oauth_providers
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
 ZONE = "oauth.example.test"
 SITE_CALLBACK = "/api/method/frappe.integrations.frappe_providers.email_oauth.callback"
+WHATSAPP_CALLBACK = "/api/method/whatsapp.whatsapp.oauth.callback"
 
 
 class TestEmailOAuth(IntegrationTestCase):
@@ -167,7 +174,7 @@ class TestEmailOAuth(IntegrationTestCase):
 
 		self.assertEqual(get_active_providers(), {"google": "google-client-id", "microsoft": None})
 
-	# Email OAuth Provider
+	# OAuth Provider
 
 	def test_provider_cannot_be_enabled_without_credentials(self):
 		doc = frappe.get_doc(PROVIDER, "microsoft").update({"client_id": ""})
@@ -183,6 +190,19 @@ class TestEmailOAuth(IntegrationTestCase):
 		doc = frappe.get_doc(PROVIDER, "microsoft")
 		self.assertEqual(doc.get_scopes(), ["openid"])
 		self.assertEqual(doc.client_id, "ms-client-id")
+
+	def test_mail_providers_are_oauth_provider_records(self):
+		self.assertEqual(PROVIDER, "OAuth Provider")
+		self.assertLessEqual(set(DEFAULT_PROVIDERS), set(frappe.get_all(PROVIDER, pluck="name")))
+		self.assertEqual(frappe.get_doc(PROVIDER, "microsoft").get_password("client_secret"), "ms-secret")
+
+	def test_rename_patch_leaves_a_renamed_site_alone(self):
+		from central.patches.v0_0.rename_email_oauth_provider_to_oauth_provider import execute
+
+		execute()
+
+		self.assertFalse(frappe.db.exists("DocType", "Email OAuth Provider"))
+		self.assertEqual(frappe.get_doc(PROVIDER, "microsoft").client_id, "ms-client-id")
 
 	# every Pilot endpoint
 
@@ -342,3 +362,64 @@ class TestEmailOAuth(IntegrationTestCase):
 				400, {"error": "invalid_grant"}, grant_type="refresh_token", refresh_token="old"
 			)
 		self.assertIn("invalid_grant", str(caught.exception))
+
+	# central.api.oauth: the path for every provider, and each provider's site callback
+
+	def enable_meta(self):
+		if not frappe.db.exists(PROVIDER, "meta"):
+			frappe.get_doc(
+				{
+					"doctype": PROVIDER,
+					"provider": "meta",
+					"authorize_url": "https://www.facebook.com/dialog/oauth",
+					"token_url": "https://graph.facebook.com/oauth/access_token",
+				}
+			).insert()
+		meta = frappe.get_doc(PROVIDER, "meta")
+		self.addCleanup(frappe.db.set_value, PROVIDER, "meta", "enabled", meta.enabled)
+		meta.update({"client_id": "meta-app-id", "client_secret": "meta-secret", "enabled": 1}).save()
+
+	def test_email_oauth_is_an_alias_of_oauth(self):
+		import central.api.email_oauth
+		import central.api.oauth
+
+		for name in ("start", "get_active_providers", "callback", "relay_token"):
+			old = frappe.get_attr(f"central.api.email_oauth.{name}")
+			with self.subTest(endpoint=name):
+				self.assertIs(old, getattr(central.api.oauth, name))
+				self.assertIs(old, getattr(central.api.email_oauth, name))
+				self.assertIn(old, frappe.guest_methods)
+
+	def test_every_provider_has_a_site_callback(self):
+		self.assertLessEqual(set(DEFAULT_PROVIDERS), set(SITE_CALLBACK_PATHS))
+		self.assertEqual(SITE_CALLBACK_PATHS["microsoft"], SITE_CALLBACK)
+		self.assertEqual(SITE_CALLBACK_PATHS["meta"], WHATSAPP_CALLBACK)
+
+	def test_oauth_start_returns_each_provider_only_to_its_own_callback(self):
+		self.enable_meta()
+		self.as_pilot("/api/method/central.api.oauth.start")
+		for provider, good, bad in (
+			("meta", WHATSAPP_CALLBACK, SITE_CALLBACK),
+			("microsoft", SITE_CALLBACK, WHATSAPP_CALLBACK),
+		):
+			with self.subTest(provider=provider):
+				result = oauth_start(
+					provider=provider, state="s", code_challenge="c", return_url=f"https://{self.site}{good}"
+				)
+				self.assertIn("authorize_url", result)
+				with self.assertRaises(frappe.PermissionError):
+					oauth_start(
+						provider=provider,
+						state="s",
+						code_challenge="c",
+						return_url=f"https://{self.site}{bad}",
+					)
+
+	def test_oauth_get_active_providers_includes_meta_when_enabled(self):
+		frappe.db.set_value(PROVIDER, {"name": ("!=", "microsoft")}, "enabled", 0)
+		self.as_pilot("/api/method/central.api.oauth.get_active_providers")
+		self.assertNotIn("meta", oauth_get_active_providers())
+
+		self.enable_meta()
+
+		self.assertEqual(oauth_get_active_providers(), {"meta": None, "microsoft": None})

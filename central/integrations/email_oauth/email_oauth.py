@@ -1,4 +1,4 @@
-"""Frappe Cloud's OAuth app at each mail provider, and the note that carries one mailbox sign-in."""
+"""Frappe Cloud's OAuth app at each provider, and the note that carries one sign-in."""
 
 import hashlib
 from typing import TYPE_CHECKING
@@ -13,11 +13,16 @@ from oauthlib.oauth2 import WebApplicationClient
 from central.infrastructure.doctype.site.site import get_server_hostnames
 
 if TYPE_CHECKING:
-	from central.central.doctype.email_oauth_provider.email_oauth_provider import EmailOAuthProvider
+	from central.central.doctype.oauth_provider.oauth_provider import OAuthProvider
 
-PROVIDER = "Email OAuth Provider"
+PROVIDER = "OAuth Provider"
 CALLBACK_PATH = "/api/method/central.api.email_oauth.callback"
-SITE_CALLBACK_PATH = "/api/method/frappe.integrations.frappe_providers.email_oauth.callback"
+MAIL_CALLBACK_PATH = "/api/method/frappe.integrations.frappe_providers.email_oauth.callback"
+# the one site path each provider's sign-in may return to, so a sign-in never lands in another app
+SITE_CALLBACK_PATHS = {
+	**dict.fromkeys(("microsoft", "google", "yahoo", "yandex"), MAIL_CALLBACK_PATH),
+	"meta": "/api/method/whatsapp.whatsapp.oauth.callback",
+}
 NOTE_TTL = 10 * 60
 # Pilot keeps only an error's text; the site matches this to fall back to its normal mailbox form
 PROVIDER_UNAVAILABLE = "provider_unavailable"
@@ -35,7 +40,7 @@ def start_sign_in(
 	"""Remember where to send the browser back, and return the provider's sign-in link.
 	With `login_hint`, the provider goes to that account instead of asking which one."""
 	config = get_provider(provider)
-	check_return_url(return_url, team, server)
+	check_return_url(provider, return_url, team, server)
 
 	frappe.cache.set_value(
 		note_key(state),
@@ -63,19 +68,20 @@ def start_sign_in(
 	return {"authorize_url": authorize_url, "client_id": config.client_id, "scopes": scopes}
 
 
-def check_return_url(return_url: str, team: str, server: str | None) -> None:
+def check_return_url(provider: str, return_url: str, team: str, server: str | None) -> None:
 	url = urlsplit(return_url)
 	schemes = ("https", "http") if frappe.conf.developer_mode else ("https",)
 	if (
 		url.scheme in schemes
 		and "@" not in url.netloc
 		and "\\" not in return_url
-		and url.path == SITE_CALLBACK_PATH
+		and url.path == SITE_CALLBACK_PATHS.get(provider)
 		and url.hostname in get_server_hostnames(team, server)
 	):
 		return
 	frappe.throw(
-		_("Return URL must be the email callback on one of this server's sites"), frappe.PermissionError
+		_("Return URL must be this provider's callback on one of this server's sites"),
+		frappe.PermissionError,
 	)
 
 
@@ -139,7 +145,7 @@ def exchange_token(provider: str, grant_type: str, **params: str | None) -> dict
 	return token
 
 
-def get_provider(provider: str) -> "EmailOAuthProvider":
+def get_provider(provider: str) -> "OAuthProvider":
 	"""The enabled record for `provider`; an enabled one always has a client ID and secret."""
 	config = frappe.db.exists(PROVIDER, provider) and frappe.get_cached_doc(PROVIDER, provider)
 	if not (config and config.enabled):
