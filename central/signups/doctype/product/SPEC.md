@@ -21,6 +21,8 @@ System Managers, Staff Viewers, and Product Operators create and edit products i
 | Signup App | The app module name, such as `raven`. Cargo tags the image that has this app installed with `app=<signup app>`. |
 | Frappe Version | The Frappe branch of the trial image, `develop`, `version-<number>` or `version-<number>-hotfix`, such as `version-16-hotfix`. The default is `develop`. Cargo tags each image with the branch it was built on as `frappe_version=<branch>`. |
 | Landing Route | Optional. Where the owner lands after signing in to a trial site, such as `/raven`, so the app runs its own setup. Empty opens Desk, which shows Frappe's setup wizard. |
+| Connector Route | Optional. The page on the site that sends a user who signed in from an AI app back to that app, such as `/api/method/crm.api.connector.return_to_connector`. Empty turns off connector sign in. See [AI connector sign in](#ai-connector-sign-in). |
+| Connector Hosts | The hosts a connector sign in can return to, one on each line, such as `connect.example.com`. |
 | Trial Days | Days a trial site of this product runs from when Central records its site. 0 uses Central Settings, Trial Days. See [Trials](../../SPEC.md#trials). |
 | Trial Deletion Days | Days a stopped trial site is kept before its server is terminated. 0 uses Central Settings, Trial Deletion Days. |
 | Use Product Branding in Emails | Off uses Frappe Cloud's logo and name in emails. On uses the product's Logo and Title. See [Emails](#emails). |
@@ -56,6 +58,17 @@ A returning customer can start another product on the selected Team. Product sig
 Another product signup reuses the Team's billing profile and credit balance. It grants no additional welcome credit and does not extend its expiry.
 
 An accepted invitation lets the member use the selected Team's balance when their role permits site creation. It grants no additional welcome credits. Membership does not consume the member's welcome-credit eligibility as an owner. If the member creates their own first Team, that Team can receive the [welcome credit](../../SPEC.md#welcome-credit).
+
+## AI connector sign in
+
+An AI app such as ChatGPT or Claude can send a user to Central to sign in to their site of this product. The link adds `return_to`, the AI app's address: `/dashboard/login?product=crm&return_to=https://connect.example.com/connect/return`. The console keeps `return_to` through sign in, signup, verification and the onboarding pages, like `?product=`. It sends it to `claim_site`, or to `login_site` for a site that is already claimed or an open trial.
+
+| Site | What `login_url` is |
+|---|---|
+| A trial site of the user's team, where the owner signs in as themselves | The one-time login, on the Connector Route instead of the Landing Route, with `return_to` added: `https://<site><connector route>?sid=<sid>&return_to=<return_to>`. The site sends the user back to `return_to` with its address. |
+| Any other site, where the login would be Administrator | `return_to` with `site=<site address>` and no session. The AI app gets no Administrator session. The user signs in on the site with their own account. |
+
+Central refuses `return_to` with "This app cannot sign in to your site." when the product has no Connector Route, when it is not https, or when its host is not in Connector Hosts.
 
 A Product needs a Cargo image of type Apps for its signup app, on its Frappe version, in the region. Without one, the signup stops with "No trial image is available right now."
 

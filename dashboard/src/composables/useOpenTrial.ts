@@ -1,4 +1,5 @@
 import { onUnmounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { API } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import {
@@ -6,6 +7,7 @@ import {
 	getFrappe,
 	methodUrl,
 	postFrappe,
+	queryString,
 } from '@/lib/auth'
 import type {
 	OpenTrial,
@@ -33,6 +35,7 @@ const UNREACHABLE_POLLS = 40
 /** The owner's open free trial, and the actions a new signup offers on it. */
 export function useOpenTrial() {
 	const { activeTeam } = useSession()
+	const route = useRoute()
 	const trial = ref<OpenTrial | null>(null)
 	const step = ref<OpenTrialStep>('idle')
 	const error = ref('')
@@ -147,6 +150,7 @@ export function useOpenTrial() {
 			const state = await postFrappe<TrialSiteState>(methodUrl(API.loginSite), {
 				name: trial.value.site,
 				product,
+				return_to: queryString(route.query.return_to) || undefined,
 			})
 			if (state.login_url) return window.location.assign(state.login_url)
 			if (attempt < OPEN_ATTEMPTS) {

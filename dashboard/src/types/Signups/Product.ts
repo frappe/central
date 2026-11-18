@@ -29,6 +29,10 @@ export interface Product {
 	frappe_version: string
 	/**	Landing Route : Data - Where the owner lands after signing in to a trial site, such as /raven, so the app can run its own setup. Leave empty to open Desk.	*/
 	landing_route?: string
+	/**	Connector Route : Data - The page on the site that sends the user back to the AI app, such as /api/method/crm.api.connector.return_to_connector. Leave empty to turn off connector sign in.	*/
+	connector_route?: string
+	/**	Connector Hosts : Small Text - The hosts a connector sign in can return to, one on each line, such as connect.example.com.	*/
+	connector_hosts?: string
 	/**	Trial Days : Int - Days a trial site of this product runs from when it is first ready. 0 uses Central Settings.	*/
 	trial_days?: number
 	/**	Trial Deletion Days : Int - Days a stopped trial site is kept before its server is terminated. 0 uses Central Settings.	*/
