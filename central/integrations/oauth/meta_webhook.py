@@ -76,7 +76,8 @@ def deliver(waba_id: str, body: dict) -> None:
 		if (
 			response.status_code == 410 and settled
 		):  # the site no longer uses this WABA: stop sending it there
-			delete_routes(name=waba_id, site=site)
+			# only the route read above: the site may have saved it again during the POST
+			delete_routes(name=waba_id, site=site, modified=modified)
 		else:
 			response.raise_for_status()
 		log_request(WEBHOOK, "Site", site, url, headers, body, response, status="Delivered")

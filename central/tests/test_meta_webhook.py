@@ -183,6 +183,22 @@ class TestMetaWebhook(IntegrationTestCase):
 		self.assertEqual(log.status, "Delivered")
 		self.assertIsNone(frappe.db.get_value("Webhook Request Log", log.name, "next_retry"))
 
+	def test_a_410_does_not_delete_the_route_the_site_saved_again_during_the_post(self):
+		old = add_to_date(now_datetime(), minutes=-11)
+		frappe.db.set_value(ROUTE, self.waba_id, "modified", old, update_modified=False)
+
+		def site_reconnects_then_answers_410(*args, **kwargs):
+			save_route(self.waba_id, self.team, self.server, self.site, "new-secret")
+			return site_reply(410)
+
+		with patch(
+			"central.integrations.oauth.meta_webhook.send_webhook_request",
+			side_effect=site_reconnects_then_answers_410,
+		):
+			deliver(self.waba_id, meta_event(self.waba_id))
+
+		self.assertTrue(frappe.db.exists(ROUTE, self.waba_id))
+
 	def test_a_410_for_a_route_saved_just_now_is_retried_and_keeps_the_route(self):
 		# the site saves its account only after Central's route, so it can answer 410 meanwhile
 		with patch("requests.Session.request", return_value=site_reply(410)):
