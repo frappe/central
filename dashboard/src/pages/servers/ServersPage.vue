@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Spinner, TabButtons } from 'frappe-ui'
+import { Alert, Button, Spinner, TabButtons, Tooltip } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -171,20 +171,14 @@ const loadServersErrorTitle = __("Couldn't load your servers")
 				:options="FLEET_VIEW_OPTIONS"
 			/>
 
-			<Button
-				v-if="activeTeam && isMobile"
-				icon="lucide-refresh-cw"
-				:label="__('Refresh')"
-				:loading="refreshing"
-				@click="refresh"
-			/>
-			<Button
-				v-else-if="activeTeam"
-				:label="__('Refresh')"
-				icon-left="lucide-refresh-cw"
-				:loading="refreshing"
-				@click="refresh"
-			/>
+			<Tooltip v-if="activeTeam" :text="__('Refresh')">
+				<Button
+					icon="lucide-refresh-cw"
+					:label="__('Refresh')"
+					:loading="refreshing"
+					@click="refresh"
+				/>
+			</Tooltip>
 			<!-- An empty fleet's list carries the one New-server button instead. -->
 			<Button
 				v-if="activeTeam && canCreateServer && !isFleetEmpty"
