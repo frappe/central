@@ -195,6 +195,9 @@ after_install = [
 # Hook on document methods and events
 
 doc_events = {
+	"Notification Log": {
+		"after_insert": "central.notification.failed_email.email_admins_when_owner_email_fails",
+	},
 	"User": {
 		"validate": "central.users.validate_user_image",
 		"after_insert": "central.users.grant_central_user_role",

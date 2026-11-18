@@ -1433,3 +1433,54 @@ class TestReaderLanguage(EngineTestBase):
 		self.german["Backup failed for {{ reference_name }}"] = "Sicherung {% if"
 
 		self.assertEqual(self.read_feed_in("de").title, "Backup failed for my-site")
+
+
+class TestOwnerEmailFailure(EngineTestBase):
+	def setUp(self):
+		super().setUp()
+		self.admin = make_user("failover-admin@example.com")
+		self.member = make_user("failover-member@example.com")
+		team = frappe.get_doc("Team", TEAM)
+		team.append("members", {"user": self.admin, "role": "Admin", "status": "Active"})
+		team.append("members", {"user": self.member, "role": "Viewer", "status": "Active"})
+		team.save()
+		self._ensure_event_type("server_failed", category="Server", is_critical=True)
+
+	def fail_email_to(self, recipient: str) -> list:
+		"""Run Frappe's final-failure path for a critical email to *recipient*; return the Admin sends."""
+		from central.notification.engine import dispatch
+
+		with patch("central.notification.engine.frappe.enqueue"):
+			notification = dispatch(TEAM, "server_failed", message="Server failed", reference_name="srv-9")[
+				"notification"
+			]
+		queue = frappe.get_doc(
+			{
+				"doctype": "Email Queue",
+				"status": "Error",
+				"message": "Subject: Server failed\n\nbody",
+				"reference_doctype": "Team Notification",
+				"reference_name": notification,
+				"recipients": [{"recipient": recipient}],
+			}
+		).insert()
+		with patch("central.notification.failed_email.frappe.enqueue") as enqueue:
+			frappe.get_doc(
+				{
+					"doctype": "Notification Log",
+					"for_user": "Administrator",
+					"type": "Alert",
+					"document_type": "Email Queue",
+					"document_name": queue.name,
+					"subject": "Failed to send email",
+				}
+			).insert()
+		return [call.kwargs["recipients"] for call in enqueue.call_args_list]
+
+	def test_failed_owner_email_goes_to_admins(self):
+		owner = frappe.db.get_value("Team", TEAM, "owner_user")
+
+		self.assertEqual(self.fail_email_to(owner), [[self.admin]])
+
+	def test_failed_member_email_is_not_forwarded(self):
+		self.assertEqual(self.fail_email_to(self.member), [])
