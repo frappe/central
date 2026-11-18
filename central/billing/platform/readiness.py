@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import datetime
+
 import frappe
 from frappe.query_builder.functions import Count
 
@@ -326,42 +328,30 @@ def check_terminated_servers_stop_billing() -> list[Violation]:
 
 
 def check_storage_usage_is_recorded() -> list[Violation]:
-	"""Every storage subscription's usage was read in the last day, so the month bills in full."""
-	from central.services.doctype.team_service.team_service import STORAGE_SERVICE
+	"""Every billed bucket that existed yesterday (UTC) has a Usage Day for it, so no day is left unbilled."""
+	from central.billing.revenue.usage_ledger import utc_today
+	from central.services.doctype.service.service import STORAGE_SERVICE
+	from central.services.doctype.team_service.team_service import billed_subjects
 
-	today = frappe.utils.getdate()
-	if today.day == 1:
-		return []
-	billed = set(
-		frappe.get_all(
-			"Team Service",
-			filters={"add_on_service": STORAGE_SERVICE, "status": "Active", "subscription": ["is", "set"]},
-			pluck="subscription",
-		)
-	)
-	subjects = frappe.get_all(
-		"Subscription", filters={"name": ["in", list(billed)]}, fields=["name", "team", "service_subject"]
-	)
-	read_through = dict(
-		frappe.get_all(
-			"Usage Rollup",
-			filters={"resource_type": "Storage", "period_start": [">=", today.replace(day=1)]},
-			fields=["resource_id", "sequence"],
-			as_list=True,
-		)
+	today = utc_today()
+	yesterday = today - datetime.timedelta(days=1)
+	# Creation is in system time; a bucket made after yesterday ended (UTC) had nothing to read.
+	cutoff = frappe.utils.convert_utc_to_system_timezone(
+		datetime.datetime.combine(today, datetime.time(), datetime.UTC)
+	).replace(tzinfo=None)
+	read = set(
+		frappe.get_all("Usage Day", filters={"service": STORAGE_SERVICE, "day": yesterday}, pluck="subject")
 	)
 	return [
 		Violation(
 			check="M1",
-			team=s.team,
+			team=bucket.team,
 			subject_doctype="Subscription",
-			subject=s.name,
-			expected=today.day - 1,
-			actual=frappe.utils.cint(read_through.get(s.service_subject)),
-			detail="Storage usage has not been read for a day or more. The next reading bills the missed days at its level.",
+			subject=bucket.subscription,
+			detail=f"Bucket {subject} has no usage for {yesterday} (UTC). The next reading or the daily estimate fills it.",
 		)
-		for s in subjects
-		if frappe.utils.cint(read_through.get(s.service_subject)) < today.day - 1
+		for subject, bucket in billed_subjects(STORAGE_SERVICE).items()
+		if subject not in read and bucket.creation < cutoff
 	]
 
 
@@ -557,16 +547,8 @@ def check_billing_run_is_moving() -> list[Violation]:
 	from central.billing.revenue.invoicing.run import billing_period
 
 	_, period_end = billing_period()
-	had_billing = frappe.db.exists("Subscription", {"start_date": ["<=", period_end]})
-	if had_billing and not frappe.db.exists("Billing Run", str(period_end)):
-		return [
-			Violation(
-				check="B5",
-				subject_doctype="Billing Run",
-				subject=str(period_end),
-				detail="The monthly billing run for this month has not started.",
-			)
-		]
+	if not_started := _unstarted_run(period_end):
+		return not_started
 
 	run = frappe.db.get_value(
 		"Billing Run", str(period_end), ["teams", "drafted", "started_at"], as_dict=True
@@ -601,6 +583,23 @@ def check_billing_run_is_moving() -> list[Violation]:
 			subject=str(period_end),
 			detail=f"{waiting} draft invoice(s) waited over {STALLED_HOURS} hours to be collected. Check the billing workers and the Error Log.",
 			actual=waiting,
+		)
+	]
+
+
+def _unstarted_run(period_end) -> list[Violation]:
+	"""The closed month had billing, its draft tick has fired, and its run has no record."""
+	from central.billing.revenue.invoicing.run import has_draft_tick_passed
+
+	had_billing = frappe.db.exists("Subscription", {"start_date": ["<=", period_end]})
+	if not had_billing or not has_draft_tick_passed() or frappe.db.exists("Billing Run", str(period_end)):
+		return []
+	return [
+		Violation(
+			check="B5",
+			subject_doctype="Billing Run",
+			subject=str(period_end),
+			detail="The monthly billing run for this month has not started.",
 		)
 	]
 

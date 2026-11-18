@@ -75,6 +75,7 @@ class BillingTestCase(IntegrationTestCase):
 		"Gateway Customer",
 		"Entitlement Token",
 		"Commitment",
+		"Usage Day",
 		"Usage Rollup",
 		"Payment Method",
 		"Tax Profile",

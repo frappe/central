@@ -11,6 +11,7 @@
   "team",
   "add_on_service",
   "region",
+  "external_id",
   "status",
   "subscription",
   "endpoint_url",
@@ -106,12 +107,20 @@
    "fieldtype": "Password",
    "label": "Secret Access Key",
    "read_only": 1
+  },
+  {
+   "description": "The subject as the service names it in its usage reports: the bucket for storage, the team for AI.",
+   "fieldname": "external_id",
+   "fieldtype": "Data",
+   "label": "External ID",
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-10 10:11:10.484991",
+ "modified": "2026-11-17 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Team Service",
