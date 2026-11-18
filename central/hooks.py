@@ -26,6 +26,7 @@ fixtures = [
 					"Atlas Host Access",
 					"Atlas Warpgate Admin",
 					"Product Operator",
+					"App Rollout Alert",
 					"Staff Viewer",
 				],
 			]
@@ -143,6 +144,7 @@ after_install = [
 	"central.billing.gateways.setup.ensure_gateway_records",
 	"central.integrations.email_oauth.setup.ensure_email_oauth_providers",
 	"central.billing.navigation.ensure_workspace_sidebars",
+	"central.central.doctype.central_settings.central_settings.ensure_app_rollout_settings",
 ]
 
 # Uninstallation
@@ -197,7 +199,7 @@ after_install = [
 
 doc_events = {
 	"User": {
-		"validate": "central.users.validate_user_image",
+		"validate": ["central.users.validate_user_image", "central.users.validate_app_rollout_alert_roles"],
 		"after_insert": "central.users.grant_central_user_role",
 		"on_update": "central.infrastructure.doctype.wireguard_device.wireguard_device.remove_disabled_user_devices",
 	},

@@ -9,7 +9,7 @@ from frappe.utils import cint, escape_html, random_string, today
 from frappe.utils.telemetry import capture
 
 from central.geo import warm_country_cache
-from central.iam import STAFF_VIEWER_ROLE
+from central.iam import APP_ROLLOUT_ALERT_ROLE, STAFF_VIEWER_ROLE
 from central.identity.email_code import EmailCode
 
 if TYPE_CHECKING:
@@ -141,6 +141,18 @@ def ensure_staff_role_profile() -> None:
 	).insert(ignore_permissions=True)
 
 
+def validate_app_rollout_alert_roles(doc, method: str | None = None) -> None:
+	"""The App Rollout Alert user's bearer token is kept in Insights, so the user must not
+	also act in the console as a customer."""
+	roles = {row.role for row in doc.roles}
+	if APP_ROLLOUT_ALERT_ROLE in roles and CENTRAL_USER_ROLE in roles:
+		frappe.throw(
+			_("A user with the {0} role cannot also have the {1} role.").format(
+				APP_ROLLOUT_ALERT_ROLE, CENTRAL_USER_ROLE
+			)
+		)
+
+
 def validate_user_image(doc, method: str | None = None) -> None:
 	"""A profile photo must be a file uploaded to that user's photo field, not any URL."""
 	if not doc.user_image or not doc.has_value_changed("user_image"):
@@ -203,6 +215,8 @@ def _should_skip_role_grant(doc) -> bool:
 	if not doc.enabled:
 		return True
 	if frappe.flags.in_install or frappe.flags.in_migrate:
+		return True
+	if APP_ROLLOUT_ALERT_ROLE in {row.role for row in doc.roles}:
 		return True
 
 	return not frappe.db.exists("Role", CENTRAL_USER_ROLE)

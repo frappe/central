@@ -4,6 +4,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.central.doctype.central_settings.central_settings import ensure_app_rollout_settings
 from central.integrations.atlas import MAXIMUM_METADATA_BYTES
 
 FLAG_FIELDS = {
@@ -101,6 +102,54 @@ class IntegrationTestCentralSettings(IntegrationTestCase):
 
 		self.assertEqual(links["support_ticket_url"], url)
 		self.assertIsNone(links["feedback_url"])
+
+	def test_app_rollout_rejects_steps_out_of_range(self):
+		for fieldname, value in (
+			("app_rollout_start_percent", 0),
+			("app_rollout_start_percent", None),
+			("app_rollout_step_percent", 101),
+			("app_rollout_interval_hours", 0),
+			("app_rollout_interval_hours", None),
+			("app_rollout_max_percent", -1),
+			("app_rollout_max_percent", 101),
+			("app_rollout_failure_percent", 0),
+			("app_rollout_failure_percent", 100),
+			("app_rollout_failure_percent", None),
+			("app_rollout_minimum_servers", 0),
+		):
+			settings = frappe.get_doc("Central Settings")
+			settings.set(fieldname, value)
+			with self.subTest(fieldname=fieldname), self.assertRaises(frappe.ValidationError):
+				settings.save()
+
+	def test_app_rollout_rejects_a_step_with_a_fraction(self):
+		for fieldname in ("app_rollout_start_percent", "app_rollout_step_percent", "app_rollout_max_percent"):
+			settings = frappe.get_doc("Central Settings")
+			settings.set(fieldname, 50.5)
+			with (
+				self.subTest(fieldname=fieldname),
+				self.assertRaisesRegex(frappe.ValidationError, "whole number"),
+			):
+				settings.save()
+
+	def test_ensure_app_rollout_settings_fills_a_missing_step_and_keeps_a_stored_0(self):
+		self.addCleanup(frappe.db.rollback)
+		frappe.db.delete("Singles", {"doctype": "Central Settings", "field": "app_rollout_step_percent"})
+		frappe.db.set_single_value("Central Settings", "app_rollout_max_percent", 0)
+
+		ensure_app_rollout_settings()
+
+		self.assertEqual(frappe.db.get_single_value("Central Settings", "app_rollout_step_percent"), 5)
+		self.assertEqual(frappe.db.get_single_value("Central Settings", "app_rollout_max_percent"), 0)
+
+	def test_app_rollout_accepts_a_fractional_failure_rate_and_a_max_percent_of_0(self):
+		self.addCleanup(frappe.clear_document_cache, "Central Settings", "Central Settings")
+		self.addCleanup(frappe.db.rollback)
+		for fieldname, value in (("app_rollout_failure_percent", 12.5), ("app_rollout_max_percent", 0)):
+			settings = frappe.get_doc("Central Settings")
+			settings.set(fieldname, value)
+			with self.subTest(fieldname=fieldname):
+				settings.save()
 
 	def test_help_links_offer_in_app_tickets_once_the_helpdesk_is_configured(self):
 		settings = frappe.get_doc("Central Settings")

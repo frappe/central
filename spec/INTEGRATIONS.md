@@ -224,6 +224,39 @@ Pilot ── start_connection ──> Central ── authorize, install ──> 
 
 The App needs one callback URL, on Central's issuer URL (`central_url()`). "Create GitHub App" in Central Settings creates the App from a manifest and fills the GitHub tab. A new App ID disables every grant, so each Pilot must connect GitHub again.
 
+## How does Central stop a bad app release?
+
+Pilot offers a new app release to a share of servers that grows over time. Pilot gets the steps from `central.api.pilot.config` as `app_rollout`: `start_percent`, `step_percent`, `interval_hours`, `max_percent` and `held_commits`. Pilot does not offer a commit in `held_commits`.
+
+```text
+Pilot ── update result ──> Datum ──> ClickHouse (one per region)
+                                          │ every 15 minutes
+                                 Insights alert ── POST rows ──> central.api.integrations.insights.hold_app_releases
+                                                                        │
+Pilot <── config: held_commits ─────────────────────────────── App Rollout Hold
+```
+
+1. After each app update, Pilot writes a `success` or `failed` line that Datum stores in `datum.logs` with `service = 'app_updates'`.
+2. An Insights alert for each region runs the **Failing app releases** query every 15 minutes. It returns each release with at least one failed update, and uses the last result of each server. Central ships this query, and the **App Releases** dashboard, in the App Rollout workbook (`central/central/insights_workbook/app_rollout/app_rollout.json`) on the data source `datum_clickhouse`.
+3. The alert posts its rows to `hold_app_releases` in the body `{"context": {"rows": [...]}}`, which Insights sends for a webhook alert. Each row has `app`, `to_commit`, `failed`, `total` and `error`. Central refuses the whole request when a row has a different shape, so a wrong alert setup fails in Insights and does not hold part of the batch.
+4. Central holds a release only when at least **Minimum Servers** updated to it and more than **Failure Rate** of them failed. Both are on the App Rollout tab of Central Settings, 5 and 20 by default. Central checks each alert alone, so it does not add the servers of one release in different regions. Central adds one **App Rollout Hold** for each new commit. The commit is the record name, so a later alert does not add a second hold.
+5. To offer the release again, an operator ticks **Released** on the hold. A later alert does not hold that commit again.
+
+Insights signs in with an OAuth bearer token. The token belongs to a user that has only the **App Rollout Alert** role, so the token can only hold releases. Central does not give this user the Central User role, and refuses a user that has both roles. To set it up:
+
+1. Create the user with the App Rollout Alert role.
+2. Create an OAuth Client. Then create an OAuth Bearer Token for that client and user from the bench console, because the token fields are read-only in Desk and Frappe keeps only a hash of the access token. Copy the printed token:
+
+   ```python
+   token = frappe.generate_hash(length=32)
+   frappe.get_doc({"doctype": "OAuth Bearer Token", "client": "<client>", "user": "<user>", "scopes": "all", "access_token": token, "refresh_token": frappe.generate_hash(length=32), "expires_in": 31536000, "expiration_time": frappe.utils.add_days(frappe.utils.now_datetime(), 365), "status": "Active"}).insert()
+   frappe.db.commit()
+   print(token)
+   ```
+
+3. In Insights, on the **Failing app releases** query, add an alert with the channel Webhook, the cron `*/15 * * * *`, the condition `q['failed'] > 0`, the URL `https://<central>/api/method/central.api.integrations.insights.hold_app_releases`, and the access token.
+4. Before the token expires, or when it may have leaked, create a new token, put it in each alert, and revoke the old token. A leaked token can hold releases, but it cannot release a hold or read data.
+
 ## How does the trial flow work?
 
 1. Authenticate the customer and resolve the Team.

@@ -9,6 +9,7 @@ from frappe.utils.caching import request_cache
 
 OPERATOR_BYPASS_ROLE = "System Manager"
 STAFF_VIEWER_ROLE = "Staff Viewer"
+APP_ROLLOUT_ALERT_ROLE = "App Rollout Alert"
 
 # The revision of the capability taxonomy. Bump it with every change (see CAPABILITIES.md).
 CAPABILITY_VERSION = 7
