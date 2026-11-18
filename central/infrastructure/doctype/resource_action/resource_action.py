@@ -541,6 +541,24 @@ class ResourceAction(Document):
 		)
 		return {row.resource_id: PENDING_LABEL[row.action] for row in rows}
 
+	@classmethod
+	def get_creators(cls, team: str) -> dict[str, dict]:
+		"""Who asked for each of the team's servers, by server name. A discovered server has none."""
+		action = frappe.qb.DocType("Resource Action")
+		user = frappe.qb.DocType("User")
+		# User is not readable by team members; the team filter scopes this read.
+		rows = (
+			frappe.qb.from_(action)
+			.left_join(user)
+			.on(user.name == action.requested_by)
+			.select(action.server, action.requested_by, user.full_name)
+			.where((action.team == team) & (action.action == "create") & action.server.isnotnull())
+			.run(as_dict=True)
+		)
+		return {
+			row.server: {"created_by": row.requested_by, "created_by_name": row.full_name} for row in rows
+		}
+
 
 def on_doctype_update() -> None:
 	frappe.db.add_unique("Resource Action", ["team", "request_key"])

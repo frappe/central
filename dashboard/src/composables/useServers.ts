@@ -61,6 +61,9 @@ export type VirtualMachineRow = Pick<
 		image_title?: string | null
 		image_description?: string | null
 		has_wireguard_access?: 0 | 1
+		creation?: string
+		created_by?: string | null
+		created_by_name?: string | null
 		/** The server's Pilot audience, which a link from that Pilot names it by. */
 		pilot_audience?: string | null
 	}

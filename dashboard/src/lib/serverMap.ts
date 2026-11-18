@@ -518,3 +518,14 @@ export const hasCrowdedRegion = (rows: { cluster: string }[]): boolean => {
 
 	return [...counts.values()].some((count) => count > CROWDED_REGION_SIZE)
 }
+
+/** The image a server runs, with the Frappe release its build tracks, such as "Pilot · Version 16". */
+export function imageLabel(server?: VirtualMachineRow): string {
+	const branch = server?.frappe_version
+	if (!branch) return server?.image_title ?? ''
+	const release =
+		branch === 'develop'
+			? 'Nightly'
+			: `Version ${branch.match(/^version-(\d+)/)?.[1] ?? branch}`
+	return [server?.image_title, release].filter(Boolean).join(' · ')
+}

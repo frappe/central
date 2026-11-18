@@ -64,6 +64,7 @@ def registry(team: str | None = None) -> dict:
 			"gateway_url",
 			"state_observed_at",
 			"has_wireguard_access",
+			"creation",
 		],
 		order_by="region asc, resource_id asc",
 		limit_page_length=0,
@@ -75,6 +76,7 @@ def registry(team: str | None = None) -> dict:
 	audiences = _pilot_audiences(team)
 	locked = get_locked_servers(team)
 	plan_titles = _plan_titles({server["plan"] for server in servers if server["plan"]})
+	creators = ResourceAction.get_creators(team)
 	images = {
 		image.name: image
 		for image in frappe.get_all("Image Offering", fields=["name", "title", "description"])
@@ -84,6 +86,7 @@ def registry(team: str | None = None) -> dict:
 		server["plan_title"] = plan_titles.get(server["plan"])
 		server["image_title"] = image.get("title")
 		server["image_description"] = image.get("description")
+		server.update(creators.get(server["name"], {"created_by": None, "created_by_name": None}))
 		server["pending_action"] = pending.get(server["resource_id"])
 		server["pilot_audience"] = audiences.get(server["name"])
 		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])

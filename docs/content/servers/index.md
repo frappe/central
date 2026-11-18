@@ -11,6 +11,8 @@ Go to **Servers** to see all the servers of your team. The list shows the name, 
 
 <Screenshot name="servers/list" alt="The Servers page. A list of 12 servers with their CPU, memory, and disk sizes, next to a world map with a marker on Mumbai." />
 
+Click **List** to see the servers in a table. Each row shows the image, the status, the address, the size, and who created the server and when. The address is the domain of the site on the server, or else the public IP address. A shield after the address shows that your team's VPN devices can reach the server. When your servers run in more than one region, the table also shows the region. Use the tabs to show **All**, **Running**, **Stopped**, or **Needs attention** servers. A server needs attention when it is broken or paused. Use the filters to show the servers that one team member created, or the servers of one image. For a Pilot server, the image also names the Frappe release, such as **Pilot · Version 16** or **Pilot · Nightly**.
+
 ## Images
 
 The image is the disk that a server starts from. Select **Frappe** for a server with Pilot, a bench, and optionally a site. Select **Apps** for a server with one service set up, such as Redis or MariaDB. Select **Ubuntu** for a clean operating system. Read [Images](/servers/images) for the builds and how they are made.
