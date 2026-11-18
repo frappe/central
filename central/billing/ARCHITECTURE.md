@@ -141,7 +141,8 @@ Credit Ledger Entry ──team, ──currency                        (append-on
 Credit Wallet ──team                           (lock anchor / cached balance — one per (team,currency))
 Commitment ──team, ──currency              (spend floor)
 Usage Rollup ──team                            (metered aggregation)
-Usage Day ──team, ──subscription, ──invoice    (one subject's metered value for one UTC day)
+Usage Day ──team, ──subscription, ──invoice    (one subject's metered value for one UTC day, per dimension such as the AI model)
+Monthly Exchange Rate                          (the USD rate one month bills converted usage at, read once from the accounting system)
 ```
 
 Money records (Invoice, Payment Attempt, Refund, Credit Ledger Entry, Credit Wallet, Usage Day, Usage Rollup, Webhook Event, Billing Event, Top-up Order) are read-only in Desk and keep a change history, except Usage Day, which billing writes in bulk. `platform.records` refuses an edit or delete that billing code did not make through `save_billing_record` or `delete_billing_record`, Administrator included. The `ignore_permissions` flag alone does not allow the change. A `db_set` or `frappe.db.set_value` write does not run validation, so it needs no mark. A person changes them through the action that owns the change: cancel, refund, retry.
@@ -240,6 +241,7 @@ flowchart LR
     M1 --> EX["expire_payment_methods"]
     H1 --> CDI["collect_due_invoices → settle page jobs"]
     H1 --> RSU["storage_bridge.read_storage_usage → one job per page of 100 buckets"]
+    H1 --> RAI["grove_bridge.read_ai_usage → one job per page of 200 AI teams"]
     H1 --> RCC["usage_recount.recount_changed → recount page jobs"]
 
     subgraph INSTALL["install/migrate/before_tests"]
@@ -275,9 +277,10 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, setup 
 | cron `0 8 1 * *` (08:00 IST on the 1st) | `revenue.invoicing.draft_monthly_invoices` | after the UTC month closes at 05:30 IST: waive internal teams' unpaid invoices, start the month's Billing Run, then draft the just-closed month as page jobs on the `billing` queue |
 | hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run once the draft tick has started it |
 | hourly | `revenue.storage_bridge.read_storage_usage` | until Cargo reports usage itself: read every billed bucket in pages of 100, one job per page, and keep each UTC day's peak as a Usage Day; a failed bucket never stops its page, and the last page of a region writes one Error Log that names how many of the region's buckets the run could not read |
+| hourly | `revenue.grove_bridge.read_ai_usage` | until Grove reports usage itself: subscribe AI teams that now have a billing currency, then read each AI team's cost per model that landed at Grove yesterday and today (UTC), as one Usage Day per model and landing day; a correction lands as a negative day; one Error Log per page names the teams it could not read |
 | hourly | `revenue.usage_recount.recount_changed` | recount the usage months whose Usage Days changed since the last run, as page jobs |
 | daily | `revenue.usage_ledger.fill_missing_days` | give a Level subject with no reading for a UTC day that ended 48 hours ago its last reading, marked estimated |
-| daily | `revenue.usage_ledger.prune_old_days` | delete billed Usage Days older than 13 months |
+| daily | `revenue.usage_ledger.prune_old_days` | delete billed or written-off Usage Days older than 13 months |
 | hourly | `ingester.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
 
@@ -688,6 +691,13 @@ Billing stops and starts a server as the system (`resource_actions.submit_billin
 platform.sync.record_meter_rollups  (Central writes the runtime it bills)
   → revenue.metering.ingest_rollup → Usage Rollup
   → metering.metered_line_items at invoice time → line items
+
+AI (ADR 0027): grove_bridge.read_ai_usage (hourly) → Usage Day per team, model, landing day (USD)
+  → usage_recount → one Usage Rollup per subscription, month and model; its rate is locked at
+    exchange_rates.month_rate (1 for a USD team, the month's USD rate otherwise; the latest
+    earlier rate when the accounting system has none for the 1st)
+  → one invoice line per model: quantity in USD × rate; a model below zero for the month is a credit
+  → a day before Service.bill_from is stored written off and never billed
 ```
 
 ### F. Credits waterfall & wallet gating
