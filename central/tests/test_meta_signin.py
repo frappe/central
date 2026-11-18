@@ -139,6 +139,10 @@ class TestMetaSignIn(IntegrationTestCase):
 			(result["access_token"], result["app_id"], result["waba_id"], result["phone_id"]),
 			("meta-token", "meta-app-id", waba_id, "phone-1"),
 		)
+		# the site names the account with the number and its business name
+		self.assertEqual(
+			(result["display_phone_number"], result["verified_name"]), ("+1 555-010-0001", "Acme Store")
+		)
 		self.assertRegex(result["pin"], r"^\d{6}$")
 		self.assertGreaterEqual(len(result["webhook_secret"]), 32)
 
@@ -153,6 +157,10 @@ class TestMetaSignIn(IntegrationTestCase):
 			],
 		)
 		debug_token = graph.call_args_list[0].kwargs
+		self.assertEqual(
+			graph.call_args_list[1].kwargs["params"]["fields"],
+			"id,platform_type,display_phone_number,verified_name",
+		)
 		self.assertEqual(debug_token["headers"]["Authorization"], "Bearer meta-app-id|meta-secret")
 		# a number with no two-step PIN gets ours from register: its PIN is not set on its own
 		self.assertEqual(graph.call_args_list[3].kwargs["json"]["pin"], result["pin"])
@@ -172,6 +180,8 @@ class TestMetaSignIn(IntegrationTestCase):
 
 		self.assertEqual(result["phone_id"], "phone-1")
 		self.assertFalse([c for c in graph.call_args_list if "old-live" in c.args[1]])
+		# Meta left out the number and name: the site gets None and names the account another way
+		self.assertEqual((result["display_phone_number"], result["verified_name"]), (None, None))
 
 	def test_meta_sign_in_refuses_an_account_where_the_new_number_is_not_clear(self):
 		waba_id = self.sign_in()
@@ -362,7 +372,14 @@ def fake_graph(
 			}
 		},
 		("GET", f"{waba_id}/phone_numbers"): {
-			"data": [{"id": "phone-1", "platform_type": "NOT_APPLICABLE"}]
+			"data": [
+				{
+					"id": "phone-1",
+					"platform_type": "NOT_APPLICABLE",
+					"display_phone_number": "+1 555-010-0001",
+					"verified_name": "Acme Store",
+				}
+			]
 			if phone_numbers is None
 			else phone_numbers
 		},

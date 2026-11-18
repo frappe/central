@@ -25,7 +25,8 @@ def connect_whatsapp(access_token: str, team: str, server: str | None, site: str
 	waba_id = get_waba_id(access_token, config.client_id, config.get_password("client_secret"))
 	check_route(waba_id, site)
 
-	phone_id = get_new_phone_id(waba_id, access_token)
+	number = get_new_number(waba_id, access_token)
+	phone_id = number["id"]
 	call_graph("POST", f"{waba_id}/subscribed_apps", access_token)
 	pin = f"{secrets.randbelow(10**6):06d}"
 	register(phone_id, access_token, pin)
@@ -39,6 +40,9 @@ def connect_whatsapp(access_token: str, team: str, server: str | None, site: str
 		"phone_id": phone_id,
 		"pin": pin,
 		"webhook_secret": webhook_secret,
+		# for the site to name the account; Meta may leave either out
+		"display_phone_number": number.get("display_phone_number"),
+		"verified_name": number.get("verified_name"),
 	}
 
 
@@ -51,19 +55,19 @@ def get_waba_id(access_token: str, app_id: str, app_secret: str) -> str:
 	refuse_with(NO_WABA)
 
 
-def get_new_phone_id(waba_id: str, access_token: str) -> str:
-	"""The number just signed in. Embedded Signup adds one number that is not on the Cloud API yet;
-	an account with a single number is that number signed in again."""
-	numbers = call_graph(
-		"GET", f"{waba_id}/phone_numbers", access_token, params={"fields": "id,platform_type"}
-	)["data"]
+def get_new_number(waba_id: str, access_token: str) -> dict:
+	"""The number just signed in, with its ID, number and business name. Embedded Signup adds one
+	number that is not on the Cloud API yet; an account with a single number is that number signed
+	in again."""
+	fields = "id,platform_type,display_phone_number,verified_name"
+	numbers = call_graph("GET", f"{waba_id}/phone_numbers", access_token, params={"fields": fields})["data"]
 	new = [n for n in numbers if n.get("platform_type") == "NOT_APPLICABLE"] or numbers
 	if not new:
 		refuse_with(NO_PHONE_NUMBER)
 	if len(new) > 1:
 		# a wrong guess would change the two-step PIN of, and re-register, a number in use
 		refuse_with(PHONE_NUMBER_UNCLEAR)
-	return new[0]["id"]
+	return new[0]
 
 
 def register(phone_id: str, access_token: str, pin: str) -> None:
@@ -118,6 +122,13 @@ def disconnect_whatsapp(waba_id: str, team: str, server: str | None) -> None:
 		)
 	# a Pilot call: no signed-in user, the team and server were checked above
 	frappe.delete_doc(ROUTE, waba_id, ignore_permissions=True)
+
+
+def delete_routes(**filters) -> None:
+	"""Stop routing the WABAs whose site or server is gone. A later sign-in can route them again."""
+	for waba_id in frappe.get_all(ROUTE, filters, pluck="name"):
+		# a system cleanup: a server's termination, a site's deletion or the site's own 410
+		frappe.delete_doc(ROUTE, waba_id, ignore_permissions=True)
 
 
 def call_graph(method: str, path: str, access_token: str, check: bool = True, **kwargs) -> dict:
