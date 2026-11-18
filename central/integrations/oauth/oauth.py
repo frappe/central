@@ -45,6 +45,9 @@ def start_sign_in(
 	check_return_url(provider, return_url, team, server)
 	# the calling site, so a sign-in needs no site name from Pilot
 	site = get_host_site(urlsplit(return_url).hostname, team, server)
+	if provider == "meta" and not site:
+		# refuse before Meta's signup changes anything at Meta: the route needs a site
+		frappe.throw(_("Return URL must be on a site of this server"), frappe.PermissionError)
 
 	frappe.cache.set_value(
 		note_key(state),

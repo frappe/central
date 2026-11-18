@@ -296,13 +296,8 @@ class TestMetaSignIn(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value(ROUTE, waba_id, "site"), self.site)
 
 	def test_meta_sign_in_from_a_domain_with_no_site_is_refused_before_meta(self):
-		waba_id = self.sign_in(host=self.add_domain(None))
-
 		with self.assertRaises(frappe.PermissionError):
-			self.relay(waba_id)
-
-		self.assertFalse(self.graph.called)
-		self.assertFalse(frappe.db.exists(ROUTE, waba_id))
+			self.sign_in(host=self.add_domain(None))
 
 	def test_meta_sign_in_from_a_domain_routed_to_another_servers_site_is_refused(self):
 		other_server = frappe.get_doc(
@@ -325,13 +320,8 @@ class TestMetaSignIn(IntegrationTestCase):
 			.insert()
 			.name
 		)
-		waba_id = self.sign_in(host=self.add_domain(far_site))
-
 		with self.assertRaises(frappe.PermissionError):
-			self.relay(waba_id)
-
-		self.assertFalse(self.graph.called)
-		self.assertFalse(frappe.db.exists(ROUTE, waba_id))
+			self.sign_in(host=self.add_domain(far_site))
 
 	def test_meta_passes_on_an_expired_code_as_invalid_grant(self):
 		waba_id = self.sign_in()
