@@ -27,6 +27,8 @@ def connect_whatsapp(access_token: str, team: str, server: str | None, site: str
 
 	call_graph("POST", f"{waba_id}/subscribed_apps", access_token)
 	pin = f"{secrets.randbelow(10**6):06d}"
+	# register needs the number's current two-step PIN, if it has one: set ours first
+	call_graph("POST", phone_id, access_token, json={"pin": pin})
 	call_graph(
 		"POST", f"{phone_id}/register", access_token, json={"messaging_product": "whatsapp", "pin": pin}
 	)
@@ -54,7 +56,10 @@ def get_waba_id(access_token: str, app_id: str, app_secret: str) -> str:
 
 def check_route(waba_id: str, site: str) -> None:
 	"""One site per WABA: another site's account is refused before Meta is changed for it."""
-	routed_site = frappe.db.get_value(ROUTE, waba_id, "site")
+	refuse_other_site(frappe.db.get_value(ROUTE, waba_id, "site"), site)
+
+
+def refuse_other_site(routed_site: str | None, site: str) -> None:
 	if routed_site and routed_site != site:
 		frappe.throw(
 			_(
@@ -65,13 +70,18 @@ def check_route(waba_id: str, site: str) -> None:
 
 
 def save_route(waba_id: str, team: str, server: str | None, site: str, webhook_secret: str) -> None:
-	route = (
-		frappe.get_doc(ROUTE, waba_id, for_update=True)
-		if frappe.db.exists(ROUTE, waba_id)
-		else frappe.new_doc(ROUTE, waba_id=waba_id)
-	)
-	route.update({"team": team, "server": server, "site": site, "webhook_secret": webhook_secret})
+	values = {"team": team, "server": server, "site": site, "webhook_secret": webhook_secret}
 	# a Pilot call: no signed-in user, the credential and the site were checked by the caller
+	if not frappe.db.exists(ROUTE, waba_id):
+		try:
+			frappe.new_doc(ROUTE, waba_id=waba_id, **values).insert(ignore_permissions=True)
+			return
+		except frappe.DuplicateEntryError:
+			pass  # another sign-in made the route meanwhile: check it below
+	# another sign-in may have routed the WABA since check_route: check the site again on the locked row
+	route = frappe.get_doc(ROUTE, waba_id, for_update=True)
+	refuse_other_site(route.site, site)
+	route.update(values)
 	route.save(ignore_permissions=True)
 
 

@@ -42,13 +42,19 @@ class TestMetaSignIn(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		return f"waba-{frappe.generate_hash(length=8)}"
 
-	def relay(self, waba_id: str, site: str | None = None, token_reply: tuple[int, dict] | None = None):
+	def relay(
+		self,
+		waba_id: str,
+		site: str | None = None,
+		token_reply: tuple[int, dict] | None = None,
+		graph_reply=None,
+	):
 		"""relay_token for meta against a fake Meta; returns the result and the fake Graph API."""
 		status, body = token_reply or (200, {"access_token": "meta-token", "token_type": "bearer"})
 		post = self.enterContext(patch("central.integrations.oauth.oauth.requests.post"))
 		post.return_value = Mock(ok=status < 400, json=Mock(return_value=body))
 		graph = self.enterContext(patch("central.integrations.oauth.meta.requests.request"))
-		graph.side_effect = fake_graph(waba_id)
+		graph.side_effect = graph_reply or fake_graph(waba_id)
 		self.graph = graph  # kept for a test whose relay raises
 
 		self.as_pilot("/api/method/central.api.oauth.relay_token", self.site if site is None else site)
@@ -120,12 +126,15 @@ class TestMetaSignIn(IntegrationTestCase):
 				("GET", "debug_token"),
 				("GET", f"{waba_id}/phone_numbers"),
 				("POST", f"{waba_id}/subscribed_apps"),
+				("POST", "phone-1"),
 				("POST", "phone-1/register"),
 			],
 		)
 		debug_token = graph.call_args_list[0].kwargs
 		self.assertEqual(debug_token["headers"]["Authorization"], "Bearer meta-app-id|meta-secret")
-		self.assertEqual(graph.call_args_list[3].kwargs["json"]["pin"], result["pin"])
+		# the two-step PIN is set first, so register works for a number that already had one
+		self.assertEqual(graph.call_args_list[3].kwargs["json"], {"pin": result["pin"]})
+		self.assertEqual(graph.call_args_list[4].kwargs["json"]["pin"], result["pin"])
 
 		route = frappe.get_doc(ROUTE, waba_id)
 		self.assertEqual((route.team, route.server, route.site), (self.team, self.server, self.site))
@@ -151,6 +160,29 @@ class TestMetaSignIn(IntegrationTestCase):
 		# refused before Meta is changed for this site
 		self.assertEqual([c.args[0] for c in self.graph.call_args_list], ["GET"])
 		self.assertNotEqual(frappe.db.get_value(ROUTE, waba_id, "site"), self.site)
+
+	def test_meta_sign_in_refuses_a_waba_another_site_routed_during_the_meta_steps(self):
+		real_exists = frappe.db.exists
+		# the second case misses the other route on the first look, as a sign-in that has not committed yet
+		for misses_route in (False, True):
+			waba_id = self.sign_in()
+			other_site = self.other_site()
+			with self.subTest(misses_route=misses_route):
+				if misses_route:
+					exists = self.enterContext(patch.object(frappe.db, "exists"))
+					exists.side_effect = lambda dt, *a, **kw: (
+						False if dt == ROUTE else real_exists(dt, *a, **kw)
+					)
+				reply = fake_graph(waba_id)
+
+				def route_meanwhile(method, url, **kwargs):
+					if url.endswith("/subscribed_apps"):
+						self.route_to(waba_id, other_site)
+					return reply(method, url, **kwargs)
+
+				with self.assertRaisesRegex(frappe.ValidationError, "already connected to another"):
+					self.relay(waba_id, graph_reply=route_meanwhile)
+				self.assertEqual(frappe.db.get_value(ROUTE, waba_id, "site"), other_site)
 
 	def test_meta_sign_in_must_come_from_a_site_on_this_server(self):
 		for site in ("", "unknown.oauth.example.test"):
@@ -208,6 +240,7 @@ def fake_graph(waba_id: str):
 		},
 		("GET", f"{waba_id}/phone_numbers"): {"data": [{"id": "phone-1", "display_phone_number": "+1 555"}]},
 		("POST", f"{waba_id}/subscribed_apps"): {"success": True},
+		("POST", "phone-1"): {"success": True},
 		("POST", "phone-1/register"): {"success": True},
 	}
 
