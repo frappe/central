@@ -83,7 +83,7 @@ def sign_in_with_code(
 	frappe.local.login_manager.login_as(name)
 	if not user:
 		capture("signup_verified", "central", user=name, properties={"product": product})
-		for invitation in get_pending_invitations(name):
+		for invitation in get_pending_invitations(email):
 			frappe.get_doc("Team Invitation", invitation).accept()
 
 	return {"user": name}
@@ -159,10 +159,10 @@ def validate_user_image(doc, method: str | None = None) -> None:
 		frappe.throw(_("Upload the image again."))
 
 
-def get_pending_invitations(user: str) -> list[str]:
+def get_pending_invitations(email: str) -> list[str]:
 	return frappe.get_all(
 		"Team Invitation",
-		filters={"email": user, "status": "Pending", "expires_on": [">=", today()]},
+		filters={"email": email, "status": "Pending", "expires_on": [">=", today()]},
 		pluck="name",
 		order_by="creation asc",
 	)

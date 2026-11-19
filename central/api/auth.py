@@ -70,7 +70,7 @@ def sign_up_with_invitation(token: str, full_name: str) -> dict:
 			_("This invitation is no longer valid. Ask a team admin to send a new invitation."),
 			frappe.ValidationError,
 		)
-	if frappe.db.exists("User", invitation.email):
+	if frappe.db.exists("User", {"email": invitation.email}):
 		frappe.throw(
 			_("An account with this email already exists. Sign in to accept."), frappe.ValidationError
 		)

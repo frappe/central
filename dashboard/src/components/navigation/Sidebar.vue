@@ -168,7 +168,7 @@ const toggleSection = (label: string) => {
 								v-if="profile?.full_name"
 								class="truncate text-xs text-ink-gray-5"
 							>
-								{{ currentUser }}
+								{{ profile.email }}
 							</div>
 						</div>
 						<!-- Single up chevron — the menu opens upward. -->

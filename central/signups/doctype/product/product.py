@@ -7,7 +7,7 @@ import frappe
 from frappe import _
 from frappe.email.email_body import inline_style_in_html
 from frappe.model.document import Document
-from frappe.utils import add_days, escape_html, formatdate, get_url, nowdate
+from frappe.utils import add_days, escape_html, formatdate, get_email_address, get_url, nowdate
 from frappe.utils.html_utils import sanitize_html
 
 PRODUCT_KEY_PATTERN = re.compile(r"[a-z][a-z0-9-]*")
@@ -200,7 +200,7 @@ class Product(Document):
 		"""Operator action: send the previewed email to the operator's own address."""
 		email = self.preview_email(event_type)
 		frappe.sendmail(
-			recipients=[frappe.session.user],
+			recipients=[get_email_address()],
 			subject=_("[Test] {0}").format(email["subject"]),
 			message=email["html"],
 			reply_to=self.reply_to,

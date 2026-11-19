@@ -1,6 +1,7 @@
 import frappe
 from frappe import _
 from frappe.realtime import has_permission as has_realtime_permission
+from frappe.utils import get_email_address
 
 from central.iam import (
 	ALL_SERVERS,
@@ -91,7 +92,7 @@ def team_invitation_query_conditions(user: str | None = None) -> str:
 	if user_has_operator_bypass(user):
 		return ""
 
-	conditions = [f"`tabTeam Invitation`.`email` = {frappe.db.escape(user)}"]
+	conditions = [f"`tabTeam Invitation`.`email` = {frappe.db.escape(get_email_address(user))}"]
 	teams = get_user_team_names_with_capability(user, "team:manage_members")
 	if teams:
 		conditions.append(f"`tabTeam Invitation`.`team` in ({_escape_values(teams)})")
@@ -109,7 +110,7 @@ def team_invitation_has_permission(doc, user: str | None = None, ptype: str | No
 	if ptype == "create":
 		return can(user, doc.team, "team:manage_members")
 
-	return doc.email == user or can(user, doc.team, "team:manage_members")
+	return doc.email == get_email_address(user) or can(user, doc.team, "team:manage_members")
 
 
 def server_query_conditions(user: str | None = None) -> str:

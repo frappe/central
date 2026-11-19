@@ -3,6 +3,7 @@ import { Button } from 'frappe-ui'
 import { computed } from 'vue'
 import { useAppMenu } from '@/composables/useAppMenu'
 import { useMyInvitations } from '@/composables/useMyInvitations'
+import { useMyProfile } from '@/composables/useMyProfile'
 import { useSession } from '@/composables/useSession'
 import {
 	openSettings,
@@ -15,7 +16,8 @@ import {
 // session rather than settling into a tab.
 const { activeTeamLabel } = useSession()
 const { availableTabs } = useSettingsTabs()
-const { currentUser, logoutAndRedirect } = useAppMenu()
+const { logoutAndRedirect } = useAppMenu()
+const { profile } = useMyProfile()
 const { count: invitationCount } = useMyInvitations()
 
 const available = computed(() =>
@@ -25,7 +27,7 @@ const available = computed(() =>
 		// for the two things people check without changing.
 		current:
 			tab.value === 'profile'
-				? currentUser.value
+				? profile.value?.email
 				: tab.value === 'team'
 					? activeTeamLabel.value
 					: tab.value === 'invitations' && invitationCount.value

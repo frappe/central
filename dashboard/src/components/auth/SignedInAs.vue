@@ -3,11 +3,13 @@ import { Button, ErrorMessage } from 'frappe-ui'
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { useMyProfile } from '@/composables/useMyProfile'
 import { useSession } from '@/composables/useSession'
 import { queryString } from '@/lib/auth'
 
 const route = useRoute()
-const { currentUser, logout } = useAuth()
+const { logout } = useAuth()
+const { profile } = useMyProfile()
 const { activeTeamLabel } = useSession()
 const isSigningOut = ref(false)
 const error = ref('')
@@ -37,7 +39,7 @@ async function signOut() {
 			<div class="min-w-0 text-p-sm text-ink-gray-5">
 				<p class="truncate">
 					Signed in as
-					<span class="text-ink-gray-8">{{ currentUser }}</span>
+					<span class="text-ink-gray-8">{{ profile?.email }}</span>
 				</p>
 				<p class="truncate">
 					Team <span class="text-ink-gray-8">{{ activeTeamLabel }}</span>

@@ -3,7 +3,7 @@ from typing import Any
 import frappe
 from frappe.query_builder import Order
 from frappe.query_builder.functions import Count
-from frappe.utils import escape_html
+from frappe.utils import escape_html, get_email_address
 
 from central.iam import (
 	get_all_capabilities,
@@ -187,7 +187,7 @@ def my_invitations() -> list[dict[str, Any]]:
 			role.role_name,
 		)
 		.where(
-			(invitation.email == user)
+			(invitation.email == get_email_address(user))
 			& (invitation.status == "Pending")
 			& (invitation.expires_on >= frappe.utils.today())
 		)

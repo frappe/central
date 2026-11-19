@@ -2,9 +2,9 @@
 import { Alert, Combobox, LoadingText, TextInput, useCall } from 'frappe-ui'
 import { computed, reactive, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import { useAuth } from '@/composables/useAuth'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { useMyProfile } from '@/composables/useMyProfile'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { emailError as validateEmail } from '@/lib/auth'
@@ -16,7 +16,7 @@ import type { BillingGeo } from '@/types/billing'
 // and India GSTIN. The edit dialog and the onboarding billing step both use it, and
 // each puts its own Save button around it.
 const { activeTeam, teams } = useSession()
-const { currentUser } = useAuth()
+const { profile: myProfile } = useMyProfile()
 const { currencyLocked, reload: reloadSetup } = useBillingSetup()
 // The billing profile is the shared singleton (it reloads on team change and
 // after a save via reloadProfile) — no second fetch of the same payload here.
@@ -53,7 +53,7 @@ function resetForm(): void {
 	for (const field of FIELDS) form[field] = row[field]?.toString() ?? ''
 	form.legal_name ||=
 		teams.value.find((team) => team.name === activeTeam.value)?.label ?? ''
-	form.email ||= currentUser.value ?? ''
+	form.email ||= myProfile.value?.email ?? ''
 }
 
 watch(() => profile.data, resetForm, { immediate: true })
