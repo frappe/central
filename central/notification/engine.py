@@ -108,6 +108,7 @@ def dispatch(
 			publish=True,
 		)
 
+	notification = doc.name if doc else None
 	email_result = _fan_out_emails(
 		team,
 		event,
@@ -117,11 +118,12 @@ def dispatch(
 		reference_name=reference_name,
 		server=server,
 		affected_user=affected_user,
+		notification=notification,
 	)
 
 	return {
 		"created": bool(doc),
-		"notification": doc.name if doc else None,
+		"notification": notification,
 		"title": title,
 		"body": body,
 		"emails_queued": email_result["queued"],
@@ -319,6 +321,7 @@ def _fan_out_emails(
 	reference_name=None,
 	server=None,
 	affected_user=None,
+	notification=None,
 ) -> dict:
 	"""Queue the email to each recipient, sent after the caller's transaction commits.
 
@@ -336,6 +339,7 @@ def _fan_out_emails(
 			event_type=event.name,
 			ctx=ctx,
 			message=message,
+			notification=notification,
 		)
 	return {"queued": len(recipients), "attempted": len(recipients), "failed": 0}
 
@@ -359,10 +363,17 @@ def _email_recipients(team, event, *, server=None, affected_user=None) -> list[s
 			if not event.required_cap or can(user, team, event.required_cap, server=server)
 		]
 	preferences = UserNotificationPreference.load_for_users(team, users)
-	return [user for user in users if _is_emailed_instantly(preferences.get((user, event.category)), event)]
+	owner = frappe.db.get_value("Team", team, "owner_user")
+	return [
+		user
+		for user in users
+		if _is_emailed_instantly(preferences.get((user, event.category)), event, is_owner=user == owner)
+	]
 
 
-def send_notification_emails(recipients: list[str], event_type: str, ctx: dict, message=None) -> None:
+def send_notification_emails(
+	recipients: list[str], event_type: str, ctx: dict, message=None, notification: str | None = None
+) -> None:
 	"""Background job: render the event's email once per language and send each recipient theirs."""
 	recipients_by_language = defaultdict(list)
 	for user in recipients:
@@ -375,7 +386,14 @@ def send_notification_emails(recipients: list[str], event_type: str, ctx: dict, 
 
 		for user in users:
 			try:
-				frappe.sendmail(recipients=[user], subject=subject, message=body, reply_to=reply_to)
+				frappe.sendmail(
+					recipients=[user],
+					subject=subject,
+					message=body,
+					reply_to=reply_to,
+					reference_doctype="Team Notification" if notification else None,
+					reference_name=notification,
+				)
 			except Exception:
 				# Delivery is best effort, but a failure must leave an error log.
 				frappe.log_error(title=f"Notification email send failed: {event.name} -> {user}")
@@ -404,12 +422,14 @@ def publish_team_nudge(team: str) -> None:
 		)
 
 
-def _is_emailed_instantly(preference: dict | None, event: frappe._dict) -> bool:
+def _is_emailed_instantly(preference: dict | None, event: frappe._dict, is_owner: bool = False) -> bool:
 	"""No preference means yes. A digest event waits for the digest, which reads it from the feed.
 
 	The feed row is team-wide, so an Affected User event cannot wait for the digest."""
-	if preference is None or event.is_critical:
+	if preference is None:
 		return True
+	if event.is_critical:
+		return is_owner or bool(preference["email_enabled"])
 	if not preference["email_enabled"]:
 		return False
 	if not preference["events"].get(event.name, True):

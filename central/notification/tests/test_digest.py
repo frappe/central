@@ -135,15 +135,17 @@ class TestDigestDelivery(EngineTestBase):
 		for event_type in ("team_impersonated", "team_suspended"):
 			self.assertTrue(frappe.db.get_value("Notification Event Type", event_type, "is_critical"))
 
-	def test_critical_event_is_sent_at_once_when_category_email_is_off(self):
+	def test_critical_event_with_category_email_off_reaches_only_the_owner(self):
 		self._ensure_event_type("server_failed", is_critical=True)
-		preference = self._daily_preference()
-		frappe.db.set_value("User Notification Preference", preference.name, "email_enabled", 0)
+		owner = frappe.db.get_value("Team", TEAM, "owner_user")
+		for user in (self.user, owner):
+			preference = self._daily_preference(user=user)
+			frappe.db.set_value("User Notification Preference", preference.name, "email_enabled", 0)
 
 		with patch("central.notification.engine.frappe.sendmail") as mock_sendmail:
 			dispatch(TEAM, "server_failed", message="Server failed")
 
-		self.assertIn([self.user], self._digest_recipients(mock_sendmail))
+		self.assertEqual(self._digest_recipients(mock_sendmail), [[owner]])
 
 	def test_digest_holds_new_entries_only(self):
 		self._ensure_event_type("backup_failure", in_app_title="Backup failed")
