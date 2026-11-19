@@ -28,6 +28,7 @@ System Managers, Staff Viewers, and Product Operators create and edit products i
 | Reply-To Address | The address that gets replies to emails about a site of this product, such as an inbox that the sales CRM reads. Empty keeps the sender address. See [Emails](#emails). |
 | Hide Plan Specs | Hides the vCPU, memory and disk line under each plan on a site of this product. See [Plans](#plans). |
 | Plan Notes | A short tag for each plan, which the site's plan list shows on a site of this product. See [Plans](#plans). |
+| AI Credit Note | Optional. One sentence that the in-app billing shows under the AI credit bar on a site of this product, such as `Used for AI replies and ticket summaries.` See [Plans](#plans). |
 
 Example: Product Key `raven`, Title `Raven`, Signup App `raven`, Frappe Version `version-16`. The signup link is `/dashboard/signup?product=raven`.
 
@@ -134,6 +135,8 @@ Each row names a Plan and a few words of plain text. Add at most one note for ea
 A plan without a note still shows in the list, with its title and specs.
 
 With **Hide Plan Specs** on, `get_plan_options` and `get_billing_summary` return an empty `subtitle` on a site of this product, so the site's plan list and billing card show the title, the note and the price only. `get_billing_summary` still returns `specs`, because the usage meters read them. The Cloud dashboard and invoices still show the specs. Add a note to each plan that the product shows, because the title and price then tell the plans apart.
+
+**AI Credit Note** tells the users of the product what its AI credit pays for. `get_billing_summary` returns it as `ai_credits.note` when the server has an AI credit, or `null` when the server has no product or the product has no note. The in-app billing shows a general line in place of `null`.
 
 ## Signup funnel
 

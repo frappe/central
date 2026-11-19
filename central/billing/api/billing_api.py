@@ -793,6 +793,10 @@ def get_billing_summary(site: str | None = None) -> dict:
 		default = next((m for m in methods if m["is_default"]), methods[0] if methods else None)
 		next_bill = server_billing.get_next_bill(team, server, forecast, currency)
 
+	# The figures are cached and shared across products, so the product's note goes on a copy.
+	if ai_credits := AITrialKey.get_server_credits(server):
+		ai_credits = {**ai_credits, "note": product.ai_credit_note if product else None}
+
 	return {
 		"currency": currency,
 		"plan": {"name": plan_title or row.plan, "subtitle": subtitle, "specs": specs},
@@ -807,7 +811,7 @@ def get_billing_summary(site: str | None = None) -> dict:
 		"payment_method": {"label": default["label"], "name": default["name"]} if default else None,
 		"profile_complete": _profile_complete(team),
 		"trial": get_trial_status(server, site),
-		"ai_credits": AITrialKey.get_server_credits(server),
+		"ai_credits": ai_credits,
 		"plan_change": _pending_plan_change(server),
 	}
 
