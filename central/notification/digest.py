@@ -8,7 +8,14 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import frappe
 from frappe import _
 from frappe.translate import get_user_lang, print_language
-from frappe.utils import escape_html, format_datetime, get_datetime, get_system_timezone, now_datetime
+from frappe.utils import (
+	escape_html,
+	format_datetime,
+	get_datetime,
+	get_email_address,
+	get_system_timezone,
+	now_datetime,
+)
 
 from central.iam import can, is_active_team_member
 from central.notification import CATEGORIES
@@ -144,7 +151,7 @@ def send_digest(
 		subject, body = _render_digest(
 			team, rows[:MAX_ITEMS], len(rows), is_capped, frequency, min(since.values()), time_zone
 		)
-	frappe.sendmail(recipients=[user], subject=subject, message=body)
+	frappe.sendmail(recipients=[get_email_address(user)], subject=subject, message=body)
 
 
 def get_digest_rows(

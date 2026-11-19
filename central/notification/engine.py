@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 import frappe
 from frappe import _
 from frappe.translate import get_user_lang, print_language
-from frappe.utils import escape_html
+from frappe.utils import escape_html, get_email_address
 
 from central.errors import build_envelope
 from central.sso import central_url
@@ -375,14 +375,16 @@ def send_notification_emails(recipients: list[str], event_type: str, ctx: dict, 
 
 		for user in users:
 			try:
-				frappe.sendmail(recipients=[user], subject=subject, message=body, reply_to=reply_to)
+				frappe.sendmail(
+					recipients=[get_email_address(user)], subject=subject, message=body, reply_to=reply_to
+				)
 			except Exception:
 				# Delivery is best effort, but a failure must leave an error log.
 				frappe.log_error(title=f"Notification email send failed: {event.name} -> {user}")
 
 
 def _get_active_members(team: str) -> list[str]:
-	"""Return the user emails of all active team members."""
+	"""Return the user IDs of all active team members."""
 	return frappe.get_all(
 		"Team Member",
 		filters={"parent": team, "parenttype": "Team", "status": "Active"},
