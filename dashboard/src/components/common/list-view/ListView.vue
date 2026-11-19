@@ -288,7 +288,7 @@ const loadListErrorTitle = __("Couldn't load this list")
 
 			<div
 				v-else-if="showListControls || $slots['controls-start']"
-				class="flex min-w-0 flex-1 flex-wrap items-center gap-2"
+				class="flex min-w-0 flex-1 basis-full flex-wrap items-center gap-2 sm:basis-0"
 			>
 				<slot name="controls-start" />
 

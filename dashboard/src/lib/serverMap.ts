@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'vue'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { displayStatus } from '@/lib/status'
-import { formatMemory } from '@/lib/units'
+import { formatMemory, gigabytesToMegabytes } from '@/lib/units'
 import type { Region } from '@/types/Region'
 
 // Display mapping for the servers map: one place that turns a Virtual Machine's mirror
@@ -145,7 +145,10 @@ export function specLine(server: VirtualMachineRow): string {
 	if (server.vcpus) parts.push(`${server.vcpus} vCPU`)
 	if (server.memory_megabytes)
 		parts.push(`${formatMemory(server.memory_megabytes)} RAM`)
-	if (server.disk_gigabytes) parts.push(`${server.disk_gigabytes} GB Disk`)
+	if (server.disk_gigabytes)
+		parts.push(
+			`${formatMemory(gigabytesToMegabytes(server.disk_gigabytes))} Disk`,
+		)
 	return parts.join(', ')
 }
 
