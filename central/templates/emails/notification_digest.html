@@ -10,7 +10,7 @@
 		{% for group in groups %}
 			<h2 class="fc-subheading">{{ group.category }}</h2>
 			{% for item in group.entries %}
-				{{ ui.paragraph(item.summary) }}
+				<p class="fc-text"><b>{{ item.summary }}</b></p>
 				{% for paragraph in item.body_parts %}
 					{{ ui.paragraph(paragraph) }}
 				{% endfor %}

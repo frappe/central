@@ -21,3 +21,7 @@
 	</td>
 </tr>
 {% endblock %}
+
+{% block footer %}
+{% if footer_note %}<b>{{ _("Note") }}:</b> {{ footer_note }}{% else %}{{ super() }}{% endif %}
+{% endblock %}
