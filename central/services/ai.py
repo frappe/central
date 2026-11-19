@@ -101,7 +101,7 @@ def get_billing_rate(team: str) -> dict | None:
 		return None
 	month = utc_today().replace(day=1)
 	try:
-		found = month_rate("USD", currency, month, store=False)
+		found = month_rate("USD", currency, month)
 	except Exception as error:
 		# The page still shows the usage in USD. Not an Error Log: every page view would add one.
 		frappe.logger("billing").warning(f"No USD to {currency} rate for {month}: {error!r}")

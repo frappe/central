@@ -11,27 +11,33 @@ from central.billing.ingester import connection
 DOCTYPE = "Monthly Exchange Rate"
 
 
-def month_rate(from_currency: str, to_currency: str, on, store: bool = True) -> frappe._dict:
-	"""The rate a month converts `from_currency` at, as {rate, rate_date}: read once, then kept."""
-	# One rate per month (ADR 0027): the Overview, the price list and the invoice all use it.
+def month_rate(from_currency: str, to_currency: str, on) -> frappe._dict:
+	"""The rate a month converts `from_currency` at, as {rate, rate_date, fixed}. Reads only."""
+	# The Overview, the recount and the invoice all use this one rate for the month.
 	if from_currency == to_currency:
-		return frappe._dict(rate=1.0, rate_date=None)
-	month = frappe.utils.getdate(on).replace(day=1)
-	key = {"month": month, "from_currency": from_currency, "to_currency": to_currency}
-	stored = frappe.db.get_value(DOCTYPE, key, ["rate", "rate_date"], as_dict=True)
-	if stored:
+		return frappe._dict(rate=1.0, rate_date=None, fixed=True)
+	key = month_key(from_currency, to_currency, on)
+	return stored_rate(key) or _as_rate(_required_rate(key), fixed=False)
+
+
+def fix_month_rate(from_currency: str, to_currency: str, on, final: bool = False) -> frappe._dict:
+	"""The month's rate, stored once it is the 1st's, or with `final` whatever the latest is."""
+	if from_currency == to_currency:
+		return month_rate(from_currency, to_currency, on)
+	key = month_key(from_currency, to_currency, on)
+	if stored := stored_rate(key):
 		return stored
-	found = accounting_rate(from_currency, to_currency, month)
-	if not found:
-		frappe.throw(
-			_("The accounting system has no {0} to {1} exchange rate on or before {2}.").format(
-				from_currency, to_currency, month
-			)
-		)
-	# A page view reads the rate without writing it; billing stores it.
-	if store:
-		_store(key, found)
-	return frappe._dict(rate=frappe.utils.flt(found.exchange_rate), rate_date=found.date)
+	found = _required_rate(key)
+	# Until then a later reading may still find the 1st's rate, so the rate is not kept.
+	if final or frappe.utils.getdate(found.date) == key["month"]:
+		return _store(key, found)
+	return _as_rate(found, fixed=False)
+
+
+def stored_rate(key: dict) -> frappe._dict | None:
+	"""The rate kept for a month, if one was."""
+	stored = frappe.db.get_value(DOCTYPE, key, ["rate", "rate_date"], as_dict=True)
+	return frappe._dict(stored, fixed=True) if stored else None
 
 
 def accounting_rate(from_currency: str, to_currency: str, month: datetime.date) -> frappe._dict | None:
@@ -51,35 +57,30 @@ def accounting_rate(from_currency: str, to_currency: str, month: datetime.date) 
 	return rows[0] if rows else None
 
 
-def check_converted_usage_has_a_rate() -> list:
-	"""Every currency AI is billed in has a USD rate in the accounting system for the next draft."""
-	from central.billing.platform.invariants import Violation
-	from central.billing.revenue.usage_ledger import utc_today
-	from central.services.doctype.service.service import AI_SERVICE
-	from central.services.doctype.team_service.team_service import billed_subjects
+def month_key(from_currency: str, to_currency: str, on) -> dict:
+	"""The filters of a month's stored rate."""
+	month = frappe.utils.getdate(on).replace(day=1)
+	return {"month": month, "from_currency": from_currency, "to_currency": to_currency}
 
-	if not connection.enabled():
-		return []
-	teams = list({service.team for service in billed_subjects(AI_SERVICE).values()})
-	currencies = frappe.get_all(
-		"Billing Profile",
-		filters={"name": ["in", teams or [""]], "currency": ["!=", "USD"]},
-		pluck="currency",
-		distinct=True,
-	)
-	return [
-		Violation(
-			check="M2",
-			subject_doctype="Currency",
-			subject=currency,
-			detail=f"The accounting system has no USD to {currency} rate, so AI cannot be billed in {currency}.",
+
+def _required_rate(key: dict) -> frappe._dict:
+	found = accounting_rate(key["from_currency"], key["to_currency"], key["month"])
+	if not found:
+		frappe.throw(
+			_("The accounting system has no {0} to {1} exchange rate on or before {2}.").format(
+				key["from_currency"], key["to_currency"], key["month"]
+			)
 		)
-		for currency in currencies
-		if not accounting_rate("USD", currency, utc_today())
-	]
+	return found
 
 
-def _store(key: dict, found: frappe._dict) -> None:
+def _as_rate(found: frappe._dict, fixed: bool) -> frappe._dict:
+	return frappe._dict(
+		rate=frappe.utils.flt(found.exchange_rate), rate_date=frappe.utils.getdate(found.date), fixed=fixed
+	)
+
+
+def _store(key: dict, found: frappe._dict) -> frappe._dict:
 	try:
 		frappe.db.savepoint("monthly_exchange_rate")
 		# Written by billing on the first read of the month; Desk only reads it.
@@ -93,5 +94,10 @@ def _store(key: dict, found: frappe._dict) -> None:
 			}
 		).insert(ignore_permissions=True)
 	except frappe.DuplicateEntryError:
-		# Another worker stored the same month first, from the same record.
+		# Another worker stored the month first. Its rate is the month's, even if this read differs.
 		frappe.db.rollback(save_point="monthly_exchange_rate")
+		return frappe._dict(
+			frappe.db.get_value(DOCTYPE, key, ["rate", "rate_date"], as_dict=True, for_update=True),
+			fixed=True,
+		)
+	return _as_rate(found, fixed=True)

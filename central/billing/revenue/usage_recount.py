@@ -11,7 +11,7 @@ from central.billing.doctype.billing_profile.billing_profile import get_team_cur
 from central.billing.doctype.billing_run_team.billing_run_team import FAILED
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue import usage_ledger
-from central.billing.revenue.exchange_rates import month_rate
+from central.billing.revenue.exchange_rates import fix_month_rate
 from central.billing.revenue.metering import ingest_rollup, live_rollup
 from central.billing.revenue.usage_ledger import DOCTYPE, LEVEL
 
@@ -102,10 +102,11 @@ def recount_month(
 	if not meter:
 		return None
 	month = _month_of(month)
-	closed = _closed_months(meter, keep_open=month if drafting else None)
+	drafted = month if drafting else None
+	closed = _closed_months(meter, keep_open=drafted)
 	for _ in range(MONTHS_AHEAD):
 		if month not in closed and not _is_billed(meter, month):
-			return _write_month(meter, month, closed)
+			return _write_month(meter, month, closed, final=month == drafted)
 		closed.add(month)
 		month = _next_month(month)
 	frappe.logger("billing").warning(f"Usage of {subscription} has no open month before {month}")
@@ -151,10 +152,12 @@ def _meter(subscription: str, resource_type: str, dimension: str = ""):
 	)
 
 
-def _write_month(meter, month: datetime.date, closed: set) -> MonthCount | None:
+def _write_month(meter, month: datetime.date, closed: set, final: bool) -> MonthCount | None:
 	"""Count the month's own unbilled days and the late days of closed months into its rollup."""
 	days = [day for day in _unbilled_days(meter, month) if _month_of(day.day) in (closed | {month})]
 	currency = get_team_currency(meter.team)
+	terms = _cost_terms(meter, currency, month, final)
+	quantity = sum(_weight(day) for day in days)
 	key = ingest_rollup(
 		{
 			"idempotency_key": rollup_key(meter.service, meter.subject, month, meter.dimension),
@@ -167,14 +170,15 @@ def _write_month(meter, month: datetime.date, closed: set) -> MonthCount | None:
 			"currency": currency,
 			"period_start": month,
 			"period_end": _month_end(month),
-			"quantity": sum(_weight(day) for day in days),
+			"quantity": quantity,
 			"unit": meter.unit,
-			"locked_terms": _cost_terms(meter, currency, month),
+			"locked_terms": terms,
 		}
 	)
 	if not key:
 		return None
 	rollup = live_rollup(frappe.db.get_value("Usage Rollup", {"idempotency_key": key}, "name"))
+	_rate_rollup(rollup, terms)
 	return MonthCount(month, rollup, [day.name for day in days])
 
 
@@ -262,12 +266,30 @@ def _unbilled_meters(team: str, period_end) -> set[tuple]:
 	)
 
 
-def _cost_terms(meter, currency: str, month: datetime.date) -> dict | None:
+def _cost_terms(meter, currency: str, month: datetime.date, final: bool) -> frappe._dict | None:
 	"""A meter that counts money bills that amount, converted at the month's rate, with no allowance."""
 	if not meter.cost_currency:
 		return None
-	rate = month_rate(meter.cost_currency, currency, month).rate
-	return {"team": meter.team, "cluster": meter.cluster, "currency": currency, "allowance": 0, "rate": rate}
+	found = fix_month_rate(meter.cost_currency, currency, month, final=final)
+	return frappe._dict(
+		team=meter.team,
+		cluster=meter.cluster,
+		currency=currency,
+		allowance=0,
+		rate=found.rate,
+		rate_date=found.rate_date if found.fixed else None,
+		is_converted=meter.cost_currency != currency,
+	)
+
+
+def _rate_rollup(rollup: str, terms) -> None:
+	"""Keep a converted rollup at the month's latest rate, and lock it once that rate is fixed."""
+	if not (terms and terms.is_converted):
+		return
+	if frappe.db.get_value("Usage Rollup", rollup, "rate_date"):
+		return
+	# A converted rollup with no rate date is not locked yet, so a later recount re-rates it.
+	frappe.db.set_value("Usage Rollup", rollup, {"locked_rate": terms.rate, "rate_date": terms.rate_date})
 
 
 def _month_of(on) -> datetime.date:

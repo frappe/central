@@ -7,6 +7,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.catalog.plan_setup import AI_PLAN, ensure_ai_plan
+from central.billing.platform import readiness
 from central.billing.revenue import exchange_rates, grove_bridge, service_reports, usage_recount
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -163,7 +164,7 @@ class TestAIBilling(AIBillingCase):
 
 	def test_a_stored_month_rate_is_kept_when_the_accounting_system_changes(self):
 		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01", 84.1)):
-			exchange_rates.month_rate("USD", "INR", "2026-06-15")
+			exchange_rates.fix_month_rate("USD", "INR", "2026-06-15")
 		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01", 90)):
 			self.assertEqual(exchange_rates.month_rate("USD", "INR", "2026-06-20").rate, 84.1)
 
@@ -174,6 +175,13 @@ class TestAIBilling(AIBillingCase):
 			[line] = self.invoice_lines(TEAM_INR)
 		self.assertEqual(line.rate, 83.5)
 		self.assertIn("rate of 2026-05-29", line.description)
+		# The draft keeps and locks the rate it found, even though it is not the 1st's.
+		stored = exchange_rates.stored_rate(exchange_rates.month_key("USD", "INR", "2026-06-01"))
+		self.assertEqual((stored.rate, str(stored.rate_date)), (83.5, "2026-05-29"))
+		rollup = frappe.get_all(
+			"Usage Rollup", filters={"team": TEAM_INR}, fields=["locked_rate", "rate_date"]
+		)[0]
+		self.assertEqual((rollup.locked_rate, str(rollup.rate_date)), (83.5, "2026-05-29"))
 
 	def test_the_rate_asked_for_is_the_latest_selling_rate_on_or_before_the_first(self):
 		with patch.object(exchange_rates.connection, "find", return_value=[]) as find:
@@ -261,13 +269,20 @@ class TestAIBilling(AIBillingCase):
 			self.assertIsNone(ai.get_billing_rate(TEAM_INR))
 
 	def test_readiness_reports_a_billing_currency_with_no_usd_rate(self):
-		with (
-			patch.object(exchange_rates.connection, "enabled", return_value=True),
-			patch.object(exchange_rates, "accounting_rate", return_value=None),
-		):
-			self.assertIn("INR", [v.subject for v in exchange_rates.check_converted_usage_has_a_rate()])
-		with (
-			patch.object(exchange_rates.connection, "enabled", return_value=True),
-			patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01")),
-		):
-			self.assertEqual(exchange_rates.check_converted_usage_has_a_rate(), [])
+		with patch.object(readiness, "accounting_rate", return_value=None):
+			self.assertIn("INR", [v.subject for v in readiness.check_converted_usage_has_a_rate()])
+		with patch.object(readiness, "accounting_rate", return_value=rate_on("2026-06-01")):
+			self.assertEqual(readiness.check_converted_usage_has_a_rate(), [])
+
+	def test_with_accounting_sync_off_only_a_kept_rate_satisfies_readiness(self):
+		with patch.object(exchange_rates.connection, "enabled", return_value=False):
+			self.assertIn("INR", [v.subject for v in readiness.check_converted_usage_has_a_rate()])
+			with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01")):
+				exchange_rates.fix_month_rate("USD", "INR", readiness_month(), final=True)
+			self.assertEqual(readiness.check_converted_usage_has_a_rate(), [])
+
+
+def readiness_month():
+	from central.billing.revenue.usage_ledger import utc_today
+
+	return utc_today().replace(day=1)

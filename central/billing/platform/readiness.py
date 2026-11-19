@@ -13,7 +13,7 @@ from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.india_gst import INDIA
 from central.billing.platform.invariants import Violation
 from central.billing.revenue import credits
-from central.billing.revenue.exchange_rates import check_converted_usage_has_a_rate
+from central.billing.revenue.exchange_rates import accounting_rate, month_key, stored_rate
 
 STALLED_HOURS = 3
 
@@ -354,6 +354,37 @@ def check_storage_usage_is_recorded() -> list[Violation]:
 		for subject, bucket in billed_subjects(STORAGE_SERVICE).items()
 		if subject not in read and bucket.creation < cutoff
 	]
+
+
+def check_converted_usage_has_a_rate() -> list[Violation]:
+	"""Every currency AI is billed in has this month's USD rate, kept or in the accounting system."""
+	from central.billing.revenue.usage_ledger import utc_today
+	from central.services.doctype.service.service import AI_SERVICE
+	from central.services.doctype.team_service.team_service import billed_subjects
+
+	month = utc_today().replace(day=1)
+	teams = list({service.team for service in billed_subjects(AI_SERVICE).values()})
+	currencies = frappe.get_all(
+		"Billing Profile",
+		filters={"name": ["in", teams or [""]], "currency": ["!=", "USD"]},
+		pluck="currency",
+		distinct=True,
+	)
+	return [
+		Violation(
+			check="M2",
+			subject_doctype="Currency",
+			subject=currency,
+			detail=f"No USD to {currency} rate is kept for {month:%B %Y} and the accounting system has none, so AI cannot be billed in {currency}.",
+		)
+		for currency in currencies
+		if not _has_month_rate(currency, month)
+	]
+
+
+def _has_month_rate(currency: str, month: datetime.date) -> bool:
+	# With accounting sync off the read finds nothing, so only a kept rate counts.
+	return bool(stored_rate(month_key("USD", currency, month)) or accounting_rate("USD", currency, month))
 
 
 # --- collection -------------------------------------------------------------------

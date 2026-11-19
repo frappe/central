@@ -368,13 +368,13 @@ def _metered_lines(
 			Rollup.resource_id,
 			Rollup.resource_type,
 			Rollup.dimension,
-			Rollup.period_start,
 			Rollup.meter_type,
 			Rollup.quantity,
 			Rollup.unit,
 			Rollup.currency,
 			Rollup.locked_allowance,
 			Rollup.locked_rate,
+			Rollup.rate_date,
 			Rollup.cluster,
 		)
 		.where(Rollup.team == team)

@@ -23,6 +23,7 @@
   "currency",
   "locked_allowance",
   "locked_rate",
+  "rate_date",
   "column_break_key",
   "idempotency_key",
   "superseded_by",
@@ -117,6 +118,13 @@
    "description": "Per-unit overage rate, locked at first receipt"
   },
   {
+   "fieldname": "rate_date",
+   "fieldtype": "Date",
+   "label": "Rate Date",
+   "read_only": 1,
+   "description": "For usage counted in another currency: the date of the exchange rate the locked rate was fixed at. Blank while the rate can still change."
+  },
+  {
    "fieldname": "column_break_key",
    "fieldtype": "Column Break"
   },
@@ -154,7 +162,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-18 10:00:00.000000",
+ "modified": "2026-11-19 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Rollup",

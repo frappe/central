@@ -5,7 +5,6 @@ import frappe
 from frappe import _
 
 from central.billing.catalog.plan_setup import AI_RESOURCE_TYPE
-from central.billing.revenue.exchange_rates import month_rate
 
 
 def billable_quantity(quantity: float, allowance: float) -> float:
@@ -16,27 +15,20 @@ def billable_quantity(quantity: float, allowance: float) -> float:
 	return max(0.0, quantity - allowance)
 
 
+# The Invoice Line Item description is a Data field.
+MAXIMUM_DESCRIPTION = 140
+
+
 def line_description(rollup, rate: float) -> str:
-	"""What an invoice line adds to its resource: the dimension, and the conversion when it has one."""
-	parts = [rollup.dimension] if rollup.dimension else []
-	if _is_converted(rollup):
-		rate_date = month_rate(rollup.unit, rollup.currency, rollup.period_start).rate_date
-		parts.append(
-			_("1 {0} = {1}, rate of {2}").format(
-				rollup.unit, frappe.utils.fmt_money(rate, currency=rollup.currency), rate_date
-			)
+	"""What an invoice line adds to its resource: the dimension, and the rate it was converted at."""
+	conversion = ""
+	if rollup.rate_date:
+		conversion = _("1 {0} = {1}, rate of {2}").format(
+			rollup.unit, frappe.utils.fmt_money(rate, currency=rollup.currency), rollup.rate_date
 		)
-	return " · ".join(parts)
-
-
-def _is_converted(rollup) -> bool:
-	"""A rollup counted in money of another currency than the invoice's."""
-	return bool(
-		rollup.unit
-		and rollup.period_start
-		and rollup.unit != rollup.currency
-		and frappe.db.exists("Currency", rollup.unit)
-	)
+	# The conversion is kept whole; a long dimension gives way.
+	room = MAXIMUM_DESCRIPTION - len(conversion) - (3 if conversion else 0)
+	return " · ".join(part for part in ((rollup.dimension or "")[:room], conversion) if part)
 
 
 def rollups_in(rollup, clusters: list, team_level: bool):
