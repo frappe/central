@@ -425,7 +425,8 @@ class Site(Document):
 		if not user or not self.is_trial() or self.team not in get_user_team_names(user):
 			return None, None
 
-		return user, frappe.db.get_value("User", user, "full_name")
+		email, full_name = frappe.db.get_value("User", user, ["email", "full_name"])
+		return (user if user in frappe.STANDARD_USERS else email), full_name
 
 	def is_trial(self) -> bool:
 		request = self.get_creation_request()
