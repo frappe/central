@@ -9,6 +9,7 @@ import frappe
 import requests
 from frappe.tests import IntegrationTestCase
 
+from central.billing.catalog.plan_setup import AI_PLAN
 from central.billing.tests.utils import complete_billing_profile, ensure_trust_tier_level
 from central.integrations.grove import GroveClient, GroveUnavailable
 from central.services import ai
@@ -281,12 +282,13 @@ class TestAI(IntegrationTestCase):
 		# The tier's name goes with it, so the first key has room for a cap.
 		update_team.assert_called_once_with(**ai.get_team_limits(self.team))
 		service = frappe.get_doc("Team Service", name)
-		# Postpaid, and each key calls its own geography: no subscription, no region, no
+		# Billed in arrears on the AI plan, and each key calls its own geography: no region and no
 		# endpoint on the row.
 		self.assertEqual(
-			(service.status, service.subscription, service.region, service.endpoint_url),
-			("Active", None, None, None),
+			(service.status, service.region, service.endpoint_url),
+			("Active", None, None),
 		)
+		self.assertEqual(frappe.db.get_value("Subscription", service.subscription, "plan"), AI_PLAN)
 
 	def test_a_grove_refusal_leaves_ai_off(self):
 		with patch.object(GroveClient, "provision_team", side_effect=frappe.ValidationError):

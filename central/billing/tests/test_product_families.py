@@ -21,7 +21,7 @@ class TestFamiliesSeed(IntegrationTestCase):
 	def test_families_are_seeded_with_rules(self):
 		expected = {
 			"VM Plans": ({"Compute", "Disk", "Memory", "Storage", "Transfer"}, "Optimization profile"),
-			"AI Tokens": ({"Tokens"}, ""),
+			"AI Tokens": ({"Tokens", "AI Usage"}, ""),
 			"SaaS Storage": ({"Disk"}, ""),
 			"Remote Storage": ({"Storage", "Backup"}, "Storage purpose"),
 		}

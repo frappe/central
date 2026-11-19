@@ -224,7 +224,9 @@ def _keep_the_paid_share(items: list[dict], taxes: list[dict], paid: float) -> N
 
 
 def _item(line, settings) -> dict:
-	label = " · ".join(x for x in (line.plan or line.resource_type, line.subscription_resource) if x)
+	label = " · ".join(
+		x for x in (line.plan or line.resource_type, line.description, line.subscription_resource) if x
+	)
 	period = f"{line.period_from or ''} to {line.period_to or ''}" if line.period_from else ""
 	return {
 		"item_code": settings.service_item,

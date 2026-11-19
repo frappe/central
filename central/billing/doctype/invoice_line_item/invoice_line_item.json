@@ -13,6 +13,7 @@
   "cluster",
   "resource_type",
   "unit",
+  "description",
   "project",
   "project_title",
   "column_break_calc",
@@ -53,6 +54,12 @@
    "fieldname": "unit",
    "fieldtype": "Data",
    "label": "Unit"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Data",
+   "label": "Description",
+   "description": "What the line counts beyond its resource, such as the AI model and the rate it was converted at."
   },
   {
    "fieldname": "project",
@@ -125,7 +132,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-03 00:00:00.000000",
+ "modified": "2026-11-18 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Invoice Line Item",
