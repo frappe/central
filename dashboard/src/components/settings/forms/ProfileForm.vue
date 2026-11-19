@@ -115,7 +115,7 @@ const updateNameErrorTitle = __("Couldn't update your name")
 				/>
 			</div>
 			<TextInput
-				:model-value="profile?.user ?? ''"
+				:model-value="profile?.email ?? ''"
 				:label="__('Email')"
 				disabled
 			/>
