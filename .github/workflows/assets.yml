@@ -2,7 +2,7 @@ name: Pre-build assets
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, main]
 
 jobs:
   assets:

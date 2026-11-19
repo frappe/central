@@ -4,10 +4,11 @@ on:
   push:
     branches:
       - develop
+      - main
   pull_request:
 
 concurrency:
-  group: develop-central-${{ github.event.number }}
+  group: central-${{ github.event.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
