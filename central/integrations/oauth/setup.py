@@ -2,7 +2,7 @@
 
 import frappe
 
-from central.integrations.email_oauth.email_oauth import PROVIDER
+from central.integrations.oauth.oauth import PROVIDER
 
 # Seeded disabled and without credentials; an operator adds the app's ID and secret and enables it
 DEFAULT_PROVIDERS = {

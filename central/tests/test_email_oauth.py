@@ -13,12 +13,12 @@ from central.api.oauth import get_active_providers as oauth_get_active_providers
 from central.api.oauth import start as oauth_start
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.integrations.email_oauth.email_oauth import (
+from central.integrations.oauth.oauth import (
 	PROVIDER,
 	PROVIDER_UNAVAILABLE,
 	SITE_CALLBACK_PATHS,
 )
-from central.integrations.email_oauth.setup import DEFAULT_PROVIDERS, ensure_email_oauth_providers
+from central.integrations.oauth.setup import DEFAULT_PROVIDERS, ensure_email_oauth_providers
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
@@ -306,7 +306,7 @@ class TestEmailOAuth(IntegrationTestCase):
 	# relay_token
 
 	def call_relay_token(self, microsoft_status: int, microsoft_body: dict, **params):
-		post = self.enterContext(patch("central.integrations.email_oauth.email_oauth.requests.post"))
+		post = self.enterContext(patch("central.integrations.oauth.oauth.requests.post"))
 		post.return_value = Mock(ok=microsoft_status < 400, json=Mock(return_value=microsoft_body))
 		self.as_pilot("/api/method/central.api.email_oauth.relay_token")
 		return relay_token(provider="microsoft", **params), post

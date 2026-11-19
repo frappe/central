@@ -11,7 +11,7 @@ from frappe import _
 
 from central.api.pilot import pilot_credential_auth
 from central.iam import can
-from central.integrations.email_oauth.email_oauth import (
+from central.integrations.oauth.oauth import (
 	CALLBACK_PATH,
 	PROVIDER,
 	claim_code,

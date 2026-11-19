@@ -141,7 +141,7 @@ after_install = [
 	"central.billing.settings.ensure_welcome_credit_amounts",
 	"central.billing.settings.ensure_minimum_invoice_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
-	"central.integrations.email_oauth.setup.ensure_email_oauth_providers",
+	"central.integrations.oauth.setup.ensure_email_oauth_providers",
 	"central.billing.navigation.ensure_workspace_sidebars",
 ]
 
@@ -349,7 +349,7 @@ after_migrate = [
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.gateways.setup.ensure_gateway_records",
-	"central.integrations.email_oauth.setup.ensure_email_oauth_providers",
+	"central.integrations.oauth.setup.ensure_email_oauth_providers",
 	"central.billing.navigation.ensure_workspace_sidebars",
 	# The Webhook that carries a team's tier to Grove, so an edit to its spec rolls out.
 	"central.services.doctype.ai_settings.ai_settings.sync_webhook",
@@ -369,7 +369,7 @@ before_tests = [
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
-	"central.integrations.email_oauth.setup.ensure_email_oauth_providers",
+	"central.integrations.oauth.setup.ensure_email_oauth_providers",
 	"central.billing.navigation.ensure_workspace_sidebars",
 	"central.users.ensure_staff_role_profile",
 ]
