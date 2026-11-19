@@ -16,7 +16,6 @@ def apply_report(existing, mode: str, qty: float, seq: int, refuse_lower: bool) 
 			{"quantity": frappe.utils.flt(existing.quantity) + qty, "sequence": seq},
 		)
 		return
-	# The terms stay as first stamped, but a converted rollup is re-rated until its rate date is set.
 	if refuse_lower and qty < frappe.utils.flt(existing.quantity):
 		frappe.throw(
 			_("A usage total for this period can only increase ({0} is recorded).").format(existing.quantity),
