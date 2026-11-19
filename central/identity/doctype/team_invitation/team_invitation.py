@@ -9,6 +9,7 @@ from frappe.utils import (
 	add_to_date,
 	cint,
 	get_datetime,
+	get_email_address,
 	get_fullname,
 	getdate,
 	now,
@@ -100,7 +101,7 @@ class TeamInvitation(Document):
 			"invited_by": get_fullname(self.invited_by),
 			"role": self.role_name,
 			"expires_on": self.expires_on,
-			"has_account": bool(frappe.db.exists("User", self.email)),
+			"has_account": bool(frappe.db.exists("User", {"email": self.email})),
 		}
 
 	# Internal; the HTTP surface is central.api.teams.accept_invitation.
@@ -108,7 +109,7 @@ class TeamInvitation(Document):
 		user = frappe.session.user
 		if self.status == "Accepted" and self.accepted_by == user:
 			return {"team": self.team, "role": self.role, "accepted": False}
-		if self.email != user:
+		if self.email != get_email_address(user):
 			frappe.throw(
 				_(
 					"This invitation was sent to a different email address. Sign in with the invited email to continue."
@@ -181,7 +182,7 @@ class TeamInvitation(Document):
 
 	# Internal; the HTTP surface is central.api.teams.decline_invitation.
 	def decline(self) -> bool:
-		if self.email != frappe.session.user and not user_has_operator_bypass():
+		if self.email != get_email_address() and not user_has_operator_bypass():
 			frappe.throw(
 				_(
 					"This invitation was sent to a different email address. Sign in with the invited email to continue."
@@ -226,10 +227,12 @@ class TeamInvitation(Document):
 		if not self.is_new():
 			return
 
-		enabled = frappe.db.get_value("User", self.email, "enabled")
-		if enabled == 0:
+		user = frappe.db.get_value("User", {"email": self.email}, ["name", "enabled"], as_dict=True)
+		if not user:
+			return
+		if not user.enabled:
 			frappe.throw(_("Disabled users cannot be invited."))
-		if frappe.db.exists("Team Member", {"parent": self.team, "user": self.email}):
+		if frappe.db.exists("Team Member", {"parent": self.team, "user": user.name}):
 			frappe.throw(_("This user is already a team member."))
 
 	def _validate_duplicate(self) -> None:
