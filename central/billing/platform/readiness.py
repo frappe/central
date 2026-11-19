@@ -13,7 +13,7 @@ from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.india_gst import INDIA
 from central.billing.platform.invariants import Violation
 from central.billing.revenue import credits
-from central.billing.revenue.exchange_rates import found_rate, month_key, stored_rate
+from central.billing.revenue.exchange_rates import month_rate
 
 STALLED_HOURS = 3
 
@@ -383,8 +383,11 @@ def check_converted_usage_has_a_rate() -> list[Violation]:
 
 
 def _has_month_rate(currency: str, month: datetime.date) -> bool:
-	key = month_key("USD", currency, month)
-	return bool(stored_rate(key) or found_rate(key))
+	try:
+		month_rate("USD", currency, month)
+	except frappe.ValidationError:
+		return False
+	return True
 
 
 # --- collection -------------------------------------------------------------------

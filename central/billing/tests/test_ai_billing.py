@@ -322,6 +322,7 @@ class TestAIBilling(AIBillingCase):
 	def test_readiness_reports_a_billing_currency_with_no_usd_rate(self):
 		with feed(None):
 			self.assertIn("INR", [v.subject for v in readiness.check_converted_usage_has_a_rate()])
+		forget_rate_readings()
 		with feed(rate_on("2026-06-01")):
 			self.assertEqual(readiness.check_converted_usage_has_a_rate(), [])
 

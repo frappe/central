@@ -44,11 +44,6 @@ def stored_rate(key: dict) -> frappe._dict | None:
 	return frappe._dict(stored, fixed=True) if stored else None
 
 
-def found_rate(key: dict) -> frappe._dict | None:
-	"""The rate API's rate for the month's 1st, else the latest earlier month's kept rate."""
-	return feed_rate(key["from_currency"], key["to_currency"], key["month"]) or _earlier_rate(key)
-
-
 def _earlier_rate(key: dict) -> frappe._dict | None:
 	earlier = frappe.db.get_value(
 		DOCTYPE,
