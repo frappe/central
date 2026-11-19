@@ -69,7 +69,7 @@ class TestTranslationCatalog(IntegrationTestCase):
 		with fixture.open("rb") as file:
 			messages = {message for _line, _function, message, _comments in extract(file)}
 
-		self.assertIn("Payment failed", messages)
+		self.assertIn("Payment failed for invoice {{ reference_name }}", messages)
 		self.assertIn("Payment for invoice {{ reference_name }} failed: {{ message }}", messages)
 
 
