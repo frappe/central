@@ -11,9 +11,10 @@ test('A trial server asks for a payment method', async ({ page, trials }) => {
 	const dialog = page.getByRole('dialog')
 	await expect(dialog.getByText('Upgrade from free trial')).toBeVisible()
 	await expect(dialog.getByText('Your free trial ends in 5 days')).toBeVisible()
-	await expect(dialog.getByText(/Add a payment method to keep this site on the .+ plan\. You can choose a bigger plan next\./)).toBeVisible()
-	await expect(dialog.getByText(/Billing starts today at .+ a month/)).toBeVisible()
-	await expect(dialog.getByRole('button', { name: 'Add payment method' })).toBeVisible()
+	await expect(dialog.getByText('Choose a plan to keep this site after the trial. Billing starts when you add a payment method.')).toBeVisible()
+	await dialog.getByRole('radio').first().click()
+	await expect(dialog.getByText(/Billing starts at .+ a month when your site moves to this plan/)).toBeVisible()
+	await expect(dialog.getByRole('button', { name: 'Add payment method' })).toBeEnabled()
 })
 
 test('An ended trial shows the deletion date', async ({ page, trials }) => {
@@ -23,7 +24,7 @@ test('An ended trial shows the deletion date', async ({ page, trials }) => {
 
 	const dialog = page.getByRole('dialog')
 	await expect(dialog.getByText('Your free trial has ended')).toBeVisible()
-	await expect(dialog.getByText(/This site is stopped. Add a payment method before/)).toBeVisible()
+	await expect(dialog.getByText(/This site is stopped\. Choose a plan and add a payment method before .+ to keep it\./)).toBeVisible()
 })
 
 test('A payment method during the trial opens the plans', async ({ page, trials }) => {
@@ -49,7 +50,7 @@ test('A card leaves an ended trial stopped and offers to keep it', async ({ page
 
 	const dialog = page.getByRole('dialog')
 	await expect(dialog.getByText('Your free trial has ended')).toBeVisible()
-	await expect(dialog.getByText(/Keep it before .+ to start it again on the .+ plan/)).toBeVisible()
+	await expect(dialog.getByText(/This site is stopped\. Choose a plan and keep the site before .+\./)).toBeVisible()
 	await expect(dialog.getByRole('button', { name: 'Keep this site' })).toBeVisible()
 	await expect(dialog.getByRole('button', { name: 'Add payment method' })).toHaveCount(0)
 })
