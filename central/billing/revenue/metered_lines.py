@@ -4,6 +4,7 @@
 import frappe
 from frappe import _
 
+from central.billing.catalog.plan_setup import AI_RESOURCE_TYPE
 from central.billing.revenue.exchange_rates import month_rate
 
 
@@ -36,3 +37,26 @@ def _is_converted(rollup) -> bool:
 		and rollup.unit != rollup.currency
 		and frappe.db.exists("Currency", rollup.unit)
 	)
+
+
+def rollups_in(rollup, clusters: list, team_level: bool):
+	"""Rollups in one of `clusters`, and with `team_level` the team's AI usage, which has no cluster."""
+	condition = _in_clusters(rollup.cluster, clusters) if clusters else None
+	if not team_level:
+		return condition
+	# Only AI: another service's blank-cluster rollups were never billed by the team run.
+	ai = _is_blank(rollup.cluster) & (rollup.resource_type == AI_RESOURCE_TYPE)
+	return ai if condition is None else condition | ai
+
+
+def _in_clusters(column, clusters: list):
+	"""`column` is one of `clusters`. A blank cluster is stored as NULL or "", so it matches both."""
+	named = [c for c in clusters if c]
+	condition = column.isin(named) if named else None
+	if len(named) < len(clusters):
+		condition = _is_blank(column) if condition is None else condition | _is_blank(column)
+	return condition
+
+
+def _is_blank(column):
+	return column.isnull() | (column == "")

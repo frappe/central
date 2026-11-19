@@ -290,9 +290,8 @@ def rate_team_period(
 	# team's clusters come back in a single query.
 	lines = team_line_items(team, period_start, period_end, explain=explain, changes=changes)
 	if metered is None:
-		# A team-level service such as AI has no cluster, so its rollups are kept under a blank one.
 		lines += metered_line_items_for_clusters(
-			team, [*team_clusters(team), ""], period_start, period_end, explain=explain
+			team, team_clusters(team), period_start, period_end, explain=explain
 		)
 	else:
 		lines += list(metered)

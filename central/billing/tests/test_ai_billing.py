@@ -42,7 +42,9 @@ def run_inline(method: str, queue=None, **kwargs):
 	return frappe.get_attr(method)(**kwargs)
 
 
-class TestAIBilling(IntegrationTestCase):
+class AIBillingCase(IntegrationTestCase):
+	"""A USD and an INR team on the AI plan, and a Grove that answers what each landed."""
+
 	def setUp(self):
 		ensure_ai_plan()
 		ensure_services()
@@ -86,8 +88,8 @@ class TestAIBilling(IntegrationTestCase):
 			order_by="day asc, dimension asc",
 		)
 
-	def invoice_lines(self, team: str):
-		invoice = generate_team_invoice(team, *JUNE)
+	def invoice_lines(self, team: str, period=JUNE):
+		invoice = generate_team_invoice(team, *period)
 		self.assertTrue(invoice, "the draft billed nothing")
 		return frappe.get_all(
 			"Invoice Line Item",
@@ -96,6 +98,8 @@ class TestAIBilling(IntegrationTestCase):
 			order_by="amount desc",
 		)
 
+
+class TestAIBilling(AIBillingCase):
 	def test_each_model_is_its_own_day(self):
 		self.land(TEAM_USD, "2026-06-10", {"claude-sonnet": 0.25, "gpt-4o": 1.5})
 		self.read("2026-06-10")

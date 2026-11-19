@@ -22,7 +22,7 @@ import frappe
 from frappe import _
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
-from central.billing.revenue.metered_lines import billable_quantity, line_description
+from central.billing.revenue.metered_lines import billable_quantity, line_description, rollups_in
 
 
 def _metered_plan_for(resource_type: str):
@@ -341,23 +341,26 @@ def metered_line_items_for_clusters(
 	The monthly run consolidates a team's clusters into a single invoice; scanning
 	rollups (and re-resolving each family's plan) once per cluster is the rating-path
 	N+1. This fetches every cluster's rollups in one query and resolves each metered
-	family once. The billed set is exactly the per-cluster union.
+	family once. The billed set is the per-cluster union plus the team's AI usage.
 	"""
-	return _metered_lines(team, list(clusters), period_start, period_end, explain)
+	return _metered_lines(team, list(clusters), period_start, period_end, explain, team_level=True)
 
 
-def _metered_lines(team: str, clusters: list, period_start, period_end, explain: bool = False) -> list[dict]:
+def _metered_lines(
+	team: str, clusters: list, period_start, period_end, explain: bool = False, team_level: bool = False
+) -> list[dict]:
 	"""One line per overage rollup for `team` in any of `clusters` (see the two public
 	wrappers). The rollup carries its own cluster, so a multi-cluster run tags each line
 	correctly and prices Live plans against the rollup's cluster."""
-	if not clusters:
+	Rollup = frappe.qb.DocType("Usage Rollup")
+	in_scope = rollups_in(Rollup, clusters, team_level)
+	if in_scope is None:
 		return []
 
 	# Filter the period in SQL, not Python. period_start is a Datetime, so the upper
 	# bound is the exclusive next-day midnight to keep the old date-inclusive semantics
 	# (a rollup dated on period_end still counts). Rows with no period_start are always
 	# included, as before.
-	Rollup = frappe.qb.DocType("Usage Rollup")
 	period_end_excl = frappe.utils.add_days(frappe.utils.getdate(period_end), 1)
 	rollups = (
 		frappe.qb.from_(Rollup)
@@ -375,7 +378,7 @@ def _metered_lines(team: str, clusters: list, period_start, period_end, explain:
 			Rollup.cluster,
 		)
 		.where(Rollup.team == team)
-		.where(_in_clusters(Rollup.cluster, clusters))
+		.where(in_scope)
 		# A superseded row has been replaced by a corrected-terms version; billing the
 		# old one as well would double-charge the same usage.
 		.where(Rollup.superseded_by.isnull())
@@ -488,13 +491,3 @@ def _metered_lines(team: str, clusters: list, period_start, period_end, explain:
 			)
 		)
 	return lines
-
-
-def _in_clusters(column, clusters: list):
-	"""`column` is one of `clusters`. A blank cluster is stored as NULL or "", so it matches both."""
-	named = [c for c in clusters if c]
-	condition = column.isin(named) if named else None
-	if len(named) < len(clusters):
-		blank = column.isnull() | (column == "")
-		condition = blank if condition is None else condition | blank
-	return condition
