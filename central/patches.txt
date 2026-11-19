@@ -112,3 +112,5 @@ central.patches.v0_0.mark_old_setups_released
 central.patches.v0_0.flag_upi_mandates_below_the_gst_ceiling
 # Start the Usage Day ledger: register storage, name subjects, carry this month's storage into days.
 central.patches.v0_0.start_usage_day_ledger
+# Fill the plan and size on resize events recorded before the feed showed them.
+central.patches.v0_0.fill_resize_activity_details

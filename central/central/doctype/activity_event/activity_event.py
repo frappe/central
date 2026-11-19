@@ -467,11 +467,11 @@ def get_action_details(action: Document) -> list[dict]:
 		plans = (get_link_title("Plan", configuration.from_plan), get_link_title("Plan", configuration.plan))
 		details.append(get_detail("Plan", *plans))
 
-	if configuration.from_shape:
-		for label, describe in SHAPE_DETAILS:
-			old, new = describe(configuration.from_shape), describe(configuration.shape)
-			if old != new:
-				details.append(get_detail(label, old, new))
+	for label, describe in SHAPE_DETAILS:
+		old = describe(configuration.from_shape) if configuration.from_shape else None
+		new = describe(configuration.shape)
+		if old != new:
+			details.append(get_detail(label, old, new))
 
 	return details
 
