@@ -17,6 +17,7 @@ from central.billing.tests.test_ai_billing import (
 	TEAM_INR,
 	TEAM_USD,
 	AIBillingCase,
+	forget_rate_readings,
 	rate_on,
 	run_inline,
 )
@@ -28,6 +29,8 @@ AUGUST = ("2026-08-01", "2026-08-31")
 
 class TestAIBillingMonths(AIBillingCase):
 	def recount(self, rate):
+		# Each recount stands for a later hour, after the cached reading has expired.
+		forget_rate_readings()
 		with (
 			patch.object(exchange_rates, "accounting_rate", return_value=rate),
 			patch("frappe.enqueue", side_effect=run_inline),

@@ -43,6 +43,11 @@ def rate_on(day: str, rate: float = 84.1):
 	return frappe._dict(name="CE-TEST", date=frappe.utils.getdate(day), exchange_rate=rate)
 
 
+def forget_rate_readings():
+	"""Each test fakes its own accounting rate, so none may reuse another's cached reading."""
+	frappe.cache.delete_keys(exchange_rates.READING_KEY)
+
+
 def run_inline(method: str, queue=None, **kwargs):
 	return frappe.get_attr(method)(**kwargs)
 
@@ -58,6 +63,8 @@ class AIBillingCase(IntegrationTestCase):
 		self.addCleanup(frappe.db.set_value, "Service", AI_SERVICE, "bill_from", bill_from)
 		self.grove = FakeGrove()
 		self.services = {TEAM_USD: self.ai_team(TEAM_USD, "USD"), TEAM_INR: self.ai_team(TEAM_INR, "INR")}
+		forget_rate_readings()
+		self.addCleanup(forget_rate_readings)
 
 	def ai_team(self, team: str, currency: str | None):
 		frappe.db.delete("Team Service", {"team": team})
@@ -188,6 +195,18 @@ class TestAIBilling(AIBillingCase):
 		)[0]
 		self.assertEqual((rollup.locked_rate, str(rollup.rate_date)), (83.5, "2026-05-29"))
 
+	def test_an_unstored_reading_is_reused_for_an_hour_but_a_stored_rate_is_read_each_time(self):
+		with patch.object(
+			exchange_rates, "accounting_rate", return_value=rate_on("2026-05-29", 83.5)
+		) as read:
+			exchange_rates.month_rate("USD", "INR", "2026-06-10")
+			found = exchange_rates.month_rate("USD", "INR", "2026-06-20")
+		self.assertEqual((found.rate, read.call_count), (83.5, 1))
+		# The draft's final read asks the accounting system again and stores what it has now.
+		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01", 84.1)):
+			exchange_rates.fix_month_rate("USD", "INR", "2026-06-01", final=True)
+		self.assertEqual(exchange_rates.month_rate("USD", "INR", "2026-06-20").rate, 84.1)
+
 	def test_the_rate_asked_for_is_the_latest_selling_rate_on_or_before_the_first(self):
 		with patch.object(exchange_rates.connection, "find", return_value=[]) as find:
 			exchange_rates.accounting_rate("USD", "INR", frappe.utils.getdate("2026-06-01"))
@@ -276,6 +295,7 @@ class TestAIBilling(AIBillingCase):
 			found = ai.get_billing_rate(TEAM_INR)
 		self.assertEqual((found["currency"], found["rate"]), ("INR", 84.1))
 		self.assertFalse(frappe.db.count("Monthly Exchange Rate", {"rate_date": "2026-06-01"}))
+		forget_rate_readings()
 		with patch.object(exchange_rates, "accounting_rate", return_value=None):
 			self.assertIsNone(ai.get_billing_rate(TEAM_INR))
 

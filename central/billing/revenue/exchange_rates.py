@@ -9,20 +9,23 @@ from frappe import _
 from central.billing.ingester import connection
 
 DOCTYPE = "Monthly Exchange Rate"
+READING_KEY = "billing_month_rate_reading"
+READING_SECONDS = 60 * 60
 
 
-def month_rate(from_currency: str, to_currency: str, on) -> frappe._dict:
+def month_rate(from_currency: str, to_currency: str, on, fresh: bool = False) -> frappe._dict:
 	"""The rate a month converts `from_currency` at, as {rate, rate_date, fixed}. Reads only."""
 	# The Overview, the recount and the invoice all use this one rate for the month.
 	if from_currency == to_currency:
 		return frappe._dict(rate=1.0, rate_date=None, fixed=True)
 	key = month_key(from_currency, to_currency, on)
-	return stored_rate(key) or _as_rate(_required_rate(key), fixed=False)
+	return stored_rate(key) or _as_rate(_reading(key, fresh), fixed=False)
 
 
 def fix_month_rate(from_currency: str, to_currency: str, on, final: bool = False) -> frappe._dict:
 	"""The month's rate, stored once it is the 1st's, or with `final` whatever the latest is."""
-	found = month_rate(from_currency, to_currency, on)
+	# The final read skips the cache, so the draft keeps what the accounting system has now.
+	found = month_rate(from_currency, to_currency, on, fresh=final)
 	key = month_key(from_currency, to_currency, on)
 	# Until then a later reading may still find the 1st's rate, so the rate is not kept.
 	if found.fixed or not (final or found.rate_date == key["month"]):
@@ -57,6 +60,22 @@ def month_key(from_currency: str, to_currency: str, on) -> dict:
 	"""The filters of a month's stored rate."""
 	month = frappe.utils.getdate(on).replace(day=1)
 	return {"month": month, "from_currency": from_currency, "to_currency": to_currency}
+
+
+def _reading(key: dict, fresh: bool) -> frappe._dict:
+	"""The accounting system's rate for an unstored month, cached for an hour."""
+	# Each rollup of the month reads it every hour, so one call serves them all.
+	cache_key = reading_key(key)
+	if not fresh and (cached := frappe.cache.get_value(cache_key, expires=True)):
+		return frappe._dict(cached)
+	found = _required_rate(key)
+	frappe.cache.set_value(cache_key, dict(found), expires_in_sec=READING_SECONDS)
+	return found
+
+
+def reading_key(key: dict) -> str:
+	"""The cache key of a month's unstored reading."""
+	return f"{READING_KEY}:{key['from_currency']}:{key['to_currency']}:{key['month']}"
 
 
 def _required_rate(key: dict) -> frappe._dict:
