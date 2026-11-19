@@ -9,10 +9,17 @@ from frappe.model.document import Document
 from frappe.query_builder import Order
 from frappe.utils import add_days, cint, now_datetime
 
-from central.central.doctype.activity_event.tracked import ACTION_EVENTS, TRACKED, EventKind, Tracked
+from central.central.doctype.activity_event.tracked import (
+	ACTION_EVENTS,
+	SHAPE_DETAILS,
+	TRACKED,
+	EventKind,
+	Tracked,
+)
 from central.iam import get_capability_gate, user_has_operator_bypass
 
 MAX_VALUE_LENGTH = 120
+
 # A long or structured value reads as "changed", not as two values side by side.
 SUMMARY_FIELDTYPES = {"Attach", "Attach Image", "Code", "JSON", "Long Text", "Small Text", "Text"}
 ACTION = EventKind("", "action", "server:view")
@@ -450,21 +457,23 @@ def get_link_title(doctype: str, name: str | None) -> str | None:
 
 
 def get_action_details(action: Document) -> list[dict]:
-	# Only a finished resize confirms the new plan.
+	# Only a finished resize confirms the new plan and size.
 	if action.action != "resize" or action.status != "Succeeded":
 		return []
 
 	configuration = action.get_resize_configuration()
-	if not configuration.plan or configuration.plan == configuration.from_plan:
-		return []
+	details = []
+	if configuration.plan and configuration.plan != configuration.from_plan:
+		plans = (get_link_title("Plan", configuration.from_plan), get_link_title("Plan", configuration.plan))
+		details.append(get_detail("Plan", *plans))
 
-	return [
-		get_detail(
-			"Plan",
-			get_link_title("Plan", configuration.from_plan),
-			get_link_title("Plan", configuration.plan),
-		)
-	]
+	if configuration.from_shape:
+		for label, describe in SHAPE_DETAILS:
+			old, new = describe(configuration.from_shape), describe(configuration.shape)
+			if old != new:
+				details.append(get_detail(label, old, new))
+
+	return details
 
 
 def get_detail(label: str, old=None, new=None) -> dict[str, Any]:

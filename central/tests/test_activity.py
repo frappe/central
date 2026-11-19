@@ -5,7 +5,11 @@ from frappe.tests import IntegrationTestCase
 
 from central.api.activity import server_activity, team_activity
 from central.api.snapshots import set_automatic_snapshots
-from central.central.doctype.activity_event.activity_event import get_actor, get_retention_days
+from central.central.doctype.activity_event.activity_event import (
+	get_action_details,
+	get_actor,
+	get_retention_days,
+)
 from central.central.doctype.activity_event.backfill import backfill
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.resource_actions import submit_command
@@ -210,6 +214,26 @@ class TestActivity(IntegrationTestCase):
 			(event["event"], event["sentence"]),
 			("server.restart_failed", "{actor} tried to restart {resource}"),
 		)
+
+	def test_a_resize_lists_each_size_that_changed(self):
+		def get_changes(from_shape: dict | None, shape: dict) -> list[tuple]:
+			action = frappe.get_doc(
+				{
+					"doctype": "Resource Action",
+					"action": "resize",
+					"status": "Succeeded",
+					"request_payload": frappe.as_json({"shape": shape, "from_shape": from_shape}),
+				}
+			)
+			return [(detail["label"], detail["from"], detail["to"]) for detail in get_action_details(action)]
+
+		small = {"vcpus": 2.0, "memory_megabytes": 4096, "disk_gigabytes": 50}
+		self.assertEqual(get_changes(small, {**small, "disk_gigabytes": 100}), [("Disk", "50 GB", "100 GB")])
+		self.assertEqual(
+			get_changes(small, {**small, "vcpus": 0.5, "memory_megabytes": 8192}),
+			[("vCPU", "2", "0.5"), ("Memory", "4 GB", "8 GB")],
+		)
+		self.assertEqual(get_changes(None, small), [])
 
 	def test_pages_follow_the_cursor_without_gaps(self):
 		for title in ("One", "Two", "Three"):
