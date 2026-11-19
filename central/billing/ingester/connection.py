@@ -95,18 +95,16 @@ def download(method: str, params: dict) -> bytes:
 	return response.content
 
 
-def find(
-	doctype: str, filters: list, fields: list | None = None, order_by: str | None = None, limit: int = 0
-) -> list[frappe._dict]:
-	"""Records matching `filters`, as a list. A `limit` of 0 returns them all."""
-	params = {
-		"filters": json.dumps(filters),
-		"fields": json.dumps(fields or ["name"]),
-		"limit_page_length": limit,
-	}
-	if order_by:
-		params["order_by"] = order_by
-	rows = _request_list(f"api/resource/{quote(doctype)}", params=params)
+def find(doctype: str, filters: list, fields: list | None = None) -> list[frappe._dict]:
+	"""Records matching `filters`, as a list."""
+	rows = _request_list(
+		f"api/resource/{quote(doctype)}",
+		params={
+			"filters": json.dumps(filters),
+			"fields": json.dumps(fields or ["name"]),
+			"limit_page_length": 0,
+		},
+	)
 	return [frappe._dict(row) for row in rows or []]
 
 

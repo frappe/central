@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""AI billing across days and months: when the rate is fixed, credits carry, and reading catches up."""
+"""AI billing across days and months: when the rate is kept, credits carry, and reading catches up."""
 
 import datetime
 from unittest.mock import patch
@@ -17,7 +17,9 @@ from central.billing.tests.test_ai_billing import (
 	TEAM_INR,
 	TEAM_USD,
 	AIBillingCase,
+	feed,
 	forget_rate_readings,
+	keep_rate,
 	rate_on,
 	run_inline,
 )
@@ -28,11 +30,12 @@ AUGUST = ("2026-08-01", "2026-08-31")
 
 
 class TestAIBillingMonths(AIBillingCase):
-	def recount(self, rate):
+	def recount(self, rate, today: str = "2026-07-01"):
 		# Each recount stands for a later hour, after the cached reading has expired.
 		forget_rate_readings()
 		with (
-			patch.object(exchange_rates, "accounting_rate", return_value=rate),
+			feed(rate),
+			patch.object(exchange_rates, "utc_today", return_value=frappe.utils.getdate(today)),
 			patch("frappe.enqueue", side_effect=run_inline),
 		):
 			usage_recount.recount_changed()
@@ -44,43 +47,61 @@ class TestAIBillingMonths(AIBillingCase):
 			fields=["name", "locked_rate", "rate_date"],
 		)[0]
 
-	def test_the_recount_keeps_an_earlier_rate_unlocked_until_the_firsts_rate_arrives(self):
-		self.land(TEAM_INR, "2026-06-10", {"gpt-4o": 2.0})
-		self.read("2026-06-10")
-		self.recount(rate_on("2026-05-29", 83.5))
+	def test_the_recount_keeps_the_rate_unlocked_on_the_first_and_locks_it_from_the_second(self):
+		self.land(TEAM_INR, "2026-06-01", {"gpt-4o": 2.0})
+		self.read("2026-06-01")
+		# On the 1st the API may still give the last day's rate.
+		self.recount(rate_on("2026-05-29", 83.5), today="2026-06-01")
 		rollup = self.inr_rollup()
 		self.assertEqual((rollup.locked_rate, rollup.rate_date), (83.5, None))
 		self.assertFalse(frappe.db.count("Monthly Exchange Rate", {"month": "2026-06-01"}))
 
-		self.land(TEAM_INR, "2026-06-11", {"gpt-4o": 1.0})
-		self.read("2026-06-11")
-		self.recount(rate_on("2026-06-01", 84.1))
+		self.land(TEAM_INR, "2026-06-02", {"gpt-4o": 1.0})
+		self.read("2026-06-02")
+		self.recount(rate_on("2026-06-01", 84.1), today="2026-06-02")
 		rollup = self.inr_rollup()
 		self.assertEqual((rollup.locked_rate, str(rollup.rate_date)), (84.1, "2026-06-01"))
 
-		# Locked: a later change in the accounting system does not move it.
+		# Locked: a later change in the rate API does not move it.
 		self.land(TEAM_INR, "2026-06-12", {"gpt-4o": 1.0})
 		self.read("2026-06-12")
-		self.recount(rate_on("2026-06-01", 90))
+		self.recount(rate_on("2026-06-01", 90), today="2026-06-12")
 		self.assertEqual(self.inr_rollup().locked_rate, 84.1)
+
+	def test_an_earlier_months_rate_is_not_kept_before_the_draft(self):
+		keep_rate("2026-05-01", 83.0)
+		self.land(TEAM_INR, "2026-06-10", {"gpt-4o": 2.0})
+		self.read("2026-06-10")
+		self.recount(None, today="2026-06-10")
+		rollup = self.inr_rollup()
+		self.assertEqual((rollup.locked_rate, rollup.rate_date), (83.0, None))
+		self.assertFalse(frappe.db.count("Monthly Exchange Rate", {"month": "2026-06-01"}))
+
+	def test_the_draft_keeps_the_rate_on_the_first(self):
+		with (
+			feed(rate_on("2026-05-29", 83.5)),
+			patch.object(exchange_rates, "utc_today", return_value=frappe.utils.getdate("2026-06-01")),
+		):
+			self.assertFalse(exchange_rates.fix_month_rate("USD", "INR", "2026-06-01").fixed)
+			self.assertTrue(exchange_rates.fix_month_rate("USD", "INR", "2026-06-01", final=True).fixed)
 
 	def test_a_worker_that_loses_the_race_returns_the_stored_rate(self):
 		key = exchange_rates.month_key("USD", "INR", "2026-06-01")
-		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01", 84.1)):
+		with feed(rate_on("2026-06-01", 84.1)):
 			exchange_rates.fix_month_rate("USD", "INR", "2026-06-01")
-		found = exchange_rates._store(key, exchange_rates._as_rate(rate_on("2026-06-01", 90), fixed=False))
+		found = exchange_rates._store(key, frappe._dict(rate_on("2026-06-01", 90), fixed=False))
 		self.assertEqual((found.rate, found.fixed), (84.1, True))
 
 	def test_a_race_whose_winner_rolled_back_keeps_the_reading_unstored(self):
 		key = exchange_rates.month_key("USD", "INR", "2026-06-01")
-		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01", 84.1)):
+		with feed(rate_on("2026-06-01", 84.1)):
 			exchange_rates.fix_month_rate("USD", "INR", "2026-06-01")
 		get_value = frappe.db.get_value
 
 		def winner_gone(*args, **kwargs):
 			return None if kwargs.get("for_update") else get_value(*args, **kwargs)
 
-		reading = exchange_rates._as_rate(rate_on("2026-06-01", 90), fixed=False)
+		reading = frappe._dict(rate_on("2026-06-01", 90), fixed=False)
 		with patch.object(frappe.db, "get_value", side_effect=winner_gone):
 			found = exchange_rates._store(key, reading)
 		self.assertEqual((found.rate, found.fixed), (90, False))

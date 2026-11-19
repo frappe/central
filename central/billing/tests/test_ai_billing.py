@@ -40,11 +40,16 @@ class FakeGrove:
 
 
 def rate_on(day: str, rate: float = 84.1):
-	return frappe._dict(name="CE-TEST", date=frappe.utils.getdate(day), exchange_rate=rate)
+	return frappe._dict(rate=rate, rate_date=frappe.utils.getdate(day), source="rates.test")
+
+
+def feed(rate):
+	"""The rate API answers `rate`, or nothing when it is None."""
+	return patch.object(exchange_rates, "feed_rate", return_value=rate)
 
 
 def forget_rate_readings():
-	"""Each test fakes its own accounting rate, so none may reuse another's cached reading."""
+	"""Each test fakes its own rate API, so none may reuse another's cached reading."""
 	frappe.cache.delete_keys(exchange_rates.READING_KEY)
 
 
@@ -65,6 +70,8 @@ class AIBillingCase(IntegrationTestCase):
 		self.services = {TEAM_USD: self.ai_team(TEAM_USD, "USD"), TEAM_INR: self.ai_team(TEAM_INR, "INR")}
 		forget_rate_readings()
 		self.addCleanup(forget_rate_readings)
+		# A rate kept by an earlier run would stand in for a month with none.
+		frappe.db.delete("Monthly Exchange Rate", {"from_currency": "USD", "to_currency": "INR"})
 
 	def ai_team(self, team: str, currency: str | None):
 		frappe.db.delete("Team Service", {"team": team})
@@ -161,7 +168,7 @@ class TestAIBilling(AIBillingCase):
 	def test_an_inr_invoice_converts_at_the_months_rate(self):
 		self.land(TEAM_INR, "2026-06-10", {"gpt-4o": 2.0})
 		self.read("2026-06-10")
-		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01")):
+		with feed(rate_on("2026-06-01")):
 			[line] = self.invoice_lines(TEAM_INR)
 		self.assertEqual((line.quantity, line.rate, line.amount), (2.0, 84.1, 168.2))
 		self.assertIn("rate of 2026-06-01", line.description)
@@ -174,57 +181,59 @@ class TestAIBilling(AIBillingCase):
 			84.1,
 		)
 
-	def test_a_stored_month_rate_is_kept_when_the_accounting_system_changes(self):
-		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01", 84.1)):
+	def test_a_stored_month_rate_is_kept_when_the_rate_api_changes(self):
+		with feed(rate_on("2026-06-01", 84.1)):
 			exchange_rates.fix_month_rate("USD", "INR", "2026-06-15")
-		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01", 90)):
+		with feed(rate_on("2026-06-01", 90)):
 			self.assertEqual(exchange_rates.month_rate("USD", "INR", "2026-06-20").rate, 84.1)
 
-	def test_the_latest_earlier_rate_is_used_and_its_date_printed(self):
+	def test_a_rate_for_the_first_dated_earlier_is_used_and_its_date_printed(self):
+		# On a holiday the API gives the last working day's rate for the 1st.
 		self.land(TEAM_INR, "2026-06-10", {"gpt-4o": 1.0})
 		self.read("2026-06-10")
-		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-05-29", 83.5)):
+		with feed(rate_on("2026-05-29", 83.5)):
 			[line] = self.invoice_lines(TEAM_INR)
 		self.assertEqual(line.rate, 83.5)
 		self.assertIn("rate of 2026-05-29", line.description)
-		# The draft keeps and locks the rate it found, even though it is not the 1st's.
 		stored = exchange_rates.stored_rate(exchange_rates.month_key("USD", "INR", "2026-06-01"))
 		self.assertEqual((stored.rate, str(stored.rate_date)), (83.5, "2026-05-29"))
-		rollup = frappe.get_all(
-			"Usage Rollup", filters={"team": TEAM_INR}, fields=["locked_rate", "rate_date"]
-		)[0]
-		self.assertEqual((rollup.locked_rate, str(rollup.rate_date)), (83.5, "2026-05-29"))
+		self.assertEqual(self.inr_rollup_rate(), (83.5, "2026-05-29"))
+
+	def test_with_the_rate_api_down_the_draft_uses_last_months_kept_rate(self):
+		keep_rate("2026-05-01", 83.0)
+		self.land(TEAM_INR, "2026-06-10", {"gpt-4o": 1.0})
+		self.read("2026-06-10")
+		with feed(None):
+			[line] = self.invoice_lines(TEAM_INR)
+		self.assertEqual(line.rate, 83.0)
+		self.assertIn("rate of 2026-05-01", line.description)
+		stored = frappe.db.get_value(
+			"Monthly Exchange Rate", {"month": "2026-06-01", "to_currency": "INR"}, ["rate_date", "source"]
+		)
+		self.assertEqual((str(stored[0]), stored[1]), ("2026-05-01", "fallback: 2026-05"))
+		self.assertEqual(self.inr_rollup_rate(), (83.0, "2026-05-01"))
 
 	def test_an_unstored_reading_is_reused_for_an_hour_but_a_stored_rate_is_read_each_time(self):
-		with patch.object(
-			exchange_rates, "accounting_rate", return_value=rate_on("2026-05-29", 83.5)
-		) as read:
+		with feed(rate_on("2026-05-29", 83.5)) as read:
 			exchange_rates.month_rate("USD", "INR", "2026-06-10")
 			found = exchange_rates.month_rate("USD", "INR", "2026-06-20")
 		self.assertEqual((found.rate, read.call_count), (83.5, 1))
-		# The draft's final read asks the accounting system again and stores what it has now.
-		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01", 84.1)):
+		# The draft's final read asks the rate API again and stores what it gives now.
+		with feed(rate_on("2026-06-01", 84.1)):
 			exchange_rates.fix_month_rate("USD", "INR", "2026-06-01", final=True)
 		self.assertEqual(exchange_rates.month_rate("USD", "INR", "2026-06-20").rate, 84.1)
 
-	def test_the_rate_asked_for_is_the_latest_selling_rate_on_or_before_the_first(self):
-		with patch.object(exchange_rates.connection, "find", return_value=[]) as find:
-			exchange_rates.accounting_rate("USD", "INR", frappe.utils.getdate("2026-06-01"))
-		filters = find.call_args.args[1]
-		self.assertIn(["date", "<=", "2026-06-01"], filters)
-		self.assertIn(["for_selling", "=", 1], filters)
-		self.assertEqual(
-			(find.call_args.kwargs["order_by"], find.call_args.kwargs["limit"]), ("date desc", 1)
-		)
-
-	def test_with_no_rate_at_all_the_inr_draft_fails(self):
+	def test_with_no_rate_ever_kept_the_inr_draft_fails(self):
 		self.land(TEAM_INR, "2026-06-10", {"gpt-4o": 1.0})
 		self.read("2026-06-10")
-		with (
-			patch.object(exchange_rates, "accounting_rate", return_value=None),
-			self.assertRaises(frappe.ValidationError),
-		):
+		with feed(None), self.assertRaises(frappe.ValidationError):
 			generate_team_invoice(TEAM_INR, *JUNE)
+
+	def inr_rollup_rate(self):
+		rollup = frappe.get_all(
+			"Usage Rollup", filters={"team": TEAM_INR}, fields=["locked_rate", "rate_date"]
+		)[0]
+		return (rollup.locked_rate, str(rollup.rate_date))
 
 	def test_usage_before_billing_starts_is_kept_written_off(self):
 		frappe.db.set_value("Service", AI_SERVICE, "bill_from", "2026-06-15")
@@ -291,26 +300,40 @@ class TestAIBilling(AIBillingCase):
 		self.assertIsNone(ai.get_billing_rate(TEAM_USD))
 		# A team with no billing currency is not billed, so it is not shown rupees either.
 		self.assertIsNone(ai.get_billing_rate("team-ai-billing-no-profile"))
-		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01")):
+		with feed(rate_on("2026-06-01")):
 			found = ai.get_billing_rate(TEAM_INR)
 		self.assertEqual((found["currency"], found["rate"]), ("INR", 84.1))
 		self.assertFalse(frappe.db.count("Monthly Exchange Rate", {"rate_date": "2026-06-01"}))
 		forget_rate_readings()
-		with patch.object(exchange_rates, "accounting_rate", return_value=None):
+		with feed(None):
 			self.assertIsNone(ai.get_billing_rate(TEAM_INR))
 
 	def test_readiness_reports_a_billing_currency_with_no_usd_rate(self):
-		with patch.object(readiness, "accounting_rate", return_value=None):
+		with feed(None):
 			self.assertIn("INR", [v.subject for v in readiness.check_converted_usage_has_a_rate()])
-		with patch.object(readiness, "accounting_rate", return_value=rate_on("2026-06-01")):
+		with feed(rate_on("2026-06-01")):
 			self.assertEqual(readiness.check_converted_usage_has_a_rate(), [])
 
-	def test_with_accounting_sync_off_only_a_kept_rate_satisfies_readiness(self):
-		with patch.object(exchange_rates.connection, "enabled", return_value=False):
-			self.assertIn("INR", [v.subject for v in readiness.check_converted_usage_has_a_rate()])
-			with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01")):
-				exchange_rates.fix_month_rate("USD", "INR", readiness_month(), final=True)
+	def test_with_the_rate_api_down_an_earlier_kept_rate_satisfies_readiness(self):
+		earlier = frappe.utils.add_months(readiness_month(), -2)
+		keep_rate(earlier, 83.0)
+		with feed(None):
 			self.assertEqual(readiness.check_converted_usage_has_a_rate(), [])
+
+
+def keep_rate(month, rate: float):
+	"""Keep a USD to INR rate for `month`, dated its 1st, as an earlier draft would have."""
+	frappe.get_doc(
+		{
+			"doctype": "Monthly Exchange Rate",
+			"month": month,
+			"from_currency": "USD",
+			"to_currency": "INR",
+			"rate": rate,
+			"rate_date": month,
+			"source": "rates.test",
+		}
+	).insert(ignore_permissions=True)
 
 
 def readiness_month():

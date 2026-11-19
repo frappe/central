@@ -1,12 +1,11 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
-import datetime
-
 import frappe
 from frappe import _
 
-from central.billing.ingester import connection
+from central.billing.revenue.exchange_rate_feed import feed_rate
+from central.billing.revenue.usage_ledger import utc_today
 
 DOCTYPE = "Monthly Exchange Rate"
 READING_KEY = "billing_month_rate_reading"
@@ -19,18 +18,23 @@ def month_rate(from_currency: str, to_currency: str, on, fresh: bool = False) ->
 	if from_currency == to_currency:
 		return frappe._dict(rate=1.0, rate_date=None, fixed=True)
 	key = month_key(from_currency, to_currency, on)
-	return stored_rate(key) or _as_rate(_reading(key, fresh), fixed=False)
+	return stored_rate(key) or frappe._dict(_reading(key, fresh), fixed=False)
 
 
 def fix_month_rate(from_currency: str, to_currency: str, on, final: bool = False) -> frappe._dict:
-	"""The month's rate, stored once it is the 1st's, or with `final` whatever the latest is."""
-	# The final read skips the cache, so the draft keeps what the accounting system has now.
+	"""The month's rate, stored from the month's 2nd (UTC), or with `final` whatever is found."""
+	# The final read skips the cache, so the draft keeps what the rate API gives now.
 	found = month_rate(from_currency, to_currency, on, fresh=final)
 	key = month_key(from_currency, to_currency, on)
-	# Until then a later reading may still find the 1st's rate, so the rate is not kept.
-	if found.fixed or not (final or found.rate_date == key["month"]):
+	if found.fixed or not _is_to_keep(key, found, final):
 		return found
 	return _store(key, found)
+
+
+def _is_to_keep(key: dict, found: frappe._dict, final: bool) -> bool:
+	# On the 1st the API may still give the last day's rate; by the 2nd it has the 1st's.
+	# An earlier month's rate stands in only for the draft, so the API's own rate can still come.
+	return final or (not found.is_fallback and utc_today() > key["month"])
 
 
 def stored_rate(key: dict) -> frappe._dict | None:
@@ -39,21 +43,31 @@ def stored_rate(key: dict) -> frappe._dict | None:
 	return frappe._dict(stored, fixed=True) if stored else None
 
 
-def accounting_rate(from_currency: str, to_currency: str, month: datetime.date) -> frappe._dict | None:
-	"""The latest selling rate the accounting system holds on or before the 1st."""
-	rows = connection.find(
-		"Currency Exchange",
-		[
-			["from_currency", "=", from_currency],
-			["to_currency", "=", to_currency],
-			["for_selling", "=", 1],
-			["date", "<=", str(month)],
-		],
-		fields=["name", "date", "exchange_rate"],
-		order_by="date desc",
-		limit=1,
+def found_rate(key: dict) -> frappe._dict | None:
+	"""The rate API's rate for the month's 1st, else the latest earlier month's kept rate."""
+	return feed_rate(key["from_currency"], key["to_currency"], key["month"]) or _earlier_rate(key)
+
+
+def _earlier_rate(key: dict) -> frappe._dict | None:
+	earlier = frappe.db.get_value(
+		DOCTYPE,
+		{
+			"from_currency": key["from_currency"],
+			"to_currency": key["to_currency"],
+			"month": ["<", key["month"]],
+		},
+		["month", "rate", "rate_date"],
+		as_dict=True,
+		order_by="month desc",
 	)
-	return rows[0] if rows else None
+	if not earlier:
+		return None
+	return frappe._dict(
+		rate=earlier.rate,
+		rate_date=earlier.rate_date,
+		source=f"fallback: {earlier.month:%Y-%m}",
+		is_fallback=True,
+	)
 
 
 def month_key(from_currency: str, to_currency: str, on) -> dict:
@@ -63,7 +77,7 @@ def month_key(from_currency: str, to_currency: str, on) -> dict:
 
 
 def _reading(key: dict, fresh: bool) -> frappe._dict:
-	"""The accounting system's rate for an unstored month, cached for an hour."""
+	"""The rate for an unstored month, cached for an hour."""
 	# Each rollup of the month reads it every hour, so one call serves them all.
 	cache_key = reading_key(key)
 	if not fresh and (cached := frappe.cache.get_value(cache_key, expires=True)):
@@ -79,23 +93,14 @@ def reading_key(key: dict) -> str:
 
 
 def _required_rate(key: dict) -> frappe._dict:
-	found = accounting_rate(key["from_currency"], key["to_currency"], key["month"])
+	found = found_rate(key)
 	if not found:
 		frappe.throw(
-			_("The accounting system has no {0} to {1} exchange rate on or before {2}.").format(
+			_("The rate API gave no {0} to {1} rate for {2} and no earlier month's rate is kept.").format(
 				key["from_currency"], key["to_currency"], key["month"]
 			)
 		)
 	return found
-
-
-def _as_rate(found: frappe._dict, fixed: bool) -> frappe._dict:
-	return frappe._dict(
-		rate=frappe.utils.flt(found.exchange_rate),
-		rate_date=frappe.utils.getdate(found.date),
-		source=found.name,
-		fixed=fixed,
-	)
 
 
 def _store(key: dict, found: frappe._dict) -> frappe._dict:
