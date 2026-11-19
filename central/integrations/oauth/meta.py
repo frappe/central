@@ -4,7 +4,7 @@ import frappe
 import requests
 from frappe import _
 
-from central.integrations.oauth.oauth import get_provider
+from central.integrations.oauth.oauth import get_meta_refusal, get_provider
 
 GRAPH_URL = "https://graph.facebook.com/v23.0"
 ROUTE = "Meta Webhook Route"
@@ -16,6 +16,17 @@ NO_WABA = "no_waba"  # the sign-in shared no account
 NO_PHONE_NUMBER = "no_phone_number"
 PHONE_NUMBER_UNCLEAR = "phone_number_unclear"  # more than one number could be the new one
 PIN_CHANGED = "pin_changed"  # register failed after the PIN change: connecting again finishes it
+
+# Graph error codes the site has its own message for
+# (developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes)
+GRAPH_REFUSALS = {
+	**dict.fromkeys((3, 10, *range(200, 300), 131005), "no_permission"),
+	**dict.fromkeys((0, 102, 190), "expired"),
+	**dict.fromkeys((4, 17, 80007, 80008, 130429, 133008, 133009, 133015, 133016), "rate_limited"),
+	**dict.fromkeys((1, 2, 131000, 131016, 133004), "meta_unavailable"),
+	**dict.fromkeys((368, 131031), "account_restricted"),
+	**dict.fromkeys((133006, 133010, 2388091, 2388093), "number_not_verified"),
+}
 
 
 def connect_whatsapp(access_token: str, team: str, server: str | None, site: str) -> dict:
@@ -158,5 +169,10 @@ def refuse_with(code: str) -> None:
 
 
 def refuse(body: dict) -> None:
-	# Graph's message says what failed and never holds a token or the PIN
-	frappe.throw(_("Meta refused the request: {0}").format(body["error"].get("message")))
+	"""Refuse with the site's code for Graph's error code, else with Meta's code and its text for users."""
+	error = body["error"]
+	if code := GRAPH_REFUSALS.get(error.get("code")):
+		refuse_with(code)
+	# Graph's error never holds a token or the PIN
+	frappe.log_error("Meta refused a WhatsApp connect", error)
+	refuse_with(get_meta_refusal(error))

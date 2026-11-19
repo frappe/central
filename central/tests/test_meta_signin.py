@@ -12,6 +12,7 @@ from central.api.meta_webhook import disconnect
 from central.api.oauth import relay_token, start
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.oauth.meta import (
+	GRAPH_REFUSALS,
 	GRAPH_URL,
 	NO_PHONE_NUMBER,
 	NO_WABA,
@@ -212,7 +213,7 @@ class TestMetaSignIn(IntegrationTestCase):
 		waba_id = self.sign_in()
 		limited = {"error": {"message": "rate limited", "code": 80008}}
 
-		with self.assertRaisesRegex(frappe.ValidationError, "rate limited") as refused:
+		with self.assertRaisesRegex(frappe.ValidationError, "^rate_limited$") as refused:
 			self.relay(waba_id, graph_reply=fake_graph(waba_id, register=[limited]))
 
 		self.assertNotIn(PIN_CHANGED, str(refused.exception))
@@ -288,6 +289,38 @@ class TestMetaSignIn(IntegrationTestCase):
 			(WABA_IN_USE, NO_WABA, NO_PHONE_NUMBER, PHONE_NUMBER_UNCLEAR, PIN_CHANGED),
 			("waba_in_use", "no_waba", "no_phone_number", "phone_number_unclear", "pin_changed"),
 		)
+		self.assertEqual(
+			set(GRAPH_REFUSALS.values()),
+			{
+				"no_permission",
+				"expired",
+				"rate_limited",
+				"meta_unavailable",
+				"account_restricted",
+				"number_not_verified",
+			},
+		)
+
+	def test_meta_refuses_with_the_sites_code_for_a_known_graph_error(self):
+		for graph_code, code in (
+			(200, "no_permission"),
+			(131031, "account_restricted"),
+			(2, "meta_unavailable"),
+		):
+			with self.subTest(graph_code=graph_code):
+				waba_id = self.sign_in()
+				error = {"error": {"message": "(#200) Permissions error", "code": graph_code}}
+				with self.assertRaisesRegex(frappe.ValidationError, f"^{code}$"):
+					self.relay(waba_id, graph_reply=fake_graph(waba_id, register=[error]))
+				self.assertFalse(frappe.db.exists(ROUTE, waba_id))
+
+	def test_meta_passes_on_another_graph_error_with_its_text_for_users(self):
+		for user_message, refusal in (("Ask your business admin.", "Ask your business admin."), (None, "")):
+			with self.subTest(user_message=user_message):
+				waba_id = self.sign_in()
+				error = {"message": "Unknown", "code": 131099, "error_user_msg": user_message}
+				with self.assertRaisesRegex(frappe.ValidationError, f"^meta_refused:131099:{refusal}$"):
+					self.relay(waba_id, graph_reply=fake_graph(waba_id, register=[{"error": error}]))
 
 	def test_meta_sign_in_on_a_custom_domain_routes_to_its_site(self):
 		waba_id = self.sign_in(host=self.add_domain(self.site))
@@ -332,6 +365,13 @@ class TestMetaSignIn(IntegrationTestCase):
 
 		with self.assertRaisesRegex(frappe.ValidationError, "invalid_grant"):
 			self.relay(waba_id, token_reply=(400, expired))
+
+	def test_meta_passes_on_another_code_exchange_error_with_its_text_for_users(self):
+		waba_id = self.sign_in()
+		refused = {"error": {"message": "Invalid", "code": 100, "error_user_msg": "Try again later."}}
+
+		with self.assertRaisesRegex(frappe.ValidationError, "^meta_refused:100:Try again later.$"):
+			self.relay(waba_id, token_reply=(400, refused))
 
 	def test_disconnect_drops_the_route_only_for_the_team_and_server_it_goes_to(self):
 		waba_id = f"waba-{frappe.generate_hash(length=8)}"

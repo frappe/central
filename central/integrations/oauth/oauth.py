@@ -174,7 +174,12 @@ def get_token_error(token: dict) -> str | None:
 	# Meta answers with a Graph error; these subcodes are its expired and used codes
 	if error.get("error_subcode") in (36007, 36009):
 		return "invalid_grant"
-	return None
+	return get_meta_refusal(error)
+
+
+def get_meta_refusal(error: dict) -> str:
+	"""The site's code for a Graph error it has no message for, with Meta's text for users, if any."""
+	return f"meta_refused:{error.get('code')}:{error.get('error_user_msg') or ''}"
 
 
 def get_provider(provider: str) -> "OAuthProvider":
