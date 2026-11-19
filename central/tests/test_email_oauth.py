@@ -114,7 +114,7 @@ class TestEmailOAuth(IntegrationTestCase):
 		self.assertEqual(query["code_challenge"], ["challenge-1"])
 		self.assertEqual(query["prompt"], ["select_account"])
 		self.assertNotIn("login_hint", query)
-		self.assertTrue(query["redirect_uri"][0].endswith("/api/method/central.api.email_oauth.callback"))
+		self.assertTrue(query["redirect_uri"][0].endswith("/api/method/central.api.oauth.callback"))
 		note = frappe.cache.get_value("email_oauth:state-1")
 		self.assertEqual((note["team"], note["server"]), (self.team, self.server))
 
@@ -272,7 +272,7 @@ class TestEmailOAuth(IntegrationTestCase):
 		login = urlsplit(response.location)
 		self.assertEqual(login.path, "/dashboard/login")
 		back = urlsplit(parse_qs(login.query)["redirect-to"][0])
-		self.assertEqual(back.path, "/api/method/central.api.email_oauth.callback")
+		self.assertEqual(back.path, "/api/method/central.api.oauth.callback")
 		self.assertEqual(parse_qs(back.query), {"state": ["state-1"], "code": ["the-code"]})
 
 		# back from the login as a team member: the code goes on to the site
@@ -330,7 +330,7 @@ class TestEmailOAuth(IntegrationTestCase):
 		self.assertEqual(token["access_token"], "at")
 		sent = post.call_args.kwargs["data"]
 		self.assertEqual((sent["client_id"], sent["client_secret"]), ("ms-client-id", "ms-secret"))
-		self.assertTrue(sent["redirect_uri"].endswith("/api/method/central.api.email_oauth.callback"))
+		self.assertTrue(sent["redirect_uri"].endswith("/api/method/central.api.oauth.callback"))
 
 	def test_relay_token_swaps_a_code_only_for_the_server_whose_sign_in_got_it(self):
 		self.sign_in()

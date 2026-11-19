@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 	from central.central.doctype.oauth_provider.oauth_provider import OAuthProvider
 
 PROVIDER = "OAuth Provider"
-CALLBACK_PATH = "/api/method/central.api.email_oauth.callback"
+CALLBACK_PATH = "/api/method/central.api.oauth.callback"
 MAIL_CALLBACK_PATH = "/api/method/frappe.integrations.frappe_providers.email_oauth.callback"
 # the one site path each provider's sign-in may return to, so a sign-in never lands in another app
 SITE_CALLBACK_PATHS = {
