@@ -46,10 +46,13 @@ def _body(response) -> dict:
 
 
 def _is_rate_for(body: dict, from_currency: str, to_currency: str) -> bool:
-	if (body.get("base"), body.get("quote")) != (from_currency, to_currency) or not body.get("date"):
+	date = body.get("date")
+	if (body.get("base"), body.get("quote")) != (from_currency, to_currency):
+		return False
+	if not date or not isinstance(date, str):
 		return False
 	try:
-		frappe.utils.getdate(body["date"])
+		frappe.utils.getdate(date)
 	except (ValueError, frappe.ValidationError):
 		return False
 	return frappe.utils.flt(body.get("rate")) > 0

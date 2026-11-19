@@ -51,6 +51,8 @@ class TestExchangeRateFeed(UnitTestCase):
 			"no rate": answering({k: v for k, v in ANSWER.items() if k != "rate"}),
 			"no date": answering({k: v for k, v in ANSWER.items() if k != "date"}),
 			"bad date": answering({**ANSWER, "date": "soon"}),
+			"number date": answering({**ANSWER, "date": 20260601}),
+			"empty date": answering({**ANSWER, "date": ""}),
 			"other quote": answering({**ANSWER, "quote": "EUR"}),
 			"other base": answering({**ANSWER, "base": "EUR"}),
 		}
