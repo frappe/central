@@ -179,9 +179,12 @@ def _send_disabled_notice(email: str) -> None:
 		template="notification",
 		args={
 			"title": _("Your account is disabled"),
-			"body": _(
-				"Someone tried to sign in to Frappe Cloud with this email. Contact support to restore access."
-			),
+			"paragraphs": [
+				_(
+					"Someone tried to sign in to Frappe Cloud with this email. "
+					"Contact support to restore access."
+				)
+			],
 		},
 	)
 
