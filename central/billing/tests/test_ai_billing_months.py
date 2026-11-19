@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import frappe
 
+from central.billing.api.dashboard._shared import _describe_line
 from central.billing.revenue import exchange_rates, grove_bridge, usage_recount
 from central.billing.revenue.invoicing.generate import team_clusters
 from central.billing.revenue.metered_lines import MAXIMUM_DESCRIPTION, line_description
@@ -151,6 +152,12 @@ class TestAIBillingMonths(AIBillingCase):
 		description = line_description(rollup, 84.1)
 		self.assertLessEqual(len(description), MAXIMUM_DESCRIPTION)
 		self.assertTrue(description.endswith("rate of 2026-06-01"))
+
+	def test_the_customer_invoice_shows_the_model_and_rate(self):
+		line = frappe._dict(
+			resource_type="AI Usage", quantity=2, unit="USD", rate=84.1, amount=168.2, description="gpt-4o"
+		)
+		self.assertTrue(_describe_line(TEAM_USD, line)["detail"].endswith(" · gpt-4o"))
 
 	def read_page(self, today: str, *teams: str):
 		with (
