@@ -1,24 +1,38 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal, TypedDict
+import ipaddress
+import re
+from typing import Annotated, Literal, NotRequired, TypedDict
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
+from frappe import _
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, StringConstraints, model_validator
+
+from central.billing.catalog.rate_card import COMPONENT_UNITS
 
 SSHKey = Annotated[str, Field(min_length=1, max_length=16_384)]
+
+
+DNS_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+# Atlas refuses larger cloud-init user data.
+MAXIMUM_USER_DATA_BYTES = 16 * 1024
+PORTS = re.compile(r"([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?")
 
 
 class ResourceQuantity(BaseModel):
 	model_config = ConfigDict(extra="forbid", strict=True)
 
-	resource_type: Literal["Compute", "Memory", "Disk", "Transfer"]
+	# The plan catalog decides which resource types a plan may include.
+	resource_type: str = Field(min_length=1)
 	quantity: float = Field(gt=0, allow_inf_nan=False)
 	unit: str
 
 	@model_validator(mode="after")
 	def validate_unit(self):
-		units = {"Compute": "vCPU", "Memory": "GB", "Disk": "GB", "Transfer": "GB"}
-		if self.unit != units[self.resource_type]:
-			raise ValueError("The unit must match the selected resource type.")
+		# The server shape is read from these units, so they must match.
+		unit = COMPONENT_UNITS.get(self.resource_type)
+		if unit and self.unit != unit:
+			raise ValueError(_("The unit must match the selected resource type."))
+
 		return self
 
 
@@ -39,8 +53,22 @@ class CreateServerInput(BaseModel):
 	hostname: str = Field(default="", max_length=63)
 	ssh_keys: list[SSHKey] = Field(default_factory=list, max_length=20)
 	ssh_key_ids: list[str] = Field(default_factory=list, max_length=20)
+	has_public_ipv4: bool = False
 	has_public_ipv6: bool = False
 	is_firewall_enabled: bool = False
+	# Cloud-init reads the script as sent, so keep its whitespace.
+	user_data: Annotated[str, StringConstraints(strip_whitespace=False)] = ""
+	# The answers to an app's inputs, as `AppAnswers`. Central turns them into the user data, and
+	# routes a `site_name` answer to the server.
+	app_inputs: dict[str, str] = Field(default_factory=dict, max_length=20)
+
+
+class SiteCreation(BaseModel):
+	"""What a trial site needs beyond its machine: the product it is for."""
+
+	model_config = ConfigDict(extra="forbid", strict=True)
+
+	product: str | None = None
 
 
 class ServerCreation(BaseModel):
@@ -58,10 +86,15 @@ class ServerCreation(BaseModel):
 	hostname: str
 	ssh_keys: list[SSHKey]
 	ssh_key_ids: list[str] = Field(default_factory=list)
+	has_public_ipv4: bool = False
 	has_public_ipv6: bool = False
 	is_firewall_enabled: bool = False
+	user_data: str = ""
 	image_tags: dict[str, str]
-	virtual_cpu_count: int = Field(gt=0, le=32)
+	# The https guide of an app server, from its template.
+	documentation_url: str | None = None
+	site: SiteCreation | None = None
+	cpu_millicores: int = Field(ge=100, le=32000)
 	memory_mib: PositiveInt
 	disk_mib: PositiveInt
 
@@ -69,7 +102,7 @@ class ServerCreation(BaseModel):
 class ServerShape(BaseModel):
 	model_config = ConfigDict(extra="forbid", strict=True)
 
-	vcpus: int = Field(gt=0, le=32)
+	vcpus: float = Field(gt=0, le=32)
 	memory_megabytes: PositiveInt
 	disk_gigabytes: PositiveInt
 
@@ -79,13 +112,122 @@ class ResizeConfiguration(BaseModel):
 
 	model_config = ConfigDict(extra="forbid", strict=True)
 
-	subscription: str = Field(min_length=1)
+	# None for a converted trial's move off its trial plan: its subscription opens once the move lands.
+	subscription: str | None = Field(default=None, min_length=1)
 	plan: str | None = None
-	includes: list[ResourceQuantity] = Field(default_factory=list, max_length=4)
+	includes: list[ResourceQuantity] = Field(default_factory=list)
 	sub_category: str | None = None
 	override_rate: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 	preset_plan: str | None = None
 	shape: ServerShape
+	# The plan and size before the resize, so its progress page can show both after it lands.
+	from_plan: str | None = None
+	from_shape: ServerShape | None = None
+
+
+class FirewallRule(BaseModel):
+	"""One allow rule, in the form Atlas stores it."""
+
+	model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+	protocol: Literal["any", "tcp", "udp", "icmp"]
+	ports: str = ""
+	cidrs: list[str] = Field(min_length=1, max_length=50)
+
+	@model_validator(mode="after")
+	def validate_rule(self):
+		if self.ports and self.protocol not in ("tcp", "udp"):
+			raise ValueError(_("Ports apply only to TCP and UDP rules."))
+
+		match = PORTS.fullmatch(self.ports) if self.ports else None
+		if self.ports and not match:
+			raise ValueError(_("Enter one port, such as 8000, or one range, such as 8000-8100."))
+		if match and not int(match[1]) <= int(match[2] or match[1]) <= 65535:
+			raise ValueError(_("Ports go from 1 to 65535, with the smaller number first."))
+
+		for cidr in self.cidrs:
+			try:
+				network = ipaddress.ip_network(cidr)
+			except ValueError:
+				raise ValueError(
+					_("{0} is not an IP address range, such as 198.51.100.0/24.").format(cidr)
+				) from None
+			if str(network) != cidr:
+				raise ValueError(_("Write {0} as {1}.").format(cidr, network))
+
+		return self
+
+
+class FirewallChange(BaseModel):
+	"""A change to a customer's firewall. A field left as None keeps its value on Atlas."""
+
+	model_config = ConfigDict(extra="forbid", strict=True)
+
+	enabled: bool | None = None
+	inbound: list[FirewallRule] | None = None
+	outbound: list[FirewallRule] | None = None
+
+	@model_validator(mode="after")
+	def validate_unique_rules(self):
+		if self.enabled is None and self.inbound is None and self.outbound is None:
+			raise ValueError(_("Send the firewall state or a rule list to change."))
+
+		for rules in (self.inbound or [], self.outbound or []):
+			keys = [(rule.protocol, rule.ports, tuple(sorted(rule.cidrs))) for rule in rules]
+			if len(keys) != len(set(keys)):
+				raise ValueError(_("Each rule can appear only once."))
+
+		return self
+
+
+class ComputeSettings(BaseModel):
+	"""A server's sleep and CPU burst settings, in the fields and units of Atlas. Zero turns a
+	setting off. Atlas checks the size limits and the order of the sleep times."""
+
+	model_config = ConfigDict(extra="forbid", strict=True)
+
+	sleep_after_idle_seconds: int = Field(ge=0)
+	deep_sleep_after_idle_seconds: int = Field(ge=0)
+	coma_after_idle_seconds: int = Field(ge=0)
+	is_burstable: bool
+	baseline_cpu_millicores: int = Field(ge=0)
+	sliding_window_minutes: int = Field(ge=0)
+
+
+class AppInput(TypedDict):
+	"""One entry of `inputs` in an app's template.yaml, as Cargo sends it."""
+
+	name: str
+	label: NotRequired[str]
+	type: NotRequired[Literal["string", "email", "domain", "password"]]
+	required: NotRequired[bool]
+	max_length: NotRequired[int]
+	pattern: NotRequired[str]
+	description: NotRequired[str]
+
+
+class AppMinimumSize(TypedDict):
+	cpu_millicores: int
+	memory_mib: int
+	disk_mib: int
+
+
+class AppPort(TypedDict):
+	port: int
+	protocol: Literal["tcp", "udp"]
+
+
+class AppRequirements(TypedDict):
+	"""What Cargo's `get_one_click_image_requirements` returns for an app."""
+
+	inputs: list[AppInput]
+	minimum_size: AppMinimumSize
+	ports: list[AppPort]
+	documentation: NotRequired[str | None]
+
+
+# The customer's answer to each app input, by input name.
+AppAnswers = dict[str, str]
 
 
 class ActionStatus(TypedDict):

@@ -1,0 +1,66 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-13 12:00:00.000000",
+ "description": "Extra text for one lifecycle email about a site of the product.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "event_type",
+  "note_format",
+  "note",
+  "note_html"
+ ],
+ "fields": [
+  {
+   "fieldname": "event_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Email",
+   "options": "site_ready\ntrial_unopened\ntrial_expiring\ntrial_ended\ntrial_deletion_soon\ntrial_converted",
+   "reqd": 1,
+   "columns": 3
+  },
+  {
+   "default": "Standard",
+   "fieldname": "note_format",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Format",
+   "options": "Standard\nHTML",
+   "reqd": 1,
+   "columns": 2
+  },
+  {
+   "description": "Separate paragraphs with a blank line.",
+   "fieldname": "note",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Note",
+   "columns": 5,
+   "depends_on": "eval:doc.note_format == \"Standard\"",
+   "mandatory_depends_on": "eval:doc.note_format == \"Standard\""
+  },
+  {
+   "depends_on": "eval:doc.note_format == \"HTML\"",
+   "description": "Scripts, styles and forms are removed on save.",
+   "fieldname": "note_html",
+   "fieldtype": "HTML Editor",
+   "label": "Note (HTML)",
+   "mandatory_depends_on": "eval:doc.note_format == \"HTML\""
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-18 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Signups",
+ "name": "Product Email Note",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -8,27 +8,22 @@ from frappe import _
 from frappe.utils.caching import request_cache
 
 OPERATOR_BYPASS_ROLE = "System Manager"
+STAFF_VIEWER_ROLE = "Staff Viewer"
 
-# Bumped whenever the capability taxonomy changes. Stamped into the SSO assertion
-# (`cap_version`) so a bench can detect drift from its own `BENCH_CAPS` mirror.
-# v3: server is the atomic unit — the bench plane (site:* + server:config) and the
-# redundant server:view are dropped; role capabilities live at team + server level
-# only. The plane field and the bench-caps SSO mint stay, so site caps can return
-# under the bench plane later with no contract change.
-CAPABILITY_VERSION = 5
+# The revision of the capability taxonomy. Bump it with every change (see CAPABILITIES.md).
+CAPABILITY_VERSION = 7
 
-# Capability implications: granting the key implies every cap in the value. Acting
-# on a resource is meaningless without seeing it, so we close every grant under
-# these before it is asserted or evaluated — the role builder can let a user tick
-# `server:create` without also remembering `server:view`/`cluster:view`, and a grant
-# hand-crafted through the API can't bypass it either.
+# Granting a key implies each capability in its value, because acting on a resource needs
+# seeing it. Every grant is closed under these before it is checked.
 CAP_IMPLICATIONS = {
 	"server:create": ("server:view", "cluster:view"),
 	"server:terminate": ("server:view",),
 	"server:power": ("server:view",),
+	"server:network": ("server:view",),
 	"server:resize": ("server:view",),
 	"server:snapshot": ("server:view",),
 	"server:ssh-key": ("server:view",),
+	"server:wireguard": ("server:view",),
 	"server:console": ("server:view",),
 	"service:manage": ("service:view",),
 }
@@ -39,6 +34,7 @@ SERVER_CAPABILITIES = frozenset(
 	{
 		"server:view",
 		"server:power",
+		"server:network",
 		"server:resize",
 		"server:snapshot",
 		"server:terminate",
@@ -60,6 +56,7 @@ def expand_capabilities(caps: list[str]) -> list[str]:
 				have.add(implied)
 				pending.append(implied)
 	extra = sorted(have.difference(caps))
+
 	return list(caps) + extra
 
 
@@ -76,11 +73,17 @@ def _user_has_operator_bypass(user: str) -> bool:
 	return OPERATOR_BYPASS_ROLE in frappe.get_roles(user)
 
 
+def is_staff_read(user: str, ptype: str | None) -> bool:
+	"""A Staff Viewer reads every team's records in Desk. It grants no capability and no write on
+	team records. The DocType permissions decide which DocTypes and fields it reads."""
+	return ptype in ("read", "select") and STAFF_VIEWER_ROLE in frappe.get_roles(user)
+
+
 def get_all_capabilities() -> list[str]:
 	return frappe.get_all("Capability", pluck="name", order_by="name")
 
 
-def get_user_team_names(user: str) -> list[str]:
+def get_user_team_names(user: str, statuses: tuple[str, ...] = ("Active",)) -> list[str]:
 	team = frappe.qb.DocType("Team")
 	member = frappe.qb.DocType("Team Member")
 
@@ -95,7 +98,7 @@ def get_user_team_names(user: str) -> list[str]:
 			& (member.parentfield == "members")
 			& (member.user == user)
 			& (member.status == "Active")
-			& (team.status == "Active")
+			& team.status.isin(statuses)
 		)
 		.orderby(team.name)
 	).run(as_dict=True)
@@ -103,9 +106,9 @@ def get_user_team_names(user: str) -> list[str]:
 	return [row.name for row in rows]
 
 
-def is_active_team_member(user: str, team: str) -> bool:
+def is_active_team_member(user: str, team: str, statuses: tuple[str, ...] = ("Active",)) -> bool:
 	"""
-	Whether `user` is an active member of the active team `team`. A scoped
+	Whether `user` is an active member of team `team` in one of `statuses`. A scoped
 	existence check — cheaper than resolving grants or listing every team.
 	"""
 
@@ -123,7 +126,7 @@ def is_active_team_member(user: str, team: str) -> bool:
 			& (member.user == user)
 			& (member.status == "Active")
 			& (team_doc.name == team)
-			& (team_doc.status == "Active")
+			& team_doc.status.isin(statuses)
 		)
 		.limit(1)
 	)
@@ -131,14 +134,39 @@ def is_active_team_member(user: str, team: str) -> bool:
 	return bool(query.run())
 
 
-def resolve_team(user: str, team: str | None = None) -> str:
-	"""The team to act on: the one given, else the user's sole active team. With
+def get_team_names_with_role(role: str, teams: list[str]) -> list[str]:
+	"""The teams among `teams` where at least one member holds `role`."""
+	return frappe.get_all(
+		"Team Member",
+		filters={"parenttype": "Team", "role": role, "parent": ("in", teams)},
+		pluck="parent",
+		distinct=True,
+	)
+
+
+def get_active_team_member_users(team: str, role: str | None = None) -> list[str]:
+	"""The users with an Active membership in `team`, only those holding `role` when it is given."""
+	filters = {"parenttype": "Team", "parentfield": "members", "parent": team, "status": "Active"}
+	if role:
+		filters["role"] = role
+	return frappe.get_all(
+		"Team Member",
+		filters=filters,
+		pluck="user",
+		distinct=True,
+	)
+
+
+def resolve_team(user: str, team: str | None = None, statuses: tuple[str, ...] = ("Active",)) -> str:
+	"""The team to act on: the one given, else the user's sole team in `statuses`. With
 	zero or many teams and none specified, the caller must pick one."""
 	if team:
 		return team
-	teams = get_user_team_names(user)
+
+	teams = get_user_team_names(user, statuses)
 	if len(teams) != 1:
 		frappe.throw(_("Specify a team."), frappe.ValidationError)
+
 	return teams[0]
 
 
@@ -200,11 +228,8 @@ def _get_membership_capability_rows(user: str) -> list[dict[str, Any]]:
 
 @request_cache
 def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
-	"""Resolve Team Member -> Team Role -> Capability into token-ready grants.
-
-	Request-cached: `can()` (via permission_query_conditions on every Virtual Machine/Site/
-	Team Invitation list query) and the notification feed call this per row/member,
-	so within one request the 4-table join runs once per user, not per call."""
+	"""The user's grants per team: Team Member, then Team Role, then Capability.
+	Cached per request, because permission checks call it once per row."""
 	grants_by_team: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
 	if user_has_operator_bypass(user):
@@ -259,14 +284,13 @@ def _get_grant_scope(row) -> str | None:
 		return row.server or None
 	if row.resource_type == "Site":
 		return row.site_server or None
+
 	return None
 
 
 def clear_grants_cache() -> None:
-	"""Drop the request-cached IAM grants after a Team write, so later capability checks
-	in the same request see the new membership. This also isolates test methods, which
-	share one request while each rebuilds its team under a fresh name. Clearing the whole
-	request cache is safe — it is transparent, and Team writes are rare."""
+	"""Drop the request-cached grants after a Team write, so later checks in the same request
+	see the new membership."""
 	cache = getattr(frappe.local, "request_cache", None)
 	if cache is not None:
 		cache.clear()
@@ -278,11 +302,8 @@ def can(user: str, team: str, capability: str, server: str | None = None) -> boo
 	1. An operator always does.
 	2. With no `server`, only a team-wide grant counts: this is the team-level question.
 	3. With a `server`, a team-wide grant or a grant scoped to that server counts."""
-	# No pre-flight db.exists probes: resolve_user_grants only returns Active teams
-	# (the join filters team.status), so an inactive/unknown team yields no grants,
-	# and an unknown capability simply won't match any grant's caps — both fall
-	# through to False without a separate round-trip. resolve_user_grants is
-	# request-cached, so the per-row/per-member callers pay one join, not N.
+	# Grants cover only Active teams and are cached per request, so an unknown team or
+	# capability is False with no extra query.
 	if user_has_operator_bypass(user):
 		return True
 
@@ -310,7 +331,24 @@ def get_allowed_servers(user: str, capability: str) -> dict[str, str | frozenset
 			allowed[team] = ALL_SERVERS
 		elif scopes:
 			allowed[team] = frozenset(scopes)
+
 	return allowed
+
+
+def get_capability_gate(capability_field, server_field, team: str, user: str):
+	"""A query builder condition for the team rows `user` may see. A row with no required
+	capability is visible to every member. A team-wide grant sees a row it has the
+	capability for. A grant scoped to servers sees a row only about one of those servers."""
+	gate = capability_field.isnull() | (capability_field == "")
+	capabilities = {cap for grant in resolve_user_grants(user).get(team, []) for cap in grant["caps"]}
+	for capability in sorted(capabilities):
+		servers = get_allowed_servers(user, capability)[team]
+		if servers == ALL_SERVERS:
+			gate = gate | (capability_field == capability)
+		else:
+			gate = gate | ((capability_field == capability) & server_field.isin(sorted(servers)))
+
+	return gate
 
 
 def get_server_capabilities(user: str, team: str, server: str) -> list[str]:

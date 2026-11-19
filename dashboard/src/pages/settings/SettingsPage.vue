@@ -2,28 +2,24 @@
 import { Button } from 'frappe-ui'
 import { computed } from 'vue'
 import { useAppMenu } from '@/composables/useAppMenu'
-import { useCapabilities } from '@/composables/useCapabilities'
+import { useMyInvitations } from '@/composables/useMyInvitations'
 import { useSession } from '@/composables/useSession'
 import {
 	openSettings,
-	SETTINGS_TABS,
-	type SettingsTabDef,
+	SETTINGS_GROUPS,
+	useSettingsTabs,
 } from '@/composables/useSettings'
 
 // Mobile's settings hub: the same tabs the desktop dialog lists in its sidebar,
 // in the same sections, as rows that push a page. Sign out stays here at the bottom — it ends the
 // session rather than settling into a tab.
 const { activeTeamLabel } = useSession()
-const { isMember, canEditTeam, canDeleteTeam } = useCapabilities()
+const { availableTabs } = useSettingsTabs()
 const { currentUser, logoutAndRedirect } = useAppMenu()
+const { count: invitationCount } = useMyInvitations()
 
 const available = computed(() =>
-	SETTINGS_TABS.filter((tab) => {
-		if (tab.requires === 'member') return isMember.value
-		if (tab.requires === 'teamAdmin')
-			return canEditTeam.value || canDeleteTeam.value
-		return true
-	}).map((tab) => ({
+	availableTabs.value.map((tab) => ({
 		tab,
 		// A row that can show what it's currently set to, does. It saves a tap
 		// for the two things people check without changing.
@@ -32,18 +28,17 @@ const available = computed(() =>
 				? currentUser.value
 				: tab.value === 'team'
 					? activeTeamLabel.value
-					: '',
+					: tab.value === 'invitations' && invitationCount.value
+						? `${invitationCount.value} pending`
+						: '',
 	})),
 )
 
 const groups = computed(() => {
-	const order: SettingsTabDef['group'][] = ['Account', 'Administration']
-	return order
-		.map((group) => ({
-			label: group,
-			rows: available.value.filter((row) => row.tab.group === group),
-		}))
-		.filter((group) => group.rows.length > 0)
+	return SETTINGS_GROUPS.map((group) => ({
+		label: group,
+		rows: available.value.filter((row) => row.tab.group === group),
+	})).filter((group) => group.rows.length > 0)
 })
 </script>
 

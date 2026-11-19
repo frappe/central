@@ -22,7 +22,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-06-12 00:00:00.000000",
+ "modified": "2026-11-03 16:30:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Gateway Customer",
@@ -32,5 +32,6 @@
  ],
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }

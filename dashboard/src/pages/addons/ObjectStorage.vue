@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { Button, Skeleton } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import BucketCard from '@/components/addons/storage/BucketCard.vue'
 import CreateBucketDialog from '@/components/addons/storage/CreateBucketDialog.vue'
@@ -9,15 +9,19 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useObjectStorage } from '@/composables/useObjectStorage'
+import { useSupport } from '@/composables/useSupport'
 import { getErrorMessage } from '@/lib/feedback'
 import { regionLabel } from '@/lib/serverMap'
 import type { BucketCredentials } from '@/types/storage'
 
 const { setBreadcrumbs } = useBreadcrumbs()
-setBreadcrumbs([{ label: 'Object storage' }])
+setBreadcrumbs([{ label: 'Object Storage' }])
 
 const { canManageServices } = useCapabilities()
 const { regions, buckets, loading, error, reload } = useObjectStorage()
+
+const { hasSupport, openSupport } = useSupport()
+const availabilityContext = { Topic: 'Object storage or LLM service' }
 
 const createOpen = ref(false)
 const credentials = ref<BucketCredentials | null>(null)
@@ -46,11 +50,7 @@ const canCreate = computed(
 
 		<div class="mx-auto w-full max-w-5xl p-3 md:p-4 lg:pt-8">
 			<div v-if="loading" class="grid gap-3 md:grid-cols-2" aria-busy="true">
-				<div
-					v-for="index in 4"
-					:key="index"
-					class="h-32 animate-pulse rounded-6 bg-surface-gray-2"
-				/>
+				<Skeleton v-for="index in 4" :key="index" class="h-32 rounded-6" />
 			</div>
 
 			<EmptyState
@@ -70,8 +70,10 @@ const canCreate = computed(
 				:title="regions.length ? 'No buckets yet' : 'Not available yet'"
 				:description="
 					regions.length
-						? 'Create a bucket in a region near your servers. You get an S3 endpoint and a key that opens only that bucket.'
-						: 'Object storage is not available in any region yet.'
+						? canCreate
+							? 'Create a bucket in a region near your servers. You get an S3 endpoint and a key that opens only that bucket.'
+							: 'This team has no buckets. Ask a team admin to create a bucket or grant you permission to manage object storage.'
+						: 'Object Storage is not available in any region right now. Contact support to check availability.'
 				"
 			>
 				<template v-if="canCreate" #action>
@@ -80,6 +82,13 @@ const canCreate = computed(
 						icon-left="lucide-plus"
 						label="Create bucket"
 						@click="createOpen = true"
+					/>
+				</template>
+				<template v-else-if="!regions.length && hasSupport" #action>
+					<Button
+						label="Contact support"
+						icon-left="lucide-life-buoy"
+						@click="openSupport(availabilityContext)"
 					/>
 				</template>
 			</EmptyState>

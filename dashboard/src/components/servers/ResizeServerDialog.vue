@@ -2,17 +2,23 @@
 import {
 	Alert,
 	Button,
-	Checkbox,
 	Dialog,
 	LoadingIndicator,
+	Radio,
+	RadioGroup,
+	Skeleton,
 	Tabs,
 } from 'frappe-ui'
-import { computed, toRef } from 'vue'
+import { computed, ref, toRef } from 'vue'
+import DialogScrollList from '@/components/common/DialogScrollList.vue'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
+import TrialUpgradePanel from '@/components/servers/TrialUpgradePanel.vue'
 import { useResizeServer } from '@/composables/useResizeServer'
 import type { VirtualMachineRow } from '@/composables/useServers'
-import { formatGb, formatVcpu } from '@/lib/composed'
-import { money } from '@/lib/format'
+import { useTrialConversion } from '@/composables/useTrialConversion'
+import { configSpecs } from '@/lib/composed'
+import { __ } from '@/lib/translate'
+import { formatGb } from '@/lib/units'
 
 interface Props {
 	server: VirtualMachineRow | null
@@ -27,6 +33,9 @@ const {
 	resizeCall,
 	plansLoading,
 	resizable,
+	trial,
+	trialPlans,
+	starting,
 	nothingToShow,
 	resizeError,
 	losesLockedRate,
@@ -47,19 +56,29 @@ const {
 	composedConfig,
 	flatPresets,
 	flatProfile,
-	growDisk,
-	largerDisks,
-	selectedDisk,
-	priceForDisk,
-	totalShape,
+	computeOnly,
+	currentPrice,
 	totalPrice,
-	resizeLabel,
+	totalShape,
+	selectionError,
+	canConfirm,
+	optionsError,
+	reloadOptions,
+	downtimeNote,
 	changed,
 	confirm,
-} = useResizeServer(toRef(props, 'server'), {
+} = useResizeServer(toRef(props, 'server'), model, {
 	close: () => (model.value = false),
 	resized: () => emit('resized'),
 })
+
+const { convertedPlan, awaitConversion } = useTrialConversion(
+	trial,
+	() => configCall.reload(),
+	model,
+)
+
+const trialPanel = ref<InstanceType<typeof TrialUpgradePanel> | null>(null)
 
 const open = computed({
 	get: () => model.value,
@@ -67,10 +86,22 @@ const open = computed({
 		if (!value && !resizeCall.loading) model.value = false
 	},
 })
+
+const loadResizeOptionsErrorTitle = __("Couldn't load resize options")
+const resizeServerErrorTitle = __("Couldn't resize the server")
+const useSizeErrorTitle = __("Can't use this size")
+
+function getConvertedPlanTitle(plan: string): string {
+	return __("You're on the {0} plan", [plan])
+}
 </script>
 
 <template>
-	<Dialog v-model="open" title="Resize server" size="3xl">
+	<Dialog
+		v-model="open"
+		:title="trial ? __('Upgrade from free trial') : __('Resize server')"
+		size="3xl"
+	>
 		<template #default>
 			<!-- Keep the dialog stable while Central accepts the resize request. -->
 			<div
@@ -78,43 +109,111 @@ const open = computed({
 				class="flex flex-col items-center gap-3 py-10 text-center"
 			>
 				<LoadingIndicator class="h-6 w-6 text-ink-gray-5" />
-				<p class="text-p-base font-medium text-ink-gray-8">Starting resize…</p>
+				<p class="text-p-base-medium text-ink-gray-8">
+					{{ __('Starting resize…') }}
+				</p>
 				<p class="max-w-xs text-p-sm text-ink-gray-5">
-					The reshape runs in the background. The server shows “Resizing” in the
-					list and comes back on its own when it’s done.
+					{{ __('Follow progress in the server list.') }}
 				</p>
 			</div>
-			<p
-				v-else-if="configCall.loading || plansLoading"
-				class="text-p-sm text-ink-gray-5"
+			<div
+				v-else-if="(configCall.loading && !trial && !starting) || plansLoading"
+				class="space-y-4"
+				aria-busy="true"
+				:aria-label="__('Loading resize options')"
 			>
-				Loading…
-			</p>
+				<div class="space-y-2">
+					<Skeleton class="h-4 w-full rounded-4" />
+					<Skeleton class="h-4 w-2/3 rounded-4" />
+				</div>
+				<div class="grid gap-3 sm:grid-cols-2">
+					<Skeleton v-for="index in 2" :key="index" class="h-16 rounded-6" />
+				</div>
+				<div class="grid gap-3 sm:grid-cols-3">
+					<Skeleton v-for="index in 6" :key="index" class="h-24 rounded-6" />
+				</div>
+			</div>
+			<div v-else-if="optionsError" class="space-y-3">
+				<Alert
+					theme="red"
+					:title="loadResizeOptionsErrorTitle"
+					:description="optionsError"
+				/>
+				<Button :label="__('Retry')" @click="reloadOptions" />
+			</div>
+			<TrialUpgradePanel
+				v-else-if="trial"
+				ref="trialPanel"
+				:trial="trial"
+				:plans="trialPlans"
+				:checking="configCall.loading"
+				:server-id="server?.resource_id ?? ''"
+				@check="awaitConversion"
+			/>
+			<Alert
+				v-else-if="starting"
+				theme="blue"
+				:title="__('Your payment method is confirmed')"
+				:description="__('We are moving your server to its paid plan. This takes a few minutes, then the plans show here.')"
+			/>
 			<p
 				v-else-if="!resizable || nothingToShow"
 				class="text-p-sm text-ink-gray-5"
 			>
-				This server can't be resized right now.
+				{{ __("This server can't be resized right now.") }}
 			</p>
-			<div v-else class="space-y-5">
-				<Alert v-if="resizeError" theme="red" :title="resizeError" />
+			<div v-else class="flex max-h-[calc(100vh-14rem)] flex-col gap-4">
+				<Alert
+					v-if="convertedPlan"
+					theme="green"
+					:title="getConvertedPlanTitle(convertedPlan.title)"
+					:description="__('Billing has started. Choose a bigger size below, or close this dialog to stay on this plan.')"
+				/>
+				<Alert
+					v-if="resizeError"
+					theme="red"
+					:title="resizeServerErrorTitle"
+					:description="resizeError"
+				/>
 				<Alert
 					v-if="losesLockedRate && lock"
 					theme="amber"
-					title="Resizing will change your rate"
-					:description="`You pay ${money(lock.locked_rate, lock.currency)}/mo for this size; it now lists at ${money(lock.list_rate, lock.currency)}/mo. Any resize is priced at today's rates, and the old rate doesn't come back, including if you resize to this size again later.`"
+					:title="__('Resizing will change your rate')"
+					:description="__('Resizing uses today’s rates. Your current rate cannot be restored.')"
 				/>
-				<div class="space-y-3">
-					<p class="text-p-sm text-ink-gray-6">
-						Changing CPU or memory restarts the server.
-					</p>
 
-					<Tabs v-if="hasTabs" v-model="activeTab" :tabs="classTabs">
-						<template #tab-panel="{ tab }">
+				<p class="text-p-sm text-ink-gray-7">
+					{{ __('Choose a new CPU and memory size. You can also increase storage, but you cannot reduce it later.') }}
+				</p>
+				<RadioGroup v-model="computeOnly" padded>
+					<template #label>
+						<span class="text-sm-medium text-ink-gray-9"
+							>{{ __('Storage') }}</span
+						>
+					</template>
+					<Radio
+						:value="true"
+						:label="__('Keep current {0} GB disk size', [formatGb(currentDisk)])"
+					/>
+					<Radio :value="false" :label="__('Increase storage')">
+						<template #description>
+							<strong class="text-p-sm-medium text-ink-amber-7">
+								{{ __('Disk size cannot be decreased later.') }}
+							</strong>
+						</template>
+					</Radio>
+				</RadioGroup>
+				<p class="text-p-sm text-ink-gray-6">
+					{{ __('Prices include storage.') }}
+				</p>
+
+				<Tabs v-if="hasTabs" v-model="activeTab" :tabs="classTabs">
+					<template #tab-panel="{ tab }">
+						<DialogScrollList class="mt-4">
 							<PlanGroup
-								class="pt-4"
-								omit-disk
-								:min-disk="currentDisk"
+								:omit-disk="computeOnly"
+								:min-disk="computeOnly ? undefined : currentDisk"
+								:current-disk="currentDisk"
 								:current-plan="currentPlanKey"
 								:presets="groups[tab.value] ?? []"
 								:profile="designableProfile(String(tab.value))"
@@ -126,12 +225,14 @@ const open = computed({
 								v-model:selected-plan="selectedPlan"
 								v-model:composed-config="composedConfig"
 							/>
-						</template>
-					</Tabs>
+						</DialogScrollList>
+					</template>
+				</Tabs>
+				<DialogScrollList v-else fill>
 					<PlanGroup
-						v-else
-						omit-disk
-						:min-disk="currentDisk"
+						:omit-disk="computeOnly"
+						:min-disk="computeOnly ? undefined : currentDisk"
+						:current-disk="currentDisk"
 						:current-plan="currentPlanKey"
 						:presets="flatPresets"
 						:profile="flatProfile"
@@ -143,87 +244,86 @@ const open = computed({
 						v-model:selected-plan="selectedPlan"
 						v-model:composed-config="composedConfig"
 					/>
-				</div>
-
-				<div class="space-y-3 border-t border-outline-gray-2 pt-4">
-					<Checkbox
-						v-model="growDisk"
-						label="Grow the disk"
-						:description="
-							largerDisks.length
-								? 'Storage can only be increased. If you increase it, you cannot resize to a smaller plan later.'
-								: 'No larger disk is available.'
-						"
-						:disabled="!largerDisks.length"
-					/>
-					<div v-if="growDisk" class="space-y-1.5">
-						<label
-							v-for="gb in largerDisks"
-							:key="gb"
-							:class="[
-								'relative flex cursor-pointer items-center gap-3 rounded-6 border px-3 py-2.5 text-p-sm',
-								selectedDisk === gb
-									? 'border-outline-gray-4 bg-surface-gray-1'
-									: 'border-outline-gray-2 hover:border-outline-gray-3',
-							]"
-						>
-							<input
-								v-model="selectedDisk"
-								type="radio"
-								name="disk"
-								class="peer sr-only"
-								:value="gb"
-							/>
-							<span
-								aria-hidden="true"
-								class="size-3.5 shrink-0 rounded-full border border-outline-gray-4 peer-checked:border-4 peer-checked:border-outline-gray-5"
-							/>
-							<span class="font-medium text-ink-gray-9"
-								>{{ formatGb(gb) }}
-								GB</span
-							>
-							<span
-								v-if="priceForDisk(gb)"
-								class="ml-auto text-p-sm font-medium text-ink-gray-9"
-								>{{ priceForDisk(gb) }}</span
-							>
-						</label>
-					</div>
-				</div>
-
+				</DialogScrollList>
+				<Alert
+					v-if="selectionError"
+					theme="red"
+					:title="useSizeErrorTitle"
+					:description="selectionError"
+				/>
 				<div
-					v-if="totalShape"
-					class="flex items-center justify-between gap-6 rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
+					v-if="totalShape && changed"
+					class="space-y-2 border-t border-outline-gray-2 pt-4"
+					aria-live="polite"
 				>
-					<div class="min-w-0">
-						<p class="text-p-sm font-medium text-ink-gray-9">Monthly total</p>
-						<p class="text-p-sm text-ink-gray-6">
-							{{ formatVcpu(totalShape.vcpus) }}
-							vCPU ·
-							{{ formatGb(totalShape.memory_gb) }}
-							GB RAM ·
-							{{ formatGb(totalShape.disk_gb) }}
-							GB disk
-						</p>
-					</div>
-					<p
-						v-if="totalPrice"
-						class="shrink-0 text-p-base font-medium text-ink-gray-9"
-					>
-						{{ totalPrice }}
+					<p class="text-sm-medium text-ink-gray-9">
+						{{ __('After resizing') }}
+					</p>
+					<p class="text-p-sm text-ink-gray-7">{{ configSpecs(totalShape) }}</p>
+					<p class="text-p-sm text-ink-gray-6">
+						{{ __('{0} Your files are kept.', [downtimeNote]) }}
 					</p>
 				</div>
 			</div>
 		</template>
 		<template #actions>
+			<div v-if="starting" class="flex justify-end">
+				<Button
+					:label="__('Check again')"
+					:loading="configCall.loading"
+					@click="configCall.reload()"
+				/>
+			</div>
+			<div v-else-if="trial && trialPanel" class="flex justify-end">
+				<Button
+					v-if="trial.can_keep"
+					variant="solid"
+					icon-left="lucide-play"
+					:label="__('Keep this site')"
+					:disabled="!trialPanel?.canContinue"
+					:loading="trialPanel?.saving"
+					@click="trialPanel?.keep()"
+				/>
+				<Button
+					v-else-if="trial.held"
+					variant="solid"
+					:label="__('Use this plan')"
+					:disabled="!trialPanel?.canContinue"
+					:loading="trialPanel?.saving || configCall.loading"
+					@click="trialPanel?.choosePlan()"
+				/>
+				<Button
+					v-else-if="trialPanel?.methodAdded"
+					:label="__('Check again')"
+					:loading="configCall.loading"
+					@click="configCall.reload()"
+				/>
+				<Button
+					v-else
+					variant="solid"
+					icon-left="lucide-credit-card"
+					:label="__('Add payment method')"
+					:disabled="!trialPanel?.canContinue"
+					:loading="trialPanel?.saving"
+					@click="trialPanel?.addMethod()"
+				/>
+			</div>
 			<div
-				v-if="resizable && !resizeCall.loading"
-				class="flex items-center justify-end"
+				v-else-if="resizable && !resizeCall.loading"
+				class="flex items-center justify-end gap-4"
 			>
+				<p v-if="totalPrice" class="text-p-sm text-ink-gray-6">
+					{{ currentPrice }}
+					<span
+						class="lucide-arrow-right mx-1 inline-block size-3.5 align-[-2px]"
+						:aria-label="__('to')"
+					/>
+					<span class="text-p-sm-medium text-ink-gray-9">{{ totalPrice }}</span>
+				</p>
 				<Button
 					variant="solid"
-					:label="resizeLabel"
-					:disabled="!changed"
+					:label="__('Resize')"
+					:disabled="!canConfirm"
 					@click="confirm"
 				/>
 			</div>

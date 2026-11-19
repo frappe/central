@@ -89,6 +89,17 @@ class TestServerObservation(IntegrationTestCase):
 		self.assertEqual(self.server.public_ipv4, "203.0.113.10")
 		self.assertEqual(self.server.public_ipv6, "2001:db8:5::7")
 
+	def test_only_a_changed_report_keeps_a_version(self):
+		"""Every report moves the observation clock, so an unchanged report must not fill the timeline."""
+		save = self.enterContext(
+			patch.object(VirtualMachine, "save", autospec=True, side_effect=VirtualMachine.save)
+		)
+
+		observe_server(self.server)
+		observe_server(self.server)
+
+		self.assertEqual([call.kwargs["ignore_version"] for call in save.call_args_list], [False, True])
+
 	def test_gateway_waits_for_an_enrolled_pilot(self):
 		self.assertEqual(observe_server(self.server), "Running")
 		self.assertIsNone(self.server.reload().gateway_url)
@@ -172,6 +183,26 @@ class TestServerObservation(IntegrationTestCase):
 		published.assert_any_call(
 			"server_state_changed",
 			{"resource_id": self.server.name},
+			doctype="Team",
+			docname=self.team.name,
+			after_commit=True,
+		)
+
+	def test_a_new_server_reaches_the_owning_team_before_its_first_report(self):
+		with patch("frappe.publish_realtime") as published:
+			server = frappe.get_doc(
+				{
+					"doctype": "Virtual Machine",
+					"resource_id": "server-" + frappe.generate_hash(length=8),
+					"team": self.team.name,
+					"region": self.server.region,
+					"status": "Provisioning",
+				}
+			).insert()
+
+		published.assert_any_call(
+			"server_state_changed",
+			{"resource_id": server.name},
 			doctype="Team",
 			docname=self.team.name,
 			after_commit=True,

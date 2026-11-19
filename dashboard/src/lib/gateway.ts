@@ -1,3 +1,5 @@
+import type { StripeElementStyle, StripeError } from '@stripe/stripe-js'
+
 // Hand a started order to the gateway's hosted element, resolve when the customer
 // finishes. Raw card/UPI data never touches our form — the gateway collects it.
 // Ported from the legacy dashboard's utils/gateway.js.
@@ -58,8 +60,6 @@ export interface RazorpayHandles {
 	razorpay_order_id?: string
 	razorpay_payment_id?: string
 	razorpay_signature?: string
-	/** Present for recurring (UPI Autopay / card mandate) setups. */
-	razorpay_token_id?: string
 }
 
 interface RazorpayOptions {
@@ -75,7 +75,15 @@ interface PayPalCallbacks {
 
 declare global {
 	interface Window {
-		Razorpay: new (options: Record<string, unknown>) => { open: () => void }
+		Razorpay: new (
+			options: Record<string, unknown>,
+		) => {
+			open: () => void
+			on: (
+				event: 'payment.failed',
+				handler: (response: { error?: { description?: string } }) => void,
+			) => void
+		}
 		paypal?: {
 			Buttons: (config: Record<string, unknown>) => {
 				render: (el: Element) => unknown
@@ -101,13 +109,16 @@ function loadScript(src: string): Promise<void> {
 export async function openRazorpayCheckout(
 	order: RazorpayOrder,
 	{
-		name = 'Central',
+		name = 'Frappe Cloud',
 		description = '',
 		displayPayPal = false,
 	}: RazorpayOptions = {},
 ): Promise<RazorpayHandles> {
 	await loadScript('https://checkout.razorpay.com/v1/checkout.js')
 	return new Promise<RazorpayHandles>((resolve, reject) => {
+		// The sheet shows a failure itself and offers a retry. When the customer then
+		// closes it, the failure reason is the error; a plain close stays 'cancelled'.
+		let failure = ''
 		const options: Record<string, unknown> = {
 			// Backend returns the publishable key id as `key_id`; keep older aliases.
 			key: order.key_id || order.key || order.razorpay_key,
@@ -121,9 +132,10 @@ export async function openRazorpayCheckout(
 					razorpay_order_id: resp.razorpay_order_id,
 					razorpay_payment_id: resp.razorpay_payment_id,
 					razorpay_signature: resp.razorpay_signature,
-					razorpay_token_id: resp.razorpay_token_id,
 				}),
-			modal: { ondismiss: () => reject(new Error('cancelled')) },
+			modal: {
+				ondismiss: () => reject(new Error(failure || 'cancelled')),
+			},
 		}
 		// Reuse the team's customer (also prefills top-ups); a mandate setup runs
 		// Checkout in recurring mode — the only way Razorpay issues the token confirm
@@ -150,7 +162,13 @@ export async function openRazorpayCheckout(
 				},
 			}
 		}
-		new window.Razorpay(options).open()
+		const sheet = new window.Razorpay(options)
+		sheet.on('payment.failed', (response) => {
+			failure =
+				response.error?.description ||
+				"The payment didn't go through. Try again, or choose another payment method."
+		})
+		sheet.open()
 	})
 }
 
@@ -163,13 +181,19 @@ export async function mountPayPalButtons(
 	order: PaypalOrder,
 	{ onApprove, onError }: PayPalCallbacks = {},
 ): Promise<unknown> {
-	if (!order?.client_id) throw new Error('PayPal client id missing.')
+	if (!order?.client_id)
+		throw new Error(
+			'The PayPal client ID is missing, so PayPal payments cannot start. Choose another payment method, or contact support.',
+		)
 	// PayPal's SDK is keyed by client id + currency; load it once per pair.
 	await loadScript(
 		`https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(order.client_id)}` +
 			`&currency=${encodeURIComponent(order.currency ?? '')}&intent=capture`,
 	)
-	if (!window.paypal) throw new Error('PayPal SDK failed to load.')
+	if (!window.paypal)
+		throw new Error(
+			'The PayPal payment library could not load. Check your connection and reload the page before starting a payment.',
+		)
 	return window.paypal
 		.Buttons({
 			createOrder: () => order.order_id,
@@ -178,4 +202,46 @@ export async function mountPayPalButtons(
 			onError: (e: unknown) => onError?.(e),
 		})
 		.render(el)
+}
+
+// Stripe draws the card field in its own iframe, so a class on our mount node
+// never reaches the typed number or the placeholder. Pass the same tokens a
+// text input uses, resolved to rgb() for the current theme.
+export function stripeCardElementStyle(): StripeElementStyle {
+	const text = tokenColor('--ink-gray-8')
+	const placeholder = tokenColor('--ink-gray-4')
+	const invalid = tokenColor('--ink-red-5')
+	return {
+		base: {
+			color: text,
+			iconColor: text,
+			fontFamily: getComputedStyle(document.body).fontFamily,
+			fontSize: '14px',
+			'::placeholder': { color: placeholder },
+		},
+		invalid: {
+			color: invalid,
+			iconColor: invalid,
+		},
+	}
+}
+
+function tokenColor(variable: string): string {
+	const probe = document.createElement('span')
+	probe.style.color = `var(${variable})`
+	document.body.appendChild(probe)
+	const color = getComputedStyle(probe).color
+	probe.remove()
+	return color
+}
+
+// Central cancels an open intent once too many attempts failed. Stripe then refuses to
+// confirm it; only the server can say how long the wait is.
+export function isCancelledIntent(error: StripeError): boolean {
+	const intent = error.setup_intent ?? error.payment_intent
+	return (
+		(error.code === 'setup_intent_unexpected_state' ||
+			error.code === 'payment_intent_unexpected_state') &&
+		intent?.status === 'canceled'
+	)
 }

@@ -80,6 +80,7 @@ class OIDCRequestValidator(OAuthWebRequestValidator):
 			return False
 
 		request.client = frappe.get_cached_doc("OAuth Client", client_id).as_dict()
+
 		return True
 
 	def get_authorization_code_scopes(self, client_id, code, redirect_uri, request) -> list[str]:
@@ -103,6 +104,7 @@ class OIDCRequestValidator(OAuthWebRequestValidator):
 		id_token["iss"] = get_issuer()
 
 		private_key, key_id = CentralSSOSettings.instance().get_signing_key("oidc")
+
 		return jwt.encode(id_token, private_key, algorithm=OIDC_ALGORITHM, headers={"kid": key_id})
 
 
@@ -112,4 +114,5 @@ def _get_client_credentials(request) -> tuple[str | None, str | None]:
 	if authorization and authorization.type == "basic":
 		# RFC 6749 section 2.3.1 form-encodes both values before base64.
 		return unquote_plus(authorization.username), unquote_plus(authorization.password)
+
 	return request.client_id, request.client_secret

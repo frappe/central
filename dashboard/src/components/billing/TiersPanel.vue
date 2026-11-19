@@ -1,0 +1,179 @@
+<script setup lang="ts">
+import { LoadingText } from 'frappe-ui'
+import { computed } from 'vue'
+import ContactSupportLink from '@/components/common/ContactSupportLink.vue'
+import SideSheet from '@/components/common/SideSheet.vue'
+import Table from '@/components/common/Table.vue'
+import { useSpendingLimits } from '@/composables/useSpendingLimits'
+import { money } from '@/lib/format'
+import type { TierLevel } from '@/types/billing'
+
+const open = defineModel<boolean>('open', { default: false })
+
+const {
+	tier,
+	currency,
+	current,
+	levels,
+	nextLevel,
+	record,
+	requirementsFor,
+	spendingLimit,
+	runningMonthly,
+	limitKnown,
+	limitFailed,
+} = useSpendingLimits()
+
+const columns = [
+	{ key: 'tier', label: 'Tier' },
+	{ key: 'requirements', label: 'To qualify' },
+	{ key: 'limit', label: 'Limit' },
+]
+
+// A manual limit with no tier has no ladder row, so it is shown on its own.
+const limitWithoutTier = computed(
+	() => limitKnown.value && !current.value && spendingLimit.value > 0,
+)
+
+const formatMoney = (amount: number) =>
+	money(amount, currency.value, { trimTrailingZeros: true })
+
+type Level = (typeof levels.value)[number]
+
+const rowClass = (level: Level) =>
+	level.state === 'current' ? 'bg-surface-gray-1' : undefined
+
+// The team's own limit may carry an override, so its row shows the limit the check uses.
+const limitFor = (level: Level) =>
+	level.state === 'current' ? spendingLimit.value : level.max_spend
+
+const requirementText = (level: TierLevel) =>
+	requirementsFor(level)
+		.map((requirement) => requirement.text)
+		.join(' · ')
+</script>
+
+<template>
+	<SideSheet
+		v-model:open="open"
+		title="Limit tiers"
+		description="Tiers rise automatically as you pay invoices."
+	>
+		<LoadingText v-if="tier.loading && !tier.data" :lines="8" class="p-5" />
+
+		<p v-else-if="limitFailed" class="p-5 text-p-sm text-ink-gray-5">
+			{{ __("Couldn't load your spending limit.") }}
+		</p>
+
+		<template v-else>
+			<p
+				v-if="limitWithoutTier"
+				class="border-b border-outline-gray-1 p-5 text-p-sm text-ink-gray-7"
+			>
+				{{ __('Your spending limit is {0}, set for your team. {1} running now.', [
+						formatMoney(spendingLimit),
+						formatMoney(runningMonthly),
+					]) }}
+			</p>
+
+			<p v-if="!levels.length" class="p-5 text-p-sm text-ink-gray-5">
+				Spending tiers aren't configured yet.
+			</p>
+
+			<Table
+				v-else
+				flush
+				:columns="columns"
+				:rows="levels"
+				:row-class="rowClass"
+			>
+				<template #tier="{ row }">
+					<span class="flex items-center gap-2">
+						<span
+							:class="
+								row.state === 'reached'
+									? 'text-ink-gray-5'
+									: 'text-base-medium text-ink-gray-9'
+							"
+						>
+							{{ row.tier }}
+						</span>
+						<span
+							v-if="row.state === 'current'"
+							class="rounded-2 bg-surface-gray-9 px-1.5 py-0.5 text-xs-medium text-ink-base"
+						>
+							Current
+						</span>
+						<span
+							v-else-if="row.tier === nextLevel?.tier"
+							class="rounded-2 border border-outline-blue-3 px-1.5 py-px text-xs-medium text-ink-blue-6"
+						>
+							Next
+						</span>
+					</span>
+				</template>
+
+				<template #requirements="{ row }">
+					<span
+						:class="row.state === 'reached' ? 'text-ink-gray-5' : 'text-ink-gray-7'"
+					>
+						{{ requirementText(row) }}
+					</span>
+				</template>
+
+				<template #limit="{ row }">
+					<span
+						class="block py-2 tabular-nums"
+						:class="
+							row.state === 'reached'
+								? 'text-ink-gray-5'
+								: 'text-base-medium text-ink-gray-9'
+						"
+					>
+						{{ money(limitFor(row), currency, { trimTrailingZeros: true }) }}
+						<span
+							v-if="row.state === 'current'"
+							class="block text-sm text-ink-gray-5"
+						>
+							{{ __('{0} running now', [
+									money(runningMonthly, currency, { trimTrailingZeros: true }),
+								]) }}
+						</span>
+						<span
+							v-if="row.max_resource_count != null"
+							class="block text-sm text-ink-gray-5"
+						>
+							{{ row.max_resource_count }}
+							resource{{ row.max_resource_count === 1 ? '' : 's' }}
+						</span>
+					</span>
+				</template>
+			</Table>
+		</template>
+
+		<template #footer>
+			<div
+				class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-p-sm text-ink-gray-5"
+			>
+				<span class="text-ink-gray-8">Resource</span>
+				<span
+					>Anything that bills while it runs: a server or a subscribed service.</span
+				>
+
+				<span class="text-ink-gray-8">Limit</span>
+				<span
+					>{{ __('The most that everything your team runs can cost a month, before tax. Taxes are added on top.') }}</span
+				>
+
+				<p v-if="record" class="col-span-2">{{ record }}</p>
+
+				<p class="col-span-2">
+					Need a higher limit now?
+					<ContactSupportLink :context="{ Topic: 'Need higher spending limit' }"
+						>Contact support</ContactSupportLink
+					>.
+				</p>
+			</div>
+		</template>
+	</SideSheet>
+</template>

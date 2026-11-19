@@ -21,7 +21,97 @@ frappe.ui.form.on("Virtual Machine", {
 					);
 				});
 
+		if (frm.doc.admin_domain_error) frm.set_intro(frappe.utils.escape_html(frm.doc.admin_domain_error), "red");
+		else if (frm.doc.__onload?.is_access_locked)
+			frm.set_intro(
+				__("Free trial server. The customer has no SSH, console, Pilot or snapshots until the trial converts. Operators keep access."),
+				"blue",
+			);
+
+		if (!frm.has_perm("write")) return;
+
+		if (frappe.user.has_role("System Manager")) {
+			if (frm.doc.admin_domain_error) {
+				frm.add_custom_button(
+					__("Retry Admin Domain"),
+					async () => {
+						await frm.call({ doc: frm.doc, method: "retry_admin_domain", freeze: true });
+						await frm.reload_doc();
+					},
+					__("Server"),
+				);
+			}
+			if (frm.doc.status === "Running" && frm.doc.gateway_url) {
+				frm.add_custom_button(
+					__("Open Bench as Administrator"),
+					() =>
+						frappe.confirm(__("Open this bench as Administrator? The login is recorded on the server."), async () => {
+							const response = await frm.call({ doc: frm.doc, method: "open_bench_as_administrator", freeze: true });
+							if (response.message) window.open(response.message, "_blank");
+						}),
+					__("Server"),
+				);
+			}
+			if (frm.doc.status === "Running" && frm.doc.atlas_vm_id) {
+				const openConsole = (mode) => {
+					// Open the window inside the click, or the browser blocks the pop-up after the call.
+					const tab = window.open("about:blank", `console-${frm.doc.resource_id}`, "popup,width=960,height=640");
+					frappe
+						.call({
+							method: "central.api.servers.open_console",
+							args: { team: frm.doc.team, resource_id: frm.doc.resource_id, mode },
+							freeze: true,
+						})
+						.then((r) => {
+							if (r.exc || !r.message?.url) return tab?.close();
+							tab.location.href = r.message.url;
+						})
+						.catch(() => tab?.close());
+				};
+				frm.add_custom_button(__("SSH session"), () => openConsole("ssh"), __("Web Console"));
+				frm.add_custom_button(__("Serial console (TTY)"), () => openConsole("tty"), __("Web Console"));
+			}
+			frm.add_custom_button(
+				__("Revoke Pilot Access"),
+				() =>
+					frappe.confirm(__("Revoke every Pilot credential of {0}? Its Pilot can no longer reach Central.", [frm.doc.resource_id]), async () => {
+						await frm.call({ doc: frm.doc, method: "revoke_pilot_access", freeze: true });
+						frappe.show_alert({ message: __("Pilot access revoked"), indicator: "red" }, 5);
+					}),
+				__("Server"),
+			);
+		}
+
 		if (frm.doc.atlas_vm_id && frm.doc.status !== "Terminated") {
+			if (frappe.user.has_role("System Manager")) {
+				frm.add_custom_button(__("Rescue mode"), async () => {
+					const args = { team: frm.doc.team, resource_id: frm.doc.resource_id };
+					const result = await frappe.call({
+						method: "central.api.servers.get_rescue_state", args, type: "GET", freeze: true,
+					});
+					if (result.exc || !result.message) return;
+					const state = result.message;
+					const label = (value) => value == null ? __("Unknown") : value ? __("Rescue") : __("Normal");
+					const message = __(
+						"Last boot: {0}. Next boot: {1}. Repairs modify the original disk. Take a snapshot before repair. This selection applies on the next cold boot; it does not restart the server now. Enabling can wake a sleeping server.",
+						[label(state.is_in_rescue_mode), label(state.is_rescue_mode_enabled)],
+					);
+					if (state.is_rescue_mode_enabled == null) {
+						frappe.msgprint(message);
+						return;
+					}
+					const question = state.is_rescue_mode_enabled ? __("Disable rescue?") : __("Enable rescue?");
+					frappe.confirm(message + "<br>" + question, async () => {
+						const response = await frappe.call({
+							method: "central.api.servers.set_rescue_mode",
+							args: { ...args, enabled: !state.is_rescue_mode_enabled }, freeze: true,
+						});
+						if (response.exc) return;
+						frappe.msgprint(__("Boot selection accepted. Use the existing Start or Restart action, then open Rescue mode again to check status."));
+					});
+				}, __("Server"));
+			}
+
 			frm.add_custom_button(
 				__("Sync state"),
 				async () => {
@@ -69,6 +159,43 @@ frappe.ui.form.on("Virtual Machine", {
 					}),
 			__("Server"),
 		);
+		if (frm.doc.__onload?.has_wireguard_gateway || frm.doc.has_wireguard_access) {
+			frm.add_custom_button(
+				frm.doc.has_wireguard_access ? __("Turn Off WireGuard Access") : __("Turn On WireGuard Access"),
+				() =>
+					frappe
+						.call({
+							method: "central.api.servers.set_server_wireguard_access",
+							args: {
+								team: frm.doc.team,
+								resource_id: frm.doc.resource_id,
+								enabled: frm.doc.has_wireguard_access ? 0 : 1,
+							},
+							freeze: true,
+						})
+						.then((r) => !r.exc && frm.reload_doc()),
+				__("Server"),
+			);
+		}
+		frm.add_custom_button(
+			frm.doc.is_termination_protected ? __("Turn Off Termination Protection") : __("Turn On Termination Protection"),
+			() =>
+				frappe
+					.call({
+						method: "central.api.servers.set_termination_protection",
+						args: {
+							team: frm.doc.team,
+							resource_id: frm.doc.resource_id,
+							enabled: frm.doc.is_termination_protected ? 0 : 1,
+						},
+						freeze: true,
+					})
+					.then((r) => !r.exc && frm.reload_doc()),
+			__("Server"),
+		);
+		if (frappe.user.has_role("System Manager") && frm.doc.atlas_vm_id) {
+			frm.add_custom_button(__("Compute Settings"), () => open_compute_settings(frm), __("Server"));
+		}
 		frm.add_custom_button(__("Start"), () => run(__("Start"), "start_server", "green"), __("Server"));
 		frm.add_custom_button(__("Stop"), () => run(__("Stop"), "stop_server", "orange"), __("Server"));
 		if (frm.doc.status === "Running") {
@@ -88,3 +215,70 @@ frappe.ui.form.on("Virtual Machine", {
 		);
 	},
 });
+
+async function open_compute_settings(frm) {
+	const response = await frm.call({ doc: frm.doc, method: "get_compute_settings", freeze: true });
+	if (response.exc || !response.message) return;
+
+	const dialog = new frappe.ui.Dialog({
+		title: __("Compute Settings"),
+		fields: [
+			{
+				fieldtype: "HTML",
+				options: `<p class="text-muted small">${__(
+					"The region keeps these settings. Zero turns a setting off. A plan resize turns sleep off again.",
+				)}</p>`,
+			},
+			{ fieldtype: "Section Break", label: __("Sleep") },
+			{
+				fieldname: "sleep_after_idle_seconds",
+				fieldtype: "Int",
+				label: __("Sleep After Idle (seconds)"),
+				description: __("Save memory and stop the server after this idle time. The next request wakes it."),
+			},
+			{
+				fieldname: "deep_sleep_after_idle_seconds",
+				fieldtype: "Int",
+				label: __("Deep Sleep After Idle (seconds)"),
+				description: __("Move saved memory to object storage. Needs at most 4 GiB memory and 50 GiB disk."),
+			},
+			{
+				fieldname: "coma_after_idle_seconds",
+				fieldtype: "Int",
+				label: __("Coma After Idle (seconds)"),
+				description: __("Also move the disk to object storage. Must be longer than deep sleep."),
+			},
+			{ fieldtype: "Section Break", label: __("CPU Burst") },
+			{ fieldname: "is_burstable", fieldtype: "Check", label: __("Burstable") },
+			{
+				fieldname: "baseline_cpu_millicores",
+				fieldtype: "Int",
+				label: __("Baseline CPU (millicores)"),
+				description: __("CPU the server can always use. Zero uses 20% of its CPU."),
+				depends_on: "is_burstable",
+			},
+			{
+				fieldname: "sliding_window_minutes",
+				fieldtype: "Int",
+				label: __("Sliding Window (minutes)"),
+				description: __("How far back average CPU use is measured. Zero uses 60."),
+				depends_on: "is_burstable",
+			},
+		],
+		primary_action_label: __("Save"),
+		async primary_action(values) {
+			const result = await frm.call({
+				doc: frm.doc,
+				method: "set_compute_settings",
+				args: { settings: { ...values, is_burstable: Boolean(values.is_burstable) } },
+				freeze: true,
+			});
+			if (result.exc) return;
+			dialog.hide();
+			frappe.show_alert({ message: __("Compute settings saved"), indicator: "green" }, 5);
+			frm.reload_doc();
+		},
+	});
+	dialog.set_values({ ...response.message, is_burstable: response.message.is_burstable ? 1 : 0 });
+	dialog.show();
+}

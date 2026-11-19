@@ -1,18 +1,8 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
-"""Everything about a region's Cargo that only Cargo cares about.
-
-Mixed into `Region` (see `region.py`). Cargo has no polled "Test Connection" the
-way Atlas does: Central checks its health endpoint only to know when to register it,
-and after that Cargo reports itself in by webhook. Keep Atlas-specific fields and
-logic in `atlas_connection.py` instead of here.
-"""
-
-from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils.password import set_encrypted_password
 
 from central.errors import CargoConnectionError
 from central.iam import user_has_operator_bypass
@@ -43,6 +33,7 @@ class CargoConnectionMixin:
 		"""Operator action: register this region's Cargo now. A failure raises."""
 		if not user_has_operator_bypass():
 			frappe.throw(_("Not permitted."), frappe.PermissionError)
+
 		self.check_permission("write")
 
 		# Keep the saved configuration stable until this call finishes.
@@ -65,8 +56,11 @@ class CargoConnectionMixin:
 		secret = frappe.generate_hash(length=32)
 		client.configure_webhooks(secret)
 
-		set_encrypted_password("Region", self.name, secret, "cargo_webhook_secret")
-		self.db_set({"cargo_status": "Registered", "cargo_registered_at": frappe.utils.now_datetime()})
+		self.cargo_webhook_secret = secret
+		self.cargo_status = "Registered"
+		self.cargo_registered_at = frappe.utils.now_datetime()
+		self.save()
+
 		return True
 
 

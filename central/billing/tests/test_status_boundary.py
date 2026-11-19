@@ -97,6 +97,6 @@ class TestStatusTransitionBoundary(BillingTestCase):
 		planted = ast.parse(
 			'inv.status = "Paid"\n'
 			'frappe.db.set_value("Subscription", n, "account_standing", "Current")\n'
-			'frappe.db.set_value("Invoice", n, {"status": "Open"})\n'
+			'frappe.db.set_value("Invoice", n, {"status": "Outstanding"})\n'
 		)
 		self.assertEqual(len(_direct_state_writes(planted)), 3)

@@ -6,7 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import get_url, now_datetime
 
-from central.billing.gateways.base import GatewayAuthError, GatewayUnsupported
+from central.billing.gateways.base import GatewayAuthError, GatewayError, GatewayUnsupported, WebhookNotFound
 
 
 def _is_local_url(url: str) -> bool:
@@ -135,8 +135,8 @@ class PaymentGateway(Document):
 		)
 
 	def _validate_credentials(self):
-		"""Prove the keys, confirm the account currency, then ensure the webhook is
-		registered. A GatewayAuthError here aborts the save (bad keys never persist)."""
+		"""Prove the keys, then make sure their account sends us our webhook events.
+		A GatewayAuthError here aborts the save (bad keys never persist)."""
 		adapter = self.get_adapter()
 		try:
 			adapter.validate_credentials()
@@ -147,13 +147,57 @@ class PaymentGateway(Document):
 			)
 
 		self.credentials_validated_at = now_datetime()
-		self._ensure_webhook_registered(adapter)
+		self._sync_webhook(adapter)
 
-	def _ensure_webhook_registered(self, adapter):
-		"""Auto-fill webhook_secret by registering the endpoint at the gateway.
-		Gateways that can't self-register fall back to manual entry of the secret."""
+	def _sync_webhook(self, adapter):
+		"""Keep the endpoint when the new keys can see it, and register one when they cannot.
+
+		New keys for the same account only update the endpoint's events. Keys for another
+		account, or another Stripe mode, cannot see the stored endpoint, so a new one is
+		registered there. The old endpoint is never deleted: another site may use it.
+		"""
 		if self.webhook_endpoint_id:
-			return
+			try:
+				self._subscribe_missing_events(adapter)
+				return
+			except GatewayUnsupported:
+				return
+			except WebhookNotFound:
+				self._forget_previous_endpoint()
+			except GatewayError as e:
+				# The keys are proven; a failed webhook read must not block saving them.
+				frappe.msgprint(
+					_("Could not check the webhook: {0}. Use Pull Webhook Events later.").format(str(e)),
+					title=_("Webhook Not Checked"),
+					indicator="orange",
+				)
+				return
+		self._register_webhook(adapter)
+
+	def _subscribe_missing_events(self, adapter):
+		"""Add the events Central needs to the stored endpoint, if any are missing."""
+		webhook = adapter.get_webhook(self.webhook_endpoint_id)
+		events = webhook["events"]
+		if not set(adapter.webhook_events) <= set(events) and "*" not in events:
+			events = list(adapter.webhook_events)
+			adapter.update_webhook_events(self.webhook_endpoint_id, self.webhook_callback_url(), events)
+		self._record_webhook(webhook["url"], webhook["is_active"], events)
+
+	def _forget_previous_endpoint(self):
+		frappe.msgprint(
+			_(
+				"Webhook endpoint {0} is not in the account of the new keys, so a new endpoint is "
+				"registered. The old endpoint is not deleted. Remove it in the old account if no "
+				"other site uses it."
+			).format(self.webhook_endpoint_id),
+			title=_("Gateway Account Changed"),
+			indicator="orange",
+		)
+		self.webhook_endpoint_id = None
+
+	def _register_webhook(self, adapter):
+		"""Register the endpoint at the gateway and store its signing secret.
+		Gateways that can't self-register fall back to manual entry of the secret."""
 		url = self.webhook_callback_url()
 		# The gateway's servers must be able to reach the callback. On a local/dev
 		# host (localhost, *.localhost, loopback/private IP) they can't — and the
@@ -178,6 +222,28 @@ class PaymentGateway(Document):
 		secret = result.get("secret")
 		if secret:
 			self.webhook_secret = secret
+		self._record_webhook(url, True, list(adapter.webhook_events))
+
+	def _record_webhook(self, url: str, is_active: bool, events: list[str]):
+		"""Store what the gateway reports for the endpoint, one row for each event."""
+		needed = set(self.get_adapter().webhook_events)
+		subscribed = set(events)
+		self.webhook_url = url
+		self.is_webhook_active = int(bool(is_active))
+		self.webhook_events_pulled_at = now_datetime()
+		self.set("webhook_events", [])
+		for event in sorted(needed | subscribed):
+			is_needed = event in needed
+			is_subscribed = event in subscribed or "*" in subscribed
+			self.append(
+				"webhook_events",
+				{
+					"event_type": event,
+					"is_needed": int(is_needed),
+					"is_subscribed": int(is_subscribed),
+					"state": "Not Used" if not is_needed else ("OK" if is_subscribed else "Missing"),
+				},
+			)
 
 	def webhook_callback_url(self) -> str:
 		return f"{get_url()}/api/method/central.billing.payments.webhooks.{self.adapter_key.lower()}"
@@ -197,14 +263,99 @@ class PaymentGateway(Document):
 				_("Validate the gateway credentials before enabling it."),
 				title=_("Gateway Not Validated"),
 			)
+		# A webhook with no secret to check it against would be accepted from anyone. Checked
+		# when the gateway goes live or its secret changes, so an unrelated edit still saves.
+		if self.is_enabled and self._is_webhook_setup_changing() and not self._has_webhook_secret():
+			frappe.throw(
+				_("Register the webhook, or enter its secret, before enabling the gateway."),
+				title=_("Webhook Secret Missing"),
+			)
 
-	# --- admin action --------------------------------------------------------
+	def _is_webhook_setup_changing(self) -> bool:
+		return self.has_value_changed("is_enabled") or self.has_value_changed("webhook_secret")
 
-	@frappe.whitelist()
-	def revalidate_and_register_webhook(self) -> dict:
-		"""Re-check the keys and (re)create the webhook endpoint, rotating the
-		signing secret. Clears the existing endpoint so a fresh one is created."""
-		self.webhook_endpoint_id = None
-		self._validate_credentials()
+	def _has_webhook_secret(self) -> bool:
+		"""Whether a webhook secret is set: typed now, stored (the field then holds a mask),
+		or in site config."""
+		return bool(self.webhook_secret or self.get_adapter().get_credential("webhook_secret"))
+
+	# --- admin actions -------------------------------------------------------
+
+	@frappe.whitelist(methods=["POST"])
+	def pull_webhook_events(self) -> dict:
+		"""Read the endpoint from the gateway and list the events it sends."""
+		self.check_permission("write")
+		webhook = self._read_webhook()
+		self._record_webhook(webhook["url"], webhook["is_active"], webhook["events"])
 		self.save()
-		return {"webhook_endpoint_id": self.webhook_endpoint_id}
+		return self._webhook_report()
+
+	@frappe.whitelist(methods=["POST"])
+	def update_webhook_events(self) -> dict:
+		"""Subscribe the endpoint to exactly the events Central needs, then read it back.
+		The signing secret does not change."""
+		self.check_permission("write")
+		self._read_webhook()
+		adapter = self.get_adapter()
+		try:
+			adapter.update_webhook_events(
+				self.webhook_endpoint_id, self.webhook_callback_url(), list(adapter.webhook_events)
+			)
+		except GatewayError as e:
+			frappe.throw(_("The gateway did not update the webhook: {0}").format(str(e)))
+		return self.pull_webhook_events()
+
+	def _read_webhook(self) -> dict:
+		"""The endpoint as the gateway reports it, or a message the operator can act on."""
+		if self.is_paypal_via_razorpay():
+			frappe.throw(_("This gateway settles through Razorpay and has no webhook of its own."))
+		if not self.webhook_endpoint_id:
+			frappe.throw(_("No webhook endpoint is registered. Use Re-register Webhook."))
+		try:
+			return self.get_adapter().get_webhook(self.webhook_endpoint_id)
+		except WebhookNotFound:
+			frappe.throw(
+				_(
+					"Webhook endpoint {0} is not in the account of these keys. Use Re-register Webhook."
+				).format(self.webhook_endpoint_id)
+			)
+		except GatewayUnsupported:
+			frappe.throw(_("Central cannot read the webhook of this gateway."))
+		except GatewayError as e:
+			frappe.throw(_("The gateway did not return the webhook: {0}").format(str(e)))
+
+	def _webhook_report(self) -> dict:
+		return {
+			"missing": [row.event_type for row in self.webhook_events if row.state == "Missing"],
+			"not_used": [row.event_type for row in self.webhook_events if row.state == "Not Used"],
+			"is_active": bool(self.is_webhook_active),
+			"url_matches": self.webhook_url == self.webhook_callback_url(),
+			"expected_url": self.webhook_callback_url(),
+		}
+
+	@frappe.whitelist(methods=["POST"])
+	def revalidate_and_register_webhook(self) -> dict:
+		"""Re-check the keys and register a new webhook endpoint with a new signing secret.
+
+		The old endpoint is not deleted at the gateway. When no new endpoint is registered
+		(a local site, or a gateway that cannot register one), the old one is kept.
+		"""
+		self.check_permission("write")
+		if self.is_paypal_via_razorpay():
+			frappe.throw(_("This gateway settles through Razorpay and has no webhook of its own."))
+
+		previous = self.webhook_endpoint_id
+		self.webhook_endpoint_id = None
+		try:
+			self._validate_credentials()
+		except GatewayError as e:
+			frappe.throw(_("The gateway did not register the webhook: {0}").format(str(e)))
+		registered = bool(self.webhook_endpoint_id)
+		if not registered:
+			self.webhook_endpoint_id = previous
+		self.save()
+		return {
+			"registered": registered,
+			"webhook_endpoint_id": self.webhook_endpoint_id,
+			"previous": previous,
+		}

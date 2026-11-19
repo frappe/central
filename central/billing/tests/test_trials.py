@@ -4,7 +4,7 @@
 
 Free trials are retired — every team is billable and receives welcome credits, so
 an entry-tier team's invoice is Billable and settles from its wallet. The Cost
-Report helpers (is_trial_team, convert_to_paid, expire_trial, subsidy_total) are
+Report helpers (is_trial_team, convert_to_paid, subsidy_total) are
 dormant, exercised here by hand until their separate cleanup."""
 
 import frappe
@@ -117,7 +117,7 @@ class TestSubsidyAndExpiry(TrialTestBase):
 					"doctype": "Invoice",
 					"team": team,
 					"invoice_type": "Cost Report",
-					"status": "Open",
+					"status": "Outstanding",
 					"period_start": "2099-01-01",
 					"period_end": "2099-01-31",
 					"currency": "INR",
@@ -128,11 +128,3 @@ class TestSubsidyAndExpiry(TrialTestBase):
 
 		subsidy = trials.subsidy_total("2099-01-01", "2099-01-31")
 		self.assertEqual(subsidy, 3000.0)  # 1000 + 2000
-
-	def test_expired_trial_emits_suspend_directive(self):
-		priv, _pub = generate_keypair()
-		frappe.conf.entitlement_private_key = priv
-
-		token = trials.expire_trial(TEAM)
-		self.assertEqual(token["payload"]["suspend"], 1)
-		self.assertEqual(frappe.db.get_value("Entitlement Token", token["name"], "suspend"), 1)

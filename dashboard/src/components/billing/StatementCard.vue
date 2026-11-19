@@ -2,117 +2,92 @@
 import { Badge, Button, LoadingText } from 'frappe-ui'
 import { computed } from 'vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import Table from '@/components/common/Table.vue'
 import { billingPeriod } from '@/lib/date'
 import { money } from '@/lib/format'
 import { invoiceTheme } from '@/lib/status'
 import type { Statement } from '@/types/billing'
 
-const VISIBLE = 5
-const COLUMNS = 'grid grid-cols-[1fr_5rem_7rem] items-center gap-3'
 const props = defineProps<{
 	statement: Statement | null
 	loading: boolean
 	exportUrl: string
 }>()
-defineEmits<{ open: [] }>()
+defineEmits<{ retry: [] }>()
 
 const currency = computed(() => props.statement?.currency ?? 'INR')
-const rows = computed(() =>
-	(props.statement?.rows ?? []).slice(-VISIBLE).reverse(),
+const period = computed(() =>
+	props.statement
+		? billingPeriod(props.statement.from_date, props.statement.to_date)
+		: undefined,
 )
-const hidden = computed(() =>
-	Math.max(0, (props.statement?.rows?.length ?? 0) - VISIBLE),
+const rows = computed(() => [...(props.statement?.rows ?? [])].reverse())
+
+const columns = [
+	{ key: 'period', label: 'Period' },
+	{ key: 'paid', label: 'Paid' },
+	{ key: 'status', label: 'Status' },
+	{ key: 'amount', label: 'Amount' },
+]
+
+const tableRows = computed(() =>
+	rows.value.map((row) => ({
+		id: row.invoice,
+		period: billingPeriod(row.period_start, row.period_end),
+		paid: money(row.amount_paid + row.credit_applied, currency.value),
+		status: row.status,
+		amount: money(row.total, currency.value),
+	})),
 )
 </script>
 
 <template>
 	<BillingCard
-		title="Statement of account"
-		:description="
-      statement
-        ? billingPeriod(statement.from_date, statement.to_date)
-        : undefined
-    "
+		title="Statement"
+		:description="period"
+		title-info="For reconciling against your own records. Tax invoices are issued separately."
+		flat
 	>
-		<template #action>
-			<Button variant="ghost" size="xs" :link="exportUrl" label="Export">
-				<template #prefix>
-					<span class="lucide-download size-3.5" aria-hidden="true" />
-				</template>
-			</Button>
+		<template v-if="statement?.rows?.length" #action>
+			<Button icon="lucide-download" label="Export CSV" :href="exportUrl" />
 		</template>
 
-		<LoadingText v-if="loading" :lines="4" />
+		<LoadingText v-if="loading" :lines="3" />
 
-		<template v-else>
-			<template v-if="statement">
-				<div v-if="rows.length" role="table" class="w-full">
-					<div
-						role="row"
-						:class="COLUMNS"
-						class="pb-2 pt-3 text-xs uppercase tracking-wide text-ink-gray-4"
-					>
-						<span role="columnheader">Period</span>
-						<span role="columnheader" class="text-right">Status</span>
-						<span role="columnheader" class="text-right">Amount</span>
-					</div>
+		<EmptyState
+			v-else-if="!statement"
+			icon="lucide-cloud-off"
+			title="Statement couldn't load"
+		>
+			<template #action>
+				<Button label="Retry" @click="$emit('retry')" />
+			</template>
+		</EmptyState>
 
-					<div
-						class="divide-y divide-outline-gray-1 border-t border-outline-gray-1"
-					>
-						<div
-							v-for="row in rows"
-							:key="row.invoice"
-							role="row"
-							:class="COLUMNS"
-							class="py-2.5"
-						>
-							<span
-								role="cell"
-								class="truncate text-p-sm text-ink-gray-8"
-								:title="billingPeriod(row.period_start, row.period_end)"
-							>
-								{{ billingPeriod(row.period_start, row.period_end) }}
-							</span>
-							<span role="cell" class="flex justify-end">
-								<Badge :theme="invoiceTheme(row.status)" :label="row.status" />
-							</span>
-							<span
-								role="cell"
-								class="text-right text-p-sm tabular-nums text-ink-gray-9"
-							>
-								{{ money(row.total, currency) }}
-							</span>
-						</div>
-					</div>
-				</div>
+		<EmptyState
+			v-else-if="!rows.length"
+			icon="lucide-file-text"
+			title="No invoices in this period"
+			description="Invoices and their payments show here at the end of each billing cycle."
+		/>
 
-				<p v-else class="py-2 text-p-sm text-ink-gray-5">
-					No invoices in this period.
-				</p>
+		<Table v-else :columns="columns" :rows="tableRows">
+			<template #period="{ row }">
+				{{ row.period }}
 			</template>
 
-			<p v-else class="py-2 text-p-sm text-ink-gray-5">
-				Couldn't load the statement.
-			</p>
+			<template #paid="{ row }">
+				<span class="text-sm tabular-nums text-ink-gray-5">{{ row.paid }}</span>
+			</template>
 
-			<div class="mt-2 flex flex-wrap items-center justify-between gap-2">
-				<Button
-					v-if="statement && hidden"
-					variant="ghost"
-					:label="`View all ${statement.rows.length}`"
-					class="-ml-2"
-					@click="$emit('open')"
-				>
-					<template #suffix>
-						<span class="lucide-chevron-right size-4" aria-hidden="true" />
-					</template>
-				</Button>
-				<p class="ml-auto text-p-sm text-ink-gray-5">
-					For reconciling against your own records. Tax invoices are issued
-					separately.
-				</p>
-			</div>
-		</template>
+			<template #status="{ row }">
+				<Badge :theme="invoiceTheme(row.status)" :label="row.status" />
+			</template>
+
+			<template #amount="{ row }">
+				<span class="tabular-nums text-ink-gray-9">{{ row.amount }}</span>
+			</template>
+		</Table>
 	</BillingCard>
 </template>

@@ -27,16 +27,9 @@ class ServiceDetail(Document):
 
 	@staticmethod
 	def endpoint_for(region: str, service: str) -> str | None:
-		"""Where one region serves one service, or None while it does not.
-
-		A region that has never reported has no row, and one reporting `Not Available` has
-		an endpoint that would refuse the caller, so both read as nothing to hand out.
-
-		NOTE: This is just a endpoint for the service (USER), for services like Object Storage the control communications
-		will go through cargo the cluster's service manager like bucket creation etc.
-		However data path of the service is the services responsibility.
-		~ AT
-		"""
+		"""Where a region serves a service, or None while it does not report it Available.
+		This is the service's data endpoint; control traffic, such as creating a bucket, goes
+		through Cargo."""
 		detail = frappe.get_cached_value(
 			"Service Detail",
 			f"{region}-{service}",
@@ -63,6 +56,7 @@ class ServiceDetail(Document):
 
 		# A region reports as a guest; the delivery's signature is what authorises this write.
 		detail.save(ignore_permissions=True)
+
 		return detail.name
 
 	@staticmethod
@@ -74,6 +68,7 @@ class ServiceDetail(Document):
 		if not frappe.db.exists("Service Detail", name):
 			inserted = None
 			with savepoint(catch=frappe.DuplicateEntryError):
+				# As in the save above: the delivery's signature authorises this write.
 				inserted = (
 					frappe.new_doc("Service Detail")
 					.update({"region": region, "service": service})

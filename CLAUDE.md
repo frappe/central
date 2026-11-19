@@ -39,12 +39,12 @@ Pilot      server runtime: benches, sites, apps on a single server.
 
 Central runs today:
 
-- Identity and access: teams, members, invitations, team roles, capabilities, and the permission probe.
+- Identity and access: teams, members, invitations, team roles, and capabilities.
 - Tokens: SSO and OAuth minting for Atlas, for a Pilot bench, and for Cargo, Datum and for any other future services, plus site login.
 - Regions: each Region holds its Atlas connection and its Cargo connection.
 - Resources: `Virtual Machine` for a provisioned server, `Site` for a self-serve site. Only the integration layer records observed state on them.
 - Provisioning: durable `Resource Action` records that Central processes against Atlas and Pilot.
-- Managed services: add-on catalog, team services and service details, LLM models and plan policies, and object storage.
+- Managed services: team services and service details, LLM models and plan policies, and object storage.
 - Notifications: event types, team notifications, user preferences, and the delivery engine.
 - Billing: catalog, subscriptions, invoicing, payments, credits, and projections.
 - The console in `dashboard/`.
@@ -156,6 +156,9 @@ The console serves customers. Desk serves the operator who has to answer a page 
 - Do not put an explanatory comment at the top of a file. Use a short class or function docstring.
 - Add focused tests for changed behavior and failure cases. Do not add tests only to raise coverage. Keep tests deterministic and independent.
 - Follow DRY, SOLID, and KISS. Apply them to remove real duplication and real coupling, not to add layers.
+- Reduce the layers a reader has to trace. Reduce the state a reader has to hold in their head.
+- Don't abstract for the sake of abstraction, abstract only if you can make a distinct concept from it. Every layer should provide a consistent interface and be part of a single task.
+- Review every test for it's necessity. If the type system covers it, remove the test. If an existing end to end / integration test covers it, remove it. When you add, change, or remove a test, check it against the `test-prune` rubric.
 
 ### Python
 
@@ -165,7 +168,9 @@ The console serves customers. Desk serves the operator who has to answer a page 
 - Use type hints for public functions and important data structures.
 - Raise specific exceptions. Handle only errors that the code can recover from. Use `central/errors.py` for a failure that a person reads.
 - Prefer standard Frappe APIs and built-in DocTypes over custom machinery. Use `frappe.db` and `frappe.qb` instead of raw SQL.
-- Wrap every user-facing string in `_()`.
+- Wrap every user-facing string in `_()`. Pass values with `.format()`, for example `_("Server {0} is stopped.").format(name)`. Do not put an f-string, a concatenation, or a variable inside `_()`.
+- Mark a literal with `N_()` when the code keeps it in a constant or a dictionary, and call `_()` where the code reads it. A `_()` at import time fixes the language of the first request. `.semgrep/translation.yml` checks these rules in pre-commit.
+- Use `better-writing` for backend error messages shown to customers. Keep admin and developer diagnostics outside this copy review. See [interface copy guidance](llm/README.md#copy).
 - Avoid mutable global state, circular imports, and lazy re-exports in a package `__init__.py`.
 - Use `@property` only for a cheap, side-effect-free, no-argument operation that returns one noun-like value. Use `get_<what_it_returns>()` for an operation with arguments or multi-step work.
 - Name boolean properties and methods with `is_` or `has_`.
@@ -239,6 +244,7 @@ dashboard/src/components/<feature>/   Feature components, one folder per domain
 - Keep line heights and text sizes on the Frappe UI scale.
 - Use correct HTML semantics. Give every control a label, a reachable focus state, and keyboard operation.
 - Match the pinned Frappe UI version. Report a version mismatch instead of a silent upgrade.
+- Use the task-specific interface skill in [agent tooling setup](llm/README.md#interface-skills). Use `better-writing` when you add or change empty states, tooltips, labels, helper text, errors, or confirmations.
 
 ## Documentation
 
@@ -283,6 +289,7 @@ Use `pilot frappe ...` for any Frappe CLI command, such as `migrate` or `clear-c
 - Keep valid error handling, boundary validation, cleanup, synchronization, and security checks.
 - Validate untrusted input at its boundary. Central is the authorization source, so treat every capability and team check as security-sensitive.
 - Run the focused tests for the changed module, and the full app suite only before a broad refactor.
+- CI skips the billing tests on a pull request that changes only modules in `skippable` in `.github/workflows/ci.yml`. When billing code starts to use one of those modules, remove it from `skippable`.
 - Always run tests in isolation and in a separate site.
 - In the handover, report the result, the changed paths, and the verification. Explain implementation details only when the user asks or the reason is not clear.
 
@@ -355,9 +362,10 @@ Use the most specific available skill for the task. See [agent tooling setup](ll
 | `quality-code-review` | Frappe correctness, security, performance, concurrency, readability, API design, and test review. |
 | `review-like-ankush` | Review of a Frappe diff or pull request. |
 | `technical-writing` | Documentation, READMEs, commits, pull requests, and release notes. |
-| `ui-design` | Dashboard layout, polish, hierarchy, spacing, typography, color, and accessibility. |
+| `ui-design` | General dashboard design. Use the task-specific interface skills in [agent tooling setup](llm/README.md#interface-skills) for copy, accessibility, layout, typography, and polish. |
 | `grill-me` | Strict review of a plan or design before handover. |
 | `diagnose` | A hard bug or a performance regression. |
+| `test-prune` | Adding, changing, or removing a test, and a slow or redundant test suite. It ships in `.claude/skills`. |
 | `draft-security-advisory` | A security advisory for a fixed vulnerability. |
 | `i-have-adhd` | Focused, action-first output. Invoke it by name. |
 

@@ -18,6 +18,7 @@ import {
 	fetchBillingSetup,
 	invalidateBillingSetup,
 } from '@/data/billingSetup'
+import { money } from '@/lib/format'
 
 // Module-level so a money-moving action anywhere can ask the Overview to open its
 // billing-profile edit dialog, and the dialog reflects that one source of truth.
@@ -62,6 +63,27 @@ export function useBillingSetup() {
 		supportedCurrencies: computed(() => state.data?.supported_currencies ?? []),
 		loading: computed(() => state.loading),
 		profile: computed(() => state.data),
+		// The fetch for this team finished without a profile, so the caller can offer a retry.
+		hasLoadFailed: computed(
+			() =>
+				!state.loading &&
+				state.team === (activeTeam.value || '') &&
+				!state.data,
+		),
+		paymentMethodRequired: computed(
+			() => !!state.data?.payment_method_required,
+		),
+		// "$10 credit, valid for 60 days", or null when there is none to get.
+		welcomeCredit: computed(() => {
+			const credit = state.data?.welcome_credit
+			if (!credit) return null
+			const amount = money(credit.amount, credit.currency, {
+				trimTrailingZeros: true,
+			})
+			return credit.validity_days
+				? `${amount} credit, valid for ${credit.validity_days} days`
+				: `${amount} credit`
+		}),
 		// Whether the billing-profile edit dialog should be open (shared).
 		setupDialogOpen,
 		requireSetup,

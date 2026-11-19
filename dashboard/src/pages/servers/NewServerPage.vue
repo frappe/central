@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { Alert, Button, Select, TabButtons, Tabs, TextInput } from 'frappe-ui'
-import { computed, ref, useTemplateRef, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import PaymentMethodFlow from '@/components/billing/PaymentMethodFlow.vue'
 import ChoiceCards from '@/components/common/ChoiceCards.vue'
+import ContactSupportLink from '@/components/common/ContactSupportLink.vue'
+import AppInputs from '@/components/servers/AppInputs.vue'
+import AppSelector from '@/components/servers/AppSelector.vue'
 import CreateServerButton from '@/components/servers/CreateServerButton.vue'
 import CreationStatusPanel from '@/components/servers/CreationStatusPanel.vue'
 import ImageOfferingSelector from '@/components/servers/ImageOfferingSelector.vue'
@@ -9,9 +13,11 @@ import PlanGroup from '@/components/servers/PlanGroup.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerNetworkOptions from '@/components/servers/ServerNetworkOptions.vue'
 import ServerSummary from '@/components/servers/ServerSummary.vue'
+import SpendingLimitNotice from '@/components/servers/SpendingLimitNotice.vue'
 import SSHKeysField from '@/components/servers/SSHKeysField.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useServerCreation } from '@/composables/useServerCreation'
+import { features } from '@/lib/features'
 import { flagEmoji, regionLabel } from '@/lib/serverMap'
 import { getCreationStage } from '@/lib/status'
 import type { ActionStatus } from '@/types/serverCreation'
@@ -32,6 +38,7 @@ const {
 	available,
 	currency,
 	capacity,
+	includedTransferGigabytes,
 	plansLoading,
 	plansError,
 	reloadPlans,
@@ -47,6 +54,9 @@ const {
 	summary,
 	canSubmit,
 	submit,
+	nameError,
+	paymentMethodRequired,
+	welcomeCredit,
 	source,
 	snapshotName,
 	snapshotOptions,
@@ -55,6 +65,14 @@ const {
 	reloadSnapshots,
 	offering,
 	offeringOptions,
+	apps,
+	isApp,
+	app,
+	appRequirements,
+	appAnswers,
+	appRequirementsLoading,
+	appRequirementsError,
+	reloadAppRequirements,
 	imageId,
 	image,
 	imageOptions,
@@ -62,6 +80,8 @@ const {
 	imagesError,
 	reloadImages,
 	sshKeyIds,
+	hasPublicIpv4,
+	ipv4PriceLabel,
 	hasPublicIpv6,
 	isFirewallEnabled,
 	action,
@@ -74,6 +94,8 @@ const {
 	submitting,
 	submitError,
 } = useServerCreation()
+
+const paymentFlow = ref<InstanceType<typeof PaymentMethodFlow> | null>(null)
 
 const { setBreadcrumbs } = useBreadcrumbs()
 setBreadcrumbs([
@@ -112,10 +134,6 @@ watch(
 	},
 	{ immediate: true },
 )
-
-// The form mounts after regions load, which is too late for the autofocus attribute.
-const nameInput = useTemplateRef<{ focus: () => void }>('nameInput')
-watch(nameInput, (input) => input?.focus())
 </script>
 
 <template>
@@ -125,19 +143,36 @@ watch(nameInput, (input) => input?.focus())
 		</Teleport>
 
 		<div class="flex flex-col-reverse lg:flex-row">
-			<div class="w-full p-4 md:p-6 lg:w-1/2">
+			<div class="vt-server-form w-full p-4 md:p-6 lg:w-1/2">
 				<p v-if="loading" class="text-p-sm text-ink-gray-5">Loading regions…</p>
 				<p v-else-if="!regions.length" class="text-p-sm text-ink-gray-5">
-					No active regions are available right now.
+					No regions are accepting new servers right now. Try again later, or
+					<ContactSupportLink :context="{ Topic: 'New server' }" />.
 				</p>
 
 				<div v-else class="space-y-8">
+					<Alert
+						v-if="paymentMethodRequired"
+						title="Add a payment method to create servers"
+						icon="lucide-credit-card"
+						:description="
+							welcomeCredit
+								? `Servers are billed monthly. Add a payment method to get ${welcomeCredit}.`
+								: 'Servers are billed monthly to your payment method.'
+						"
+						:primary-action="{
+							label: 'Add payment method',
+							onClick: () => paymentFlow?.start(),
+						}"
+					/>
+
 					<section class="grid gap-3 md:grid-cols-2">
 						<TextInput
-							ref="nameInput"
+							v-focus
 							v-model="name"
 							label="Name"
 							required
+							:error="nameError"
 							size="md"
 							placeholder="e.g. Acme Production"
 							:maxlength="60"
@@ -173,7 +208,8 @@ watch(nameInput, (input) => input?.focus())
 								v-else-if="snapshotOptions.length < 2"
 								class="text-p-sm text-ink-gray-5"
 							>
-								No snapshots are available in this region.
+								No snapshots are available in this region. Select another
+								region, or choose Image to create a server without a snapshot.
 							</p>
 							<Select
 								v-else
@@ -204,6 +240,16 @@ watch(nameInput, (input) => input?.focus())
 								:description="imagesError"
 								:primary-action="{ label: 'Retry images', onClick: reloadImages }"
 							/>
+							<template v-else-if="isApp">
+								<p v-if="!apps.length" class="text-p-sm text-ink-gray-5">
+									No apps are available in this region yet. Select another image
+									or region.
+								</p>
+								<template v-else>
+									<h3 class="pt-2 text-sm-medium text-ink-gray-6">App</h3>
+									<AppSelector v-model="imageId" :apps="apps" />
+								</template>
+							</template>
 							<p
 								v-else-if="imageOptions.length < 2"
 								class="text-p-sm text-ink-gray-5"
@@ -214,7 +260,7 @@ watch(nameInput, (input) => input?.focus())
 						</template>
 						<div class="grid gap-3 md:grid-cols-2">
 							<Select
-								v-if="source === 'image' && imageOptions.length > 1"
+								v-if="source === 'image' && !isApp && imageOptions.length > 1"
 								v-model="imageId"
 								label="Image build"
 								size="md"
@@ -224,9 +270,51 @@ watch(nameInput, (input) => input?.focus())
 						</div>
 					</section>
 
-					<section v-if="image">
+					<section v-if="app" class="space-y-3">
+						<h2 class="text-base-semibold text-ink-gray-8">
+							{{ app.title }}
+							settings
+						</h2>
+						<p
+							v-if="appRequirementsLoading"
+							role="status"
+							class="text-p-sm text-ink-gray-5"
+						>
+							Loading app settings…
+						</p>
+						<Alert
+							v-else-if="appRequirementsError"
+							theme="red"
+							title="Couldn't load app settings"
+							:description="appRequirementsError"
+							:primary-action="{
+								label: 'Retry settings',
+								onClick: reloadAppRequirements,
+							}"
+						/>
+						<p
+							v-else-if="!appRequirements?.inputs.length"
+							class="text-p-sm text-ink-gray-5"
+						>
+							This app needs no settings.
+						</p>
+						<AppInputs
+							v-else
+							v-model="appAnswers"
+							:inputs="appRequirements.inputs"
+						/>
+					</section>
+
+					<section
+						v-if="
+							image &&
+							(features.publicIpv4 || features.publicIpv6 || features.firewall)
+						"
+					>
 						<h2 class="mb-3 text-base-semibold text-ink-gray-8">Network</h2>
 						<ServerNetworkOptions
+							v-model:has-public-ipv4="hasPublicIpv4"
+							:ipv4-price-label="ipv4PriceLabel"
 							v-model:has-public-ipv6="hasPublicIpv6"
 							v-model:is-firewall-enabled="isFirewallEnabled"
 						/>
@@ -236,7 +324,7 @@ watch(nameInput, (input) => input?.focus())
 						<div class="mb-3 flex items-center justify-between gap-3">
 							<h2 class="text-base-semibold text-ink-gray-8">Region</h2>
 							<span class="text-xs text-ink-gray-5"
-								>Or pick a pin on the map</span
+								>Or select a region on the map</span
 							>
 						</div>
 						<ChoiceCards
@@ -246,7 +334,7 @@ watch(nameInput, (input) => input?.focus())
 							@update:model-value="selectRegion"
 						>
 							<template #icon="{ option }">
-								<span class="text-xl leading-none" aria-hidden="true">
+								<span class="text-xl" aria-hidden="true">
 									{{ regionFlags[option.value] }}
 								</span>
 							</template>
@@ -261,7 +349,9 @@ watch(nameInput, (input) => input?.focus())
 						<p v-if="!image" class="text-p-sm text-ink-gray-5">
 							{{ source === 'snapshot'
 									? 'Select a snapshot to see compatible plans.'
-									: 'Select an image build to see compatible plans.' }}
+									: isApp
+										? 'Select an app to see compatible plans.'
+										: 'Select an image build to see compatible plans.' }}
 						</p>
 						<p v-else-if="plansLoading" class="text-p-sm text-ink-gray-5">
 							Loading plans…
@@ -288,24 +378,12 @@ watch(nameInput, (input) => input?.focus())
 							"
 						/>
 
-						<div
-							v-else-if="bracketExhausted"
-							class="rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
-						>
-							<p class="text-p-sm font-medium text-ink-gray-8">
-								You've reached your spending limit
-							</p>
-							<p class="mt-1 text-p-sm text-ink-gray-5">
-								No plans (preset or custom) fit your remaining headroom in this
-								region. Remove a server to free some up, or contact support to
-								raise your limit.
-							</p>
-						</div>
-
-						<p v-else-if="nothingToShow" class="text-p-sm text-ink-gray-5">
-							No plans are available for this region within your current
-							spending limit.
-						</p>
+						<SpendingLimitNotice
+							v-else-if="bracketExhausted || nothingToShow"
+							:exhausted="bracketExhausted"
+							:available="available"
+							:currency="currency"
+						/>
 
 						<Tabs v-else-if="hasTabs" v-model="activeTab" :tabs="classTabs">
 							<template #tab-panel="{ tab }">
@@ -317,6 +395,7 @@ watch(nameInput, (input) => input?.focus())
 									:available="available ?? 0"
 									:currency="currency ?? 'USD'"
 									:capacity="capacity"
+									:included-transfer-gigabytes="includedTransferGigabytes"
 									v-model:selected-plan="selectedPlan"
 									v-model:composed-config="composedConfig"
 								/>
@@ -331,6 +410,7 @@ watch(nameInput, (input) => input?.focus())
 							:available="available ?? 0"
 							:currency="currency ?? 'USD'"
 							:capacity="capacity"
+							:included-transfer-gigabytes="includedTransferGigabytes"
 							v-model:selected-plan="selectedPlan"
 							v-model:composed-config="composedConfig"
 						/>
@@ -342,7 +422,7 @@ watch(nameInput, (input) => input?.focus())
 				class="flex flex-col border-b border-outline-gray-1 lg:sticky lg:top-0 lg:h-[calc(100dvh-3rem)] lg:w-1/2 lg:self-start lg:border-b-0 lg:border-l"
 			>
 				<div
-					class="relative m-6 h-72 overflow-hidden rounded-7 border border-outline-gray-2 lg:h-auto lg:flex-1"
+					class="vt-server-map relative m-2 h-72 overflow-hidden rounded-6 border border-outline-gray-1 lg:h-auto lg:flex-1"
 				>
 					<ServerMap
 						:interactive="false"
@@ -351,7 +431,7 @@ watch(nameInput, (input) => input?.focus())
 						@select="selectRegion"
 					/>
 				</div>
-				<ServerSummary v-bind="summary">
+				<ServerSummary class="vt-server-summary" v-bind="summary">
 					<div class="space-y-3">
 						<Alert
 							v-if="submitError && !action"
@@ -389,5 +469,6 @@ watch(nameInput, (input) => input?.focus())
 				</ServerSummary>
 			</div>
 		</div>
+		<PaymentMethodFlow ref="paymentFlow" />
 	</div>
 </template>

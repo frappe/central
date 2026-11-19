@@ -1,30 +1,68 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
 import frappe
 from frappe import _
 from frappe.utils import cint, escape_html, random_string, today
+from frappe.utils.telemetry import capture
 
+from central.geo import warm_country_cache
+from central.iam import STAFF_VIEWER_ROLE
 from central.identity.email_code import EmailCode
 
+if TYPE_CHECKING:
+	from central.signups.doctype.product.product import Product
+
 CENTRAL_USER_ROLE = "Central User"
+STAFF_ROLE_PROFILE = "Frappe Employee"
 
 
-def send_sign_in_code(email: str, full_name: str | None = None) -> None:
+def send_sign_in_code(email: str, full_name: str | None = None, product: str | None = None) -> None:
 	"""Email a code to any address. A new address gets an account when the code is verified.
 
-	A disabled account gets a notice instead of a code, so the caller cannot tell it apart."""
+	A disabled account gets a notice instead of a code, so the caller cannot tell it apart.
+	`product` labels the signup funnel event, and its branding replaces Frappe Cloud's."""
+	from central.signups.doctype.product.product import get_email_product
+
 	user = _find_user(email)
 	if user and not user.enabled:
+		EmailCode(email).hold()
 		_send_disabled_notice(email)
-	elif user:
-		EmailCode(email).send(_("{0} is your Frappe Cloud sign-in code"), _("Sign in to Frappe Cloud"))
-	else:
-		EmailCode(email).send(
-			_("{0} is your Frappe Cloud signup code"), _("Create your Frappe Cloud account"), full_name
+		return
+
+	subject, heading, brand = get_code_email(get_email_product(product), is_new_user=not user)
+	EmailCode(email).send(subject, heading, None if user else full_name, brand)
+	if not user:
+		capture("signup_code_sent", "central", user=email, properties={"product": product})
+		warm_country_cache()
+
+
+def get_code_email(
+	product: Product | None, is_new_user: bool
+) -> tuple[Callable[[str], str], str, dict | None]:
+	"""The subject builder, heading and header branding of a code email. A product with its own
+	branding names itself instead of Frappe Cloud."""
+	brand = product.get_email_brand() if product else None
+	name = product.title if brand else "Frappe Cloud"
+	if is_new_user:
+		return (
+			lambda code: _("{0} is your {1} signup code").format(code, name),
+			_("Create your {0} account").format(escape_html(name)),
+			brand,
 		)
 
+	return (
+		lambda code: _("{0} is your {1} sign-in code").format(code, name),
+		_("Sign in to {0}").format(escape_html(name)),
+		brand,
+	)
 
-def sign_in_with_code(email: str, code: str, full_name: str | None = None) -> dict:
+
+def sign_in_with_code(
+	email: str, code: str, full_name: str | None = None, product: str | None = None
+) -> dict:
 	"""Sign in with a verified code, creating the account for a new address.
 
 	A new address needs a name. Without one the code stays valid, so the person can add it."""
@@ -44,8 +82,10 @@ def sign_in_with_code(email: str, code: str, full_name: str | None = None) -> di
 
 	frappe.local.login_manager.login_as(name)
 	if not user:
+		capture("signup_verified", "central", user=name, properties={"product": product})
 		for invitation in get_pending_invitations(name):
 			frappe.get_doc("Team Invitation", invitation).accept()
+
 	return {"user": name}
 
 
@@ -68,6 +108,7 @@ def create_user(email: str, full_name: str):
 	user.flags.no_welcome_mail = True
 	# A guest creates the account, and a guest has no User create permission.
 	user.insert(ignore_permissions=True)
+
 	return user
 
 
@@ -81,6 +122,41 @@ def grant_central_user_role(doc, method: str | None = None) -> None:
 
 	if CENTRAL_USER_ROLE not in {row.role for row in doc.roles}:
 		doc.add_roles(CENTRAL_USER_ROLE)
+
+
+def ensure_staff_role_profile() -> None:
+	"""Create the Frappe Employee role profile once. An operator may change it in Desk later.
+
+	It holds Central User, because a role profile replaces every other role of its users."""
+	if frappe.db.exists("Role Profile", STAFF_ROLE_PROFILE):
+		return
+
+	# Migrate and test setup run this as the system, not as a user.
+	frappe.get_doc(
+		{
+			"doctype": "Role Profile",
+			"role_profile": STAFF_ROLE_PROFILE,
+			"roles": [{"role": CENTRAL_USER_ROLE}, {"role": STAFF_VIEWER_ROLE}],
+		}
+	).insert(ignore_permissions=True)
+
+
+def validate_user_image(doc, method: str | None = None) -> None:
+	"""A profile photo must be a file uploaded to that user's photo field, not any URL."""
+	if not doc.user_image or not doc.has_value_changed("user_image"):
+		return
+
+	is_uploaded = frappe.db.exists(
+		"File",
+		{
+			"file_url": doc.user_image,
+			"attached_to_doctype": "User",
+			"attached_to_name": doc.name,
+			"attached_to_field": "user_image",
+		},
+	)
+	if not is_uploaded:
+		frappe.throw(_("Upload the image again."))
 
 
 def get_pending_invitations(user: str) -> list[str]:
@@ -126,8 +202,7 @@ def _enforce_signup_limit() -> None:
 def _should_skip_role_grant(doc) -> bool:
 	if not doc.enabled:
 		return True
-	if getattr(frappe.flags, "in_install", False) or getattr(frappe.flags, "in_migrate", False):
+	if frappe.flags.in_install or frappe.flags.in_migrate:
 		return True
-	if not frappe.db.exists("Role", CENTRAL_USER_ROLE):
-		return True
-	return False
+
+	return not frappe.db.exists("Role", CENTRAL_USER_ROLE)

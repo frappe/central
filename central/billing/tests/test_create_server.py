@@ -24,6 +24,8 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 	def setUp(self):
 		self.team = "test-create-" + frappe.generate_hash(length=8)
 		frappe.set_user("Administrator")
+		# These tests are about the subscription a create records, not the payment method gate.
+		self.enterContext(self.change_settings("Central Settings", require_payment_method=0))
 		ensure_atlas_instance(REGION)
 		ensure_team(self.team)
 		complete_billing_profile(self.team, currency="INR")
@@ -82,7 +84,8 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 			self.create(title="a" * 141)
 
 	def test_unpriced_raw_server_is_rejected(self):
-		with self.assertRaises(frappe.ValidationError):
+		# Newer Frappe rejects the missing plan by its type before create_server runs.
+		with self.assertRaises((frappe.ValidationError, frappe.FrappeTypeError)):
 			create_billed_server(self.team, REGION, None)
 
 	def test_refused_without_a_complete_billing_profile(self):

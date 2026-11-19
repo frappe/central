@@ -11,10 +11,25 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.report.payment_method_mix.payment_method_mix import execute
+from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.tests.utils import ensure_team
 
 TEAM_A = "team-pmm-a"
 TEAM_B = "team-pmm-b"
+
+
+def _method(team, status, gateway_method_id=None, validated_at=None):
+	frappe.get_doc(
+		{
+			"doctype": "Payment Method",
+			"team": team,
+			"gateway": make_stripe_gateway().name,
+			"method_type": "Card",
+			"status": status,
+			"gateway_method_id": gateway_method_id,
+			"validated_at": validated_at,
+		}
+	).db_insert()
 
 
 def _book(team, entry_type, amount, reference_type, currency="INR"):
@@ -99,3 +114,23 @@ class TestPaymentMethodMixCredits(IntegrationTestCase):
 		welcome = {r["currency"]: r for r in rows if r["method_type"] == "Welcome Credits"}
 		self.assertEqual(welcome["INR"]["credits_applied_inr"], 100.0)
 		self.assertEqual(welcome["USD"]["credits_applied_usd"], 20.0)
+
+	def test_an_abandoned_card_setup_is_not_counted(self):
+		frappe.db.delete("Payment Method", {"team": TEAM_A})
+		_method(TEAM_A, "Cancelled")
+		_method(TEAM_A, "Cancelled", gateway_method_id="pm_detached")
+		_method(TEAM_A, "Active", gateway_method_id="pm_live")
+
+		_columns, rows, *_ = execute({"team": TEAM_A})
+		cards = next(r for r in rows if r["method_type"] == "Card")
+		self.assertEqual((cards["total"], cards["cancelled"], cards["active"]), (2, 1, 1))
+
+	def test_an_expired_setup_counts_apart_from_a_lapsed_card(self):
+		frappe.db.delete("Payment Method", {"team": TEAM_A})
+		_method(TEAM_A, "Expired")
+		_method(TEAM_A, "Expired", gateway_method_id="pm_lapsed", validated_at="2026-01-05 10:00:00")
+
+		_columns, rows, *_ = execute({"team": TEAM_A})
+		cards = next(r for r in rows if r["method_type"] == "Card")
+		self.assertEqual((cards["total"], cards["expired"], cards["setup_expired"]), (2, 1, 1))
+		self.assertIn("setup_expired", {c["fieldname"] for c in _columns})

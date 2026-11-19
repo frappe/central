@@ -6,6 +6,7 @@
 frappe.ui.form.on("VM Snapshot", {
 	refresh(frm) {
 		if (frm.is_new()) return;
+		if (frm.doc.error_detail) frm.set_intro(frappe.utils.escape_html(frm.doc.error_detail), "red");
 
 		const call = (method, args, message) =>
 			frappe

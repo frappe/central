@@ -50,6 +50,7 @@ def read_only(strict: bool = True):
 	"""
 	if frappe.db.transaction_writes:
 		if strict:
+			# nosemgrep: central-untranslated-exception -- an invariant for developers, not a customer error
 			raise ProjectionBoundaryError(
 				"A projection cannot start with unsaved changes pending — commit or roll "
 				"back first. Projections read a consistent snapshot and must not decide "
@@ -71,6 +72,7 @@ def read_only(strict: bool = True):
 	try:
 		yield
 	except frappe.InReadOnlyMode as e:
+		# nosemgrep: central-untranslated-exception -- an invariant for developers, not a customer error
 		raise ProjectionWroteError(
 			"A projection attempted to write. Projections read; the billing run writes."
 		) from e

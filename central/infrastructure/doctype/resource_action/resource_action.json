@@ -15,12 +15,16 @@
   "server",
   "resource_id",
   "subdomain",
+  "product",
+  "is_free_trial",
   "column_break_main",
   "status",
   "requested_by",
   "dispatched_at",
   "last_checked_at",
   "completed_at",
+  "setup_section",
+  "setup_timeline",
   "section_break_error",
   "error_code",
   "retriable",
@@ -28,6 +32,7 @@
   "remediation",
   "request_tab",
   "request_payload",
+  "user_data",
   "reserved_monthly_rate",
   "diagnostics_tab",
   "remote_vm_id",
@@ -37,9 +42,29 @@
   "request_key",
   "request_digest",
   "credential",
-  "error_log"
+  "diagnostic"
  ],
  "fields": [
+  {
+   "depends_on": "eval:doc.resource_type=='Site'",
+   "description": "The product this trial starts, used to resume the correct product signup.",
+   "fieldname": "product",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Product",
+   "options": "Product",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.resource_type=='Site'",
+   "description": "Set once when the request is made. A free trial server has no subscription until its trial converts.",
+   "fieldname": "is_free_trial",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Free Trial",
+   "read_only": 1
+  },
   {
    "fieldname": "resource_type",
    "fieldtype": "Select",
@@ -117,6 +142,18 @@
    "read_only": 1
   },
   {
+   "depends_on": "eval:doc.resource_type==='Site' && doc.action==='create'",
+   "fieldname": "setup_section",
+   "fieldtype": "Section Break",
+   "label": "Site Setup"
+  },
+  {
+   "description": "Each step a new site takes and when it happened. The first step without a time is where the signup stopped.",
+   "fieldname": "setup_timeline",
+   "fieldtype": "HTML",
+   "label": "Setup Timeline"
+  },
+  {
    "fieldname": "section_break_error",
    "fieldtype": "Section Break",
    "label": "Failure"
@@ -136,12 +173,14 @@
    "read_only": 1
   },
   {
+   "description": "Set only when the region or Central gave its own sentence. When empty, the console shows the catalog message for the Error Code in the reader's language.",
    "fieldname": "error_message",
    "fieldtype": "Small Text",
    "label": "Error Message",
    "read_only": 1
   },
   {
+   "description": "Set only when the region or Central gave its own advice. When empty, the console shows the catalog remediation for the Error Code in the reader's language.",
    "fieldname": "remediation",
    "fieldtype": "Small Text",
    "label": "Remediation",
@@ -203,6 +242,13 @@
    "read_only": 1
   },
   {
+   "description": "The cloud-init user data the server boots with. It can hold the passwords a customer typed, so Central keeps it encrypted. Only the dispatch job and a System Manager read it.",
+   "fieldname": "user_data",
+   "fieldtype": "Password",
+   "label": "User Data",
+   "read_only": 1
+  },
+  {
    "fieldname": "reserved_monthly_rate",
    "fieldtype": "Currency",
    "label": "Reserved Monthly Rate",
@@ -222,11 +268,11 @@
   },
   {
    "default": "0",
+   "description": "A terminate that takes a final snapshot first. The server is not destroyed unless the snapshot is Available.",
    "fieldname": "take_snapshot",
    "fieldtype": "Check",
    "label": "Take Snapshot",
-   "read_only": 1,
-   "description": "A terminate that takes a final snapshot first. The server is not destroyed unless the snapshot is Available."
+   "read_only": 1
   },
   {
    "fieldname": "vm_snapshot",
@@ -258,17 +304,21 @@
    "read_only": 1
   },
   {
-   "description": "Latest Error Log created for this action. All related Error Logs also reference this Resource Action.",
-   "fieldname": "error_log",
-   "fieldtype": "Link",
-   "label": "Error Log",
-   "options": "Error Log",
+   "description": "The traceback or Atlas detail of the latest failure of this action. Operators only.",
+   "fieldname": "diagnostic",
+   "fieldtype": "Code",
+   "label": "Diagnostic",
    "permlevel": 1,
    "read_only": 1
   }
  ],
- "links": [],
- "modified": "2026-09-23 12:00:00.000000",
+ "links": [
+  {
+   "link_doctype": "User Mail Account",
+   "link_fieldname": "resource_action"
+  }
+ ],
+ "modified": "2026-11-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Resource Action",
@@ -330,5 +380,6 @@
    "title": "Timed Out"
   }
  ],
- "title_field": "title"
+ "title_field": "title",
+ "track_changes": 1
 }

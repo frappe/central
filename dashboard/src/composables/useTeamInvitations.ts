@@ -29,7 +29,7 @@ const invitationsCall = useList<InvitationRow>({
 	],
 	filters: teamParams,
 	orderBy: 'creation desc',
-	limit: 100,
+	limit: 1000,
 	refetch: true,
 	immediate: false,
 })

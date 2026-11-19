@@ -1,25 +1,28 @@
 <script setup lang="ts" generic="TData extends object">
 import {
-	type ColumnDef,
-	type ColumnFiltersState,
-	FlexRender,
-	getCoreRowModel,
-	getFilteredRowModel,
-	getPaginationRowModel,
-	getSortedRowModel,
-	type PaginationState,
-	type Row,
-	type RowSelectionState,
-	type SortingState,
-	type Updater,
-	useVueTable,
-} from '@tanstack/vue-table'
-import { Alert, Button, Checkbox, Select, Skeleton, TextInput } from 'frappe-ui'
-import { computed, getCurrentInstance, h, ref } from 'vue'
+	Alert,
+	Button,
+	Combobox,
+	ScrollArea,
+	Skeleton,
+	TextInput,
+} from 'frappe-ui'
+import {
+	List,
+	ListCell,
+	ListHeader,
+	ListHeaderCell,
+	ListHeaderCellSort,
+	ListRow,
+	ListRows,
+} from 'frappe-ui/list'
+import { computed, getCurrentInstance, ref } from 'vue'
+import { __ } from '@/lib/translate'
 import ListViewPagination from './ListViewPagination.vue'
 import ListViewState from './ListViewState.vue'
 import {
 	createListViewQuery,
+	type ListViewColumn,
 	type ListViewEmptyState,
 	type ListViewFilter,
 	type ListViewQuery,
@@ -28,7 +31,7 @@ import {
 const props = withDefaults(
 	defineProps<{
 		rows: TData[]
-		columns: ColumnDef<TData, unknown>[]
+		columns: ListViewColumn<TData>[]
 		rowKey: (row: TData) => string
 		loading?: boolean
 		error?: string | null
@@ -37,33 +40,34 @@ const props = withDefaults(
 		filters?: ListViewFilter[]
 		selectable?: boolean
 		paginated?: boolean
+		/** Hide the 10/20/50 choice when the page owns the page size. */
+		showPageSize?: boolean
 		serverSide?: boolean
 		totalRows?: number
 		countLoading?: boolean
 		itemLabel?: string
 		showCount?: boolean
 		emptyState?: ListViewEmptyState
-		/** Tailwind classes for each body row — density knob for panels whose rows
-		 *  carry an avatar and two stacked lines. Defaults to a single-line height. */
 		rowClass?: string
-		/** Highlight the row whose rowKey matches this — for master/detail lists. */
 		activeKey?: string | null
 		/**
 		 * True while a page-owned #filters control (e.g. a date range) is
-		 * narrowing the rows it passes in — so an empty result reads as "no
+		 * narrowing the rows it passes in, so an empty result reads as "no
 		 * matching results", not as a genuinely empty list. Pair with
 		 * @clear-filters to reset that control.
 		 */
 		externalFilterActive?: boolean
+		minWidth?: string
 	}>(),
 	{
 		loading: false,
 		error: null,
 		searchable: false,
-		searchPlaceholder: 'Search…',
+		searchPlaceholder: __('Search…'),
 		filters: () => [],
 		selectable: false,
 		paginated: true,
+		showPageSize: true,
 		serverSide: false,
 		totalRows: 0,
 		countLoading: false,
@@ -72,9 +76,10 @@ const props = withDefaults(
 		rowClass: 'min-h-10',
 		activeKey: null,
 		externalFilterActive: false,
+		minWidth: '720px',
 		emptyState: () => ({
-			title: 'No data',
-			description: 'There is nothing to show yet.',
+			title: __('No data'),
+			description: __('There is nothing to show yet.'),
 		}),
 	},
 )
@@ -86,386 +91,239 @@ const query = defineModel<ListViewQuery>('query', {
 const emit = defineEmits<{
 	retry: []
 	rowClick: [row: TData]
-	selectionChange: [rows: TData[]]
 	/** Fired by the filtered empty state's Clear so pages reset their #filters controls too. */
 	clearFilters: []
 }>()
 
-const rowSelection = ref<RowSelectionState>({})
+const selection = ref<string[]>([])
 
-const selectionColumn = computed<ColumnDef<TData, unknown>>(() => ({
-	id: '__selection',
-	size: 1,
-	minSize: 1,
-	maxSize: 1,
-	enableSorting: false,
-	enableHiding: false,
-	header: ({ table }) =>
-		h(Checkbox, {
-			class: 'cursor-pointer shrink-0',
-			modelValue: table.getIsAllPageRowsSelected(),
-			'aria-label': 'Select all rows on this page',
-			'onUpdate:modelValue': (...args: unknown[]) =>
-				table.toggleAllPageRowsSelected(Boolean(args[0])),
-		}),
-	cell: ({ row }) =>
-		h(Checkbox, {
-			class: 'cursor-pointer shrink-0',
-			modelValue: row.getIsSelected(),
-			disabled: !row.getCanSelect(),
-			'aria-label': `Select row ${row.id}`,
-			onClick: (event: Event) => event.stopPropagation(),
-			'onUpdate:modelValue': (...args: unknown[]) =>
-				row.toggleSelected(Boolean(args[0])),
-		}),
-}))
+const readValue = (row: TData, column: ListViewColumn<TData>): unknown =>
+	column.value
+		? column.value(row)
+		: (row as Record<string, unknown>)[column.key]
 
-const tableColumns = computed(() =>
-	props.selectable ? [selectionColumn.value, ...props.columns] : props.columns,
+const includesText = (value: unknown, text: string): boolean =>
+	value != null && String(value).toLowerCase().includes(text.toLowerCase())
+
+const compareValues = (a: unknown, b: unknown): number => {
+	if (typeof a === 'number' && typeof b === 'number') return a - b
+	return String(a ?? '').localeCompare(String(b ?? ''), undefined, {
+		numeric: true,
+	})
+}
+
+const columnsByKey = computed(
+	() => new Map(props.columns.map((column) => [column.key, column])),
 )
 
-// TanStack state derived from the query model. These MUST be stable references:
-// the sorted/filtered/paginated row models (active in client-side mode) memoize on
-// them, so returning a fresh array/object on every read recomputes the models on
-// every render and wedges the page in an update loop. `computed` memoizes — the
-// reference changes only when the query actually does.
-const sortingState = computed<SortingState>(() =>
-	query.value.sort
-		? [
-				{
-					id: query.value.sort.key,
-					desc: query.value.sort.direction === 'desc',
-				},
-			]
-		: [],
-)
-const columnFiltersState = computed<ColumnFiltersState>(() =>
-	Object.entries(query.value.filters)
-		.filter(([, value]) => value !== '')
-		.map(([id, value]) => ({ id, value })),
-)
-const paginationState = computed<PaginationState>(() => ({
-	pageIndex: query.value.page - 1,
-	pageSize: query.value.pageSize,
-}))
+const isShown = (row: TData): boolean => {
+	const search = query.value.search.trim()
+	const matchesSearch =
+		!search ||
+		props.columns.some((column) => includesText(readValue(row, column), search))
 
-const table = useVueTable({
-	get data() {
-		return props.rows
-	},
-	get columns() {
-		return tableColumns.value
-	},
-	getRowId: (row) => props.rowKey(row),
-	// Keep tanstack from auto-resetting the page on every row-model recompute. Our
-	// query handlers already reset `page` to 1 explicitly on search/filter/sort, so
-	// auto-reset is redundant — and harmful: in a client-side list it fires
-	// onPaginationChange while the rows re-render (e.g. when a master/detail
-	// selection flips `activeKey`), which rewrites `query` mid-render and spins into
-	// an infinite update loop that freezes the tab. Server-side lists dodge this
-	// only because manualPagination already disables auto-reset.
-	autoResetPageIndex: false,
-	get enableRowSelection() {
-		return props.selectable
-	},
-	manualFiltering: props.serverSide,
-	manualPagination: props.serverSide,
-	manualSorting: props.serverSide,
-	get rowCount() {
-		return props.serverSide ? props.totalRows : undefined
-	},
-	getCoreRowModel: getCoreRowModel(),
-	getFilteredRowModel: getFilteredRowModel(),
-	getSortedRowModel: getSortedRowModel(),
-	getPaginationRowModel:
-		props.paginated && !props.serverSide ? getPaginationRowModel() : undefined,
-	state: {
-		get sorting() {
-			return sortingState.value
-		},
-		get globalFilter() {
-			return query.value.search
-		},
-		get columnFilters() {
-			return columnFiltersState.value
-		},
-		get pagination() {
-			return paginationState.value
-		},
-		get rowSelection() {
-			return rowSelection.value
-		},
-	},
-	onSortingChange: updateSorting,
-	onGlobalFilterChange: updateSearch,
-	onColumnFiltersChange: updateColumnFilters,
-	onPaginationChange: updatePagination,
-	onRowSelectionChange: (updater) => {
-		updateRef(updater, rowSelection)
-		emit(
-			'selectionChange',
-			table.getSelectedRowModel().rows.map((row) => row.original),
-		)
-	},
+	return (
+		matchesSearch &&
+		Object.entries(query.value.filters).every(([key, value]) => {
+			const column = columnsByKey.value.get(key)
+			return !value || (!!column && includesText(readValue(row, column), value))
+		})
+	)
+}
+
+const filteredRows = computed(() =>
+	props.serverSide ? props.rows : props.rows.filter(isShown),
+)
+
+const sortedRows = computed(() => {
+	const sort = query.value.sort
+	const column = sort && columnsByKey.value.get(sort.key)
+	if (props.serverSide || !sort || !column) return filteredRows.value
+
+	const compare =
+		column.compare ??
+		((a: TData, b: TData) =>
+			compareValues(readValue(a, column), readValue(b, column)))
+	const direction = sort.direction === 'asc' ? 1 : -1
+
+	return [...filteredRows.value].sort((a, b) => compare(a, b) * direction)
 })
 
-const visibleColumnCount = computed(() => table.getVisibleLeafColumns().length)
-const filteredRows = computed(() => table.getFilteredRowModel().rows)
-const pageRows = computed(() => table.getRowModel().rows)
+const pageRows = computed(() => {
+	if (!props.paginated || props.serverSide) return sortedRows.value
+
+	const start = (query.value.page - 1) * query.value.pageSize
+	return sortedRows.value.slice(start, start + query.value.pageSize)
+})
+
 const hasRows = computed(() => props.rows.length > 0)
 const hasActiveQuery = computed(
 	() =>
 		query.value.search !== '' ||
 		Object.values(query.value.filters).some(Boolean),
 )
-// Anything narrowing the list — our own query or a page-owned #filters
-// control. Decides whether an empty result is "no matches" or "no data".
-const filtersActive = computed(
-	() => hasActiveQuery.value || props.externalFilterActive,
-)
 const resultCount = computed(() =>
 	props.serverSide ? props.totalRows : filteredRows.value.length,
 )
+const pageCount = computed(() =>
+	Math.ceil(resultCount.value / query.value.pageSize),
+)
 const countText = computed(() => {
 	const label =
-		resultCount.value === 1 ? props.itemLabel : `${props.itemLabel}s`
+		resultCount.value === 1 ? props.itemLabel : __('{0}s', [props.itemLabel])
 	return `${resultCount.value.toLocaleString()} ${label}`
 })
-// Footer visibility deliberately ignores `loading`: a refetch (e.g. changing
-// the page size) keeps the row count stable, so unmounting the footer mid-load
-// only causes a flicker and layout shift. It stays put while new rows arrive.
+
 const showPagination = computed(
-	() => props.paginated && resultCount.value > 0 && table.getPageCount() > 1,
+	() => props.paginated && resultCount.value > 0 && pageCount.value > 1,
 )
-const showFooter = computed(
-	() => (props.showCount && resultCount.value > 0) || showPagination.value,
+// A short list is counted at a glance, so the count only shows from this size.
+const MINIMUM_ROWS_FOR_COUNT = 5
+const showCountText = computed(
+	() => props.showCount && resultCount.value >= MINIMUM_ROWS_FOR_COUNT,
 )
-const pagination = computed(() => table.getState().pagination)
-const gridTemplateColumns = computed(() =>
-	table
-		.getFlatHeaders()
-		.map((header) =>
-			header.id === '__selection'
-				? '14px'
-				: header.column.id === 'actions'
-					? '40px'
-					: `${header.getSize()}fr`,
-		)
-		.join(' '),
+const showFooter = computed(() => showCountText.value || showPagination.value)
+
+const selectedRows = computed(() => {
+	const keys = new Set(selection.value)
+	return props.rows.filter((row) => keys.has(props.rowKey(row)))
+})
+const hasSelection = computed(
+	() => props.selectable && selectedRows.value.length > 0,
+)
+const clearSelection = (): void => {
+	selection.value = []
+}
+
+const gridColumns = computed(() =>
+	props.columns.map((column) => column.width ?? 'minmax(0,1fr)'),
 )
 
-const scroller = ref<HTMLElement | null>(null)
+const isSkeleton = computed(() => props.loading && !hasRows.value)
+const stateKind = computed(() => {
+	if (props.error && !hasRows.value) return 'error'
+	if (hasActiveQuery.value || props.externalFilterActive || hasRows.value)
+		return 'filtered'
+	return 'empty'
+})
 
-function clearFilters(): void {
+const instance = getCurrentInstance()
+const interactive = computed(() => !!instance?.vnode.props?.onRowClick)
+
+const updateQuery = (patch: Partial<ListViewQuery>): void => {
+	query.value = { ...query.value, page: 1, ...patch }
+}
+
+const setSearch = (value: unknown): void => {
+	const search = String(value ?? '')
+	if (search !== query.value.search) updateQuery({ search })
+}
+
+const setFilter = (key: string, value: unknown): void => {
+	const next = typeof value === 'string' ? value : ''
+	if (query.value.filters[key] === next) return
+
+	updateQuery({ filters: { ...query.value.filters, [key]: next } })
+}
+
+const getSortDirection = (column: ListViewColumn<TData>) =>
+	query.value.sort?.key === column.key ? query.value.sort.direction : null
+
+const toggleSort = (column: ListViewColumn<TData>): void => {
+	const direction = getSortDirection(column)
+	const next = direction === null ? 'asc' : direction === 'asc' ? 'desc' : null
+
+	updateQuery({
+		sort: next ? { key: column.key, direction: next } : null,
+	})
+}
+
+const setPage = (page: number): void => {
+	query.value = { ...query.value, page }
+}
+
+const clearFilters = (): void => {
 	// The page owns its #filters controls, so clearing those is delegated up.
 	emit('clearFilters')
-	// The empty state's Clear sits inside the h-scroll wrapper, and focusing it
-	// can scroll a squeezed list sideways — snap back so the returning rows
-	// start at their first column.
-	if (scroller.value) scroller.value.scrollLeft = 0
-	if (!hasActiveQuery.value && query.value.page === 1) return
-
-	query.value = {
-		...query.value,
-		page: 1,
-		search: '',
-		filters: {},
-	}
+	if (hasActiveQuery.value || query.value.page !== 1)
+		updateQuery({ search: '', filters: {} })
 }
 
-function updateFilter(key: string, value: unknown): void {
-	const nextValue = typeof value === 'string' ? value : ''
-	if (query.value.filters[key] === nextValue && query.value.page === 1) return
-
-	query.value = {
-		...query.value,
-		page: 1,
-		filters: {
-			...query.value.filters,
-			[key]: nextValue,
-		},
-	}
-}
-
-function updateSearch(updater: Updater<unknown>): void {
-	const nextSearch = String(applyUpdater(updater, query.value.search) ?? '')
-	if (query.value.search === nextSearch && query.value.page === 1) return
-
-	query.value = { ...query.value, page: 1, search: nextSearch }
-}
-
-function updateSorting(updater: Updater<SortingState>): void {
-	const current: SortingState = query.value.sort
-		? [
-				{
-					id: query.value.sort.key,
-					desc: query.value.sort.direction === 'desc',
-				},
-			]
-		: []
-	const next = applyUpdater(updater, current)[0]
-	const nextSort: ListViewQuery['sort'] = next
-		? { key: next.id, direction: next.desc ? 'desc' : 'asc' }
-		: null
-	if (sameSort(query.value.sort, nextSort) && query.value.page === 1) return
-
-	query.value = {
-		...query.value,
-		page: 1,
-		sort: nextSort,
-	}
-}
-
-function updateColumnFilters(updater: Updater<ColumnFiltersState>): void {
-	const current = Object.entries(query.value.filters).map(([id, value]) => ({
-		id,
-		value,
-	}))
-	const next = applyUpdater(updater, current)
-	const nextFilters = Object.fromEntries(
-		next.map(({ id, value }) => [id, String(value ?? '')]),
-	)
-	if (
-		sameStringRecord(query.value.filters, nextFilters) &&
-		query.value.page === 1
-	)
-		return
-
-	query.value = {
-		...query.value,
-		page: 1,
-		filters: nextFilters,
-	}
-}
-
-function updatePagination(updater: Updater<PaginationState>): void {
-	const next = applyUpdater(updater, pagination.value)
-	const nextPage = next.pageIndex + 1
-	if (query.value.page === nextPage && query.value.pageSize === next.pageSize)
-		return
-
-	query.value = {
-		...query.value,
-		page: nextPage,
-		pageSize: next.pageSize,
-	}
-}
-
-function sortAria(column: ReturnType<typeof table.getAllLeafColumns>[number]) {
-	const sorted = column.getIsSorted()
-	return sorted === 'asc'
-		? 'ascending'
-		: sorted === 'desc'
-			? 'descending'
-			: 'none'
-}
-
-function justifyClass(align?: 'start' | 'center' | 'end'): string {
-	if (align === 'center') return 'justify-center'
-	if (align === 'end') return 'justify-end'
-	return 'justify-start'
-}
-
-function metaClass(className?: string): string {
-	return className?.replace(/\btable-cell\b/g, 'block') ?? ''
-}
-
-// Rows are interactive only when a page actually listens for row clicks —
-// otherwise no pointer cursor and no hover state (nothing would happen).
-const _inst = getCurrentInstance()
-const interactive = computed(() => !!_inst?.vnode.props?.onRowClick)
-
-function handleRowClick(row: Row<TData>): void {
-	emit('rowClick', row.original)
-}
-
-function updateRef<T>(updater: Updater<T>, target: { value: T }): void {
-	target.value = applyUpdater(updater, target.value)
-}
-
-function applyUpdater<T>(updater: Updater<T>, previous: T): T {
-	return typeof updater === 'function'
-		? (updater as (value: T) => T)(previous)
-		: updater
-}
-
-function sameSort(
-	current: ListViewQuery['sort'],
-	next: ListViewQuery['sort'],
-): boolean {
-	if (!current || !next) return current === next
-	return current.key === next.key && current.direction === next.direction
-}
-
-function sameStringRecord(
-	current: Record<string, string>,
-	next: Record<string, string>,
-): boolean {
-	const currentKeys = Object.keys(current)
-	const nextKeys = Object.keys(next)
-	return (
-		currentKeys.length === nextKeys.length &&
-		currentKeys.every((key) => current[key] === next[key])
-	)
-}
-
-// Search + filters stay visible even when the list is empty: page-owned
-// controls in the #filters slot (e.g. a date range) aren't part of
-// hasActiveQuery, so hiding on empty would strand a filter that matched
-// nothing with no way to clear it.
 const showListControls = computed(
 	() => props.searchable || props.filters.length > 0,
 )
+
+const refreshListErrorTitle = __("Couldn't refresh the list")
+const loadListErrorTitle = __("Couldn't load this list")
 </script>
 
 <template>
-	<section class="min-w-0">
+	<section class="flex h-full min-h-0 min-w-0 flex-col">
 		<div
-			v-if="showListControls || $slots.toolbar || $slots['controls-start']"
+			v-if="showListControls || $slots.toolbar || $slots['controls-start'] || hasSelection"
 			class="flex flex-wrap items-center justify-between gap-3 pb-3"
 		>
+			<!-- Selection takes over the controls row, so the table never shifts. -->
 			<div
-				v-if="showListControls || $slots['controls-start']"
-				class="flex min-w-0 flex-1 flex-wrap items-center gap-2"
+				v-if="hasSelection"
+				class="flex min-w-0 flex-1 items-center justify-between gap-3"
 			>
-				<!-- Page-owned controls ahead of search — e.g. a view switcher that
-				     belongs on the same row as the list's own controls. -->
+				<p class="text-sm-medium text-ink-gray-8 tabular-nums">
+					{{ __('{0} selected', [selectedRows.length]) }}
+				</p>
+
+				<div class="flex items-center gap-2">
+					<slot
+						name="selection-actions"
+						:rows="selectedRows"
+						:clear="clearSelection"
+					/>
+					<Button
+						:label="__('Clear')"
+						variant="ghost"
+						@click="clearSelection"
+					/>
+				</div>
+			</div>
+
+			<div
+				v-else-if="showListControls || $slots['controls-start']"
+				class="flex min-w-0 flex-1 basis-full flex-wrap items-center gap-2 sm:basis-0"
+			>
 				<slot name="controls-start" />
+
 				<TextInput
 					v-if="searchable"
 					:model-value="query.search"
-					class="w-full sm:w-80"
+					class="w-full sm:w-64"
 					:placeholder="searchPlaceholder"
 					:debounce="250"
-					@update:model-value="table.setGlobalFilter(String($event))"
+					@update:model-value="setSearch"
 				>
 					<template #prefix>
 						<span class="lucide-search size-4" aria-hidden="true" />
 					</template>
 				</TextInput>
-				<!-- A plain Select, not a Combobox: filter option sets are short, so a
-             search field inside the popover is noise. -->
-				<Select
+
+				<Combobox
 					v-for="filter in filters"
 					:key="filter.key"
+					trigger="button"
+					side="bottom"
+					align="start"
 					:model-value="query.filters[filter.key] || ''"
-					class="w-40"
-					:placeholder="filter.allLabel || `All ${filter.label.toLowerCase()}`"
+					class="min-w-36 max-w-60"
+					:placeholder="__('Search…')"
 					:options="[
-            {
-              label: filter.allLabel || `All ${filter.label.toLowerCase()}`,
-              value: '',
-            },
-            ...filter.options,
-          ]"
-					@update:model-value="updateFilter(filter.key, $event)"
+						{ label: filter.allLabel || __('All {0}', [filter.label.toLowerCase()]), value: '' },
+						...filter.options,
+					]"
+					@update:model-value="setFilter(filter.key, $event)"
 				/>
-				<!-- Page-specific filter controls (e.g. a date-range picker) that
-             belong with the built-in search + filters cluster. No toolbar
-             Clear button — each control offers its own "All"/"Any" reset, and
-             the filtered empty state carries a Clear for the dead-end case. -->
+
 				<slot name="filters" />
 			</div>
+
 			<div
 				v-if="$slots.toolbar"
 				class="ml-auto flex shrink-0 items-center gap-3"
@@ -474,232 +332,150 @@ const showListControls = computed(
 			</div>
 		</div>
 
-		<div
-			v-if="selectable && table.getSelectedRowModel().rows.length"
-			class="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-4 bg-surface-blue-1 px-3 py-2"
-		>
-			<p class="text-p-sm font-medium text-ink-blue-7">
-				{{ table.getSelectedRowModel().rows.length }}
-				selected
-			</p>
-			<div class="flex items-center gap-2">
-				<slot
-					name="selection-actions"
-					:rows="table.getSelectedRowModel().rows.map((row) => row.original)"
-					:clear="table.resetRowSelection"
-				/>
-				<Button
-					label="Clear"
-					variant="ghost"
-					@click="table.resetRowSelection()"
-				/>
-			</div>
-		</div>
-
 		<Alert
 			v-if="error && hasRows"
 			theme="red"
-			:title="error"
-			:primary-action="{ label: 'Retry', onClick: () => $emit('retry') }"
+			:title="refreshListErrorTitle"
+			:description="error"
+			:primary-action="{ label: __('Retry'), onClick: () => $emit('retry') }"
 			class="mb-2"
 		/>
 
-		<!-- flex-1 is inert unless the caller makes the root section a flex column
-         (class fall-through) to pin the pagination footer to the bottom. -->
-		<div ref="scroller" class="relative min-w-0 flex-1 overflow-x-auto">
-			<div
-				role="table"
-				:class="pageRows.length || loading ? 'min-w-[720px]' : ''"
+		<ScrollArea
+			v-if="isSkeleton || pageRows.length"
+			class="min-h-0 min-w-0 flex-1"
+			orientation="both"
+		>
+			<List
+				v-model:selection="selection"
+				class="list-gap-4 list-row-px-2"
+				:style="{ minWidth, contain: 'inline-size' }"
+				:columns="gridColumns"
+				:selectable="selectable"
 			>
-				<div
-					v-if="hasRows || loading"
-					role="row"
-					class="grid h-10 items-center gap-4 border-b border-outline-gray-2 px-2"
-					:style="{ gridTemplateColumns }"
-				>
-					<div
-						v-for="header in table.getFlatHeaders()"
-						:key="header.id"
-						role="columnheader"
-						:aria-sort="header.column.getCanSort() ? sortAria(header.column) : undefined"
-						class="flex min-w-0 items-center gap-2 truncate text-sm text-ink-gray-5"
-						:class="[
-              header.id === '__selection' ? 'shrink-0' : justifyClass(header.column.columnDef.meta?.align),
-              metaClass(header.column.columnDef.meta?.headerClass),
-            ]"
-					>
-						<button
-							v-if="!header.isPlaceholder && header.column.getCanSort()"
-							type="button"
-							class="inline-flex min-w-0 items-center gap-2 truncate outline-none hover:text-ink-gray-8 focus-visible:ring-2 focus-visible:ring-outline-blue-2"
-							@click="header.column.getToggleSortingHandler()?.($event)"
+				<ListHeader>
+					<template v-for="column in columns" :key="column.key">
+						<ListHeaderCellSort
+							v-if="column.sortable"
+							:class="column.class"
+							:direction="getSortDirection(column)"
+							:align="column.align"
+							@click="toggleSort(column)"
 						>
-							<FlexRender
-								:render="header.column.columnDef.header"
-								:props="header.getContext()"
-							/>
-							<span
-								:class="[
-                header.column.getIsSorted() === 'asc'
-                  ? 'lucide-arrow-up'
-                  : header.column.getIsSorted() === 'desc'
-                    ? 'lucide-arrow-down'
-                    : 'lucide-arrow-up-down opacity-60',
-  'size-3.5 shrink-0',
-]"
-								aria-hidden="true"
-							/>
-						</button>
-						<FlexRender
-							v-else-if="!header.isPlaceholder"
-							:render="header.column.columnDef.header"
-							:props="header.getContext()"
-						/>
-					</div>
-				</div>
+							{{ column.label }}
+						</ListHeaderCellSort>
+						<ListHeaderCell
+							v-else
+							:class="[column.class, column.align === 'end' && 'justify-end']"
+						>
+							{{ column.label }}
+						</ListHeaderCell>
+					</template>
+				</ListHeader>
 
-				<div v-if="loading && !hasRows" role="rowgroup">
-					<div
-						v-for="rowIndex in 5"
-						:key="rowIndex"
-						role="row"
-						class="grid h-10 items-center gap-4 border-b border-outline-gray-1 px-2"
-						:style="{ gridTemplateColumns }"
-					>
-						<div
-							v-for="column in visibleColumnCount"
-							:key="column"
-							role="cell"
-							class="min-w-0"
+				<template v-if="isSkeleton">
+					<ListRow v-for="index in 5" :key="index" :class="rowClass">
+						<ListCell
+							v-for="(column, columnIndex) in columns"
+							:key="column.key"
+							:class="column.class"
 						>
 							<Skeleton
 								class="h-3 rounded-4"
-								:class="column === 1 ? 'w-2/3' : 'w-1/2'"
+								:class="columnIndex === 0 ? 'w-2/3' : 'w-1/2'"
 							/>
-						</div>
-					</div>
-				</div>
+						</ListCell>
+					</ListRow>
+				</template>
 
-				<!-- State messages stay inside the table, so they're wrapped in a
-             row/cell: every non-rowgroup child of role="table" must be a row. -->
-				<div v-else-if="!hasRows" role="row">
-					<div
-						role="cell"
-						:aria-colindex="1"
-						:aria-colspan="visibleColumnCount"
-					>
-						<ListViewState
-							v-if="error"
-							kind="error"
-							title="Couldn't load this list"
-							:description="error"
-							@retry="$emit('retry')"
-						/>
-						<ListViewState
-							v-else-if="filtersActive"
-							kind="filtered"
-							title="No matching results"
-							description="Change or clear the filters to see more results."
-							@clear="clearFilters"
-						/>
-						<ListViewState
-							v-else
-							kind="empty"
-							:title="emptyState.title"
-							:description="emptyState.description"
-						>
-							<template v-if="$slots['empty-action']" #action>
-								<slot name="empty-action" />
-							</template>
-						</ListViewState>
-					</div>
-				</div>
-
-				<!-- Rows exist but the query filtered them all out (client-side
-             column filters run inside the table, so the source rows are
-             still non-empty). Same dead-end, same way out. -->
-				<div v-else-if="!pageRows.length" role="row">
-					<div
-						role="cell"
-						:aria-colindex="1"
-						:aria-colspan="visibleColumnCount"
-					>
-						<ListViewState
-							kind="filtered"
-							title="No matching results"
-							description="Change or clear the filters to see more results."
-							@clear="clearFilters"
-						/>
-					</div>
-				</div>
-
-				<div v-else role="rowgroup">
-					<!-- Hairline lives in the gap above each row (a straight ::before, not a
-					     border-top, which would trace the rounded-6 corners into hooks). The
-					     row's small top margin keeps the rounded hover/active highlight clear
-					     of the line, so nothing has to be hidden on hover. -->
-					<div
-						v-for="row in pageRows"
-						:key="row.id"
-						role="row"
-						class="relative mt-1 grid items-center gap-4 rounded-6 px-2 text-sm transition-colors duration-150 ease-in-out first:mt-0 before:pointer-events-none before:absolute before:inset-x-0 before:-top-0.5 before:h-px before:bg-[var(--outline-gray-1)] before:content-[''] first:before:hidden"
+				<ListRows
+					v-else
+					v-slot="{ item, value }"
+					:items="pageRows"
+					:row-key="rowKey"
+				>
+					<ListRow
+						:value="value"
+						:aria-current="value === activeKey || undefined"
 						:class="[
-              rowClass,
-              interactive ? 'cursor-pointer hover:bg-surface-gray-1' : 'cursor-default',
-              row.getIsSelected() || activeKey === row.id ? 'bg-surface-gray-2' : '',
-            ]"
-						:style="{ gridTemplateColumns }"
-						@click="handleRowClick(row)"
+							rowClass,
+							interactive && 'cursor-pointer rounded-5 hover:bg-surface-gray-2',
+							value === activeKey && 'bg-surface-gray-3',
+						]"
 					>
-						<div
-							v-for="(cell, cellIndex) in row.getVisibleCells()"
-							:key="cell.id"
-							role="cell"
-							class="flex min-w-0 overflow-x-hidden"
+						<button
+							v-if="interactive"
+							type="button"
+							class="absolute inset-0 rounded-5"
+							:aria-label="__('Open {0}', [readValue(item, columns[0])])"
+							@click="emit('rowClick', item)"
+						/>
+
+						<ListCell
+							v-for="(column, columnIndex) in columns"
+							:key="column.key"
+							class="text-sm"
 							:class="[
-  cell.column.id === '__selection'
-    ? 'w-fit shrink-0 pe-2'
-    : [
-      cellIndex === (selectable ? 1 : 0) ? 'text-ink-gray-9' : 'text-ink-gray-7',
-      justifyClass(cell.column.columnDef.meta?.align),
-    ],
-  metaClass(cell.column.columnDef.meta?.cellClass),
-              ]"
-							@click="cell.column.id === '__selection' ? $event.stopPropagation() : undefined"
+								column.class,
+								column.align === 'end' && 'justify-end',
+								columnIndex === 0 ? 'text-ink-gray-9' : 'text-ink-gray-7',
+							]"
 						>
 							<slot
-								v-if="$slots[cell.column.id]"
-								:name="cell.column.id"
-								:row="row.original"
-								:value="cell.getValue()"
-							/>
-							<FlexRender
-								v-else
-								:render="cell.column.columnDef.cell"
-								:props="cell.getContext()"
-							/>
-						</div>
-					</div>
-				</div>
-			</div>
-		</div>
+								:name="column.key"
+								:row="item as TData"
+								:value="readValue(item, column)"
+							>
+								<span class="truncate">{{ readValue(item, column) }}</span>
+							</slot>
+						</ListCell>
+					</ListRow>
+				</ListRows>
+			</List>
+		</ScrollArea>
+
+		<ListViewState
+			v-else-if="stateKind === 'error'"
+			kind="error"
+			:title="loadListErrorTitle"
+			:description="error ?? undefined"
+			@retry="$emit('retry')"
+		/>
+		<ListViewState
+			v-else-if="stateKind === 'filtered'"
+			kind="filtered"
+			:title="__('No matching results')"
+			:description="__('Change or clear the filters to see more results.')"
+			@clear="clearFilters"
+		/>
+		<ListViewState
+			v-else
+			kind="empty"
+			:title="emptyState.title"
+			:description="emptyState.description"
+		>
+			<template v-if="$slots['empty-action']" #action>
+				<slot name="empty-action" />
+			</template>
+		</ListViewState>
 
 		<ListViewPagination
 			v-if="showFooter"
 			:paginated="showPagination"
-			:show-count="showCount"
+			:show-page-size="showPageSize"
+			:show-count="showCountText"
 			:count-text="countText"
 			:count-loading="countLoading"
-			:page="pagination.pageIndex + 1"
-			:page-count="table.getPageCount()"
-			:page-size="pagination.pageSize"
-			:can-previous="table.getCanPreviousPage()"
-			:can-next="table.getCanNextPage()"
-			@first="table.firstPage()"
-			@previous="table.previousPage()"
-			@next="table.nextPage()"
-			@last="table.lastPage()"
-			@page-size-change="table.setPageSize($event)"
+			:page="query.page"
+			:page-count="pageCount"
+			:page-size="query.pageSize"
+			:can-previous="query.page > 1"
+			:can-next="query.page < pageCount"
+			@first="setPage(1)"
+			@previous="setPage(query.page - 1)"
+			@next="setPage(query.page + 1)"
+			@last="setPage(pageCount)"
+			@page-size-change="updateQuery({ pageSize: $event })"
 		/>
 	</section>
 </template>

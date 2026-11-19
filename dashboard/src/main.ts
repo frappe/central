@@ -1,7 +1,8 @@
-import { FrappeUI, setConfig } from 'frappe-ui'
+import { FrappeUI, setConfig, vFocus } from 'frappe-ui'
 import { io } from 'socket.io-client'
 import { createApp } from 'vue'
 import App from '@/App.vue'
+import { __ } from '@/lib/translate'
 import { router } from '@/router'
 import './style.css'
 
@@ -11,6 +12,10 @@ import './style.css'
 const app = createApp(App)
 app.use(router)
 app.use(FrappeUI)
+// The autofocus attribute works once per document, so a page reached in-app uses v-focus.
+app.directive('focus', vFocus)
+// Templates call __('...') directly; a script imports it from '@/lib/translate'.
+app.config.globalProperties.__ = __
 
 if (window.system_timezone) setConfig('systemTimezone', window.system_timezone)
 if (window.max_file_size) setConfig('maxFileSize', window.max_file_size)
@@ -32,5 +37,7 @@ app.config.globalProperties.$socket = io(
 	`${protocol}://${host}${port}/${siteName}`,
 	{ withCredentials: true },
 )
+
+if (window.lang) document.documentElement.lang = window.lang
 
 router.isReady().then(() => app.mount('#app'))

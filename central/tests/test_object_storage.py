@@ -56,22 +56,25 @@ class TestObjectStorageClient(TestCase):
 		)
 		post.assert_called_once_with(
 			"https://cargo.par-2.example.test/api/method/cargo.object_storage.api.bucket.create_bucket",
-			json={"name": "pilot-action-1", "region": "par-2"},
+			json={"name": "pilot-action-1", "region": "par-2", "tags": {}},
 			headers={"X-Cargo-Access-Token": "cargo-token"},
 			timeout=(5, 20),
 			allow_redirects=False,
 		)
 
-	def test_delete_and_rotate_use_the_named_cargo_methods(self):
+	def test_bucket_operations_use_the_named_cargo_methods(self):
 		for operation, method, arguments in (
 			("delete_bucket", "delete_bucket", {}),
 			("rotate_credentials", "rotate_credentials", {"access_key": "old-access"}),
+			("set_allowed_origins", "set_allowed_origins", {"origins": ["https://erp.example.test"]}),
 		):
 			with self.subTest(operation=operation):
 				response = Mock(status_code=200)
 				message = {"name": "pilot-action-1", "region": "par-2"}
 				if operation == "rotate_credentials":
 					message["credentials"] = {"access_key": "access", "secret_access_key": "secret"}
+				if operation == "set_allowed_origins":
+					message["allowed_origins"] = ["https://erp.example.test"]
 				response.json.return_value = {"message": message}
 				with (
 					patch("central.integrations.object_storage.mint_cargo_token", return_value="cargo-token"),

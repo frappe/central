@@ -5,6 +5,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "tab_billing",
   "section_break_credits",
   "grant_welcome_credits",
   "promotional_credit_validity_days",
@@ -14,12 +15,13 @@
   "section_break_invoicing",
   "invoice_due_days",
   "billing_details_grace_days",
+  "minimum_invoice_amounts",
   "column_break_invoicing",
   "forecast_notify_percent",
   "section_break_dunning",
-  "dunning_retry_days",
+  "dunning_retry_interval_days",
   "column_break_dunning",
-  "suspend_after_days",
+  "suspension_day",
   "terminate_after_days",
   "section_break_projection",
   "projection_budget_seconds",
@@ -31,25 +33,81 @@
   "section_break_routing",
   "enable_gateway_fallback",
   "section_break_tax",
-  "default_gst_rate"
+  "default_gst_rate",
+  "gst_status_refresh_days",
+  "gst_status_daily_limit",
+  "section_break_reports",
+  "reporting_usd_to_inr",
+  "section_break_exchange_rates",
+  "exchange_rate_url",
+  "tab_operator_alerts",
+  "section_operator_alerts",
+  "operator_alert_channel",
+  "operator_alert_emails",
+  "section_raven",
+  "raven_site_url",
+  "raven_channel_id",
+  "column_break_raven",
+  "raven_api_key",
+  "raven_api_secret",
+  "section_muted_alerts",
+  "muted_operator_alerts",
+  "tab_accounting",
+  "section_company",
+  "company",
+  "company_address",
+  "column_break_company",
+  "section_accounts",
+  "advance_account",
+  "column_break_accounts",
+  "income_account",
+  "cost_center",
+  "promotional_credit_account",
+  "section_receivables",
+  "receivable_accounts",
+  "section_gateways",
+  "gateways",
+  "section_item",
+  "service_item",
+  "section_tax",
+  "in_state_template",
+  "column_break_tax",
+  "out_state_template",
+  "section_series",
+  "series_india_b2b",
+  "series_india_b2c",
+  "column_break_series",
+  "series_overseas",
+  "series_receipt_voucher",
+  "series_credit_note",
+  "section_print",
+  "invoice_print_format",
+  "invoice_letter_head",
+  "column_break_print",
+  "receipt_voucher_print_format"
  ],
  "fields": [
+  {
+   "fieldname": "tab_billing",
+   "fieldtype": "Tab Break",
+   "label": "Billing"
+  },
   {
    "fieldname": "section_break_credits",
    "fieldtype": "Section Break",
    "label": "Welcome Credits"
   },
   {
-   "default": "1",
+   "default": "0",
    "description": "Grant welcome credits when a team completes its billing profile.",
    "fieldname": "grant_welcome_credits",
    "fieldtype": "Check",
    "label": "Grant Welcome Credits"
   },
   {
-   "default": "0",
+   "default": "60",
    "depends_on": "grant_welcome_credits",
-   "description": "Days a welcome credit stays usable. 0 means it never expires.",
+   "description": "Days a promotional credit stays usable. An empty value or 0 uses 60 days.",
    "fieldname": "promotional_credit_validity_days",
    "fieldtype": "Int",
    "label": "Validity (Days)",
@@ -70,7 +128,7 @@
   },
   {
    "default": "0",
-   "description": "Create every new team as a staging trial — it provisions servers on welcome credits without a full billing profile. For staging deployments.",
+   "description": "Create every new team as a staging trial \u2014 it provisions servers on welcome credits without a full billing profile. For staging deployments.",
    "fieldname": "provision_teams_as_trial",
    "fieldtype": "Check",
    "label": "Provision Teams as Trial"
@@ -97,6 +155,13 @@
    "non_negative": 1
   },
   {
+   "description": "Below this total in a currency, the month is written off and no invoice is created. It can be at most the smallest charge the payment gateways accept: INR 1 and USD 1. A currency with no row has no minimum.",
+   "fieldname": "minimum_invoice_amounts",
+   "fieldtype": "Table",
+   "label": "Minimum Invoice Amounts",
+   "options": "Minimum Invoice Amount"
+  },
+  {
    "fieldname": "column_break_invoicing",
    "fieldtype": "Column Break"
   },
@@ -113,27 +178,28 @@
    "label": "Dunning"
   },
   {
-   "default": "1, 3, 7",
-   "description": "Days past due to retry payment on, comma separated.",
-   "fieldname": "dunning_retry_days",
-   "fieldtype": "Data",
-   "label": "Retry Days"
+   "default": "2",
+   "description": "Days between payment retries after the payment date. Retries stop at the invoice due date. When no retry fits, the payment is retried once, 24 hours after the failed charge.",
+   "fieldname": "dunning_retry_interval_days",
+   "fieldtype": "Int",
+   "label": "Retry Every (Days)",
+   "non_negative": 1
   },
   {
    "fieldname": "column_break_dunning",
    "fieldtype": "Column Break"
   },
   {
-   "default": "14",
-   "description": "Days past due before a subscription is suspended.",
-   "fieldname": "suspend_after_days",
+   "default": "15",
+   "description": "Day of the month on which a team with an unpaid invoice is suspended. Choose a day from the 11th to the 28th.",
+   "fieldname": "suspension_day",
    "fieldtype": "Int",
-   "label": "Suspend After (Days)",
+   "label": "Suspension Day",
    "non_negative": 1
   },
   {
-   "default": "44",
-   "description": "Days past due before a subscription is terminated.",
+   "default": "10",
+   "description": "Days after suspension before termination is due. An operator is alerted. Nothing is deleted.",
    "fieldname": "terminate_after_days",
    "fieldtype": "Int",
    "label": "Terminate After (Days)",
@@ -157,8 +223,8 @@
    "label": "Log Retention"
   },
   {
-   "default": "90",
-   "description": "Rolling window (days) the gateway logs — Payment Attempt and Webhook Event — are kept before daily pruning. Live/unsettled rows are kept regardless.",
+   "default": "180",
+   "description": "How many days failed Payment Attempts and handled Webhook Events are kept before daily pruning. Never less than 180, so a chargeback still finds its trail. Captured and refunded charges are never pruned.",
    "fieldname": "payment_log_retention_days",
    "fieldtype": "Int",
    "label": "Payment Log Retention (Days)",
@@ -177,7 +243,7 @@
    "description": "How long Central keeps a daily snapshot before it deletes it. A customer can keep one for longer."
   },
   {
-   "default": "2",
+   "default": "0",
    "fieldname": "free_snapshots_per_server",
    "fieldtype": "Int",
    "label": "Free Snapshots per Server",
@@ -206,12 +272,311 @@
    "fieldname": "default_gst_rate",
    "fieldtype": "Percent",
    "label": "Default GST Rate"
+  },
+  {
+   "default": "7",
+   "description": "How old a GSTIN status may get before the daily sweep asks the GST portal again. Invoicing only reads the stored status.",
+   "fieldname": "gst_status_refresh_days",
+   "fieldtype": "Int",
+   "label": "GSTIN Status Refresh (Days)",
+   "non_negative": 1
+  },
+  {
+   "default": "500",
+   "description": "Most GSTIN lookups the daily sweep makes. Keeps the GST portal and ERPNext out of harm's way.",
+   "fieldname": "gst_status_daily_limit",
+   "fieldtype": "Int",
+   "label": "GSTIN Lookups per Day",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "section_break_reports",
+   "fieldtype": "Section Break",
+   "label": "Reports"
+  },
+  {
+   "fieldname": "reporting_usd_to_inr",
+   "fieldtype": "Float",
+   "label": "USD to INR Rate for Reports",
+   "non_negative": 1,
+   "precision": "2",
+   "description": "Margin reports and dashboards turn USD revenue into INR at this rate, to compare it with the INR bare metal cost. Leave 0 to leave USD revenue out."
+  },
+  {
+   "fieldname": "section_break_exchange_rates",
+   "fieldtype": "Section Break",
+   "label": "Exchange Rates"
+  },
+  {
+   "default": "https://api.frankfurter.dev/v2",
+   "description": "The rate API that gives billing the USD rate of the 1st of each month, for usage billed in another currency.",
+   "fieldname": "exchange_rate_url",
+   "fieldtype": "Data",
+   "label": "Exchange Rate API URL",
+   "options": "URL"
+  },
+  {
+   "fieldname": "tab_operator_alerts",
+   "fieldtype": "Tab Break",
+   "label": "Operator Alerts"
+  },
+  {
+   "description": "Where the hourly billing alerts for operators go. Customer notifications do not change.",
+   "fieldname": "section_operator_alerts",
+   "fieldtype": "Section Break",
+   "label": "Delivery"
+  },
+  {
+   "default": "Raven",
+   "description": "When a Raven post fails, the alert goes to the email addresses instead.",
+   "fieldname": "operator_alert_channel",
+   "fieldtype": "Select",
+   "label": "Alert Channel",
+   "options": "Raven\nEmail\nRaven and Email",
+   "reqd": 1
+  },
+  {
+   "description": "One address per line. Required when the channel includes Email.",
+   "fieldname": "operator_alert_emails",
+   "fieldtype": "Small Text",
+   "label": "Alert Email Addresses"
+  },
+  {
+   "depends_on": "eval:doc.operator_alert_channel != 'Email'",
+   "description": "The alert is posted as a bot user. Add that user to the channel.",
+   "fieldname": "section_raven",
+   "fieldtype": "Section Break",
+   "label": "Raven"
+  },
+  {
+   "description": "For example https://raven.example.com.",
+   "fieldname": "raven_site_url",
+   "fieldtype": "Data",
+   "label": "Raven Site URL",
+   "options": "URL"
+  },
+  {
+   "description": "The channel ID from the channel URL in Raven.",
+   "fieldname": "raven_channel_id",
+   "fieldtype": "Data",
+   "label": "Raven Channel ID"
+  },
+  {
+   "fieldname": "column_break_raven",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "raven_api_key",
+   "fieldtype": "Data",
+   "label": "Bot API Key"
+  },
+  {
+   "fieldname": "raven_api_secret",
+   "fieldtype": "Password",
+   "label": "Bot API Secret"
+  },
+  {
+   "fieldname": "tab_accounting",
+   "fieldtype": "Tab Break",
+   "label": "Accounting",
+   "depends_on": "eval:doc.__onload && doc.__onload.accounting_sync_enabled",
+   "description": "Names Central reads from the accounting system. Central does not create them."
+  },
+  {
+   "fieldname": "section_company",
+   "fieldtype": "Section Break",
+   "label": "Company"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Data",
+   "label": "Company",
+   "description": "The company's name in the accounting system."
+  },
+  {
+   "fieldname": "company_address",
+   "fieldtype": "Data",
+   "label": "Company Address",
+   "description": "The company's address in the accounting system. It carries the company GSTIN."
+  },
+  {
+   "fieldname": "column_break_company",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_accounts",
+   "fieldtype": "Section Break",
+   "label": "Accounts",
+   "description": "Full account names, for example Debtors - ABBR."
+  },
+  {
+   "fieldname": "advance_account",
+   "fieldtype": "Data",
+   "label": "Advance Account",
+   "description": "Where customer advances are booked. The company must book advances in a separate account, this one."
+  },
+  {
+   "fieldname": "column_break_accounts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "income_account",
+   "fieldtype": "Data",
+   "label": "Income Account"
+  },
+  {
+   "fieldname": "cost_center",
+   "fieldtype": "Data",
+   "label": "Cost Center"
+  },
+  {
+   "description": "Pays for promotional credit spent on invoices, for example a marketing expense or discount account, in the company currency.",
+   "fieldname": "promotional_credit_account",
+   "fieldtype": "Data",
+   "label": "Promotional Credit Account"
+  },
+  {
+   "fieldname": "section_receivables",
+   "fieldtype": "Section Break",
+   "label": "Accounts per Currency",
+   "description": "Each invoice is booked to the receivable in its own currency."
+  },
+  {
+   "fieldname": "receivable_accounts",
+   "fieldtype": "Table",
+   "label": "Accounts per Currency",
+   "options": "Accounting Receivable Account"
+  },
+  {
+   "fieldname": "section_gateways",
+   "fieldtype": "Section Break",
+   "label": "Gateways"
+  },
+  {
+   "fieldname": "gateways",
+   "fieldtype": "Table",
+   "label": "Gateway Accounts",
+   "options": "Accounting Gateway Account"
+  },
+  {
+   "fieldname": "section_item",
+   "fieldtype": "Section Break",
+   "label": "Service Item"
+  },
+  {
+   "fieldname": "service_item",
+   "fieldtype": "Data",
+   "label": "Service Item",
+   "default": "Cloud Hosting",
+   "description": "The item on every invoice line. Its SAC code comes from the accounting system."
+  },
+  {
+   "fieldname": "section_tax",
+   "fieldtype": "Section Break",
+   "label": "Tax",
+   "description": "Supplies outside India and to SEZ units are zero-rated and use no template."
+  },
+  {
+   "fieldname": "in_state_template",
+   "fieldtype": "Data",
+   "label": "In-State Tax Template"
+  },
+  {
+   "fieldname": "column_break_tax",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "out_state_template",
+   "fieldtype": "Data",
+   "label": "Out-of-State Tax Template"
+  },
+  {
+   "fieldname": "section_series",
+   "fieldtype": "Section Break",
+   "label": "Naming Series",
+   "description": "A GST invoice number has 16 characters or fewer: letters, digits, / and -."
+  },
+  {
+   "fieldname": "series_india_b2b",
+   "fieldtype": "Data",
+   "label": "India B2B Invoices",
+   "default": "B2B/.TFY./.#####"
+  },
+  {
+   "fieldname": "series_india_b2c",
+   "fieldtype": "Data",
+   "label": "India B2C Invoices",
+   "default": "B2C/.TFY./.#####"
+  },
+  {
+   "fieldname": "column_break_series",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "series_overseas",
+   "fieldtype": "Data",
+   "label": "Overseas Invoices",
+   "default": "EXP/.TFY./.#####"
+  },
+  {
+   "fieldname": "series_receipt_voucher",
+   "fieldtype": "Data",
+   "label": "Receipt Vouchers",
+   "default": "RV/.TFY./.######",
+   "description": "Numbers the advance received for a wallet top-up."
+  },
+  {
+   "default": "CN/.TFY./.#####",
+   "description": "Numbers the credit notes for cancelled and refunded invoices.",
+   "fieldname": "series_credit_note",
+   "fieldtype": "Data",
+   "label": "Credit Notes"
+  },
+  {
+   "fieldname": "section_print",
+   "fieldtype": "Section Break",
+   "label": "Print Formats",
+   "description": "Print formats in the accounting system. Invoice PDFs are rendered with them."
+  },
+  {
+   "fieldname": "invoice_print_format",
+   "fieldtype": "Data",
+   "label": "Invoice Print Format",
+   "default": "Cloud Tax Invoice"
+  },
+  {
+   "description": "Letter head in the accounting system for invoice PDFs. Blank prints none.",
+   "fieldname": "invoice_letter_head",
+   "fieldtype": "Data",
+   "label": "Invoice Letter Head"
+  },
+  {
+   "fieldname": "column_break_print",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "receipt_voucher_print_format",
+   "fieldtype": "Data",
+   "label": "Receipt Voucher Print Format",
+   "default": "Cloud Receipt Voucher"
+  },
+  {
+   "description": "Stop a known billing alert from being sent while its fix is in progress. The alert is still counted in the billing metrics. Other Central alerts are not affected.",
+   "fieldname": "section_muted_alerts",
+   "fieldtype": "Section Break",
+   "label": "Muted Alerts"
+  },
+  {
+   "fieldname": "muted_operator_alerts",
+   "fieldtype": "Table",
+   "label": "Muted Alerts",
+   "options": "Muted Operator Alert"
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-23 12:00:00.000000",
+ "modified": "2026-11-19 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

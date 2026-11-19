@@ -12,10 +12,12 @@ export const test = base.extend({
       const invite = await page.request.post(api('invite_team_member'), {
         form: { team: owner.team, email: member.email, role },
       })
+      expect(invite.ok(), `invite_team_member failed: ${invite.status()} ${await invite.text()}`).toBeTruthy()
       const invitation = (await invite.json()).message
 
       await users.login(member)
-      await page.request.post(api('accept_invitation'), { form: { invitation } })
+      const accept = await page.request.post(api('accept_invitation'), { form: { invitation } })
+      expect(accept.ok(), `accept_invitation failed: ${accept.status()} ${await accept.text()}`).toBeTruthy()
       await users.login(owner)
 
       return member
@@ -61,7 +63,12 @@ export const test = base.extend({
       return creds
     }
 
-    await use({ seed, login, signIn })
+    const reopenOnboarding = async ({ team }) => {
+      const res = await page.request.post(method('central.billing.tests.e2e.reopen_onboarding'), { form: { team } })
+      expect(res.ok(), `reopen_onboarding failed: ${res.status()} ${await res.text()}`).toBeTruthy()
+    }
+
+    await use({ seed, login, signIn, reopenOnboarding })
 
     for (const creds of seeded) {
       await request

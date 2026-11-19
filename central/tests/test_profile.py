@@ -27,12 +27,14 @@ class TestProfile(IntegrationTestCase):
 	def test_my_profile_returns_the_session_user(self):
 		profile = my_profile()
 		self.assertEqual(profile["user"], self.user)
+		self.assertEqual(profile["email"], self.user)
 		self.assertEqual(profile["full_name"], "Profile User")
 
 	def test_guest_is_rejected(self):
 		frappe.set_user("Guest")
-		with self.assertRaises(frappe.PermissionError):
-			my_profile()
+		for method in (my_profile, update_profile, set_profile_photo):
+			with self.subTest(method=method.__name__), self.assertRaises(frappe.PermissionError):
+				frappe.is_whitelisted(method)
 
 	def test_update_profile_escapes_html(self):
 		# Same write-time escaping as the signup path: full_name reaches HTML
@@ -64,6 +66,8 @@ class TestProfile(IntegrationTestCase):
 	def test_non_string_input_is_a_validation_error(self):
 		# A JSON body can put a list or a dict where a string is expected; that has
 		# to come back as a controlled error, not an unhandled server error.
+		# Newer Frappe checks the argument type before the function runs (FrappeTypeError,
+		# a 417); older Frappe leaves it to the function's own check.
 		for value in ([], {"a": 1}, None):
-			with self.assertRaises(frappe.ValidationError):
+			with self.assertRaises((frappe.ValidationError, frappe.FrappeTypeError)):
 				update_profile(value)

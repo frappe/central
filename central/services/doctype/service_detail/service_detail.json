@@ -87,7 +87,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-09-21 22:31:34.074786",
+ "modified": "2026-10-10 10:10:50.332822",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Service Detail",
@@ -123,5 +123,6 @@
    "title": "Not Available"
   }
  ],
- "title_field": "service"
+ "title_field": "service",
+ "track_changes": 1
 }

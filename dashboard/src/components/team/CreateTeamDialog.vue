@@ -2,10 +2,11 @@
 import { Alert, Avatar, Dialog, TextInput } from 'frappe-ui'
 import { computed, watch } from 'vue'
 import { useCreateTeam } from '@/composables/useCreateTeam'
+import { __ } from '@/lib/translate'
 
 const open = defineModel<boolean>('open', { default: false })
 
-const { teamName, name, duplicate, canSubmit, saving, error, submit, reset } =
+const { teamName, name, duplicate, canSubmit, error, submit, reset } =
 	useCreateTeam()
 
 watch(open, (isOpen) => {
@@ -18,21 +19,33 @@ const onSubmit = async () => {
 
 const actions = computed(() => [
 	{
-		label: 'Create team',
+		label: __('Create team'),
 		variant: 'solid' as const,
-		loading: saving.value,
 		disabled: !canSubmit.value,
 		onClick: onSubmit,
 	},
 ])
+
+const createTeamErrorTitle = __("Couldn't create the team")
 </script>
 
 <template>
-	<Dialog v-model="open" title="Create a team" size="sm" :actions="actions">
-		<Alert v-if="error" class="mb-4" theme="red" :title="error" />
+	<Dialog
+		v-model="open"
+		:title="__('Create a team')"
+		size="sm"
+		:actions="actions"
+	>
+		<Alert
+			v-if="error"
+			class="mb-4"
+			theme="red"
+			:title="createTeamErrorTitle"
+			:description="error"
+		/>
 		<div>
 			<label for="team-name" class="block text-xs text-ink-gray-5">
-				Team name
+				{{ __('Team name') }}
 			</label>
 			<div class="mt-1.5 flex items-center gap-2">
 				<span class="size-8 shrink-0" aria-hidden="true">
@@ -49,7 +62,7 @@ const actions = computed(() => [
 					v-model="teamName"
 					class="min-w-0 flex-1"
 					size="md"
-					placeholder="e.g. Acme Production"
+					:placeholder="__('e.g. Acme Production')"
 					autocomplete="off"
 					autofocus
 					@keyup.enter="onSubmit"
@@ -60,8 +73,8 @@ const actions = computed(() => [
 				:class="duplicate ? 'text-ink-red-5' : 'text-ink-gray-5'"
 			>
 				{{ duplicate
-						? `You already have a team called “${name}”`
-						: "You'll be the owner of this team" }}
+						? __('You already have a team called “{0}”', [name])
+						: __("You'll be the owner of this team") }}
 			</p>
 		</div>
 	</Dialog>

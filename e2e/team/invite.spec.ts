@@ -17,10 +17,10 @@ test('Invite and accept a team member', async ({ page, users }) => {
 
 	// accept invite
 	await users.login(invitee)
-	await page.goto('/dashboard/invitations')
-	await page.getByRole('button', { name: 'Accept & join' }).click()
+	await page.goto('/dashboard/settings/invitations')
+	await page.getByRole('button', { name: 'Accept' }).click()
 
-	await expect(page.getByText('No invitations')).toBeVisible()
+	await expect(page.getByText('No pending invitations')).toBeVisible()
 
 	// verify invitee as member
 	await users.login(owner)

@@ -17,6 +17,21 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 
 
 class TeamSSHKey(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		fingerprint: DF.Data | None
+		last_sync_error: DF.SmallText | None
+		public_key: DF.LongText
+		team: DF.Link
+		title: DF.Data
+	# end: auto-generated types
+
 	"""One public login key owned by a Team and selected by individual servers."""
 
 	def validate(self) -> None:
@@ -27,14 +42,14 @@ class TeamSSHKey(Document):
 		if len(self.title) > 140:
 			frappe.throw(_("Use a shorter SSH key name."))
 		if not self.is_new() and self.has_value_changed("team"):
-			frappe.throw(_("An SSH key cannot move to another Team."))
+			frappe.throw(_("An SSH key cannot move to another team."))
 		if self.has_value_changed("public_key"):
 			self.last_sync_error = None
 		self.fingerprint = fingerprint(self.public_key)
 		if frappe.db.exists(
 			"Team SSH Key", {"team": self.team, "fingerprint": self.fingerprint, "name": ["!=", self.name]}
 		):
-			frappe.throw(_("This SSH key already belongs to the Team."))
+			frappe.throw(_("This SSH key already belongs to the team."))
 
 	def on_update(self) -> None:
 		if self.has_value_changed("public_key"):
@@ -43,6 +58,7 @@ class TeamSSHKey(Document):
 	def on_trash(self) -> None:
 		if frappe.db.exists("Server SSH Key", {"team_ssh_key": self.name}):
 			frappe.throw(_("Remove this key from its servers before deleting it."))
+
 		requests = frappe.get_all(
 			"Resource Action",
 			filters={
@@ -55,7 +71,17 @@ class TeamSSHKey(Document):
 		if any(_creation_holds_key(self.name, row) for row in requests if row.status in PENDING_STATES):
 			frappe.throw(_("Wait for pending server creation before deleting this key."))
 		if any(_creation_holds_key(self.name, row) for row in requests if _creation_can_be_retried(row)):
-			frappe.throw(_("A failed server creation can still be retried with this key."))
+			frappe.throw(
+				_(
+					"This key is saved in a failed server request that can still be retried. Contact support to release it before deleting the key."
+				)
+			)
+
+	@frappe.whitelist(methods=["POST"])
+	def retry_sync(self) -> None:
+		"""Operator action: send this key to its servers again after a failed sync."""
+		self.check_permission("write")
+		self.queue_sync()
 
 	def queue_sync(self) -> None:
 		frappe.enqueue(
@@ -92,6 +118,7 @@ def fingerprint(public_key: str) -> str:
 			raise ValueError
 	except (ValueError, TypeError, binascii.Error, UnsupportedAlgorithm):
 		frappe.throw(_("Enter one valid OpenSSH public key. Private keys are not accepted."))
+
 	return "SHA256:" + base64.b64encode(hashlib.sha256(blob).digest()).decode().rstrip("=")
 
 

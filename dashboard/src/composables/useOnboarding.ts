@@ -10,18 +10,13 @@ import { useSession } from '@/composables/useSession'
 import { submitOrThrow } from '@/lib/frappeCall'
 import type { OnboardingStepKey } from '@/types/api'
 
-type StepStatus = 'Done' | 'Skipped'
+export type StepStatus = 'Done' | 'Skipped'
 
 const setStepCall = useCall<
 	{ step: OnboardingStepKey; status: StepStatus },
 	{ team: string; step: OnboardingStepKey; status: StepStatus }
 >({
 	url: method(API.setOnboardingStep),
-	method: 'POST',
-	immediate: false,
-})
-const skipCall = useCall<{ skipped: boolean }, { team: string }>({
-	url: method(API.skipOnboarding),
 	method: 'POST',
 	immediate: false,
 })
@@ -55,12 +50,7 @@ export function useOnboarding() {
 		})
 	}
 
-	async function skipAll(): Promise<void> {
-		await submitOrThrow(skipCall, { team: session.activeTeam.value! })
-		await session.reload()
-	}
-
-	return { pendingSteps, answerStep, skipAll, reload: session.reload }
+	return { pendingSteps, answerStep, reload: session.reload }
 }
 
 function stepsFor(keys: OnboardingStep['key'][]): OnboardingStep[] {

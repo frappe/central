@@ -11,7 +11,7 @@ The design constraint is the same as everywhere else here: an invented resize mu
 rated by *exactly* the code that rates a real one, or the simulator becomes a second
 model of billing and starts lying. So an injected event is not priced separately — it is
 merged into the Subscription Change stream the line engine already reads, which means it
-picks up day-weighting, the sub-24h churn window and the locked-rate segment boundaries
+picks up day-weighting, the hourly plan-change dates and the locked-rate segment boundaries
 for free, because it is the same code path.
 
 What an event cannot do is bypass a gate. A projected provision that would breach the

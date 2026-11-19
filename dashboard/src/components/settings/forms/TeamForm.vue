@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { Alert, Button, Dialog, SettingsRow, TextInput } from 'frappe-ui'
+import { Alert, Button, SettingsRow, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ImageUpload from '@/components/common/ImageUpload.vue'
+import ArchiveTeamDialog from '@/components/team/ArchiveTeamDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { settingsOpen } from '@/composables/useSettings'
 import { useTeamSettings } from '@/composables/useTeamSettings'
+import { __ } from '@/lib/translate'
 
 const router = useRouter()
 const { activeTeam, activeTeamLabel, activeTeamLogo } = useSession()
-const { saving, error, clearError, rename, setLogo, deleteTeam } =
+const { saving, error, clearError, rename, setLogo, archiveTeam } =
 	useTeamSettings()
 
 const { canEditTeam, canDeleteTeam } = useCapabilities()
@@ -29,37 +31,32 @@ async function onSave(): Promise<void> {
 }
 watch(name, clearError)
 
-const confirmDelete = ref(false)
-const deleteOptions = computed(() => ({
-	title: 'Delete team',
-	message: `Permanently delete “${activeTeamLabel.value}”? This can't be undone.`,
-	actions: [
-		{
-			label: 'Delete team',
-			variant: 'solid' as const,
-			theme: 'red' as const,
-			loading: saving.value,
-			onClick: onDelete,
-		},
-	],
-}))
+const archiveTarget = ref<string | null>(null)
+watch(archiveTarget, clearError)
 
-async function onDelete(): Promise<void> {
-	if (await deleteTeam()) {
-		confirmDelete.value = false
+async function onArchive(): Promise<void> {
+	if (await archiveTeam()) {
+		archiveTarget.value = null
 		settingsOpen.value = false
 		router.push('/servers')
 	}
 }
+
+const updateTeamErrorTitle = __("Couldn't update the team")
 </script>
 
 <template>
 	<div class="mt-6">
 		<div class="space-y-6">
-			<Alert v-if="error && !confirmDelete" theme="red" :title="error" />
+			<Alert
+				v-if="error && !archiveTarget"
+				theme="red"
+				:title="updateTeamErrorTitle"
+				:description="error"
+			/>
 			<ImageUpload
 				v-if="canEditTeam && activeTeam"
-				label="Logo"
+				:label="__('Logo')"
 				:name="name.trim() || activeTeamLabel"
 				:image="activeTeamLogo"
 				:attach-to="{
@@ -75,7 +72,8 @@ async function onDelete(): Promise<void> {
 			<div class="flex items-end gap-2">
 				<TextInput
 					v-model="name"
-					label="Team name"
+					v-focus="canEditTeam"
+					:label="__('Team name')"
 					class="flex-1"
 					:disabled="!canEditTeam"
 					@keydown.enter="onSave"
@@ -83,32 +81,34 @@ async function onDelete(): Promise<void> {
 				<Button
 					v-if="canEditTeam && changed"
 					variant="solid"
-					label="Save"
+					:label="__('Save')"
 					:loading="saving"
 					@click="onSave"
 				/>
 			</div>
 			<p v-if="!canEditTeam" class="text-p-sm text-ink-gray-5">
-				Editing the team requires the Admin or Owner role.
+				{{ __('Editing the team requires the Admin or Owner role.') }}
 			</p>
 		</div>
 
 		<div v-if="canDeleteTeam" class="mt-8 border-t border-outline-gray-1">
 			<SettingsRow
-				title="Delete team"
-				description="Permanently delete this team. Remove its servers and sites first."
+				:title="__('Archive team')"
+				:description="__('Close this team for every member. Terminate its servers and pay its invoices first.')"
 			>
-				<Button theme="red" label="Delete" @click="confirmDelete = true" />
+				<Button
+					theme="red"
+					:label="__('Archive')"
+					@click="archiveTarget = activeTeam"
+				/>
 			</SettingsRow>
 		</div>
 
-		<Dialog
-			v-model="confirmDelete"
-			:title="deleteOptions.title"
-			:message="deleteOptions.message"
-			:actions="deleteOptions.actions"
-		>
-			<Alert v-if="error" theme="red" :title="error" />
-		</Dialog>
+		<ArchiveTeamDialog
+			v-model:target="archiveTarget"
+			:archiving="saving"
+			:error="error"
+			@archive="onArchive"
+		/>
 	</div>
 </template>

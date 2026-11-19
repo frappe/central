@@ -3,6 +3,8 @@
 """get_eligible_plans returns the rate card + profile bounds + headroom; provision
 re-validates composition, bounds, and headroom server-side (#83)."""
 
+from unittest.mock import patch
+
 import frappe
 
 from central.billing.api.dashboard.catalog import (
@@ -60,7 +62,7 @@ class TestEligibilityComposed(IntegrationTestCase):
 		self.assertEqual(out["rate_card"]["Disk"], {"rate": 10, "unit": "GB"})
 		general = next(p for p in out["profiles"] if p["sub_category"] == "General")
 		self.assertEqual(general["ram_ratio"], 4)
-		self.assertEqual(general["vcpu_steps"][:5], [1, 2, 4, 8, 16])
+		self.assertEqual(general["vcpu_steps"][:5], [0.125, 0.25, 0.5, 1, 2])
 		# Storage ladder rungs within [disk_min, disk_max] (10..2000).
 		self.assertEqual(general["disk_steps"], [10, 20, 50, 100, 200, 500, 1000, 2000])
 		self.assertEqual(general["disk_min"], 10)
@@ -105,6 +107,61 @@ class TestEligibilityComposed(IntegrationTestCase):
 		set_team_tier(TEAM, max_spend=3400)  # exactly covers the config
 		out = provision_composed_config(GENERAL, "General", CLUSTER, team=TEAM)
 		self.assertEqual(out["locked_rate"], 3400)
+
+	def test_locked_headroom_check_locks_the_billing_profile_first(self):
+		from central.billing.catalog import subscriptions
+
+		with patch.object(frappe.db, "get_value", wraps=frappe.db.get_value) as get_value:
+			subscriptions.enforce_headroom(TEAM, 100, for_update=True)
+		get_value.assert_any_call("Billing Profile", TEAM, "name", for_update=True)
+
+	def test_the_limit_card_shows_the_figures_the_check_uses(self):
+		from central.billing.api.dashboard.account import get_trust_tier
+		from central.billing.catalog import subscriptions
+
+		set_team_tier(TEAM, max_spend=5000)  # an override, so the ladder's own cap differs
+		provisioned = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		frappe.db.set_value("Subscription", provisioned["subscription"], "enabled", 1)
+
+		tier = get_trust_tier(TEAM)
+		self.assertEqual((tier["spending_limit"], tier["running_monthly"]), (5000, 3400))
+		self.assertEqual(
+			subscriptions.remaining_headroom(TEAM), tier["spending_limit"] - tier["running_monthly"]
+		)
+
+	def test_a_refusal_names_the_server_the_limit_and_what_runs(self):
+		from central.billing.catalog import subscriptions
+
+		set_team_tier(TEAM, max_spend=5000)
+		provisioned = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		frappe.db.set_value("Subscription", provisioned["subscription"], "enabled", 1)
+
+		with self.assertRaises(frappe.ValidationError) as refused:
+			subscriptions.enforce_headroom(TEAM, 3400)
+		self.assertEqual(
+			str(refused.exception),
+			"This server adds ₹ 3,400.00 a month before tax. Your spending limit is ₹ 5,000.00 and "
+			"your servers already run at ₹ 3,400.00. Taxes are added on top.",
+		)
+		subscriptions.enforce_headroom(TEAM, 1600)  # exactly what is left passes
+
+	def test_a_resize_refusal_leaves_out_the_server_being_resized(self):
+		from central.billing.catalog import subscriptions
+
+		set_team_tier(TEAM, max_spend=8000)
+		provisioned = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		other = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		for name in (provisioned["subscription"], other["subscription"]):
+			frappe.db.set_value("Subscription", name, "enabled", 1)
+
+		with self.assertRaises(frappe.ValidationError) as refused:
+			subscriptions.enforce_headroom(TEAM, 5000, exclude=provisioned["subscription"])
+		self.assertEqual(
+			str(refused.exception),
+			"This server adds ₹ 5,000.00 a month before tax. Your spending limit is ₹ 8,000.00 and "
+			"your servers already run at ₹ 3,400.00. Taxes are added on top.",
+		)
+		subscriptions.enforce_headroom(TEAM, 4600, exclude=provisioned["subscription"])
 
 	def test_provision_off_ratio_refused_serverside(self):
 		bad = [

@@ -13,6 +13,7 @@ class ResourceType(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		cost_per_unit_inr: DF.Currency
 		description: DF.SmallText | None
 		is_active: DF.Check
 		resource_type_name: DF.Data

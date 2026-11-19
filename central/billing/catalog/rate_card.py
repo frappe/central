@@ -36,6 +36,9 @@ STARTER_RATE_CARD = {
 # COMPONENT_UNITS; it is priced the same way, so an admin re-prices it in Catalog Rate.
 STARTER_SNAPSHOT_RATES = {"INR": 6.5, "USD": 0.08}
 
+# One public IPv4 address per month. IPv6 is free, so it has no rate.
+STARTER_PUBLIC_IPV4_RATES = {"INR": 170, "USD": 2}
+
 
 def ensure_component_rate_card():
 	"""Seed the starter component rate card if absent. Safe to call repeatedly."""
@@ -47,6 +50,10 @@ def ensure_component_rate_card():
 	for currency, rate in STARTER_SNAPSHOT_RATES.items():
 		if not _has_rate("Snapshot", currency):
 			set_catalog_rate("Resource Type", "Snapshot", currency, rate)
+
+	for currency, rate in STARTER_PUBLIC_IPV4_RATES.items():
+		if not _has_rate("IP", currency):
+			set_catalog_rate("Resource Type", "IP", currency, rate)
 
 
 def _has_rate(resource_type: str, currency: str, cluster: str | None = None) -> bool:

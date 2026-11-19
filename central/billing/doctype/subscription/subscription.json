@@ -13,6 +13,7 @@
   "server_id",
   "service_subject",
   "vm_snapshot",
+  "public_ip_server",
   "cluster",
   "pricing_mode",
   "plan",
@@ -20,6 +21,7 @@
   "billing_cycle",
   "column_break_state",
   "account_standing",
+  "stopped_for_nonpayment",
   "start_date",
   "section_break_payment",
   "default_payment_method",
@@ -104,6 +106,14 @@
    "options": "Current\nPast Due\nSuspended"
   },
   {
+   "default": "0",
+   "description": "Dunning stopped this server for an unpaid invoice. Paying the invoice starts it again.",
+   "fieldname": "stopped_for_nonpayment",
+   "fieldtype": "Check",
+   "label": "Stopped for Non-payment",
+   "read_only": 1
+  },
+  {
    "fieldname": "start_date",
    "fieldtype": "Date",
    "label": "Start Date"
@@ -157,6 +167,14 @@
    "options": "VM Snapshot",
    "read_only": 1,
    "description": "The snapshot a storage subscription bills. Mutually exclusive with server_id."
+  },
+  {
+   "fieldname": "public_ip_server",
+   "fieldtype": "Link",
+   "label": "Public IPv4 Of",
+   "options": "Virtual Machine",
+   "read_only": 1,
+   "description": "The server whose public IPv4 this subscription bills. Mutually exclusive with server_id."
   }
  ],
  "index_web_pages_for_search": 1,
@@ -167,7 +185,7 @@
    "link_fieldname": "subscription"
   }
  ],
- "modified": "2026-09-23 12:00:00.000000",
+ "modified": "2026-10-26 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Subscription",

@@ -1,6 +1,7 @@
 frappe.ui.form.on("Region", {
 	refresh(frm) {
 		if (frm.is_new()) return;
+		if (frm.doc.connection_error) frm.set_intro(frappe.utils.escape_html(frm.doc.connection_error), "red");
 		if (!frappe.user.has_role("System Manager")) return;
 
 		frm.add_custom_button(__("Test Connection"), async () => {
@@ -20,6 +21,19 @@ frappe.ui.form.on("Region", {
 			);
 			await frm.reload_doc();
 		});
+
+		if (frm.doc.has_wireguard_gateway) {
+			frm.add_custom_button(__("Restore WireGuard Devices"), () => {
+				frappe.confirm(__("Replace the gateway device table with Central's records?"), async () => {
+					const { message: count } = await frm.call({
+						doc: frm.doc,
+						method: "restore_wireguard_devices",
+						freeze: true,
+					});
+					frappe.show_alert({ message: __("{0} devices restored", [count]), indicator: "green" }, 5);
+				});
+			});
+		}
 
 		update_enroll_buttons(frm);
 	},

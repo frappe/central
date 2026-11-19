@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { Button, LoadingText, Switch } from 'frappe-ui'
+import { Button, LoadingText } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import SidePanel from '@/components/common/SidePanel.vue'
 import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
-import { infoToast } from '@/lib/feedback'
 import { money, signedMoney } from '@/lib/format'
+import { downloadReceipt } from '@/lib/invoicePdf'
+import { __ } from '@/lib/translate'
 import type { CreditLedgerEntry } from '@/types/billing'
 
 // Wallet history — a docked side panel (like the invoice detail tray), opened
-// from the compact Wallet card. Balance header, auto-recharge toggle, the credit
-// ledger, and Add credit (TopupDialog → #67). The page owns whether it's mounted;
-// the close button clears that.
+// from the compact Wallet card. The page owns whether it's mounted; the close
+// button clears that.
 const open = defineModel<boolean>('open', { default: false })
 const { credit, ledger, currency, reloadMoney } = useBillingOverview()
 const { canManageBilling } = useCapabilities()
@@ -21,17 +21,16 @@ const { requireSetup } = useBillingSetup()
 
 const balance = computed(() => Number(credit.data?.balance ?? 0))
 
-// GROUNDING GAP (#69): no auto-recharge endpoint yet. The toggle is rendered to
-// match the design but is inert until one lands.
-const autoRecharge = ref(false)
-function onAutoRecharge(): void {
-	autoRecharge.value = false
-	infoToast("Auto-recharge isn't available yet")
-}
-
 const showTopup = ref(false)
 function onAddCredit(): void {
 	if (requireSetup()) showTopup.value = true
+}
+
+function gstPaid(entry: CreditLedgerEntry): string {
+	const amount = money(entry.tax_amount, entry.currency || currency.value)
+	return entry.tax_label
+		? __('GST paid: {0} ({1})', [amount, entry.tax_label])
+		: __('GST paid: {0}', [amount])
 }
 
 function isCredit(entry: CreditLedgerEntry): boolean {
@@ -46,16 +45,6 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 		title="Wallet history"
 		:subtitle="`Balance ${money(balance, currency)}`"
 	>
-		<template #actions>
-			<Switch
-				class="mr-1"
-				label="Auto-recharge"
-				:model-value="autoRecharge"
-				:disabled="!canManageBilling"
-				@update:model-value="onAutoRecharge"
-			/>
-		</template>
-
 		<!-- Ledger -->
 		<div class="min-h-0 flex-1 overflow-y-auto">
 			<LoadingText
@@ -71,8 +60,8 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 			</div>
 			<ul v-else class="divide-y divide-outline-gray-1 px-4">
 				<li
-					v-for="(e, idx) in ledger.data"
-					:key="idx"
+					v-for="e in ledger.data"
+					:key="e.name"
 					class="flex items-center gap-3 py-3"
 				>
 					<span
@@ -93,7 +82,10 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 						<p class="truncate text-sm text-ink-gray-8">
 							{{ e.note || e.entry_type }}
 						</p>
-						<p class="text-p-sm text-ink-gray-5">{{ e.created_at }}</p>
+						<p class="text-p-sm text-ink-gray-5">
+							{{ e.created_at }}
+							<span v-if="Number(e.tax_amount)"> · {{ gstPaid(e) }}</span>
+						</p>
 					</div>
 					<span
 						class="shrink-0 text-sm tabular-nums"
@@ -101,6 +93,14 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 					>
 						{{ signedMoney(e.amount, e.currency || currency, isCredit(e)) }}
 					</span>
+					<Button
+						v-if="e.has_receipt"
+						variant="ghost"
+						icon="lucide-download"
+						label="Download receipt"
+						title="Download receipt"
+						@click="downloadReceipt(e.name)"
+					/>
 				</li>
 			</ul>
 		</div>

@@ -4,6 +4,8 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.tests.utils import make_plan
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
@@ -47,6 +49,67 @@ class TestVirtualMachine(IntegrationTestCase):
 		enqueue.assert_called_once()
 		self.assertEqual(enqueue.call_args.kwargs["server"], server.name)
 
+	def test_termination_revokes_the_pilot_and_removes_the_mailbox(self):
+		server = self._server("vm-ends", "Running")
+		credential = "pcred-vm-ends"
+		PilotCredential.mint(
+			team=self.team.name, pilot_credential_id=credential, server=server.name, audience_id=credential
+		)
+
+		with patch.object(UserMailAccount, "queue_removal") as queue_removal, patch("frappe.enqueue"):
+			server.status = "Terminated"
+			server.save()
+
+		self.assertEqual(frappe.db.get_value("Pilot Credential", credential, "status"), "Revoked")
+		queue_removal.assert_called_once_with(server=server.name)
+
+	def test_an_operator_revokes_a_servers_pilot_access(self):
+		server = self._server("vm-revoke", "Running")
+		credential = "pcred-vm-revoke"
+		PilotCredential.mint(
+			team=self.team.name, pilot_credential_id=credential, server=server.name, audience_id=credential
+		)
+
+		frappe.set_user(self.owner)
+		with self.assertRaises(frappe.PermissionError):
+			server.revoke_pilot_access()
+		frappe.set_user("Administrator")
+		server.revoke_pilot_access()
+
+		self.assertEqual(frappe.db.get_value("Pilot Credential", credential, "status"), "Revoked")
+		self.assertTrue(
+			frappe.db.exists("Comment", {"reference_name": server.name, "content": ("like", "%revoked%")})
+		)
+
+	def test_an_operator_revokes_one_credential(self):
+		credential = "pcred-one"
+		PilotCredential.mint(team=self.team.name, pilot_credential_id=credential, audience_id=credential)
+		doc = frappe.get_doc("Pilot Credential", credential)
+
+		frappe.set_user(self.owner)
+		with self.assertRaises(frappe.PermissionError):
+			doc.revoke_from_desk()
+		frappe.set_user("Administrator")
+		doc.revoke_from_desk()
+
+		self.assertEqual(frappe.db.get_value("Pilot Credential", credential, "status"), "Revoked")
+
+	def test_admin_domain_retry_needs_a_failure_and_asks_pilot_again(self):
+		server = self._server("vm-admin-domain", "Running")
+		with self.assertRaisesRegex(frappe.ValidationError, "no failure to retry"):
+			server.retry_admin_domain()
+
+		server.db_set("admin_domain_error", "Pilot did not accept the admin hostname change.")
+		with patch.object(type(server), "claim_admin_hostname") as claim:
+			server.retry_admin_domain()
+		claim.assert_called_once()
+
+	def test_an_operator_retries_a_failed_ssh_key_sync(self):
+		key = frappe.get_doc({"doctype": "Team SSH Key", "team": self.team.name, "title": "Ops"})
+		with patch.object(type(key), "queue_sync") as queue_sync:
+			key.retry_sync()
+		queue_sync.assert_called_once()
+
 	def test_route_removal_is_refused_for_a_live_server(self):
 		server = self._server("vm-routes-live", "Running")
 
@@ -84,6 +147,68 @@ class TestVirtualMachine(IntegrationTestCase):
 			[call.args[1] for call in queue_event.call_args_list],
 			["server_failed", "server_terminated"],
 		)
+
+	def _compute(self, **changes) -> dict:
+		return {
+			"sleep_after_idle_seconds": 0,
+			"deep_sleep_after_idle_seconds": 0,
+			"coma_after_idle_seconds": 0,
+			"is_burstable": False,
+			"baseline_cpu_millicores": 0,
+			"sliding_window_minutes": 0,
+			**changes,
+		}
+
+	def _set_compute_settings(self, server, remote_compute: dict, **settings):
+		with (
+			patch("central.integrations.servers.get_remote_server", return_value={"compute": remote_compute}),
+			patch("central.integrations.servers.get_client") as get_client,
+		):
+			server.set_compute_settings({**self._compute(), **settings})
+		return get_client.return_value.set_compute_settings
+
+	def test_an_operator_makes_a_server_sleepy(self):
+		server = self._server("vm-sleepy", "Running")
+
+		frappe.set_user(self.owner)
+		with self.assertRaises(frappe.PermissionError):
+			self._set_compute_settings(server, self._compute(), sleep_after_idle_seconds=3600)
+		frappe.set_user("Administrator")
+		client_call = self._set_compute_settings(server, self._compute(), sleep_after_idle_seconds=3600)
+
+		client_call.assert_called_once_with(server.atlas_vm_id, {"sleep_after_idle_seconds": 3600})
+		self.assertTrue(
+			frappe.db.exists(
+				"Comment", {"reference_name": server.name, "content": ("like", "%compute settings%")}
+			)
+		)
+
+	def test_a_negative_compute_setting_is_refused(self):
+		server = self._server("vm-negative", "Running")
+
+		with self.assertRaises(frappe.ValidationError):
+			self._set_compute_settings(server, self._compute(), sleep_after_idle_seconds=-5)
+
+	def test_unchanged_compute_settings_reach_no_region(self):
+		server = self._server("vm-unchanged", "Running")
+
+		client_call = self._set_compute_settings(
+			server, self._compute(sleep_after_idle_seconds=600), sleep_after_idle_seconds=600
+		)
+
+		client_call.assert_not_called()
+
+	def test_an_incomplete_compute_answer_fails_loudly(self):
+		from central.errors import AtlasConnectionError
+		from central.integrations.servers import get_compute_settings
+
+		server = self._server("vm-partial", "Running")
+		with patch(
+			"central.integrations.servers.get_remote_server",
+			return_value={"compute": {"sleep_after_idle_seconds": 0}},
+		):
+			with self.assertRaises(AtlasConnectionError):
+				get_compute_settings(server)
 
 	def _server(self, resource_id: str, status: str):
 		return frappe.get_doc(

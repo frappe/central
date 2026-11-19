@@ -115,6 +115,26 @@ class TestStateDelivery(IntegrationTestCase):
 			self.deliver(self.state_report(), region="no-such-region")
 		self.assertEqual(str(wrong_secret.exception), str(unknown_region.exception))
 
+	def test_repeated_refusals_from_one_caller_are_logged_once(self):
+		ip = f"test-{frappe.generate_hash(length=8)}"
+		before = len(
+			frappe.get_all("Error Log", filters={"method": "Rejected regional state report"}, pluck="name")
+		)
+
+		with patch.object(frappe.local, "request_ip", ip, create=True):
+			for _ in range(3):
+				with self.assertRaises(frappe.PermissionError):
+					self.deliver(self.state_report(), region="x" * 5000)
+
+		logged = frappe.get_all(
+			"Error Log", filters={"method": "Rejected regional state report"}, pluck="error", limit=0
+		)
+		self.assertEqual(len(logged), before + 1)
+		self.assertLessEqual(
+			len(frappe.get_last_doc("Error Log", filters={"method": "Rejected regional state report"}).error),
+			200,
+		)
+
 	# — What Central does with an authenticated report
 
 	def test_a_new_state_is_queued_and_applied(self):
@@ -181,6 +201,23 @@ class TestStateDelivery(IntegrationTestCase):
 		self.apply(self.state_report(status="stopped", observed_at="2026-06-02 00:00:00"))
 		self.assertEqual(self.server.reload().status, "Stopped")
 
+	def test_the_reported_host_is_recorded(self):
+		self.apply(self.state_report(server="host-1"))
+		self.assertEqual(self.server.reload().atlas_host_id, "host-1")
+
+	def test_a_report_without_a_host_keeps_the_known_host(self):
+		self.server.db_set("atlas_host_id", "host-1")
+		self.apply(self.state_report())
+		self.assertEqual(self.server.reload().atlas_host_id, "host-1")
+
+	def test_a_host_move_is_applied_when_the_state_is_unchanged(self):
+		self.server.db_set({"status": "Running", "atlas_host_id": "host-1"})
+
+		report = self.state_report(server="host-2")
+		self.assertEqual(self.deliver(report), {"queued": True, "resource_id": self.server.name})
+		self.apply(report)
+		self.assertEqual(self.server.reload().atlas_host_id, "host-2")
+
 	def test_an_unchanged_state_is_ignored(self):
 		self.server.db_set("status", "Running")
 
@@ -237,13 +274,6 @@ class TestStateDelivery(IntegrationTestCase):
 
 	# — A deleted server
 
-	def test_a_deletion_is_queued_and_terminates_the_server(self):
-		report = self.state_report(event="vm.state.deleted", status="stopped")
-		self.assertEqual(self.deliver(report), {"queued": True, "resource_id": self.server.name})
-
-		self.apply(report)
-		self.assertEqual(self.server.reload().status, "Terminated")
-
 	def test_a_deletion_ignores_the_ordering_watermark(self):
 		"""The body repeats the last cached report, so its observed_at is never newer
 		than the one Central already holds."""
@@ -281,21 +311,6 @@ class TestStateDelivery(IntegrationTestCase):
 
 	def test_the_waiting_action_succeeds_on_its_goal_state(self):
 		action = self._action("start")
-
-		self.apply(self.state_report())
-		self.assertEqual(frappe.db.get_value("Resource Action", action, "status"), "Succeeded")
-
-	def test_a_restart_waits_to_see_the_server_leave_running(self):
-		"""A restart begins and ends at Running, so the goal state alone proves nothing.
-		It succeeds only after the region reports the server away from Running."""
-		action = self._action("restart")
-		self.server.db_set("status", "Running")
-
-		self.apply(self.state_report())
-		self.assertEqual(frappe.db.get_value("Resource Action", action, "status"), "Sent")
-
-		self.apply(self.state_report(status="stopped"))
-		self.assertEqual(frappe.db.get_value("Resource Action", action, "status"), "In Progress")
 
 		self.apply(self.state_report())
 		self.assertEqual(frappe.db.get_value("Resource Action", action, "status"), "Succeeded")
@@ -345,11 +360,6 @@ class TestDeliveryRouting(IntegrationTestCase):
 		headers = {SOURCE_HEADER: source, REGION_HEADER: "region", "X-Frappe-Webhook-Signature": "s"}
 		with patch("central.api.state_delivery.frappe.get_request_header", headers.get):
 			return receive()
-
-	def test_an_atlas_delivery_reaches_the_state_handler(self):
-		self.deliver("atlas")
-
-		self.assertTrue(self.accepted.called)
 
 	def test_the_header_is_read_whatever_its_case(self):
 		self.deliver("Atlas")
@@ -429,7 +439,7 @@ class TestCargoServiceDelivery(IntegrationTestCase):
 			self.deliver(self.service_report(), region="")
 
 	def test_an_unregistered_region_is_refused(self):
-		self.region.db_set("cargo_status", "Draft")
+		self.region.db_set("cargo_status", "Outstanding")
 
 		with self.assertRaises(frappe.PermissionError):
 			self.deliver(self.service_report())

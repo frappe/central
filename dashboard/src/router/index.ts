@@ -1,7 +1,14 @@
+import { nextTick } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useSession } from '@/composables/useSession'
 import { fetchBillingSetup } from '@/data/billingSetup'
+import { rememberFirstTouch } from '@/lib/attribution'
+import {
+	carriedQuery,
+	productOnboarding,
+	signInDestination,
+} from '@/lib/authRedirect'
 import { features } from '@/lib/features'
 
 const routes = [
@@ -42,6 +49,11 @@ const routes = [
 		name: 'OnboardingProvisioning',
 		component: () => import('@/pages/onboarding/SiteReadyPage.vue'),
 	},
+	{
+		path: '/github/connect/:attempt?',
+		name: 'ConnectGitHub',
+		component: () => import('@/pages/github/ConnectGitHubPage.vue'),
+	},
 	// authenticated routes -> AppShell
 	{
 		path: '/',
@@ -60,17 +72,13 @@ const routes = [
 				component: () => import('@/pages/servers/ServersPage.vue'),
 				meta: { title: 'Servers' },
 			},
+			// Team-wide snapshots, including those of terminated servers. Reached only
+			// from the archive-team checks, which list the snapshots still billing.
 			{
 				path: 'servers/snapshots',
 				name: 'Snapshots',
 				component: () => import('@/pages/servers/SnapshotsPage.vue'),
-				meta: { title: 'Snapshots' },
-			},
-			{
-				path: 'servers/ssh-keys',
-				name: 'SSHKeys',
-				component: () => import('@/pages/servers/SSHKeysPage.vue'),
-				meta: { title: 'SSH keys' },
+				meta: { title: 'Team snapshots' },
 			},
 			{
 				path: 'servers/new',
@@ -79,16 +87,28 @@ const routes = [
 				meta: { title: 'New server' },
 			},
 			{
+				path: 'servers/:id/:tab(networking|access|snapshots|settings|activity)?',
+				name: 'Server',
+				component: () => import('@/pages/servers/ServerPage.vue'),
+				meta: { title: 'Servers' },
+			},
+			{
+				path: 'llm',
+				name: 'LLM',
+				component: () => import('@/pages/services/AIInference.vue'),
+				meta: { title: 'LLM', feature: ['addons', 'llm'] },
+			},
+			{
 				path: 'object-storage',
 				name: 'ObjectStorage',
 				component: () => import('@/pages/addons/ObjectStorage.vue'),
-				meta: { title: 'Object storage', feature: ['addons', 'storage'] },
+				meta: { title: 'Object Storage', feature: ['addons', 'storage'] },
 			},
 			{
 				path: 'object-storage/:name',
 				name: 'Bucket',
 				component: () => import('@/pages/addons/BucketPage.vue'),
-				meta: { title: 'Object storage', feature: ['addons', 'storage'] },
+				meta: { title: 'Object Storage', feature: ['addons', 'storage'] },
 			},
 			{
 				path: 'billing',
@@ -103,16 +123,10 @@ const routes = [
 				meta: { title: 'Invoices' },
 			},
 			{
-				path: 'billing/reports',
-				name: 'BillingReports',
-				component: () => import('@/pages/billing/BillingReportsPage.vue'),
-				meta: { title: 'Reports' },
-			},
-			{
-				path: 'billing/limits',
-				name: 'SpendingLimits',
-				component: () => import('@/pages/billing/SpendingLimitsPage.vue'),
-				meta: { title: 'Limit tiers' },
+				path: 'billing/payments',
+				name: 'BillingPayments',
+				component: () => import('@/pages/billing/BillingPaymentsPage.vue'),
+				meta: { title: 'Payments' },
 			},
 			{
 				path: 'settings',
@@ -132,8 +146,7 @@ const routes = [
 			{ path: 'team', redirect: '/team/members' },
 			// Members + roles share one tabbed page. Settings fold into this surface
 			// (rename beside the title, transfer on member rows, delete in team menu).
-			// /team/roles and /team/settings stay as aliases; invitations stay routable
-			// but are hidden from the sidebar for now.
+			// /team/roles and /team/settings stay as aliases.
 			{
 				path: 'team/members',
 				name: 'Members',
@@ -142,24 +155,6 @@ const routes = [
 			},
 			{ path: 'team/roles', redirect: '/team/members' },
 			{ path: 'team/settings', redirect: '/team/members' },
-			{
-				path: 'team/invitations',
-				name: 'TeamInvitations',
-				component: () => import('@/pages/team/InvitationsPage.vue'),
-				meta: { title: 'Invitations' },
-			},
-			// Personal invitation inbox: opens the Invitations page on its Received tab.
-			{
-				path: 'invitations',
-				name: 'MyInvitations',
-				component: () => import('@/pages/team/InvitationsPage.vue'),
-				meta: { title: 'Invitations' },
-			},
-			{
-				path: 'addons',
-				name: 'Addons',
-				redirect: '/object-storage',
-			},
 		],
 	},
 ]
@@ -169,20 +164,86 @@ export const router = createRouter({
 	routes,
 })
 
+// Route pairs that animate, keyed by the name their CSS selects on (see style.css).
+const ROUTE_TRANSITIONS: Record<string, string> = {
+	'Servers>Server': 'server-open',
+	'Server>Servers': 'server-open-back',
+	'Servers>NewServer': 'server-create',
+	'NewServer>Servers': 'server-create-back',
+	// A finished creation opens its server the same way the list does.
+	'NewServer>Server': 'server-open',
+	'Login>VerifyEmail': 'auth-step',
+	'Signup>VerifyEmail': 'auth-step',
+	'VerifyEmail>OnboardingSite': 'auth-step',
+	'OnboardingSite>OnboardingProvisioning': 'auth-step',
+	'VerifyEmail>Login': 'auth-step-back',
+}
+
+// The list layout of Servers has no map card to morph, so New server slides in as a
+// page instead. Its names must not start with "server-create", or the map rules match.
+const LIST_LAYOUT_TRANSITIONS: Record<string, string> = {
+	'server-create': 'server-list-create',
+	'server-create-back': 'server-list-create-back',
+}
+
+// Set when leaving Servers, so Cancel on New server reverses the way it came.
+let isFleetMapLayout = true
+
+function getRouteTransition(key: string): string | undefined {
+	if (key === 'Servers>NewServer')
+		isFleetMapLayout = Boolean(document.querySelector('.vt-server-map'))
+
+	const transition = ROUTE_TRANSITIONS[key]
+	if (!transition || isFleetMapLayout) return transition
+	return LIST_LAYOUT_TRANSITIONS[transition] ?? transition
+}
+
+router.beforeResolve((to, from) => {
+	const transition = getRouteTransition(
+		`${String(from.name)}>${String(to.name)}`,
+	)
+	if (!document.startViewTransition || !transition) return
+
+	const root = document.documentElement
+	root.dataset.routeTransition = transition
+	return new Promise<void>((resolve) => {
+		const viewTransition = document.startViewTransition(
+			() =>
+				new Promise<void>((rendered) => {
+					const stop = router.afterEach(() => {
+						stop()
+						nextTick(rendered)
+					})
+
+					resolve()
+				}),
+		)
+		viewTransition.finished.finally(() => delete root.dataset.routeTransition)
+	})
+})
+
 // Session state is seeded synchronously from boot data (window.user), so the
-// guard can decide without awaiting. Auth transitions (login/logout) do a full
-// page reload, which re-boots the SPA with a fresh session — no client revalidation needed.
+// guard can decide without awaiting. Sign-in and logout reload the page, except a
+// product signup, which enters its new session in place (useAuth.enterSession).
 router.beforeEach((to) => {
 	const { isGuest } = useAuth()
-	// Seeded with `window.user` (central/www/dashboard.py). A brand-new user has no
-	// live site yet, so they belong in the onboarding funnel, not the dashboard.
-	const onboardingComplete = window.onboarding_complete ?? false
+	// Only a product signup has an onboarding funnel, which ends in its free trial site.
+	// A direct Central signup buys its servers from the console.
+	const productSignup = Boolean(carriedQuery(to.query).product)
 
 	if (to.meta.public) {
+		if (isGuest.value) rememberFirstTouch(to.query)
 		if (isGuest.value || to.meta.allowSignedIn) return true
-		// Logged in but on an auth page — e.g. browser-Back after verifying. Don't dump
-		// them into the dashboard mid-onboarding: resume the funnel until it's finished.
-		return onboardingComplete ? '/servers' : '/onboarding/site'
+		// Logged in but on an auth page, such as browser-Back after verifying: go where sign-in would.
+		const onboarding = productOnboarding(to.query)
+		if (onboarding) return onboarding
+
+		const destination = signInDestination(to.query)
+		if (destination.startsWith('/dashboard/'))
+			return destination.slice('/dashboard'.length)
+		// Central's mailbox sign-in callback is a server route, not a console page.
+		window.location.replace(destination)
+		return false
 	}
 
 	if (isGuest.value) {
@@ -202,8 +263,7 @@ router.beforeEach((to) => {
 			return '/servers'
 	}
 
-	// A finished user has no reason to re-enter onboarding.
-	if (to.path.startsWith('/onboarding') && onboardingComplete) return '/servers'
+	if (to.path.startsWith('/onboarding') && !productSignup) return '/servers'
 
 	// Warm the billing-profile completeness cache for the active team, non-blocking
 	// (mirrors the legacy guard): money-moving actions gate on it via

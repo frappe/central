@@ -79,13 +79,14 @@ async function take(server: VirtualMachineRow) {
 		@confirm="take"
 	>
 		<div class="space-y-3">
-			<FormControl v-model="title" label="Name" type="text" />
+			<FormControl v-model="title" label="Name" type="text" autofocus />
 			<p class="text-p-sm text-ink-gray-7">
-				The server keeps running. The snapshot is kept until you delete it. The
-				{{ freePerServer }}
-				newest snapshots of a server are free.
+				The server keeps running. The snapshot is kept until you delete it.
+				<template v-if="freePerServer"
+					>The {{ freePerServer }} newest snapshots of a server are free.</template
+				>
 				<template v-if="ceiling && rate != null">
-					An older one costs
+					{{ freePerServer ? 'An older one costs' : 'It costs' }}
 					{{ money(rate, currency, { trimTrailingZeros: true }) }}
 					per GB per month, at most {{ ceiling }} for this {{ diskGib }} GB
 					disk.

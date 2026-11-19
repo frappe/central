@@ -18,6 +18,8 @@ A System Manager opens Central SSO Settings and selects **Initialize Atlas Signi
 
 Configure Atlas `central_jwks_url` with the shared `central.api.jwks.get_jwks` endpoint. Initialize the Atlas key before Atlas fetches this URL. Atlas rejects an empty trust set.
 
+**Session Length** sets how long a server dashboard sign-in link from Central stays valid, from 1 to 1440 minutes. The default is 60. Pilot ends the session when the link expires, so this is also the session length. A new value applies to links opened after the save. It does not change the bearer that Central sends on its own calls to Pilot.
+
 Central gives each Pilot the shared endpoint at enrollment and seeds the shared key set into a new server. Initialize the Pilot key before you create a server.
 
 The endpoint returns a raw JWKS document. `get_jwks` publishes both initialized Pilot and Atlas public keys. An uninitialized plane contributes no key. An incomplete saved key blocks publication. The endpoint does not generate keys or expose private key material. No automatic key initialization runs on migration. Operators must initialize both keys explicitly on each Central deployment.
@@ -34,7 +36,7 @@ The endpoint returns a raw JWKS document. `get_jwks` publishes both initialized 
 
 `central.sso.mint_datum_token(region_id, resource_id)` uses the Atlas key for the credential that a Pilot presents to the Datum of its region. Its audience is `atlas-datum:<region_id>` and its scope is `datum`. It carries the `resource_id` claim and the `access` claim `["write"]`. It is valid for 7 days. A blank `resource_id` blocks minting.
 
-`mint_bench_login`, `mint_site_login`, and `mint_bootstrap_token` use the Pilot key. Read [SSO](../../../../spec/SSO.md) for their claims.
+`mint_bench_login`, `mint_bench_api_token`, `mint_site_login`, and `mint_bootstrap_token` use the Pilot key. Read [SSO](../../../../spec/SSO.md) for their claims.
 
 `central.integrations.atlas.AtlasClient` signs every regional request with the Atlas key. These functions are not a public API. A caller must authorize the requested operation through Central IAM and select the correct tenant before it sends a regional request.
 

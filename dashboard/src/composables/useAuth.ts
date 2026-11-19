@@ -11,8 +11,16 @@ export function useAuth() {
 		currentUser: readonly(currentUser),
 		isLoggedIn: computed(() => currentUser.value !== null),
 		isGuest: computed(() => currentUser.value === null),
+		enterSession,
 		logout,
 	}
+}
+
+/** Take on a session a sign-in call just opened. frappe-ui reads the CSRF token from `window`. */
+function enterSession(user: string, csrfToken: string): void {
+	window.csrf_token = csrfToken
+	window.user = user
+	currentUser.value = user
 }
 
 async function logout(): Promise<void> {

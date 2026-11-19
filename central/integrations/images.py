@@ -1,10 +1,28 @@
 from __future__ import annotations
 
+import re
+
 import frappe
 from frappe import _
+from frappe.utils import validate_email_address
+from frappe.utils.password_strength import test_password_strength
 
 from central.iam import can
+from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain
+from central.infrastructure.doctype.region.region import Region
+from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
 from central.integrations.atlas import AtlasClient
+from central.integrations.cargo import CargoClient
+from central.server_models import DNS_LABEL, AppAnswers, AppInput, AppRequirements
+from central.utils.units import MIB_PER_GIB, MILLICORES_PER_VCPU
+
+# The Atlas `purpose` tag of an image a region's Cargo built for an app.
+APP_PURPOSE = "one-click"
+# The app input whose answer Central routes to the app server, as <answer>.<region zone>.
+SITE_NAME_INPUT = "site_name"
+# Each answer becomes a shell variable in the app server's inputs.env, so its name must be one.
+APP_INPUT_NAME = re.compile(r"[a-z][a-z0-9_]*")
+DOMAIN = re.compile(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
 
 
 def list_offerings(team: str, flow: str = "Server") -> list[dict]:
@@ -18,7 +36,7 @@ def list_offerings(team: str, flow: str = "Server") -> list[dict]:
 		"Image Offering",
 		filters={"enabled": 1, "available_in": ["in", [flow, "Both"]]},
 		fields=["name", "title", "logo", "description", "available_in"],
-		order_by="title asc",
+		order_by="display_order asc, title asc",
 		limit=0,
 	)
 
@@ -42,20 +60,53 @@ def list_images(
 		frappe.throw(_("This image offering is not available for this flow."))
 
 	instance = frappe.get_doc("Region", region)
-	if instance.status != "Active":
-		frappe.throw(_("This region is not accepting new servers."))
+	instance.ensure_accepts_new_servers()
 
 	client = AtlasClient.for_team(instance, team)
-	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
+	page = client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
+	if flow == "Server":
+		page["items"] = [image for image in page["items"] if not document.is_image_hidden(image["tags"])]
+
+	return page
 
 
-def preview_images(offering: str, region: str, offset: int = 0) -> dict:
-	"""Check an operator's saved selector without creating a regional resource."""
+def list_apps(team: str, region: str) -> list[dict]:
+	"""The ready-to-run apps the region's Cargo has built, one per application."""
+	apps = _app_cargo(team, region).get_apps()
+	for app in apps:
+		app["documentation"] = get_guide_url(app.get("documentation"))
+
+	return apps
+
+
+def get_guide_url(documentation: str | None) -> str | None:
+	"""An app's guide address from its template, or None unless it is an https page. The
+	console opens it as a link."""
+	return documentation if str(documentation or "").startswith("https://") else None
+
+
+def get_app_requirements(team: str, region: str, application: str) -> AppRequirements:
+	"""What a server from one app asks the user for and needs to run."""
+	return _app_cargo(team, region).get_app_requirements(application)
+
+
+def _app_cargo(team: str, region: str) -> CargoClient:
+	validate_catalog_access(team, "Server")
+	instance = frappe.get_doc("Region", region)
+	instance.ensure_accepts_new_servers()
+	return CargoClient(instance)
+
+
+def preview_images(
+	offering: str, region: str, offset: int = 0, extra_tags: dict[str, str] | None = None
+) -> dict:
+	"""Check an operator's saved selector without creating a regional resource. The caller
+	checks that the operator may edit what is previewed."""
 	instance = frappe.get_doc("Region", region)
 	client = AtlasClient.for_operator(instance)
 	document = frappe.get_doc("Image Offering", offering)
-	document.check_permission("write")
-	return client.list_system_images(document.get_image_tags(), offset)
+
+	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
 
 
 def validate_catalog_access(team: str, flow: str) -> None:
@@ -81,12 +132,11 @@ def selected_image(
 		frappe.throw(_("This offering is not available for server creation."))
 
 	instance = frappe.get_doc("Region", region)
-	if instance.status != "Active":
-		frappe.throw(_("This region is not accepting new servers."))
+	instance.ensure_accepts_new_servers()
 
 	client = AtlasClient.for_team(instance, team, capability)
 	image = client.read_system_image(client.get_image(image_id), document.get_image_tags())
-	if not image["enabled"] or image["status"] != "available":
+	if not image["enabled"] or image["status"] != "available" or document.is_image_hidden(image["tags"]):
 		frappe.throw(_("This image is no longer available. Select another image."))
 
 	return image
@@ -107,8 +157,7 @@ def snapshot_image(team: str, region: str, snapshot: str, capability: str = "ser
 		frappe.throw(_("A snapshot restores only in the region it was taken in."))
 
 	instance = frappe.get_doc("Region", region)
-	if instance.status != "Active":
-		frappe.throw(_("This region is not accepting new servers."))
+	instance.ensure_accepts_new_servers()
 
 	image = AtlasClient.for_team(instance, team, capability).get_machine_image(row.atlas_image_id)
 	if not image.get("enabled") or image.get("status") != "available":
@@ -139,16 +188,17 @@ def _restorable_snapshot(team: str, snapshot: str):
 	if row.status != "Available":
 		frappe.throw(_("Only an available snapshot can be restored."))
 	if not row.is_restorable or not row.image_offering:
-		frappe.throw(_("A snapshot of a Pilot server cannot be restored yet."))
+		frappe.throw(_("A snapshot of a Frappe server cannot be restored yet."))
+
 	return row
 
 
 def eligible_plans(team: str, region: str, offering: str, image_id: str, snapshot: str | None = None) -> dict:
-	"""Combine billing eligibility with the selected image's disk requirement. A restore
-	passes `snapshot` instead of an offering and image."""
+	"""Combine the offering's plan family and minimum memory with the selected image's disk
+	requirement. A restore passes `snapshot` instead of an offering and image."""
 	from math import ceil
 
-	from central.billing.catalog.composition import DISK, composition_quantities
+	from central.billing.catalog.composition import composition_quantities
 	from central.billing.catalog.server_plans import get_server_plans
 
 	image = (
@@ -156,28 +206,142 @@ def eligible_plans(team: str, region: str, offering: str, image_id: str, snapsho
 		if snapshot
 		else selected_image(team, region, offering, image_id)
 	)
-	catalog = get_server_plans(team, cluster=region)
-	minimum_disk = image["rootfs_size_mib"]
+	if snapshot:
+		offering = snapshot_source(team, snapshot)[0]
+	minimum = get_minimum_shape(
+		image, get_image_app_requirements(region, image, snapshot), get_minimum_memory_mib(offering)
+	)
+	catalog = get_server_plans(team, cluster=region, offering=offering)
 	groups = {}
 	for name, plans in catalog["plans"].items():
-		rows = [
-			plan
-			for plan in plans
-			if composition_quantities(plan["includes"]).get(DISK, 0) * 1024 >= minimum_disk
-		]
+		rows = [plan for plan in plans if is_shape_enough(composition_quantities(plan["includes"]), minimum)]
 		if rows:
 			groups[name] = rows
 
 	profiles = []
 	for profile in catalog["profiles"]:
-		steps = [size for size in profile["disk_steps"] if size * 1024 >= minimum_disk]
-		if steps:
+		vcpu_steps = [
+			vcpus
+			for vcpus in profile["vcpu_steps"]
+			if vcpus * MILLICORES_PER_VCPU >= minimum["cpu_millicores"]
+			and vcpus * profile["ram_ratio"] * MIB_PER_GIB >= minimum["memory_mib"]
+		]
+		disk_steps = [size for size in profile["disk_steps"] if size * MIB_PER_GIB >= minimum["disk_mib"]]
+		if vcpu_steps and disk_steps:
 			profiles.append(
 				{
 					**profile,
-					"disk_steps": steps,
-					"disk_min": max(profile["disk_min"], ceil(minimum_disk / 1024)),
+					"vcpu_steps": vcpu_steps,
+					"disk_steps": disk_steps,
+					"disk_min": max(profile["disk_min"], ceil(minimum["disk_mib"] / MIB_PER_GIB)),
 				}
 			)
 
 	return {**catalog, "plans": groups, "profiles": profiles, "image_id": image_id}
+
+
+def get_image_app_requirements(
+	region: str, image: dict, snapshot: str | None = None
+) -> AppRequirements | None:
+	"""What a new server from an app image needs, from the region's Cargo. A restored
+	snapshot is already set up, and any other image has no app, so both need nothing."""
+	if snapshot or image["tags"].get("purpose") != APP_PURPOSE:
+		return None
+
+	region_document = frappe.get_doc("Region", region)
+	return CargoClient(region_document).get_app_requirements(image["tags"]["application"])
+
+
+def get_minimum_memory_mib(offering: str) -> int:
+	return frappe.get_cached_doc("Image Offering", offering).minimum_memory_mib
+
+
+def get_minimum_shape(
+	image: dict, requirements: AppRequirements | None, minimum_memory_mib: int = 0
+) -> dict[str, int]:
+	"""The smallest machine an image runs on: its root disk, its offering's minimum memory,
+	and an app's minimum size."""
+	minimum = (requirements or {}).get("minimum_size") or {}
+	return {
+		"cpu_millicores": minimum.get("cpu_millicores", 0),
+		"memory_mib": max(minimum.get("memory_mib", 0), minimum_memory_mib),
+		"disk_mib": max(image["rootfs_size_mib"], minimum.get("disk_mib", 0)),
+	}
+
+
+def is_shape_enough(quantities: dict[str, float], minimum: dict[str, int]) -> bool:
+	"""Whether plan quantities, in vCPUs and GiB, reach a minimum shape in millicores and MiB."""
+	from central.billing.catalog.composition import COMPUTE, DISK, MEMORY
+
+	return (
+		quantities.get(COMPUTE, 0) * MILLICORES_PER_VCPU >= minimum["cpu_millicores"]
+		and quantities.get(MEMORY, 0) * MIB_PER_GIB >= minimum["memory_mib"]
+		and quantities.get(DISK, 0) * MIB_PER_GIB >= minimum["disk_mib"]
+	)
+
+
+def validate_app_answer(name: str, item: AppInput, value: str) -> None:
+	"""Throw a message that says what is wrong with one answer to an app input and what it takes."""
+	label = item.get("label", name)
+	if not APP_INPUT_NAME.fullmatch(name):
+		frappe.throw(_("The app setting {0} is not a valid shell variable name.").format(name))
+	if len(value) > item.get("max_length", 255):
+		frappe.throw(_("{0} must be at most {1} characters.").format(label, item.get("max_length", 255)))
+	if not value.isprintable():
+		frappe.throw(
+			_("{0} can contain only printable characters, with no line breaks or tabs.").format(label)
+		)
+
+	kind = item.get("type", "string")
+	if kind == "email":
+		validate_email_address(value, throw=True)
+	elif kind == "domain" and not DOMAIN.fullmatch(value):
+		frappe.throw(_("{0} must be a domain name in lowercase, such as app.example.com.").format(label))
+	elif kind == "password":
+		validate_app_password(label, value)
+	if (pattern := item.get("pattern")) and not re.fullmatch(pattern, value):
+		frappe.throw(
+			_("{0} is not in the expected format. {1}").format(label, item.get("description", "")).strip()
+		)
+
+
+def validate_app_password(label: str, value: str) -> None:
+	"""Refuse a password that zxcvbn scores below 3 of 4, with its advice on how to fix it."""
+	result = test_password_strength(value)
+	if result["score"] < 3:
+		feedback = result["feedback"]
+		advice = " ".join([feedback.get("warning") or "", *feedback.get("suggestions", [])]).strip()
+		frappe.throw(
+			_("{0} is too easy to guess. {1}").format(
+				label, advice or _("Use a longer password made of a few uncommon words.")
+			)
+		)
+
+
+def get_app_subdomain(region: str, answers: AppAnswers) -> str | None:
+	"""The answer to the app's `site_name` input, which the regional proxy routes to the server
+	once it has an address. It must be a free label in the region's zone."""
+	subdomain = answers.get(SITE_NAME_INPUT, "").strip()
+	if not subdomain:
+		return None
+	if not DNS_LABEL.fullmatch(subdomain):
+		frappe.throw(
+			_("Use lowercase letters, numbers and hyphens in the site name, starting and ending with one.")
+		)
+
+	domain = f"{subdomain}.{Region.get_zone(region)}"
+	BlockedDomain.validate_assignment(domain)
+	chosen_by_site = frappe.get_all(
+		"Site",
+		filters={"subdomain": subdomain, "server.region": region, "server.status": ["!=", "Terminated"]},
+		limit=1,
+	)
+	subdomain_request_in_queue = frappe.db.exists(
+		"Resource Action",
+		{"action": "create", "region": region, "subdomain": subdomain, "status": ["in", PENDING_STATES]},
+	)
+
+	if frappe.db.exists("Site Domain", domain) or chosen_by_site or subdomain_request_in_queue:
+		frappe.throw(_("{0} is already taken. Choose another site name.").format(domain))
+
+	return subdomain

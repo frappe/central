@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="Row extends Record<string, any>">
-import Scrollbar from '@/components/common/Scrollbar.vue'
+import { ScrollArea } from 'frappe-ui'
 
 interface Column {
 	key: string
@@ -11,6 +11,9 @@ interface Props {
 	columns: Column[]
 	rows: Row[]
 	height?: string
+	flush?: boolean
+	hideHeader?: boolean
+	rowClass?: (row: Row) => string | undefined
 }
 
 defineProps<Props>()
@@ -21,14 +24,17 @@ defineSlots<{
 </script>
 
 <template>
-	<Scrollbar class="min-h-0" :class="height || 'flex-1'">
-		<table class="min-w-full border-separate border-spacing-0 text-left">
-			<thead class="sticky top-0 z-10">
+	<ScrollArea class="min-h-0" :class="height || 'flex-1'" orientation="both">
+		<table
+			class="min-w-full border-separate border-spacing-0 text-left"
+			:class="{ flush }"
+		>
+			<thead v-if="!hideHeader" class="sticky top-0 z-10">
 				<tr>
 					<th
 						v-for="column in columns"
 						:key="column.key"
-						class="whitespace-nowrap bg-surface-gray-2 px-4 py-2 text-sm font-normal text-ink-gray-5"
+						class="whitespace-nowrap bg-surface-gray-1 px-4 py-2 text-sm font-normal text-ink-gray-5"
 						:class="column.class"
 					>
 						{{ column.label }}
@@ -37,7 +43,11 @@ defineSlots<{
 			</thead>
 
 			<tbody>
-				<tr v-for="(row, index) in rows" :key="row.id ?? index">
+				<tr
+					v-for="(row, index) in rows"
+					:key="row.id ?? index"
+					:class="rowClass?.(row)"
+				>
 					<td
 						v-for="column in columns"
 						:key="column.key"
@@ -51,7 +61,7 @@ defineSlots<{
 				</tr>
 			</tbody>
 		</table>
-	</Scrollbar>
+	</ScrollArea>
 </template>
 
 <style scoped>
@@ -71,5 +81,9 @@ tbody tr:hover td:first-child {
 th:last-child,
 tbody tr:hover td:last-child {
 	@apply rounded-r-4;
+}
+.flush th,
+.flush tbody tr:hover td {
+	@apply rounded-none;
 }
 </style>

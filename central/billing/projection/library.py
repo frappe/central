@@ -43,7 +43,7 @@ SCENARIOS = {
 		"events": [],
 	},
 	"resized-twice-in-a-day": {
-		"title": "Two resizes inside 24 hours",
+		"title": "Two resizes on one day",
 		"question": "Why did one day of the bill itemise by the hour?",
 		"look_for": (
 			"That date leaves daily billing entirely and bills the real hours each config "
@@ -75,13 +75,13 @@ SCENARIOS = {
 		"months": 3,
 	},
 	"harsher-dunning": {
-		"title": "Suspend a week sooner",
+		"title": "Suspend four days sooner",
 		"question": "What would tightening the ladder do to the teams already behind?",
 		"look_for": (
 			"Every date on the unpaid branch moving left. Billing Settings are untouched — "
 			"this is read instead of them, for one projection."
 		),
-		"overrides": {"suspend_after_days": 7, "terminate_after_days": 30},
+		"overrides": {"suspension_day": 11, "terminate_after_days": 5},
 		"events": [],
 	},
 	"a-price-rise": {

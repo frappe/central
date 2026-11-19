@@ -35,7 +35,7 @@ export interface VirtualMachine {
 		| 'Stopped'
 		| 'Failed'
 		| 'Terminated'
-	/**	vCPUs : Int	*/
+	/**	vCPUs : Float	*/
 	vcpus?: number
 	/**	Memory (MB) : Int	*/
 	memory_megabytes?: number
@@ -43,6 +43,8 @@ export interface VirtualMachine {
 	disk_gigabytes?: number
 	/**	Image Offering : Link - Image Offering	*/
 	image_offering?: string
+	/**	Has Site : Check - The server's image carries a site.	*/
+	has_site?: 0 | 1
 	/**	Skip Automatic Snapshot : Check - The customer turned off the daily free snapshot for this server.	*/
 	skip_automatic_snapshot?: 0 | 1
 	/**	Mesh IPv6 : Data - The private WireGuard mesh address. Only the region reaches it.	*/
@@ -63,8 +65,8 @@ export interface VirtualMachine {
 	admin_domain_task?: string
 	/**	Admin Domain Error : Small Text - A safe summary of the latest admin hostname failure.	*/
 	admin_domain_error?: string
-	/**	Admin Domain Error Log : Link - Error Log - The Error Log for the latest admin hostname failure.	*/
-	admin_domain_error_log?: string
+	/**	Admin Domain Diagnostic : Code - The detail of the latest admin hostname failure. Operators only.	*/
+	admin_domain_diagnostic?: string
 	/**	Atlas Image ID : Data	*/
 	atlas_image_id?: string
 	/**	State Observed At : Datetime - When Central last recorded this server's state.	*/

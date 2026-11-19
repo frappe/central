@@ -5,9 +5,6 @@ from central.errors import build_envelope
 
 def execute() -> None:
 	"""Preserve historical actions without guessing acceptance or regional VM ownership."""
-	# Nullable regional identities stay unset; widening disk precision preserves stored sizes.
-	frappe.reload_doc("central", "doctype", "virtual_machine")
-	frappe.reload_doc("central", "doctype", "resource_action")
 	rows = frappe.get_all(
 		"Resource Action",
 		fields=["name", "title", "resource_id", "owner", "requested_by", "request_key", "status"],

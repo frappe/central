@@ -55,7 +55,16 @@ export interface Forecast {
 	subtotal: number
 	tax_amount: number
 	tax_type: string | null
+	/** The GST named as invoices name it, e.g. "IGST 18%"; null when no GST applies. */
+	tax_label: string | null
+	/** What follows the tax-inclusive total, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
+	tax_note: string | null
+	/** The note for the off-session limit, from the team's tax today; null when not taxed. */
+	limit_tax_note: string | null
 	credit_balance: number
+	/** What is collected after TDS; the shortfall is part of it. */
+	expected_collection: number
+	/** What the card or UPI pays after the wallet, drawn as the bill draws it. */
 	shortfall: number
 	days_remaining: number
 	currency: Currency
@@ -91,6 +100,8 @@ export interface ChargingMethod {
 export interface NextPayment {
 	currency: Currency
 	amount: number
+	/** The tax the amount includes, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
+	tax_note: string | null
 	charge_on: string | null
 	invoice: string | null
 	period_end: string | null
@@ -98,7 +109,17 @@ export interface NextPayment {
 	method: ChargingMethod | null
 	/** Empty blockers is not a promise of success — only that nothing decides otherwise. */
 	will_auto_charge: boolean
+	/** The team pays by hand or is asked to choose: nothing is charged automatically. */
+	debit_held: boolean
 	blockers: PaymentBlocker[]
+	/**
+	 * Set once the open invoice is charged or its payment date has passed. At most one is set,
+	 * except that an overdue invoice with a payment in progress also has `suspends_on`.
+	 */
+	payment_in_progress_since: string | null
+	next_retry_on: string | null
+	suspends_on: string | null
+	suspended_since: string | null
 }
 
 export interface PredebitNotice {
@@ -161,6 +182,10 @@ export interface TrustTier {
 	current: TierLevel | null
 	next: TierLevel | null
 	is_top_tier: boolean
+	/** The limit the server-create check uses, with any manual override. */
+	spending_limit: number
+	/** Monthly cost before tax of everything running now. */
+	running_monthly: number
 	progress: {
 		resources_used: number
 		paid_invoices: number
@@ -188,8 +213,15 @@ export interface ExpiringCredit {
 
 /** credit_ledger row — append-only wallet movement (ADR 0006). */
 export interface CreditLedgerEntry {
+	name: string
 	entry_type: 'Credit' | 'Debit'
 	amount: number
+	/** GST paid on top of a top-up; it later pays invoice GST. */
+	tax_amount: number
+	/** That GST named, e.g. "IGST 18%"; null when the entry has none. */
+	tax_label: string | null
+	/** A top-up booked in the accounting system, so its receipt can be downloaded. */
+	has_receipt: boolean
 	running_balance: number
 	currency: Currency
 	note: string | null
@@ -201,8 +233,7 @@ export interface CreditLedgerEntry {
 // Mirrors the Invoice DocType's status Select options — keep in sync with
 // central/billing/doctype/invoice/invoice.json.
 export type InvoiceStatus =
-	| 'Draft'
-	| 'Open'
+	| 'Outstanding'
 	| 'Paid'
 	| 'Overdue'
 	| 'Waived'
@@ -219,6 +250,10 @@ export interface InvoiceSummary {
 	amount_paid: number
 	currency: Currency
 	due_date: string | null
+	/** Issued in the accounting system, so its PDF can be downloaded. */
+	has_pdf: boolean
+	/** The tax the total includes, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
+	tax_note: string | null
 }
 
 /** One event in an invoice's lifecycle timeline (issued → credits → payment → settled). */
@@ -246,11 +281,21 @@ export interface InvoiceDetail {
 	output_tax_rate: number | null
 	output_tax_amount: number
 	zero_rating_reason: string | null
+	/** The invoice's GST, e.g. "IGST 18%" or "No GST (SEZ)"; null when none applies. */
+	tax_label: string | null
+	/** Why a zero-rated invoice carries no tax, in words. */
+	tax_reason: string | null
 	total: number
 	credit_applied: number
+	/** GST paid with the top-ups the credit came from, so not charged again. */
+	advance_tax_applied: number
 	expected_collection: number
 	amount_paid: number
 	due_date: string | null
+	/** Why the invoice cannot be paid yet. */
+	hold_reason: string | null
+	/** Collection has started, so the invoice can be paid. */
+	is_issued: boolean
 	/** A charge is in flight (or captured, awaiting the settlement webhook). */
 	payment_in_progress: boolean
 	/** The method that settled a Paid invoice (from the capturing attempt). */
@@ -375,6 +420,10 @@ export interface BillingProfile {
 	email?: string | null
 	phone?: string | null
 	gstin?: string | null
+	/** As the GST portal last reported it; blank until checked. */
+	gst_status?: GstStatus | null
+	gst_category?: string | null
+	gst_status_checked_at?: string | null
 	address_line1?: string | null
 	address_line2?: string | null
 	city?: string | null
@@ -387,7 +436,42 @@ export interface BillingProfile {
 	missing_labels?: string[]
 	currency_locked: boolean
 	supported_currencies: Currency[]
+	/** GSTIN on file but not Active: invoices go out as unregistered. */
+	gst_lapsed?: boolean
+	/** An Indian profile with no state: GST is charged as IGST until one is set. */
+	gst_state_missing?: boolean
+	/** The GST rate charged as IGST while the state is missing. */
+	igst_rate?: number | null
+	/** A new server needs a payment method first: no credit covers it. */
+	payment_method_required?: boolean
+	/** What the team's first payment method adds, while the owner has not had it. */
+	welcome_credit?: WelcomeCredit | null
+	/** The team's open free trial, which its first payment method converts. */
+	open_trial?: TeamOpenTrial | null
 }
+
+export interface TeamOpenTrial {
+	state: 'Active' | 'Ended'
+	/** Null when the caller cannot view the server. */
+	server: string | null
+	/** Null for a plain Frappe Cloud trial. */
+	product: string | null
+	product_title: string
+	plan: TrialPlan | null
+}
+
+export interface WelcomeCredit {
+	amount: number
+	currency: Currency
+	validity_days: number
+}
+
+export type GstStatus =
+	| 'Active'
+	| 'Inactive'
+	| 'Suspended'
+	| 'Cancelled'
+	| 'Invalid'
 
 /** get_billing_geo — dropdown feeds for the address form. */
 export interface BillingGeo {
@@ -400,6 +484,18 @@ export interface BillingSettings {
 	team: string
 	min_balance: number
 	spend_alert_threshold: number
+	/** Day of the month, 1 to 10, the card is charged on for the closed month. */
+	payment_day: number
+	/** Changes to the payment day the team can still make this billing cycle. */
+	payment_day_changes_left: number
+	/** The latest day of the month a team can pick as its payment day. */
+	last_payment_day: number
+	/** Changes to the payment day a team can make in one billing cycle. */
+	payment_day_changes_per_cycle: number
+	/** Day of the month on which a team with an unpaid invoice is suspended. */
+	suspension_day: number
+	/** The last payment day that still gets interval retries. A later day gets one retry. */
+	last_payment_day_with_retries: number
 }
 
 /** get_collection_status — collection mode + the "Action Required" banner feed (ADR 0005). */
@@ -409,15 +505,54 @@ export interface CollectionStatus {
 	/** Networks no rail will auto-charge — shown before the customer picks how to pay. */
 	mandate_gap_note?: string | null
 	action_required: boolean
+	/** "Automatic" (Prepaid or Auto Charge) or "Manual"; null while Action Required. */
+	choice: 'Automatic' | 'Manual' | null
+	/** The method charged first when the wallet is short; null when none is saved. */
+	charged_method: string | null
+	/** Whether the team may pick "Pay each invoice yourself" (INR only). */
+	manual_offered: boolean
 	reason: string | null
+	/** Most the team's card or UPI may be charged automatically; null when nothing caps it. */
 	threshold: number | null
 	projected_total: number
+	/** The tax the projected total includes, e.g. "incl. IGST 18%". */
+	tax_note: string | null
+	/** The tax the amounts the limit caps include, e.g. "incl. IGST 18%"; null for a team not taxed. */
+	limit_tax_note: string | null
 	wallet_balance: number
 	shortfall: number
 	currency: Currency
+	/** What to add to the wallet before the next payment date; null when the card or UPI can pay. */
+	top_up_due: TopUpDue | null
 }
 
-export type NotificationCategory = 'Billing' | 'Server' | 'Team'
+/** A top-up the card or UPI limit makes necessary before the payment date (INR only). */
+export interface TopUpDue {
+	/** Credit that lets the wallet pay the whole bill, rounded up to ₹100. */
+	amount: number
+	/** What that credit costs with GST on top; equal to `amount` when no GST applies. */
+	amount_with_gst: number
+	/** ISO payment date. */
+	date: string
+	/** Most the card or UPI may pay automatically; 0 when none is saved. */
+	limit: number
+	has_method: boolean
+	/** Part of the credit's GST pays for earlier purchased credit that had none, so it is more than the gap. */
+	includes_earlier_gst: boolean
+	/** As the reminder email shows them; `amount_with_gst` and `tax_label` are null with no GST, `limit` with no method. */
+	labels: {
+		amount: string
+		amount_with_gst: string | null
+		/** The GST it includes, e.g. "IGST 18%" or "CGST 9% + SGST 9%". */
+		tax_label: string | null
+		payment_date: string
+		limit: string | null
+		/** The tax the amounts the limit caps include; null with no limit or no GST. */
+		limit_tax_note: string | null
+	}
+}
+
+export type NotificationCategory = 'Billing' | 'Server' | 'Team' | 'Trial'
 export type NotificationSeverity = 'Info' | 'Success' | 'Warning' | 'Error'
 
 /** A Team Notification — one item in the console's unified in-app feed. */
@@ -444,10 +579,34 @@ export interface NotificationFeed {
 	has_next_page: boolean
 }
 
-/** get_notification_preferences — per-event-type delivery toggles (0/1), keyed by event. */
-export interface NotificationPreferences {
-	team: string
-	[event: string]: number | string
+export type NotificationFrequency = 'Instant' | 'Daily' | 'Weekly'
+
+export interface NotificationPreference {
+	category: NotificationCategory
+	email_enabled: boolean | number
+	in_app_enabled: boolean | number
+	frequency: NotificationFrequency
+	events: { event_type: string; email_enabled: number }[]
+}
+
+export interface NotificationCatalogEvent {
+	event_type: string
+	title: string
+	severity: NotificationSeverity
+	is_critical: 0 | 1
+}
+
+/** get_user_preferences: saved rows plus the events each category holds. */
+export interface UserNotificationPreferences {
+	time_zone: string
+	digest_hour: number
+	is_team_owner: boolean
+	preferences: NotificationPreference[]
+	catalog: {
+		category: NotificationCategory
+		label: string
+		events: NotificationCatalogEvent[]
+	}[]
 }
 
 /** get_spend_history — the period-ranged reads behind Billing → Reports. */
@@ -455,6 +614,8 @@ export interface SpendMonth {
 	month: string
 	label: string
 	total: number
+	/** Spend before tax, which the spend limit is compared with. */
+	subtotal: number
 	paid: number
 	currency: Currency
 }
@@ -479,6 +640,8 @@ export interface StatementRow {
 	period_start: string
 	period_end: string
 	status: InvoiceStatus
+	due_date: string | null
+	is_issued: boolean
 	total: number
 	tax: number
 	credit_applied: number
@@ -592,3 +755,34 @@ export interface MeteredServices {
 export type PayingForItem =
 	| { kind: 'server'; id: string; cost: number | null; sub: SubscriptionRow }
 	| { kind: 'service'; id: string; cost: number | null; service: ServiceRow }
+
+/** The open free trial of a server's site, from `signups.trial.get_status`. */
+export interface ServerTrial {
+	state: 'Active' | 'Ended'
+	/** An ended trial whose team has a payment method, so it can be kept. */
+	can_keep?: boolean
+	/** The team has a payment method, but the plan is above its spending limit. */
+	held?: boolean
+	ends_on: string
+	days_left: number
+	deletes_on: string | null
+	/** The plan the site converts to, or null when Central has no creation record. */
+	plan: TrialPlan | null
+}
+
+export interface TrialPlan {
+	name: string
+	title: string
+	monthly_rate: number
+	currency: Currency | null
+}
+
+/** A paid plan a trial site may move to when it converts. */
+export interface TrialPlanChoice {
+	name: string
+	title: string
+	/** For example "0.5 vCPU · 2 GB RAM · 40 GB SSD". */
+	specs: string
+	monthly_rate: number
+	currency: Currency
+}

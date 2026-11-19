@@ -1,0 +1,59 @@
+{
+ "actions": [],
+ "creation": "2026-09-27 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "editable_grid": 1,
+ "description": "Where one gateway's money lands in the accounting system, for one currency.",
+ "field_order": [
+  "gateway",
+  "currency",
+  "mode_of_payment",
+  "clearing_account"
+ ],
+ "fields": [
+  {
+   "fieldname": "gateway",
+   "fieldtype": "Link",
+   "label": "Gateway",
+   "options": "Payment Gateway",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "mode_of_payment",
+   "fieldtype": "Data",
+   "label": "Mode of Payment",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "clearing_account",
+   "fieldtype": "Data",
+   "label": "Clearing Account",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "Full account name, for example Stripe Clearing - ABBR."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-27 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Accounting Gateway Account",
+ "owner": "Administrator",
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

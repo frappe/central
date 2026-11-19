@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
 	Avatar,
+	Badge,
 	SettingsBody,
 	SettingsContent,
 	SettingsDialog,
@@ -11,40 +12,29 @@ import {
 	SettingsSidebar,
 } from 'frappe-ui'
 import { computed, watch } from 'vue'
-import { useCapabilities } from '@/composables/useCapabilities'
+import { useMyInvitations } from '@/composables/useMyInvitations'
 import { useMyProfile } from '@/composables/useMyProfile'
 import {
-	SETTINGS_TABS,
-	type SettingsTabDef,
+	SETTINGS_GROUPS,
 	settingsOpen,
 	settingsTab,
+	useSettingsTabs,
 } from '@/composables/useSettings'
 
 // Desktop's settings surface: every tab in one dialog, so nothing is a dead end
 // — you can fix your photo, switch teams and rename one without closing
 // anything. Mobile renders the same tabs as pages (see SettingsDetailPage).
 const { profile } = useMyProfile()
-const { isMember, canEditTeam, canDeleteTeam } = useCapabilities()
-
-const tabs = computed(() =>
-	SETTINGS_TABS.filter((tab) => {
-		if (tab.requires === 'member') return isMember.value
-		if (tab.requires === 'teamAdmin')
-			return canEditTeam.value || canDeleteTeam.value
-		return true
-	}),
-)
+const { availableTabs: tabs } = useSettingsTabs()
+const { count: invitationCount } = useMyInvitations()
 
 // What's yours and what the team's are different kinds of setting, so they get
 // their own sections rather than one long list.
 const groups = computed(() => {
-	const order: SettingsTabDef['group'][] = ['Account', 'Administration']
-	return order
-		.map((group) => ({
-			label: group,
-			items: tabs.value.filter((tab) => tab.group === group),
-		}))
-		.filter((group) => group.items.length > 0)
+	return SETTINGS_GROUPS.map((group) => ({
+		label: group,
+		items: tabs.value.filter((tab) => tab.group === group),
+	})).filter((group) => group.items.length > 0)
 })
 
 // Losing a tab you can no longer reach shouldn't leave an empty content pane.
@@ -82,17 +72,31 @@ watch(tabs, (available) => {
 						<span v-else :class="`${tab.icon} size-4 text-ink-gray-7`" />
 					</template>
 					{{ tab.label }}
+					<template
+						v-if="tab.value === 'invitations' && invitationCount"
+						#suffix
+					>
+						<Badge
+							theme="orange"
+							:label="String(invitationCount)"
+							:aria-label="`${invitationCount} pending`"
+						/>
+					</template>
 				</SettingsNavItem>
 			</SettingsNavGroup>
 		</SettingsSidebar>
 
-		<SettingsContent class="bg-surface-base">
+		<SettingsContent class="min-w-0 bg-surface-base">
 			<SettingsPanel v-for="tab in tabs" :key="tab.value" :value="tab.value">
 				<SettingsHeader
 					class="!px-10 !pt-9"
 					:title="tab.title"
 					:description="tab.description"
-				/>
+				>
+					<template #actions>
+						<div :id="`settings-actions-${tab.value}`" class="contents" />
+					</template>
+				</SettingsHeader>
 				<SettingsBody viewport-class="px-10 pb-16">
 					<component :is="tab.component" />
 				</SettingsBody>

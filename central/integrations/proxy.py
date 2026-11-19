@@ -10,10 +10,24 @@ from atlas_proxy_client.types import Response
 from frappe import _
 
 PROXY_TIMEOUT = 30
+PRE_AUTHORIZE_PATH = "/.well-known/frappe-pre-authorize/"
+PRE_AUTHORIZE_TIMEOUT = 10
 
 
 class ProxyError(frappe.ValidationError):
 	"""The regional proxy refused a route change."""
+
+
+def get_pre_authorized_zone(domain: str) -> str:
+	"""The zone of the proxy that answers for `domain` over HTTP. Empty when no proxy answers."""
+	try:
+		response = httpx.get(f"http://{domain}{PRE_AUTHORIZE_PATH}", timeout=PRE_AUTHORIZE_TIMEOUT)
+	except httpx.HTTPError:
+		return ""
+
+	if response.status_code != 200:
+		return ""
+	return response.text.strip().lower()
 
 
 class ProxyClient:

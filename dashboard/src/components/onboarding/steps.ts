@@ -43,9 +43,8 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
 	},
 	{
 		key: 'billing',
-		title: 'Add your billing details',
-		description:
-			'Invoices use these details, and your country sets the currency.',
+		title: 'Add a payment method',
+		description: 'You can also add one later from Billing.',
 		component: BillingStep,
 		isRequired: false,
 	},

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import frappe
 import stripe
 
-from central.billing.gateways.base import GatewayUnsupported
+from central.billing.gateways.base import GatewayError, GatewayTimeout, GatewayUnsupported
 from central.billing.gateways.stripe_adapter import StripeAdapter
 from central.billing.tests.gateway_contract import GatewayAdapterContract
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -164,12 +164,84 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 			"https://site/api/method/central.billing.payments.webhooks.stripe",
 		)
 
+	def test_get_webhook_reads_url_status_and_events(self):
+		adapter = self.make_adapter()
+		endpoint = frappe._dict(url="https://site/x", status="enabled", enabled_events=["charge.refunded"])
+		with patch.object(stripe.WebhookEndpoint, "retrieve", return_value=endpoint):
+			webhook = adapter.get_webhook("we_1")
+		self.assertEqual(webhook, {"url": "https://site/x", "is_active": True, "events": ["charge.refunded"]})
+
+	def test_an_endpoint_in_another_account_is_not_found(self):
+		from central.billing.gateways.base import WebhookNotFound
+
+		adapter = self.make_adapter()
+		missing = stripe.error.InvalidRequestError("No such webhook endpoint", "id", code="resource_missing")
+		with patch.object(stripe.WebhookEndpoint, "retrieve", side_effect=missing):
+			with self.assertRaises(WebhookNotFound):
+				adapter.get_webhook("we_old")
+
+	def test_update_webhook_events_replaces_the_event_list(self):
+		adapter = self.make_adapter()
+		with patch.object(stripe.WebhookEndpoint, "modify") as modify:
+			adapter.update_webhook_events("we_1", "https://site/x", ["payment_intent.canceled"])
+		modify.assert_called_once()
+		self.assertEqual(modify.call_args.args, ("we_1",))
+		self.assertEqual(modify.call_args.kwargs["enabled_events"], ["payment_intent.canceled"])
+		self.assertEqual(
+			modify.call_args.kwargs["stripe_version"], "2026-08-26.dahlia"
+		)  # per request, pinned
+
 	def test_create_customer_returns_id(self):
 		adapter = self.make_adapter()
 		with patch.object(stripe.Customer, "create", return_value=frappe._dict(id="cus_new")) as create:
 			cid = adapter.create_customer(frappe._dict(name="Team-1", owner_user="a@b.com"))
 		self.assertEqual(cid, "cus_new")
 		self.assertEqual(create.call_args.kwargs["email"], "a@b.com")
+
+	def test_a_rejected_key_raises_a_gateway_error_the_customer_never_sees(self):
+		"""A bad key reaches core billing as GatewayAuthError, and the customer reads a plain message."""
+		from central.billing.gateways.base import GatewayAuthError, customer_safe_gateway_errors
+
+		adapter = self.make_adapter()
+		err = stripe.error.AuthenticationError("Invalid API Key provided: sk_test_****123")
+		with patch.object(stripe.Customer, "create", side_effect=err), self.assertRaises(GatewayAuthError):
+			adapter.create_customer(frappe._dict(name="Team-1", owner_user="a@b.com"))
+
+		with (
+			patch.object(stripe.SetupIntent, "create", side_effect=err),
+			patch.object(frappe, "log_error") as log_error,
+			self.assertRaises(frappe.ValidationError) as raised,
+			customer_safe_gateway_errors(),
+		):
+			adapter.setup_payment_method(
+				frappe._dict(name="Team-1"), {"customer_id": "cus_1", "currency": "USD"}
+			)
+
+		self.assertNotIn("sk_test", str(raised.exception))
+		self.assertIn("payment provider", str(raised.exception))
+		log_error.assert_called_once()
+
+	def test_a_stripe_outage_asks_the_customer_to_try_again(self):
+		from central.billing.gateways.base import customer_safe_gateway_errors
+
+		adapter = self.make_adapter()
+		err = stripe.error.APIConnectionError("Network error")
+		with (
+			patch.object(stripe.PaymentIntent, "create", side_effect=err),
+			patch.object(frappe, "log_error"),
+			self.assertRaisesRegex(frappe.ValidationError, "Try again in a few minutes"),
+			customer_safe_gateway_errors(),
+		):
+			adapter.create_order(100, "USD", "topup-1")
+
+	def test_an_order_keeps_cents_off_the_callers_amount(self):
+		"""create_topup_order spreads these handles over its own major-unit `amount`."""
+		adapter = self.make_adapter()
+		intent = {"id": "pi_1", "client_secret": "s", "amount": 15000}
+		with patch.object(stripe.PaymentIntent, "create", return_value=intent):
+			handles = adapter.create_order(150, "USD", "topup-1")
+		self.assertNotIn("amount", handles)
+		self.assertEqual(handles["amount_in_subunits"], 15000)
 
 	def test_get_mandate_status(self):
 		adapter = self.make_adapter()
@@ -233,6 +305,156 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 		self.assertEqual(out["amount_received"], 5000)
 		self.assertEqual(out["currency"], "eur")
 
+	def test_a_refused_setup_reads_back_the_bank_reason(self):
+		adapter = self.make_adapter()
+		intent = stripe.SetupIntent.construct_from(
+			{
+				"id": "seti_x",
+				"status": "requires_payment_method",
+				"last_setup_error": {
+					"type": "card_error",
+					"code": "card_declined",
+					"decline_code": "generic_decline",
+				},
+			},
+			"sk_test",
+		)
+		with patch.object(stripe.SetupIntent, "retrieve", return_value=intent):
+			out = adapter.read_saved_card("seti_x")
+		self.assertEqual(
+			out, {"setup_error": {"failure_code": "card_declined", "decline_code": "generic_decline"}}
+		)
+
+	def test_an_unfinished_or_refused_setup_reads_as_not_finished(self):
+		adapter = self.make_adapter()
+		for status in ("requires_payment_method", "processing"):
+			intent = stripe.SetupIntent.construct_from({"id": "seti_x", "status": status}, "sk_test")
+			with patch.object(stripe.SetupIntent, "retrieve", return_value=intent):
+				self.assertEqual(adapter.read_finished_setup("seti_x"), {})
+
+	def test_a_finished_setup_reads_back_its_card(self):
+		adapter = self.make_adapter()
+		intent = stripe.SetupIntent.construct_from(
+			{"id": "seti_x", "status": "succeeded", "payment_method": "pm_x", "customer": "cus_x"}, "sk_test"
+		)
+		card = stripe.PaymentMethod.construct_from({"id": "pm_x", "card": {"last4": "4242"}}, "sk_test")
+		with (
+			patch.object(stripe.SetupIntent, "retrieve", return_value=intent),
+			patch.object(stripe.PaymentMethod, "retrieve", return_value=card),
+		):
+			saved = adapter.read_finished_setup("seti_x")
+		self.assertEqual((saved["payment_method"], saved["customer"]), ("pm_x", "cus_x"))
+
+	def test_a_failed_setup_read_is_a_gateway_error(self):
+		from central.billing.gateways.base import GatewayTimeout
+
+		adapter = self.make_adapter()
+		with patch.object(
+			stripe.SetupIntent, "retrieve", side_effect=stripe.error.APIConnectionError("down")
+		):
+			with self.assertRaises(GatewayTimeout):
+				adapter.read_finished_setup("seti_x")
+
+	def test_a_setup_stripe_no_longer_has_reads_as_not_finished(self):
+		adapter = self.make_adapter()
+		missing = stripe.error.InvalidRequestError("No such setupintent", "intent", code="resource_missing")
+		with patch.object(stripe.SetupIntent, "retrieve", side_effect=missing):
+			self.assertEqual(adapter.read_finished_setup("seti_gone"), {})
+
+	def test_any_other_refused_setup_read_is_a_gateway_error(self):
+		from central.billing.gateways.base import GatewayError
+
+		adapter = self.make_adapter()
+		refused = stripe.error.InvalidRequestError("Invalid id", "intent", code="parameter_invalid_empty")
+		with patch.object(stripe.SetupIntent, "retrieve", side_effect=refused):
+			with self.assertRaises(GatewayError):
+				adapter.read_finished_setup("seti_x")
+
+	def test_removing_a_saved_card_detaches_it(self):
+		adapter = self.make_adapter()
+		with patch.object(stripe.PaymentMethod, "detach") as detach:
+			adapter.remove_saved_method("pm_x", customer_reference="cus_x")
+		self.assertEqual(detach.call_args.args, ("pm_x",))
+
+	def test_a_card_already_detached_or_gone_counts_as_removed(self):
+		adapter = self.make_adapter()
+		for error in (
+			stripe.error.InvalidRequestError("No such PaymentMethod: 'pm_x'", "id", code="resource_missing"),
+			stripe.error.InvalidRequestError(
+				"The payment method you provided is not attached to a customer so detachment is impossible.",
+				None,
+			),
+		):
+			with patch.object(stripe.PaymentMethod, "detach", side_effect=error):
+				adapter.remove_saved_method("pm_x", customer_reference="cus_x")
+
+	def test_another_refusal_to_detach_a_card_raises(self):
+		adapter = self.make_adapter()
+		error = stripe.error.InvalidRequestError("Invalid API version", None)
+		with patch.object(stripe.PaymentMethod, "detach", side_effect=error):
+			with self.assertRaises(GatewayError):
+				adapter.remove_saved_method("pm_x", customer_reference="cus_x")
+
+
+class FakeStripeHttp(stripe.HTTPClient):
+	"""Stands in for the stripe client's HTTP layer and records each request."""
+
+	name = "fake"
+
+	def __init__(self, body: dict):
+		super().__init__()
+		self.body = body
+		self.requests = []
+
+	def request(self, method, url, headers, post_data=None, **kwargs):
+		self.requests.append({"method": method, "url": url, "headers": dict(headers)})
+		return frappe.as_json(self.body), 200, {}
+
+	def close(self):
+		pass
+
+
+class TestStripeRealClient(IntegrationTestCase):
+	"""The real stripe client builds each request; only its HTTP layer is stubbed."""
+
+	def setUp(self):
+		self.adapter = StripeAdapter(make_stripe_gateway())
+
+	def send(self, body: dict, call) -> dict:
+		http = FakeStripeHttp(body)
+		with patch.object(stripe, "default_http_client", http):
+			call()
+		self.assertEqual(len(http.requests), 1)
+		return http.requests[0]
+
+	def assert_signed(self, request: dict):
+		from central.billing.gateways.stripe_adapter import STRIPE_API_VERSION
+
+		# assertTrue, so a failure never prints a key from the site config.
+		key = self.adapter.get_credential("api_secret")
+		self.assertTrue(request["headers"]["Authorization"] == f"Bearer {key}")
+		self.assertEqual(request["headers"]["Stripe-Version"], STRIPE_API_VERSION)
+
+	def test_removing_a_saved_card_posts_the_detach(self):
+		request = self.send(
+			{"id": "pm_x", "object": "payment_method"},
+			lambda: self.adapter.remove_saved_method("pm_x", customer_reference="cus_x"),
+		)
+
+		self.assertEqual(request["method"], "post")
+		self.assertTrue(request["url"].endswith("/v1/payment_methods/pm_x/detach"))
+		self.assert_signed(request)
+
+	def test_reading_a_setup_gets_the_setup_intent(self):
+		request = self.send(
+			{"id": "seti_x", "object": "setup_intent", "status": "requires_payment_method"},
+			lambda: self.assertEqual(self.adapter.read_finished_setup("seti_x"), {}),
+		)
+
+		self.assertEqual(request["method"], "get")
+		self.assertTrue(request["url"].endswith("/v1/setup_intents/seti_x"))
+		self.assert_signed(request)
+
 
 class TestIndiaCardMandate(IntegrationTestCase):
 	"""Stripe India registers the mandate an Indian recurring card debit needs, and
@@ -290,3 +512,125 @@ class TestIndiaCardMandate(IntegrationTestCase):
 				"key-2",
 			)
 		self.assertNotIn("mandate", create.call_args.kwargs)
+
+	def test_a_charge_fails_cleanly_when_stripe_rejects_the_mandate(self):
+		method = frappe._dict(gateway_method_id="pm_x", gateway_mandate_id="mandate_x", team="t")
+		error = stripe.error.InvalidRequestError(
+			"The parameter `mandate` is not provided or invalid.", param="mandate"
+		)
+		with patch.object(stripe.PaymentIntent, "create", side_effect=error):
+			result = self.adapter.charge(
+				frappe._dict(name="INV-1", amount=1000, currency="INR", customer_id="cus_x", team="t"),
+				method,
+				"key-3",
+			)
+		self.assertFalse(result.success)
+		self.assertEqual(result.status, "Failed")
+
+	def test_a_reused_charge_key_is_an_unknown_outcome_not_a_decline(self):
+		method = frappe._dict(gateway_method_id="pm_x", team="t")
+		error = stripe.error.IdempotencyError(
+			"Keys for idempotent requests can only be used with the same parameters"
+		)
+		with patch.object(stripe.PaymentIntent, "create", side_effect=error):
+			with self.assertRaises(GatewayTimeout):
+				self.adapter.charge(
+					frappe._dict(name="INV-1", amount=50, currency="USD", customer_id="cus_x", team="t"),
+					method,
+					"key-4",
+				)
+
+	def test_a_mandate_card_is_checked_by_its_mandate_not_a_charge(self):
+		method = frappe._dict(
+			gateway_method_id="pm_x", gateway_mandate_id="mandate_x", gateway_customer_id="cus_x", team="t"
+		)
+		with (
+			patch.object(stripe.Mandate, "retrieve", return_value=frappe._dict(status="active")),
+			patch.object(stripe.PaymentIntent, "create") as create,
+		):
+			validated = self.adapter.validate_payment_method(method)
+		create.assert_not_called()
+		self.assertTrue(validated.success)
+
+	def test_an_inactive_mandate_fails_the_card(self):
+		method = frappe._dict(gateway_method_id="pm_x", gateway_mandate_id="mandate_x", team="t")
+		with patch.object(stripe.Mandate, "retrieve", return_value=frappe._dict(status="inactive")):
+			validated = self.adapter.validate_payment_method(method)
+		self.assertFalse(validated.success)
+		self.assertEqual(validated.failure_code, "mandate_inactive")
+
+	def test_the_check_charge_is_keyed_on_the_method_and_refunded(self):
+		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "succeeded"}, "sk")
+		method = frappe._dict(name="pm-doc", gateway_method_id="pm_x", gateway_customer_id="cus_x", team="t")
+		with (
+			patch.object(stripe.PaymentIntent, "create", return_value=intent) as create,
+			patch.object(stripe.Refund, "create") as refund,
+		):
+			validated = self.adapter.validate_payment_method(method)
+		key = create.call_args.kwargs["idempotency_key"]
+		self.assertTrue(key.endswith(":card-check:pm-doc"))
+		self.assertEqual(refund.call_args.kwargs["idempotency_key"], f"{key}:refund")
+		self.assertTrue(validated.success)
+
+	def test_a_check_charge_waiting_on_the_customer_is_cancelled(self):
+		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "requires_action"}, "sk")
+		method = frappe._dict(name="pm-doc", gateway_method_id="pm_x", team="t")
+		with (
+			patch.object(stripe.PaymentIntent, "create", return_value=intent),
+			patch.object(stripe.PaymentIntent, "cancel") as cancel,
+		):
+			validated = self.adapter.validate_payment_method(method)
+		cancel.assert_called_once()
+		self.assertEqual(cancel.call_args.args, ("pi_x",))
+		self.assertFalse(validated.success)
+		self.assertEqual(validated.failure_code, "check_unfinished")
+
+	def test_a_processing_check_charge_is_reported_not_cancelled(self):
+		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "processing"}, "sk")
+		method = frappe._dict(name="pm-doc", gateway_method_id="pm_x", team="t")
+		with (
+			patch.object(stripe.PaymentIntent, "create", return_value=intent),
+			patch.object(stripe.PaymentIntent, "cancel") as cancel,
+			patch.object(frappe, "log_error") as log_error,
+		):
+			validated = self.adapter.validate_payment_method(method)
+		cancel.assert_not_called()
+		log_error.assert_called_once()
+		self.assertFalse(validated.success)
+		self.assertEqual(validated.failure_code, "check_unfinished")
+
+	def test_a_failed_check_refund_still_proves_the_card(self):
+		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "succeeded"}, "sk")
+		method = frappe._dict(name="pm-doc", gateway_method_id="pm_x", team="t")
+		with (
+			patch.object(stripe.PaymentIntent, "create", return_value=intent),
+			patch.object(stripe.Refund, "create", side_effect=stripe.error.APIError("down")),
+			patch.object(frappe, "log_error") as log_error,
+		):
+			validated = self.adapter.validate_payment_method(method)
+		self.assertTrue(validated.success)
+		log_error.assert_called_once()
+
+	def test_validation_fails_cleanly_when_stripe_rejects_a_missing_mandate(self):
+		method = frappe._dict(gateway_method_id="pm_x", gateway_customer_id="cus_x", team="t")
+		error = stripe.error.InvalidRequestError(
+			"The parameter `mandate` is not provided or invalid.", param="mandate"
+		)
+		with patch.object(stripe.PaymentIntent, "create", side_effect=error):
+			validated = self.adapter.validate_payment_method(method)
+		self.assertFalse(validated.success)
+		self.assertIn("mandate", validated.failure_reason)
+
+	def test_a_declined_card_check_carries_the_decline_code(self):
+		method = frappe._dict(gateway_method_id="pm_x", gateway_customer_id="cus_x", team="t")
+		error = stripe.error.CardError(
+			"Your card has insufficient funds.",
+			param=None,
+			code="card_declined",
+			json_body={"error": {"code": "card_declined", "decline_code": "insufficient_funds"}},
+		)
+		with patch.object(stripe.PaymentIntent, "create", side_effect=error):
+			validated = self.adapter.validate_payment_method(method)
+		self.assertEqual(
+			(validated.failure_code, validated.decline_code), ("card_declined", "insufficient_funds")
+		)

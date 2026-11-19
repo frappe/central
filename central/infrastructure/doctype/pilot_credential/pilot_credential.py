@@ -4,6 +4,7 @@
 import hashlib
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 TOKEN_LENGTH = 48  # hex chars of the opaque bearer token (~192 bits of entropy)
@@ -95,15 +96,18 @@ class PilotCredential(Document):
 		doc.pilot_credential_id = pilot_credential_id
 		doc.team = team
 		doc.audience_id = audience_id
+
 		return doc._issue_token()
 
 	@classmethod
 	def verify(cls, token: str) -> "PilotCredential | None":
 		"""Resolve a bearer token to its usable credential, stamping last_used_at. The
 		auth surface turns a None here into a 401."""
-		token_hash = cls._hash(token) if token else None
-		name = frappe.db.get_value(cls._DOCTYPE_NAME, {"token_hash": token_hash}) if token_hash else None
+		if not token:
+			return None
 
+		token_hash = cls._hash(token)
+		name = frappe.db.get_value(cls._DOCTYPE_NAME, {"token_hash": token_hash})
 		if not name:
 			return None
 
@@ -136,6 +140,13 @@ class PilotCredential(Document):
 	def revoke(self) -> None:
 		if self.status != "Revoked":
 			self.db_set("status", "Revoked")
+
+	@frappe.whitelist(methods=["POST"])
+	def revoke_from_desk(self) -> None:
+		"""Operator action: stop this token from reaching Central, recorded on the credential."""
+		frappe.only_for("System Manager")
+		self.revoke()
+		self.add_comment("Info", _("{0} revoked this credential.").format(frappe.session.user))
 
 	# --- lifecycle joins: driven by the Atlas VM events once they echo the id back ---
 

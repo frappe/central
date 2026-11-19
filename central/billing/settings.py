@@ -26,7 +26,7 @@ SETTINGS = "Billing Settings"
 # would put the simulator's concerns into code that has no business knowing it exists.
 #
 # Nothing here writes. An override changes what a projection *reads*, never what the
-# document holds, so the answer to "what would a 2/5/10 ladder do" costs nobody their
+# document holds, so the answer to "what would a suspension on the 11th do" costs nobody their
 # real configuration.
 _overrides: ContextVar[dict | None] = ContextVar("billing_settings_overrides", default=None)
 
@@ -64,15 +64,41 @@ _MISSING = _Missing()
 
 # The launch grant, seeded once onto a Billing Settings nobody has saved yet. It is
 # a starting point for the accounts team to edit, not a value the code depends on.
-LAUNCH_WELCOME_CREDITS = {"INR": 2500.0, "USD": 25.0}
+LAUNCH_WELCOME_CREDITS = {"INR": 1000.0, "USD": 10.0}
 
 
 def _settings():
 	return frappe.get_cached_doc(SETTINGS)
 
 
+# The smallest charge every gateway we use accepts, per currency. Razorpay takes at least
+# 100 subunits (₹1, $1). Stripe takes at least ₹0.50 or $0.50. Anything above this is charged.
+GATEWAY_MINIMUM_CHARGES = {"INR": 1.0, "USD": 1.0}
+
+
+def minimum_invoice_amount(currency: str | None) -> float:
+	"""The smallest total worth invoicing in `currency`. Zero means no minimum."""
+	for row in _settings().minimum_invoice_amounts:
+		if row.currency == currency:
+			return frappe.utils.flt(row.amount)
+	return 0.0
+
+
+def ensure_minimum_invoice_amounts() -> None:
+	"""Seed the starting minimums if none is set. An operator changes them in Billing Settings."""
+	doc = frappe.get_doc("Billing Settings")
+	if doc.minimum_invoice_amounts:
+		return
+	for currency, amount in GATEWAY_MINIMUM_CHARGES.items():
+		if frappe.db.exists("Currency", currency):
+			doc.append("minimum_invoice_amounts", {"currency": currency, "amount": amount})
+	# The system seeds these defaults during install or a patch, with no user to check.
+	doc.save(ignore_permissions=True)
+	frappe.clear_cache(doctype="Billing Settings")
+
+
 def welcome_credit_amount(currency: str) -> float:
-	"""What a team billed in `currency` is granted on completing its profile.
+	"""What a team billed in `currency` is granted when its first payment method is active.
 
 	Zero when grants are switched off or the currency has no configured amount —
 	callers treat both the same way, by not granting."""
@@ -91,12 +117,14 @@ def provision_teams_as_trial() -> bool:
 	return bool(_settings().provision_teams_as_trial)
 
 
+DEFAULT_PROMOTIONAL_CREDIT_VALIDITY_DAYS = 60
+
+
 def promotional_credit_validity_days() -> int:
-	"""Days a welcome credit stays usable; 0 means it never expires."""
+	"""Days a promotional credit stays usable. Every promotional credit expires."""
 	override = _override("promotional_credit_validity_days")
-	if override is not _MISSING:
-		return frappe.utils.cint(override)
-	return frappe.utils.cint(_settings().promotional_credit_validity_days)
+	days = override if override is not _MISSING else _settings().promotional_credit_validity_days
+	return frappe.utils.cint(days) or DEFAULT_PROMOTIONAL_CREDIT_VALIDITY_DAYS
 
 
 def invoice_due_days() -> int:
@@ -107,12 +135,11 @@ def invoice_due_days() -> int:
 	return frappe.utils.cint(_settings().invoice_due_days)
 
 
-def dunning_retry_days() -> list[int]:
-	"""Days past due on which payment is retried, in order. Empty means no retries."""
-	override = _override("dunning_retry_days")
-	if override is not _MISSING:
-		return _parse_retry_days(override)
-	return _settings().retry_days()
+def dunning_retry_interval_days() -> int:
+	"""Days between payment retries after the payment date. Never less than 1."""
+	override = _override("dunning_retry_interval_days")
+	days = override if override is not _MISSING else _settings().dunning_retry_interval_days
+	return max(1, frappe.utils.cint(days))
 
 
 def billing_details_grace_days() -> int:
@@ -123,16 +150,16 @@ def billing_details_grace_days() -> int:
 	return frappe.utils.cint(_settings().billing_details_grace_days)
 
 
-def suspend_after_days() -> int:
-	"""Days past due before a subscription is suspended."""
-	override = _override("suspend_after_days")
+def suspension_day() -> int:
+	"""Day of the month on which a team with an unpaid invoice is suspended."""
+	override = _override("suspension_day")
 	if override is not _MISSING:
 		return frappe.utils.cint(override)
-	return frappe.utils.cint(_settings().suspend_after_days)
+	return frappe.utils.cint(_settings().suspension_day)
 
 
 def terminate_after_days() -> int:
-	"""Days past due before a subscription is terminated."""
+	"""Days after suspension before termination is due. Termination only alerts an operator."""
 	override = _override("terminate_after_days")
 	if override is not _MISSING:
 		return frappe.utils.cint(override)
@@ -140,7 +167,7 @@ def terminate_after_days() -> int:
 
 
 # Starting points for the snapshot settings; an operator changes them in Billing Settings.
-SNAPSHOT_DEFAULTS = {"daily_snapshot_retention_hours": 48, "free_snapshots_per_server": 2}
+SNAPSHOT_DEFAULTS = {"daily_snapshot_retention_hours": 48, "free_snapshots_per_server": 0}
 
 
 def ensure_snapshot_settings() -> None:
@@ -168,15 +195,40 @@ def free_snapshots_per_server() -> int:
 	return frappe.utils.cint(_settings().free_snapshots_per_server)
 
 
+# A chargeback can arrive up to about 120 days after the charge, and its handler needs
+# the webhook trail; a shorter window would delete what a dispute is matched against.
+MIN_PAYMENT_LOG_RETENTION_DAYS = 180
+
+
 def payment_log_retention_days() -> int:
 	"""Rolling window (days) the gateway logs — Payment Attempt and Webhook Event —
-	are kept before daily pruning."""
-	return frappe.utils.cint(_settings().payment_log_retention_days)
+	are kept before daily pruning. Never below `MIN_PAYMENT_LOG_RETENTION_DAYS`."""
+	return max(frappe.utils.cint(_settings().payment_log_retention_days), MIN_PAYMENT_LOG_RETENTION_DAYS)
 
 
 def default_gst_rate() -> float:
 	"""Output GST rate stamped on a new Indian team's Tax Profile."""
 	return frappe.utils.flt(_settings().default_gst_rate)
+
+
+def gst_status_refresh_days() -> int:
+	"""How old a stored GSTIN status may get before the sweep looks it up again."""
+	return frappe.utils.cint(_settings().gst_status_refresh_days)
+
+
+def gst_status_daily_limit() -> int:
+	"""Most GSTIN lookups the daily sweep makes."""
+	return frappe.utils.cint(_settings().gst_status_daily_limit)
+
+
+def reporting_usd_to_inr() -> float:
+	"""Rate the margin reports turn USD revenue into INR at, or 0 to leave USD out."""
+	return frappe.utils.flt(_settings().reporting_usd_to_inr)
+
+
+def exchange_rate_url() -> str:
+	"""The base URL of the rate API billing reads a month's exchange rate from."""
+	return (_settings().exchange_rate_url or "").strip().rstrip("/")
 
 
 def forecast_notify_ratio() -> float:
@@ -185,6 +237,38 @@ def forecast_notify_ratio() -> float:
 	if override is not _MISSING:
 		return frappe.utils.flt(override) / 100.0
 	return frappe.utils.flt(_settings().forecast_notify_percent) / 100.0
+
+
+def operator_alert_channel() -> str:
+	"""Where operator alerts go: Raven, Email, or Raven and Email."""
+	return _settings().operator_alert_channel
+
+
+def operator_alert_emails() -> list[str]:
+	"""The named addresses that get operator alerts by email."""
+	return _settings().alert_emails()
+
+
+def muted_operator_alerts() -> list:
+	"""The Muted Alerts rows in force now: no end time, or an end time still ahead."""
+	now = frappe.utils.now_datetime()
+	return [
+		row
+		for row in _settings().muted_operator_alerts
+		if not row.until or frappe.utils.get_datetime(row.until) > now
+	]
+
+
+def raven_connection() -> dict | None:
+	"""The Raven site, channel and bot credentials, or None when any one is missing."""
+	doc = _settings()
+	connection = {
+		"site_url": (doc.raven_site_url or "").rstrip("/"),
+		"channel_id": doc.raven_channel_id,
+		"api_key": doc.raven_api_key,
+		"api_secret": doc.get_password("raven_api_secret", raise_exception=False),
+	}
+	return connection if all(connection.values()) else None
 
 
 def ensure_welcome_credit_amounts() -> None:
@@ -207,20 +291,3 @@ def ensure_welcome_credit_amounts() -> None:
 	for currency, amount in LAUNCH_WELCOME_CREDITS.items():
 		settings.append("welcome_credit_amounts", {"currency": currency, "amount": amount})
 	settings.save(ignore_permissions=True)
-
-
-def _parse_retry_days(value) -> list[int]:
-	"""Accept a ladder as a list or as the comma string the document stores."""
-	if isinstance(value, str):
-		parts = [p.strip() for p in value.split(",") if p.strip()]
-	else:
-		parts = list(value or [])
-	days = []
-	for part in parts:
-		try:
-			day = int(part)
-		except (TypeError, ValueError):
-			continue
-		if day not in days:
-			days.append(day)
-	return sorted(days)

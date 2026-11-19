@@ -2,11 +2,10 @@
 # For license information, please see license.txt
 """UPI Autopay mandate lifecycle (issue #08).
 
-A mandate's ceiling is structurally tied to the team's trust-tier cap: the
-mandate is authorised with `max_amount` = the current cap, so a bill can never
-exceed it. A tier promotion that raises the cap requires customer re-consent
-(re-authorisation); until then the team is held at the old ceiling. Cards are
-exempt (off-session, any amount), so only `upi_autopay` methods participate.
+A mandate is authorised for the team's trust-tier cap plus its GST, held to the
+₹15,000 silent-debit ceiling, so a bill at the cap fits. A tier promotion that
+raises this requires customer re-consent (re-authorisation); until then the team
+is held at the old ceiling. Only `UPI Autopay` methods are re-authorised here.
 
 This module never imports a gateway SDK directly — it resolves an adapter
 through the registry, keeping the gateway seam intact (see gateways/base.py).
@@ -15,6 +14,10 @@ through the registry, keeping the gateway seam intact (see gateways/base.py).
 import frappe
 from frappe import _
 
+from central.billing.doctype.billing_profile.billing_profile import normalize_phone, usable_phone
+from central.billing.payments import payments, setup_lockout
+from central.billing.payments.decline import ORDER_MISMATCH, PAYMENT_NOT_AUTHORISED, SIGNATURE_INVALID
+from central.billing.revenue import tax
 from central.billing.states import transition
 
 MANDATE_METHOD = "UPI Autopay"
@@ -30,6 +33,11 @@ UPI_RECURRING_MAX = 100000
 # the value the adapter multiplies up to). Going above it makes order.create reject
 # the mandate with "The max amount may not be greater than 100000000".
 CARD_TOKEN_MAX = 1000000
+
+# A setup order authorises ₹1 (100 paise); the payment on it carries the token.
+SETUP_AUTHORISATION_PAISE = 100
+# Setup orders auto-capture, so the captured payment is the one that is refunded.
+SETUP_PROOF_EVENTS = ("payment.captured",)
 
 
 def team_cap(team: str):
@@ -50,20 +58,18 @@ def last_invoice_amount(team: str):
 
 def upi_eligibility(team: str) -> dict:
 	"""Whether UPI Autopay is usable for a team, given the Rs. 1,00,000 recurring
-	limit. Blocked when the trust-tier cap or the last invoice would breach it."""
-	cap = frappe.utils.flt(team_cap(team))
+	limit. Blocked when the trust-tier cap with GST, or the last invoice, would breach it."""
+	cap = tax.with_output_tax(team, team_cap(team))
 	last = last_invoice_amount(team)
 	reason = None
 	if cap >= UPI_RECURRING_MAX:
-		reason = (
-			f"Your spend cap (₹{cap:,.0f}) is at or above the ₹{UPI_RECURRING_MAX:,.0f} "
-			"UPI Autopay recurring limit — set up a card instead."
-		)
+		reason = _(
+			"Your spend cap with GST (₹{0}) is at or above the ₹{1} UPI Autopay recurring limit. Set up a card instead."
+		).format(f"{cap:,.0f}", f"{UPI_RECURRING_MAX:,.0f}")
 	elif last >= UPI_RECURRING_MAX:
-		reason = (
-			f"Your last invoice (₹{last:,.0f}) is at or above the ₹{UPI_RECURRING_MAX:,.0f} "
-			"UPI Autopay recurring limit — set up a card instead."
-		)
+		reason = _(
+			"Your last invoice (₹{0}) is at or above the ₹{1} UPI Autopay recurring limit. Set up a card instead."
+		).format(f"{last:,.0f}", f"{UPI_RECURRING_MAX:,.0f}")
 	return {
 		"eligible": reason is None,
 		"reason": reason,
@@ -102,8 +108,6 @@ def _ensure_customer(team: str, gateway: str, adapter, customer_id: str | None =
 	"""Reuse-or-create a gateway customer for a mandate setup. Recurring orders
 	need a customer (see payments.ensure_gateway_customer for the why); shared so
 	the card-lifecycle (#05) and mandate (#08) paths provision identically."""
-	from central.billing.payments import payments
-
 	return payments.ensure_gateway_customer(team, gateway, adapter, customer_id)
 
 
@@ -114,7 +118,7 @@ def _require_card_contact(
 	without it Razorpay errors "The contact field is required for recurring links".
 	(UPI Autopay does not need one, so this is only called from the card path.)
 	Returns the customer id to use for the order, which may differ from the input
-	(see the collision case below).
+	(see _switch_to_existing_customer).
 
 	The phone is optional on the billing profile, so the dashboard collects it inline
 	at card setup when missing and passes it here. Use the inline `contact` else the
@@ -124,20 +128,12 @@ def _require_card_contact(
 	if frappe.db.get_value("Payment Gateway", gateway, "adapter_key") != "Razorpay":
 		return customer_id
 	p = (
-		frappe.db.get_value("Billing Profile", team, ["legal_name", "email", "phone"], as_dict=True)
+		frappe.db.get_value(
+			"Billing Profile", team, ["legal_name", "email", "phone", "country"], as_dict=True
+		)
 		or frappe._dict()
 	)
-	contact = str(contact or "").strip()
-	phone = contact or str(p.phone or "").strip()
-	if not phone:
-		frappe.throw(
-			_("A phone number is required to set up automatic payments on this card."),
-			frappe.ValidationError,
-		)
-	# An inline-provided phone is saved to the profile so it's collected only once.
-	# Saved BEFORE the recovery path so gateway_customer_info() below carries it.
-	if contact and contact != str(p.phone or ""):
-		frappe.db.set_value("Billing Profile", team, "phone", contact)
+	phone = _card_phone(team, p, contact)
 
 	try:
 		adapter.update_customer(
@@ -145,44 +141,66 @@ def _require_card_contact(
 		)
 		return customer_id
 	except Exception as e:
-		# Razorpay enforces (email, contact) uniqueness per merchant. If a different
-		# customer already owns this identity (e.g. our stored customer was minted
-		# contactless and the real one already carries the phone), the edit fails
-		# "Customer already exists for the merchant". Swallowing it would leave a
-		# contactless customer and the order would then fail "contact required".
-		# Instead, fetch the customer that already has (email, contact) — create with
-		# fail_existing returns it now that the phone is on the profile — and repoint
-		# our stored row so the recurring order uses the contact-bearing customer.
 		if "already exists" not in str(e).lower():
 			raise
-		from central.billing.payments.payments import gateway_customer_info
+		return _switch_to_existing_customer(team, gateway, adapter, customer_id)
 
-		corrected = adapter.create_customer(gateway_customer_info(team))
-		if corrected and corrected != customer_id:
-			frappe.db.set_value(
-				"Gateway Customer",
-				{"team": team, "gateway": gateway},
-				"gateway_customer_id",
-				corrected,
-			)
-			return corrected
-		return customer_id
+
+def _card_phone(team: str, profile, contact: str | None) -> str:
+	"""The inline `contact`, else the profile's phone. Throws when there is neither."""
+	contact = _inline_phone(contact, profile.country)
+	phone = contact or str(profile.phone or "").strip()
+	if not phone:
+		frappe.throw(
+			_("A phone number is required to set up automatic payments on this card."),
+			frappe.ValidationError,
+		)
+	# An inline-provided phone is saved to the profile so it's collected only once.
+	# Saved BEFORE the recovery path so gateway_customer_info() carries it.
+	if contact and contact != str(profile.phone or ""):
+		frappe.db.set_value("Billing Profile", team, "phone", contact)
+	return phone
+
+
+def _inline_phone(contact: str | None, country: str | None) -> str:
+	"""An inline phone, held to the same rule as one entered on the profile."""
+	contact = str(contact or "").strip()
+	return normalize_phone(contact, country) if contact else contact
+
+
+def _switch_to_existing_customer(team: str, gateway: str, adapter, customer_id: str) -> str:
+	"""Razorpay enforces (email, contact) uniqueness per merchant. If a different
+	customer already owns this identity (e.g. our stored customer was minted
+	contactless and the real one already carries the phone), the edit fails
+	"Customer already exists for the merchant". Swallowing it would leave a
+	contactless customer and the order would then fail "contact required".
+	Instead, fetch the customer that already has (email, contact) — create with
+	fail_existing returns it now that the phone is on the profile — and repoint
+	our stored row so the recurring order uses the contact-bearing customer."""
+	corrected = adapter.create_customer(payments.gateway_customer_info(team))
+	if corrected and corrected != customer_id:
+		frappe.db.set_value(
+			"Gateway Customer",
+			{"team": team, "gateway": gateway},
+			"gateway_customer_id",
+			corrected,
+		)
+		return corrected
+	return customer_id
 
 
 def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_default: int = 0) -> dict:
-	"""Begin UPI Autopay authorisation.
+	"""Begin UPI Autopay authorisation, with the ceiling `payments.mandate_ceiling` gives.
 
-	The ceiling is locked to the team's current trust-tier cap. Refuses when the
-	team is above the UPI recurring limit (cap or last invoice >= Rs. 1,00,000) —
-	the UI hides UPI in that case, this is the server-side backstop. Returns the
-	client-side handles the UI runs Razorpay Checkout against, plus the name of
-	the (pending) Payment Method. No money is moved and no token exists yet.
+	Refuses a team above the UPI recurring limit (cap or last invoice >= Rs. 1,00,000).
+	Returns the Razorpay Checkout handles and the pending Payment Method. No money moves.
 	"""
+	setup_lockout.check(team, frappe.session.user)
 	elig = upi_eligibility(team)
 	if not elig["eligible"]:
 		frappe.throw(elig["reason"], frappe.ValidationError)
 
-	cap = team_cap(team)
+	cap = payments.mandate_ceiling(team, gateway, "INR")
 	adapter = _adapter(gateway)
 	customer_id = _ensure_customer(team, gateway, adapter, customer_id)
 	# UPI Autopay carries no customer contact — no phone needed here.
@@ -201,6 +219,7 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 			"mandate_max_amount": cap,
 			"mandate_currency": "INR",
 			"gateway_customer_id": customer_id,
+			"setup_reference": handles.get("order_id"),
 			"is_default": is_default,
 		}
 	).insert(ignore_permissions=True)
@@ -222,6 +241,7 @@ def setup_card(
 	`contact` is the phone the dashboard collects inline when the profile has none.
 	Returns the client-side handles plus the pending Payment Method name.
 	"""
+	setup_lockout.check(team, frappe.session.user)
 	adapter = _adapter(gateway)
 	customer_id = _ensure_customer(team, gateway, adapter, customer_id)
 	# May return a different (contact-bearing) customer if the held one collided.
@@ -241,6 +261,7 @@ def setup_card(
 			"gateway_customer_id": customer_id,
 			"fallback_reason": fallback_reason,
 			"card_network": "RuPay" if fallback_reason == "Rupay" else None,
+			"setup_reference": handles.get("order_id"),
 		}
 	).insert(ignore_permissions=True)
 
@@ -252,21 +273,154 @@ def setup_card(
 def confirm_mandate(payment_method: str, callback: dict):
 	"""Confirm the Razorpay Checkout callback that authorised the mandate.
 
-	Verifies the checkout-callback signature (distinct from the webhook
-	signature), stores the live token, and flips the method to `active`. A new
-	active mandate retires any sibling active mandate for the same team+gateway
+	1. The checkout-callback signature must be valid (it binds the order and payment ids).
+	2. The callback's order must be the authorisation order Central opened for this method.
+	3. The payment, read from Razorpay, must belong to that order and this method's
+	   customer, and must be authorised or captured. The token is read from it, never
+	   taken from the browser.
+	A new active mandate retires any sibling active mandate for the same team+gateway
 	(the re-authorisation case), so the higher ceiling cleanly supersedes.
+	A method already past validation is returned as it is, so a repeated callback
+	neither activates a refused mandate nor refunds an authorisation twice. The method
+	is locked first, so the setup expiry job and a confirm never both act on it. A
+	mandate authorised after its setup expired has its payment refunded and its token
+	cancelled; the method stays Expired.
 	"""
-	method = frappe.get_doc("Payment Method", payment_method)
+	from central.billing.payments import setup_expiry
+
+	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
+	if method.status != "Pending Validation":
+		setup_expiry.queue_late_release(method)
+		return method
 	adapter = _adapter(method.gateway)
 
 	if not adapter.verify_payment_signature(callback):
-		transition(method, "Failed", actor=frappe.session.user, reason="mandate signature invalid")
-		method.save(ignore_permissions=True)
-		frappe.throw(_("Mandate authorisation signature invalid"), frappe.ValidationError)
+		return _refuse_mandate(method, SIGNATURE_INVALID, "The checkout signature is invalid.")
+	if not method.setup_reference or callback.get("razorpay_order_id") != method.setup_reference:
+		return _refuse_mandate(method, ORDER_MISMATCH, "The callback is for another order.")
+	payment = adapter.get_payment(callback.get("razorpay_payment_id"))
+	if not _is_mandate_payment(method, payment):
+		return _refuse_mandate(method, PAYMENT_NOT_AUTHORISED, "The payment does not authorise this mandate.")
+	return _activate_mandate(method, adapter, payment, actor=frappe.session.user)
 
-	method.gateway_method_id = callback.get("razorpay_token_id") or callback.get("token_id")
-	transition(method, "Active", actor=frappe.session.user)
+
+def activate_proven_mandate(payment_method: str, payment: dict, actor: str):
+	"""Activate a mandate from the gateway's own setup payment, without the browser.
+	A payment that does not match the setup is logged and not acted on."""
+	from central.billing.payments import setup_expiry
+
+	method = frappe.get_doc("Payment Method", payment_method, for_update=True)
+	if method.status != "Pending Validation":
+		_settle_late_proof(method, payment)
+		return method
+	if not is_proven_setup_payment(method, payment):
+		frappe.logger("billing").warning(
+			f"mandate {method.name} not activated: payment {payment.get('id')} does not match its setup"
+		)
+		return method
+	reason = _reason_not_to_activate(method, payment["token_id"])
+	if reason:
+		return setup_expiry.expire_and_release(method.name, reason, actor=actor) or method
+	return _activate_mandate(method, _adapter(method.gateway), payment, actor=actor)
+
+
+def _reason_not_to_activate(method, token_id: str) -> str | None:
+	"""Why a proven setup must not become Active, or None. The browser confirm does not ask."""
+	if _has_live_method_on_token(method, token_id):
+		# The customer retried and finished another setup on the same token first.
+		return "another payment method already holds this token"
+	if _has_newer_mandate(method):
+		# The customer chose another UPI mandate after starting this one; the newest choice wins.
+		return "a newer mandate was confirmed after this setup started"
+	return None
+
+
+def _has_newer_mandate(method) -> bool:
+	"""True when the team has an Active UPI mandate on this gateway, validated after this
+	setup started. Activating this one would retire it. Cards coexist, so they never count."""
+	return method.method_type == MANDATE_METHOD and bool(
+		frappe.db.exists(
+			"Payment Method",
+			{
+				"team": method.team,
+				"gateway": method.gateway,
+				"method_type": MANDATE_METHOD,
+				"status": "Active",
+				"validated_at": [">=", method.creation],
+				"name": ["!=", method.name],
+			},
+		)
+	)
+
+
+def _settle_late_proof(method, payment: dict) -> None:
+	"""Give back the ₹1 of a setup that is no longer pending. An Active mandate confirmed
+	before the capture still owes its refund; a released setup is released."""
+	from central.billing.payments import setup_expiry
+
+	if method.status == "Active" and method.gateway_method_id == payment.get("token_id"):
+		if is_proven_setup_payment(method, payment):
+			_queue_authorisation_refund(method, payment)
+		return
+	setup_expiry.queue_late_release(method)
+
+
+def _has_live_method_on_token(method, token_id: str) -> bool:
+	"""True when another Active or pending method on the gateway already holds the token."""
+	return bool(
+		frappe.db.exists(
+			"Payment Method",
+			{
+				"gateway": method.gateway,
+				"gateway_method_id": token_id,
+				"status": ["in", ["Active", "Pending Validation"]],
+				"name": ["!=", method.name],
+			},
+		)
+	)
+
+
+def apply_setup_payment_event(event) -> str | None:
+	"""Activate the mandate a captured setup payment proves. The method, or None when the
+	payment is for no setup of ours."""
+	if event.event_type not in SETUP_PROOF_EVENTS:
+		return None
+	payload = frappe.parse_json(event.raw_payload) if event.raw_payload else {}
+	payment = ((payload.get("payload") or {}).get("payment") or {}).get("entity") or {}
+	if not payment.get("order_id"):
+		return None
+	name = frappe.db.get_value(
+		"Payment Method", {"gateway": event.gateway, "setup_reference": payment["order_id"]}
+	)
+	if name:
+		activate_proven_mandate(name, payment, actor="webhook")
+	return name
+
+
+def is_proven_setup_payment(method, payment: dict) -> bool:
+	"""True when the payment is this setup's captured ₹1 authorisation, for this team's customer."""
+	return (
+		_is_mandate_payment(method, payment)
+		# Only a captured payment can be refunded, and the refund is always queued.
+		and payment.get("status") == "captured"
+		and bool(method.gateway_customer_id)
+		and round(frappe.utils.flt(payment.get("amount"))) == SETUP_AUTHORISATION_PAISE
+		and (payment.get("currency") or "").upper() == "INR"
+		and _notes_team(payment) in (None, method.team)
+	)
+
+
+def _notes_team(payment: dict) -> str | None:
+	notes = payment.get("notes")
+	return (notes.get("team") or None) if isinstance(notes, dict) else None
+
+
+def _activate_mandate(method, adapter, payment: dict, actor: str):
+	"""Make the mandate Active on its token and refund the authorisation payment."""
+	method.gateway_method_id = payment["token_id"]
+	method.display_label = _mandate_label(method, payment)
+	method.set_instrument_fingerprint(adapter.read_instrument_fingerprint(payment))
+	transition(method, "Active", actor=actor)
 	method.validated_at = frappe.utils.now_datetime()
 	method.reauth_required = 0
 	method.save(ignore_permissions=True)
@@ -275,11 +429,117 @@ def confirm_mandate(payment_method: str, callback: dict):
 	# (the fallback list, #28), so only retire siblings for UPI mandates.
 	if method.method_type == MANDATE_METHOD:
 		_retire_superseded_mandates(method)
-
-	from central.billing.payments import payments
+	_fill_profile_contact(method.team, payment)
 
 	payments.densify_priorities(method.team)  # slot the new method into the fallback order
+	_queue_authorisation_refund(method, payment)
 	method.reload()
+	return method
+
+
+def _fill_profile_contact(team: str, payment: dict) -> None:
+	"""Keep the phone and email the payer gave Razorpay at authorisation, where the billing
+	profile has none. A mandate debit must send both. A phone the gateways refuse is not kept."""
+	if not frappe.db.exists("Billing Profile", team):
+		return
+	profile = frappe.get_doc("Billing Profile", team)
+	missing = _missing_contact(profile, payment)
+	if not missing:
+		return
+
+	profile.update(missing)
+	# A stored field that fails validation must not undo a mandate the gateway registered.
+	profile.save_as_system("fill the payer's contact from a confirmed mandate")
+
+
+def _missing_contact(profile, payment: dict) -> dict:
+	"""The payer's email and usable phone, each only where the profile has none."""
+	missing = {}
+	if not profile.email and payment.get("email"):
+		missing["email"] = payment.get("email")
+	phone = None if profile.phone else usable_phone(str(payment.get("contact") or ""), profile.country)
+	if phone:
+		missing["phone"] = phone
+	return missing
+
+
+def _queue_authorisation_refund(method, payment: dict) -> None:
+	"""Queue the refund of the authorisation payment. It registers the mandate and pays no bill."""
+	if payment.get("status") != "captured":
+		return
+
+	# A savepoint rollback in jobs.each_isolated does not drop a job queued after commit.
+	# That is safe: the ₹1 is owed back whatever happens to the row, and the key is idempotent.
+	frappe.enqueue(
+		"central.billing.payments.mandates.refund_authorisation_payment",
+		payment_method=method.name,
+		payment_id=payment["id"],
+		amount=frappe.utils.flt(payment.get("amount")) / 100,
+		job_id=f"mandate-authorisation-refund::{payment['id']}",
+		deduplicate=True,
+		enqueue_after_commit=True,
+	)
+
+
+def refund_authorisation_payment(payment_method: str, payment_id: str, amount: float) -> None:
+	"""Refund the authorisation payment that registered a mandate.
+
+	1. The refund is keyed on the payment, so a retried job never refunds twice.
+	2. A failure leaves a comment on the method for an operator and fails the job.
+	   The mandate stays active either way.
+	"""
+	method = frappe.get_doc("Payment Method", payment_method)
+	try:
+		refund_authorisation(method, payment_id, amount)
+	except Exception as error:
+		method.add_comment(
+			"Comment", f"Authorisation payment {payment_id} ({amount} INR) was not refunded: {error}"
+		)
+		# The job's own rollback would drop the comment the operator needs.
+		frappe.db.commit()
+		raise
+
+
+def refund_authorisation(method, payment_id: str, amount: float) -> None:
+	"""Refund an authorisation payment, or raise. Keyed on the payment, so a repeat
+	returns the first refund instead of making a second one."""
+	result = _adapter(method.gateway).refund(
+		frappe._dict(gateway_transaction_id=payment_id),
+		amount,
+		reason="Mandate authorisation",
+		idempotency_key=f"mandate-authorisation-{payment_id}",
+	)
+	if not result.success:
+		# nosemgrep: central-untranslated-exception -- an operator reads it in the comment or the Error Log
+		raise frappe.ValidationError(f"Gateway refund status: {result.status}")
+
+
+def _is_mandate_payment(method, payment: dict) -> bool:
+	"""Whether the payment is an authorisation on this method's order and customer, with a token."""
+	return (
+		payment.get("order_id") == method.setup_reference
+		and payment.get("status") in ("authorized", "captured")
+		and bool(payment.get("token_id"))
+		and (not method.gateway_customer_id or payment.get("customer_id") == method.gateway_customer_id)
+	)
+
+
+def _mandate_label(method, payment: dict) -> str:
+	"""How the customer recognises the mandate: the UPI ID, or the card's network and last four digits."""
+	card = payment.get("card") or {}
+	if card.get("last4"):
+		return f"{card.get('network') or 'Card'} ···· {card['last4']}"
+	if payment.get("vpa"):
+		return f"{method.method_type} · {payment['vpa']}"
+	return method.method_type
+
+
+def _refuse_mandate(method, failure_code: str, reason: str):
+	"""Fail the method and return it. It does not raise, so the failure is not rolled back."""
+	method.record_failure({"failure_code": failure_code, "failure_reason": reason})
+	transition(method, "Failed", actor=frappe.session.user, reason=failure_code)
+	# Only billing code changes a method's status; the caller checked billing:manage.
+	method.save(ignore_permissions=True)
 	return method
 
 
@@ -296,38 +556,13 @@ def cancel_mandate(payment_method: str):
 
 
 def reauthorise_mandate(payment_method: str) -> dict:
-	"""Start a fresh authorisation at the team's current (raised) cap.
+	"""Start a fresh authorisation at the ceiling a new mandate gets.
 
-	The existing mandate stays active at its old ceiling until the new one is
-	confirmed — the customer is never left without a working mandate.
+	The flagged mandate is still charged, up to its own maximum, until the new one
+	is confirmed and supersedes it.
 	"""
 	method = frappe.get_doc("Payment Method", payment_method)
 	return setup_mandate(method.team, method.gateway, customer_id=method.gateway_customer_id)
-
-
-# --- cap reconciliation -----------------------------------------------------
-
-
-def active_mandate_ceiling(team: str):
-	"""Highest ceiling among a team's active mandates (None if none active)."""
-	ceilings = frappe.get_all(
-		"Payment Method",
-		filters={"team": team, "method_type": MANDATE_METHOD, "status": "Active"},
-		pluck="mandate_max_amount",
-	)
-	return max(ceilings) if ceilings else None
-
-
-def effective_cap(team: str):
-	"""The cap a mandate team is actually held to: min(tier cap, mandate ceiling).
-
-	A team with no active mandate is bounded purely by its tier cap. A pending
-	re-authorisation keeps the ceiling at the *old* value even after the tier
-	cap rises, so this naturally returns the old ceiling until re-consent.
-	"""
-	cap = team_cap(team)
-	ceiling = active_mandate_ceiling(team)
-	return cap if ceiling is None else min(cap, ceiling)
 
 
 def reauth_pending(team: str) -> bool:
@@ -349,23 +584,42 @@ def reauth_pending(team: str) -> bool:
 def reconcile_mandates_to_cap(team: str):
 	"""After a tier change, flag/clear re-authorisation on active mandates.
 
-	An active mandate whose ceiling is below the new cap needs re-consent (the
-	team is functionally held at the old ceiling until then). A mandate whose
-	ceiling already covers the cap — e.g. after a demotion — is cleared.
-	Returns the list of mandates newly requiring re-authorisation.
+	An active mandate below the ceiling a new mandate would get needs re-consent
+	(it is still charged, up to its own maximum). A mandate that already covers
+	it, e.g. after a demotion, is cleared. The team is asked once, when a mandate
+	is first flagged. Returns the mandates newly flagged.
 	"""
-	cap = team_cap(team)
 	flagged = []
 	for method in frappe.get_all(
 		"Payment Method",
 		filters={"team": team, "method_type": MANDATE_METHOD, "status": "Active"},
-		fields=["name", "mandate_max_amount"],
+		fields=["name", "gateway", "mandate_max_amount", "reauth_required"],
 	):
-		needs = cap > (method.mandate_max_amount or 0)
-		frappe.db.set_value("Payment Method", method.name, "reauth_required", 1 if needs else 0)
-		if needs:
+		if payments.mandate_ceiling(team, method.gateway, "INR") <= (method.mandate_max_amount or 0):
+			frappe.db.set_value("Payment Method", method.name, "reauth_required", 0)
+		elif _has_claimed_reauth(method.name):
 			flagged.append(method.name)
+			_ask_to_reauthorise(team, method.name)
 	return flagged
+
+
+def _has_claimed_reauth(payment_method: str) -> bool:
+	"""Flag the mandate for re-authorisation unless another run did it first. Only the run
+	whose update changes the row asks the team, so two overlapping runs send one notice."""
+	method = frappe.qb.DocType("Payment Method")
+	frappe.qb.update(method).set(method.reauth_required, 1).where(method.name == payment_method).where(
+		method.reauth_required == 0
+	).run()
+	return frappe.db._cursor.rowcount == 1
+
+
+def _ask_to_reauthorise(team: str, payment_method: str):
+	"""Tell the team a mandate needs authorising again."""
+	from central.billing.platform import notifications
+
+	notifications.notify(
+		team, "Mandate Reauth", reference_doctype="Payment Method", reference_name=payment_method
+	)
 
 
 def _retire_superseded_mandates(new_method):
@@ -394,6 +648,21 @@ def _retire_superseded_mandates(new_method):
 _DEAD_MANDATE_STATUSES = ("inactive", "cancelled", "canceled", "revoked", "expired")
 
 
+def _payment_method_for_mandate(mandate_id: str) -> dict | None:
+	"""The Payment Method a gateway's mandate id refers to. Stripe keeps it in
+	gateway_mandate_id; Razorpay has no separate mandate id and reuses the recurring
+	token, gateway_method_id, for the same purpose."""
+	method = frappe.qb.DocType("Payment Method")
+	row = (
+		frappe.qb.from_(method)
+		.select(method.name, method.team)
+		.where((method.gateway_mandate_id == mandate_id) | (method.gateway_method_id == mandate_id))
+		.limit(1)
+		.run(as_dict=True)
+	)
+	return row[0] if row else None
+
+
 def apply_mandate_event(event_name: str) -> dict:
 	"""Mark the Payment Method a gateway mandate event refers to.
 
@@ -410,16 +679,11 @@ def apply_mandate_event(event_name: str) -> dict:
 	mandate_id = mandate.get("id")
 	status = (mandate.get("status") or "").lower()
 
-	method = (
-		frappe.db.get_value(
-			"Payment Method", {"gateway_mandate_id": mandate_id}, ["name", "team"], as_dict=True
-		)
-		if mandate_id
-		else None
-	)
+	method = _payment_method_for_mandate(mandate_id) if mandate_id else None
 	if not method:
 		charges._mark_event(event, "Ignored")
 		return {"handled": False, "reason": "no_method_for_mandate"}
+	event.payment_method = method.name
 	if status not in _DEAD_MANDATE_STATUSES:
 		charges._mark_event(event, "Processed")
 		return {"handled": True, "result": "mandate_still_live", "payment_method": method.name}

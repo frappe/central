@@ -18,6 +18,7 @@ untagged (still billed, just without a project label) on future invoices.
 """
 
 import frappe
+from frappe import _
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import _require_manage, _resolve_team
@@ -75,7 +76,7 @@ def create_project(title: str, team: str | None = None, spending_limit: float = 
 	team = _resolve_team(team, authz.MANAGE)
 	title = (title or "").strip()
 	if not title:
-		frappe.throw("Project needs a title.", frappe.ValidationError)
+		frappe.throw(_("Project needs a title."), frappe.ValidationError)
 	doc = frappe.get_doc(
 		{
 			"doctype": "Project",
@@ -99,7 +100,7 @@ def rename_project(name: str, title: str) -> dict:
 	_require_manage(team)
 	title = (title or "").strip()
 	if not title:
-		frappe.throw("Project needs a title.", frappe.ValidationError)
+		frappe.throw(_("Project needs a title."), frappe.ValidationError)
 	doc = frappe.get_doc("Project", name)
 	doc.title = title
 	doc.save(ignore_permissions=True)

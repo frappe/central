@@ -7,9 +7,8 @@ from frappe.model.document import Document
 
 from central.billing.catalog.subscriptions import end_subscription, provision_service_subscription
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
+from central.services.doctype.service.service import AI_SERVICE, STORAGE_SERVICE
 from central.services.doctype.service_detail.service_detail import ServiceDetail
-
-STORAGE_SERVICE = "storage"
 
 
 class TeamService(Document):
@@ -22,30 +21,43 @@ class TeamService(Document):
 		from frappe.types import DF
 
 		access_key: DF.Data | None
-		add_on_service: DF.Link
+		add_on_service: DF.Literal["storage", "ai"]
 		bucket_name: DF.Data | None
 		endpoint_url: DF.Data | None
-		region: DF.Link
+		external_id: DF.Data | None
+		region: DF.Link | None
 		secret_access_key: DF.Password | None
 		status: DF.Literal["Active", "Suspended"]
 		subscription: DF.Link | None
 		team: DF.Link
 	# end: auto-generated types
 
-	_DOCTYPE_NAME = "Team Service"
-
 	@property
 	def is_bucket(self) -> bool:
 		return self.add_on_service == STORAGE_SERVICE
 
+	@property
+	def is_ai(self) -> bool:
+		return self.add_on_service == AI_SERVICE
+
 	def before_insert(self) -> None:
 		"""Create the bucket, bill it, then let the record save. Cargo answers first, so a
-		record always names a bucket that exists."""
+		record always names a bucket that exists. AI registers the team at Grove first; its keys
+		each call their own geography's gateway, so an AI row has no endpoint."""
+		if self.is_ai:
+			from central.services.ai import register_team
+
+			self.validate_one_ai_service()
+			register_team(self.team)
+			self.subscribe_ai()
+			return
+
 		if not self.is_bucket:
 			return
 
 		if not self.bucket_name:
 			frappe.throw(_("A bucket needs a name."))
+		self.validate_bucket_region()
 		self.validate_bucket_is_unclaimed()
 
 		# Read everything that can refuse first, so a refusal leaves no bucket in Cargo.
@@ -84,7 +96,7 @@ class TeamService(Document):
 			return
 
 		others = {"subscription": self.subscription, "name": ("!=", self.name)}
-		if not frappe.db.exists(self._DOCTYPE_NAME, others):
+		if not frappe.db.exists(self.doctype, others):
 			end_subscription(self.subscription)
 
 	def get_usage(self) -> dict:
@@ -94,6 +106,17 @@ class TeamService(Document):
 	def set_quota(self, size_gib: int, max_objects: int) -> None:
 		"""Cap the bucket in Cargo, which owns and enforces the quota. Zero lifts a cap."""
 		ObjectStorageClient.from_region(self.region).set_quota(self.bucket_name, size_gib, max_objects)
+
+	def get_allowed_origins(self) -> list[str]:
+		"""The websites that may call the bucket from a browser. Cargo owns the list."""
+		receipt = ObjectStorageClient.from_region(self.region).get_allowed_origins(self.bucket_name)
+		return receipt["allowed_origins"]
+
+	def set_allowed_origins(self, origins: list[str]) -> list[str]:
+		"""Replace the websites that may call the bucket from a browser. Returns the list as
+		Cargo stored it: each origin once, lowercase, without a default port."""
+		receipt = ObjectStorageClient.from_region(self.region).set_allowed_origins(self.bucket_name, origins)
+		return receipt["allowed_origins"]
 
 	def rotate_credentials(self) -> None:
 		"""Replace the bucket's key. The old key stops working at once."""
@@ -107,11 +130,41 @@ class TeamService(Document):
 		self.access_key = credentials["access_key"]
 		self.secret_access_key = credentials["secret_access_key"]
 
+	def subscribe_ai(self) -> None:
+		"""Bill the team's AI on the AI plan, once the team has a billing currency."""
+		if self.subscription or not has_billing_currency(self.team):
+			return
+		from central.billing.catalog.plan_setup import AI_PLAN
+
+		subscription = provision_service_subscription(
+			self.team, AI_PLAN, changed_by=self.flags.requested_by or frappe.session.user
+		)
+		self.subscription = subscription["subscription"]
+
 	def validate(self) -> None:
-		if self.status == "Active" and not self.subscription:
+		# AI can be turned on before the team has a billing currency; it is subscribed once it has one.
+		waits_for_currency = self.is_ai and not has_billing_currency(self.team)
+		if self.status == "Active" and not self.subscription and not waits_for_currency:
 			frappe.throw(_("An active service must have a subscription."))
 
+		self.validate_bucket_region()
 		self.validate_bucket_is_unclaimed()
+		self.validate_one_ai_service()
+		self.external_id = self.bucket_name if self.is_bucket else self.team
+
+	def validate_bucket_region(self) -> None:
+		"""The form asks for it through mandatory_depends_on, which the server does not check."""
+		if self.is_bucket and not self.region:
+			frappe.throw(_("A bucket needs a region."), frappe.MandatoryError)
+
+	def validate_one_ai_service(self) -> None:
+		"""A team is one Central Team at Grove, so it has one AI service."""
+		if not self.is_ai:
+			return
+
+		others = {"team": self.team, "add_on_service": AI_SERVICE, "name": ("!=", self.name or "")}
+		if frappe.db.exists(self.doctype, others):
+			frappe.throw(_("Team {0} already has AI.").format(self.team))
 
 	def validate_bucket_is_unclaimed(self) -> None:
 		"""A readable error ahead of the unique constraint, which is what enforces this.
@@ -120,7 +173,7 @@ class TeamService(Document):
 			return
 
 		duplicate = frappe.db.exists(
-			self._DOCTYPE_NAME,
+			self.doctype,
 			{
 				"team": self.team,
 				"bucket_name": self.bucket_name,
@@ -169,7 +222,25 @@ def get_storage_plan() -> str:
 	return plan
 
 
+def has_billing_currency(team: str) -> bool:
+	return bool(frappe.db.get_value("Billing Profile", team, "currency"))
+
+
 def on_doctype_update():
 	frappe.db.add_unique(
 		"Team Service", ["team", "bucket_name"], constraint_name="unique_team_service_bucket"
 	)
+
+
+def billed_subjects(service: str, external_ids: list[str] | None = None) -> dict:
+	"""The Team Services that bill a subscription for `service`, by subject, suspended ones included."""
+	filters = {"add_on_service": service, "subscription": ["is", "set"]}
+	if external_ids is not None:
+		filters["external_id"] = ["in", external_ids]
+	rows = frappe.get_all(
+		"Team Service",
+		filters=filters,
+		fields=["name", "external_id", "team", "subscription", "region", "creation", "usage_read_until"],
+		order_by="name asc",
+	)
+	return {row.external_id: row for row in rows}

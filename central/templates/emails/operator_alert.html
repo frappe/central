@@ -5,16 +5,19 @@
 <tr>
 	<td class="fc-body">
 		{{ ui.heading(_("Billing needs attention")) }}
-		{% set count = alerts | length %}
 		{{ ui.paragraph(
 			_("1 open alert as of this sweep.") if count == 1
 			else _("{0} open alerts as of this sweep.").format(count)
 		) }}
 
-		{{ ui.table(
-			[_("Kind"), _("Reference"), _("Detail")],
-			alerts | map(attribute='row') | list,
-		) }}
+		{% for group in groups %}
+		{{ ui.paragraph("<strong>" ~ group.heading ~ "</strong> (" ~ group.rows|length ~ ")<br>" ~ group.meaning) }}
+		{{ ui.table([_("Reference"), _("Detail")], group.rows) }}
+		{% endfor %}
+
+		{% if hidden %}
+		{{ ui.paragraph(_("{0} more alerts are in the Error Log.").format(hidden)) }}
+		{% endif %}
 	</td>
 </tr>
 {% endblock %}

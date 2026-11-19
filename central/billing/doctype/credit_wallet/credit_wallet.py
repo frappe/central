@@ -30,3 +30,16 @@ class CreditWallet(Document):
 				),
 				frappe.ValidationError,
 			)
+		self.refuse_balance_outside_the_ledger()
+
+	def refuse_balance_outside_the_ledger(self):
+		"""A wallet starts empty, and only a ledger entry moves its balance."""
+		before = self.get_doc_before_save()
+		previous = frappe.utils.flt(before.balance) if before else 0.0
+		if abs(frappe.utils.flt(self.balance) - previous) > 0.001:
+			frappe.throw(
+				frappe._(
+					"Change a wallet's balance by booking a Credit Ledger Entry, not by editing the wallet."
+				),
+				frappe.ValidationError,
+			)

@@ -24,7 +24,7 @@ ledger.
 from dataclasses import asdict, dataclass
 
 import frappe
-from frappe.query_builder import Case
+from frappe.query_builder import Case, Order
 from frappe.query_builder.functions import Count, Sum
 
 # Money is float `Currency` in major units, so an exact `==` is a bug. Anything at or
@@ -35,6 +35,7 @@ TOLERANCE = 0.01
 # invoice older than the window has no attempts to reconcile against and would report a
 # false violation. Audits that read attempts stay inside the window.
 from central.billing import settings
+from central.billing.doctype.payment_attempt.payment_attempt import gateway_hold_active
 
 STUCK_ATTEMPT_MINUTES = 30
 
@@ -79,7 +80,9 @@ def _attempt_cutoff():
 
 
 def check_wallet_matches_ledger() -> list[Violation]:
-	"""`Credit Wallet.balance` == Σ signed `Credit Ledger Entry`, per (team, currency).
+	"""A team's wallet balance equals the sum of its credit ledger entries. If not, the balance the team sees is wrong.
+
+	`Credit Wallet.balance` == Σ signed `Credit Ledger Entry`, per (team, currency).
 
 	The canary for the anchor/ledger split. The anchor is the authoritative balance
 	(maintained under its row lock) and the ledger is the audit trail; if they part
@@ -138,7 +141,9 @@ def check_wallet_matches_ledger() -> list[Violation]:
 
 
 def check_running_balance_chain() -> list[Violation]:
-	"""Each entry's `running_balance` == the previous one ± its own signed amount.
+	"""Each credit ledger entry's running balance follows from the entry before it. If not, an entry was changed, removed or written out of order.
+
+	Each entry's `running_balance` == the previous one ± its own signed amount.
 
 	This is what makes the ledger *self-verifying*: a deleted, reordered or tampered
 	entry breaks the chain even if the final balance happens to add up. Reports only
@@ -180,7 +185,9 @@ def check_running_balance_chain() -> list[Violation]:
 
 
 def check_invoice_line_sum() -> list[Violation]:
-	"""Σ(line items) == `Invoice.subtotal`. Should be impossible; >0 is an assembly bug."""
+	"""An invoice's subtotal equals the sum of its lines. If not, the customer is billed a different amount than the lines show.
+
+	Σ(line items) == `Invoice.subtotal`. Should be impossible; >0 is an assembly bug."""
 	item = frappe.qb.DocType("Invoice Line Item")
 	lines = {
 		r.parent: frappe.utils.flt(r.total)
@@ -217,7 +224,9 @@ def check_invoice_line_sum() -> list[Violation]:
 
 
 def check_paid_invoice_is_covered() -> list[Violation]:
-	"""A `Paid` invoice was covered: `amount_paid` + `credit_applied` >= `total` − TDS.
+	"""A Paid invoice is covered by its card payments and credits. If not, it is marked Paid without the money to back it.
+
+	A `Paid` invoice was covered: card + credit + advance GST >= `total` − TDS.
 
 	Covers both settlement routes: the card path stamps `amount_paid`, the
 	credits-cover-it-in-full path leaves it at zero and stamps `credit_applied`. An
@@ -228,10 +237,24 @@ def check_paid_invoice_is_covered() -> list[Violation]:
 	for inv in frappe.get_all(
 		"Invoice",
 		filters={"status": "Paid", "invoice_type": ["!=", "Cost Report"]},
-		fields=["name", "team", "currency", "total", "tds_amount", "amount_paid", "credit_applied"],
+		fields=[
+			"name",
+			"team",
+			"currency",
+			"total",
+			"tds_amount",
+			"amount_paid",
+			"credit_applied",
+			"advance_tax_applied",
+		],
 	):
 		owed = frappe.utils.flt(inv.total) - frappe.utils.flt(inv.tds_amount)
-		settled = frappe.utils.flt(inv.amount_paid) + frappe.utils.flt(inv.credit_applied)
+		# GST paid with top-ups is part of what settled it, beside the card and the credit.
+		settled = (
+			frappe.utils.flt(inv.amount_paid)
+			+ frappe.utils.flt(inv.credit_applied)
+			+ frappe.utils.flt(inv.advance_tax_applied)
+		)
 		if settled + TOLERANCE < owed:
 			violations.append(
 				Violation(
@@ -252,7 +275,9 @@ def check_paid_invoice_is_covered() -> list[Violation]:
 
 
 def check_one_live_invoice_per_period() -> list[Violation]:
-	"""A team is billed at most once for a period.
+	"""A team has at most one live invoice for a billing period. If not, the team may be billed twice.
+
+	A team is billed at most once for a period.
 
 	The unique index on `period_key` makes this impossible going forward; the audit
 	is what surfaces the duplicates that predate it (the v28 patch flags them rather
@@ -290,7 +315,9 @@ def check_one_live_invoice_per_period() -> list[Violation]:
 
 
 def check_captured_matches_amount_paid() -> list[Violation]:
-	"""`Invoice.amount_paid` <= Σ(attempts that took money). Never more than was captured.
+	"""An invoice never records more paid than the payment gateway captured for it.
+
+	`Invoice.amount_paid` <= Σ(attempts that took money). Never more than was captured.
 
 	This is an **inequality, and deliberately so.** Equality is not assertable today,
 	because `amount_paid` has no defined meaning after a refund. Both of these are real,
@@ -353,7 +380,9 @@ def check_captured_matches_amount_paid() -> list[Violation]:
 
 
 def check_no_stuck_attempts() -> list[Violation]:
-	"""No Payment Attempt sits non-terminal past the threshold.
+	"""Every payment attempt reaches a final result in time. If not, we do not know whether the customer was charged.
+
+	No Payment Attempt sits non-terminal past the threshold.
 
 	An `Initiated` attempt is a charge whose outcome we do not know. Not knowing is a
 	defect, not a resting state ([ADR 0017]): reconciliation must drive every one of
@@ -372,12 +401,24 @@ def check_no_stuck_attempts() -> list[Violation]:
 			detail=f"Attempt still '{a.status}' after {STUCK_ATTEMPT_MINUTES} minutes — "
 			"its outcome at the gateway is unknown and unreconciled.",
 		)
-		for a in frappe.get_all(
-			"Payment Attempt",
-			filters={"status": ["in", IN_FLIGHT], "initiated_at": ["<", stale]},
-			fields=["name", "team", "currency", "amount", "status"],
-		)
+		for a in unheld_attempts_in_flight(stale, ["name", "team", "currency", "amount", "status"])
 	]
+
+
+def unheld_attempts_in_flight(initiated_before, fields: list[str], limit: int = 0) -> list[frappe._dict]:
+	"""Attempts in flight since before `initiated_before` that no gateway hold covers now."""
+	attempt = frappe.qb.DocType("Payment Attempt")
+	query = (
+		frappe.qb.from_(attempt)
+		.select(*(attempt[field] for field in fields))
+		.where(attempt.status.isin(IN_FLIGHT))
+		.where(attempt.initiated_at < initiated_before)
+		.where(~gateway_hold_active(attempt))
+		.orderby(attempt.creation, order=Order.desc)
+	)
+	if limit:
+		query = query.limit(limit)
+	return query.run(as_dict=True)
 
 
 CHECKS = {
@@ -391,12 +432,13 @@ CHECKS = {
 }
 
 
-def audit(only: str | None = None) -> list[Violation]:
-	"""Run every registered check (or one) and return the violations, worst drift first."""
-	keys = [only] if only else list(CHECKS)
+def audit(only: str | None = None, checks: dict | None = None) -> list[Violation]:
+	"""Run every check in a registry (or one) and return the violations, worst drift first."""
+	checks = CHECKS if checks is None else checks
+	keys = [only] if only else list(checks)
 	found: list[Violation] = []
 	for key in keys:
-		_title, fn = CHECKS[key]
+		_title, fn = checks[key]
 		try:
 			found.extend(fn())
 		except Exception:
@@ -410,12 +452,14 @@ def audit(only: str | None = None) -> list[Violation]:
 
 
 def run_invariant_audit() -> dict:
-	"""Daily: assert the money invariants and speak up only when one is broken.
+	"""Daily: assert the money invariants and the readiness checks, and speak up only when one is broken.
 
 	Silence is the success case. A violation is logged with its team and amount so it
 	is actionable without opening a dashboard.
 	"""
-	violations = audit()
+	from central.billing.platform import readiness
+
+	violations = audit() + audit(checks=readiness.CHECKS)
 	if not violations:
 		frappe.logger("billing").info("invariant audit clean")
 		return {"violations": 0, "by_check": {}}

@@ -3,13 +3,14 @@
 """Postpaid two-phase invoice generation (issue #09)."""
 
 import threading
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 
 from central.billing.catalog import subscriptions
+from central.billing.platform.records import save_billing_record
 from central.billing.revenue import credits, invoicing
-from central.billing.revenue.invoicing import run
+from central.billing.revenue.invoicing import lifecycle, run
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
@@ -80,7 +81,7 @@ class TestDraftGeneration(BillingTestBase):
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		inv = frappe.get_doc("Invoice", name)
 
-		self.assertEqual(inv.status, "Draft")
+		self.assertEqual(inv.status, "Outstanding")
 		days = sorted(li.days for li in inv.items)
 		self.assertEqual(days, [9, 9, 12])  # Jun1-9, Jun22-30 (9 each), Jun10-21 (12)
 		amounts = sorted(li.amount for li in inv.items)
@@ -90,9 +91,7 @@ class TestDraftGeneration(BillingTestBase):
 		self.assertEqual(inv.total, 1400.0)
 		self.assertEqual(inv.expected_collection, 1400.0)
 
-	def test_same_day_churn_bills_by_the_hour(self):
-		# Provisioned 09:00 and cancelled 18:00 the same day: a sub-24h run bills its
-		# real hours (9h), not a floored full day.
+	def test_a_server_stopped_on_its_first_day_bills_the_hours_it_ran(self):
 		add_segment(self.sub, "Created", 1000, "2026-06-05 09:00:00")
 		add_segment(self.sub, "Cancelled", None, "2026-06-05 18:00:00")
 
@@ -100,13 +99,23 @@ class TestDraftGeneration(BillingTestBase):
 		inv = frappe.get_doc("Invoice", name)
 		self.assertEqual(len(inv.items), 1)  # cancelled marker is skipped
 		li = inv.items[0]
-		self.assertEqual(li.unit, "hour")
-		self.assertEqual(li.hours, 9.0)
-		self.assertEqual(li.amount, round(9 * 1000 / (30 * 24), 2))
+		self.assertEqual((li.unit, li.hours), ("hour", 9.0))
+		self.assertEqual(li.amount, round(9 * 1000 / 720, 2))
+
+	def test_a_server_created_resized_and_stopped_on_one_day_bills_the_hours_each_plan_ran(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-05 10:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-05 11:00:00")
+		add_segment(self.sub, "Cancelled", None, "2026-06-05 12:00:00")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+		self.assertEqual(
+			sorted((li.rate, li.unit, li.hours) for li in inv.items),
+			[(1000.0, "hour", 1.0), (2000.0, "hour", 1.0)],
+		)
 
 	def test_multiple_resizes_in_a_day_bill_that_day_hourly(self):
-		# 2000 all month; a peak-hours bump to 4000 (09:00) then back (18:00) on Jun 15.
-		# Only Jun 15 goes hourly; the rest of the month stays daily.
+		# 2000 all month; a bump to 4000 (09:00) then back (18:00) on Jun 15.
 		add_segment(self.sub, "Created", 2000, "2026-06-01 00:00:00")
 		add_segment(self.sub, "Plan Changed", 4000, "2026-06-15 09:00:00")
 		add_segment(self.sub, "Plan Changed", 2000, "2026-06-15 18:00:00")
@@ -127,9 +136,7 @@ class TestDraftGeneration(BillingTestBase):
 		# 9h billed at the higher 4000 rate. No double-count, no gap.
 		self.assertEqual(inv.subtotal, 2025.0)
 
-	def test_cross_midnight_churn_bills_both_days_hourly(self):
-		# Bump 23:00 Jun 10 → drop 01:00 Jun 11 (2h, < 24h): the 24h window straddles
-		# midnight, so both dates go hourly even though each has one change.
+	def test_a_resize_on_each_side_of_midnight_bills_both_days_hourly(self):
 		add_segment(self.sub, "Created", 2000, "2026-06-01 00:00:00")
 		add_segment(self.sub, "Plan Changed", 8000, "2026-06-10 23:00:00")
 		add_segment(self.sub, "Plan Changed", 2000, "2026-06-11 01:00:00")
@@ -143,6 +150,66 @@ class TestDraftGeneration(BillingTestBase):
 		# Jun 10 and Jun 11 are excluded from the daily lines (billed hourly instead).
 		daily_days = sum(li.days for li in inv.items if li.unit == "day")
 		self.assertEqual(daily_days, 28)  # 30 days − Jun 10 − Jun 11
+
+	def test_a_mid_day_start_bills_that_day_by_the_hour(self):
+		add_segment(self.sub, "Created", 3000, "2026-06-05 14:00:00")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+		self.assertEqual(
+			sorted((li.unit, li.days or li.hours) for li in inv.items), [("day", 25), ("hour", 10.0)]
+		)
+		self.assertEqual(inv.subtotal, round(25 * 3000 / 30, 2) + round(10 * 3000 / 720, 2))
+
+	def test_a_resize_on_the_first_day_bills_each_plan_the_hours_it_ran(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-05 14:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-05 18:00:00")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+		self.assertEqual(
+			sorted((li.rate, li.unit, li.days or li.hours) for li in inv.items),
+			[(1000.0, "hour", 4.0), (2000.0, "day", 25), (2000.0, "hour", 6.0)],
+		)
+
+	def test_a_mid_day_stop_bills_that_day_by_the_hour(self):
+		add_segment(self.sub, "Created", 3000, "2026-06-01 00:00:00")
+		add_segment(self.sub, "Cancelled", None, "2026-06-20 12:00:00")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+		self.assertEqual(
+			sorted((li.unit, li.days or li.hours) for li in inv.items), [("day", 19), ("hour", 12.0)]
+		)
+
+	def test_a_mid_day_resize_bills_each_plan_the_hours_it_ran(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-10 15:00:00")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+		self.assertEqual(
+			sorted((li.rate, li.unit, li.days or li.hours) for li in inv.items),
+			[(1000.0, "day", 9), (1000.0, "hour", 15.0), (2000.0, "day", 20), (2000.0, "hour", 9.0)],
+		)
+
+	def test_a_mid_day_stop_after_a_resize_bills_that_day_by_the_hour(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-10 15:00:00")
+		add_segment(self.sub, "Cancelled", None, "2026-06-20 12:00:00")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+		self.assertEqual(
+			sorted((li.rate, li.unit, li.days or li.hours) for li in inv.items),
+			[
+				(1000.0, "day", 9),
+				(1000.0, "hour", 15.0),
+				(2000.0, "day", 9),
+				(2000.0, "hour", 9.0),
+				(2000.0, "hour", 12.0),
+			],
+		)
 
 	def test_partial_first_month_billed_for_join_window(self):
 		add_segment(self.sub, "Created", 3000, "2026-06-15 00:00:00")
@@ -249,7 +316,7 @@ class TestOpenAndCollect(BillingTestBase):
 		result = invoicing.open_and_collect(name)
 		inv = frappe.get_doc("Invoice", name)
 		self.assertTrue(result["claimed"])
-		self.assertEqual(inv.status, "Open")
+		self.assertEqual(inv.status, "Outstanding")
 		self.assertEqual(inv.credit_applied, 400.0)
 		self.assertEqual(inv.expected_collection, 600.0)
 		self.assertTrue(inv.due_date)
@@ -297,7 +364,7 @@ class TestOpenAndCollect(BillingTestBase):
 
 		frappe.db.rollback()
 		inv = frappe.get_doc("Invoice", name)
-		self.assertEqual(inv.status, "Open")
+		self.assertEqual(inv.status, "Outstanding")
 		self.assertEqual(inv.credit_applied, 200.0)  # credit applied exactly once
 		# One debit entry for the invoice — no duplicate debit.
 		debits = frappe.get_all(
@@ -305,6 +372,150 @@ class TestOpenAndCollect(BillingTestBase):
 			{"team": TEAM, "entry_type": "Debit", "reference_name": name},
 		)
 		self.assertEqual(len(debits), 1)
+
+
+class TestInvoiceWaitsForThePaymentDay(BillingTestBase):
+	def test_credits_apply_on_opening_and_the_card_waits_for_the_payment_day(self):
+		frappe.db.set_value("Billing Profile", TEAM, "payment_day", 10)
+		credits.purchase(TEAM, 400, "INR")
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+
+		with self.freeze_time("2026-07-01 02:00:00"):
+			invoicing.open_and_collect(name)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.credit_applied, inv.expected_collection), (400.0, 600.0))
+		self.assertEqual(str(inv.payment_date), "2026-07-10")
+		self.assertGreaterEqual(str(inv.due_date), "2026-07-10")
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 0)
+
+
+class TestCreditAddedAfterIssue(BillingTestBase):
+	"""Credit that lands after an invoice is issued pays that invoice, not next month's."""
+
+	def _open_invoice(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		invoicing.open_and_collect(name, collect=False)
+		return name
+
+	def test_credit_that_covers_the_invoice_settles_it(self):
+		name = self._open_invoice()
+		credits.purchase(TEAM, 1000, "INR")
+
+		lifecycle.settle_with_new_credit(TEAM)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Paid", 1000.0, 0.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
+
+	def test_part_credit_waits_in_the_wallet_without_a_method(self):
+		name = self._open_invoice()
+		credits.purchase(TEAM, 400, "INR")
+
+		lifecycle.settle_with_new_credit(TEAM)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual(
+			(inv.status, inv.credit_applied, inv.expected_collection), ("Outstanding", 0.0, 1000.0)
+		)
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 400)
+
+	def test_part_credit_waits_in_the_wallet_even_with_a_method(self):
+		name = self._open_invoice()
+		credits.purchase(TEAM, 400, "INR")
+
+		with (
+			patch("central.billing.payments.collection_mode._has_chargeable_method", return_value=True),
+			patch("central.billing.payments.collection.collect_invoice") as collect,
+		):
+			lifecycle.settle_with_new_credit(TEAM)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual(
+			(inv.status, inv.credit_applied, inv.expected_collection), ("Outstanding", 0.0, 1000.0)
+		)
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 400)
+		collect.assert_not_called()
+
+	def _attempt(self, invoice: str, hold_until=None, status="Initiated"):
+		return frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": invoice,
+				"team": TEAM,
+				"amount": 1000,
+				"currency": "INR",
+				"status": status,
+				"initiated_at": frappe.utils.now_datetime(),
+				"gateway_hold_until": hold_until,
+				"gateway_transaction_id": "pi_late",
+			}
+		).insert(ignore_permissions=True)
+
+	def test_credit_settles_an_invoice_with_a_charge_in_flight(self):
+		name = self._open_invoice()
+		self._attempt(name)
+		credits.purchase(TEAM, 1000, "INR")
+
+		lifecycle.settle_with_new_credit(TEAM)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.expected_collection), ("Paid", 1000.0, 0.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
+
+	def test_credit_settles_an_invoice_whose_debit_the_gateway_holds(self):
+		name = self._open_invoice()
+		self._attempt(name, hold_until=frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=36))
+		credits.purchase(TEAM, 1000, "INR")
+
+		lifecycle.settle_with_new_credit(TEAM)
+
+		self.assertEqual(frappe.db.get_value("Invoice", name, "status"), "Paid")
+
+	def test_a_capture_not_yet_settled_keeps_the_credit_in_the_wallet(self):
+		name = self._open_invoice()
+		self._attempt(name, status="Captured")
+		credits.purchase(TEAM, 1000, "INR")
+
+		self.assertEqual(lifecycle.settle_with_new_credit(TEAM), [{"invoice": name, "applied": 0}])
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 1000)
+
+	def test_the_charge_in_flight_that_captures_later_is_refunded_once(self):
+		from central.billing.gateways.base import RefundResult
+		from central.billing.payments import charges
+
+		name = self._open_invoice()
+		attempt = self._attempt(name)
+		credits.purchase(TEAM, 1000, "INR")
+		lifecycle.settle_with_new_credit(TEAM)
+
+		frappe.db.set_value("Payment Attempt", attempt.name, "status", "Captured")
+		attempt.reload()
+		gateway = MagicMock()
+		gateway.refund.return_value = RefundResult(status="Completed", gateway_refund_id="re_late", raw={})
+		with patch("central.billing.payments.refunds._adapter", return_value=gateway):
+			self.assertFalse(charges._mark_invoice_paid(attempt, 1000, "INR", "pi_late", None))
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual((inv.status, inv.credit_applied, inv.amount_paid), ("Paid", 1000.0, 0.0))
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
+		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt.name, "status"), "Refunded")
+		gateway.refund.assert_called_once()
+		refund = frappe.db.get_value("Refund", {"payment_attempt": attempt.name, "late_capture": 1})
+		notices = frappe.get_all(
+			"Billing Notification Log",
+			filters={"event_type": "Payment Refunded", "reference_name": refund},
+			pluck="message",
+		)
+		self.assertEqual(len(notices), 1)
+		self.assertIn(name, notices[0])
+
+	def test_booking_a_credit_queues_the_settlement(self):
+		with patch("frappe.enqueue") as enqueue:
+			credits.purchase(TEAM, 400, "INR")
+		self.assertEqual(enqueue.call_args.kwargs["team"], TEAM)
 
 
 class TestTerminationCancelsBilling(BillingTestBase):
@@ -341,6 +552,60 @@ class TestTerminationCancelsBilling(BillingTestBase):
 		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)  # headroom freed
 
 
+class TestStatusSaveKeepsLines(BillingTestBase):
+	"""Saving an invoice's status does not write its lines again."""
+
+	def _invoice(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		return frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+
+	def test_a_status_save_leaves_the_lines_alone(self):
+		inv = self._invoice()
+		line_modified = frappe.db.get_value("Invoice Line Item", inv.items[0].name, "modified")
+		with self.freeze_time("2030-01-01 10:00:00"):
+			inv.due_date = "2026-07-07"
+			save_billing_record(inv)
+		self.assertEqual(
+			frappe.db.get_value("Invoice Line Item", inv.items[0].name, "modified"), line_modified
+		)
+
+	def test_a_changed_line_is_still_written(self):
+		inv = self._invoice()
+		inv.items[0].amount = 1
+		save_billing_record(inv)
+		self.assertEqual(frappe.db.get_value("Invoice Line Item", inv.items[0].name, "amount"), 1)
+
+
+class TestServerBillsFromItsStart(BillingTestBase):
+	"""A server bills from the moment it was created, not from that day's midnight."""
+
+	def _server_for(self, created, terminated):
+		with self.freeze_time(created):
+			sub = make_billing_subscription(TEAM, CLUSTER, PLAN, clear_changes=False)
+		server = frappe.get_doc("Virtual Machine", frappe.db.get_value("Subscription", sub, "server_id"))
+		server.status = "Running"
+		server.save(ignore_permissions=True)
+		with self.freeze_time(terminated):
+			server.reload()
+			server.status = "Terminated"
+			server.save(ignore_permissions=True)
+		return sub
+
+	def test_a_server_that_ran_eight_hours_bills_eight_hours(self):
+		sub = self._server_for("2026-06-05 14:30:00", "2026-06-05 22:30:00")
+
+		inv = frappe.get_doc("Invoice", invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30"))
+		self.assertEqual([(li.unit, li.hours) for li in inv.items], [("hour", 8.0)])
+
+	def test_a_backdated_start_opens_at_its_date(self):
+		with self.freeze_time("2026-06-10 15:00:00"):
+			sub = make_billing_subscription(TEAM, CLUSTER, PLAN, start_date="2026-06-05", clear_changes=False)
+		opened = frappe.db.get_value("Subscription Change", {"subscription": sub}, "effective_at")
+		self.assertEqual(str(opened), "2026-06-05 00:00:00")
+
+
 class TestMonthlyBillingRun(BillingTestBase):
 	"""The scheduled entrypoint that drafts + settles the just-closed month."""
 
@@ -357,7 +622,7 @@ class TestMonthlyBillingRun(BillingTestBase):
 
 		# The team's June invoice was drafted and opened (here, credits settle it).
 		inv = frappe.get_doc("Invoice", {"team": TEAM, "period_end": "2026-06-30"})
-		self.assertNotEqual(inv.status, "Draft")
+		self.assertTrue(inv.due_date or inv.status != "Outstanding")
 		self.assertEqual(inv.status, "Paid")
 		self.assertEqual(inv.credit_applied, 1000.0)
 
@@ -370,6 +635,24 @@ class TestMonthlyBillingRun(BillingTestBase):
 		invoicing.run_monthly_billing(today="2026-07-01")
 
 		self.assertEqual(frappe.db.count("Invoice", {"team": TEAM, "period_end": "2026-06-30"}), 1)
+
+	def test_run_records_the_billing_run_of_the_month(self):
+		frappe.db.delete("Billing Run", {"period_end": "2026-06-30"})
+		invoicing.run_monthly_billing(today="2026-07-01")
+		self.assertTrue(frappe.db.exists("Billing Run", "2026-06-30"))
+
+	def test_a_rerun_after_collection_keeps_the_run_state(self):
+		from central.billing.tests.utils import run_enqueued_inline
+
+		frappe.db.delete("Billing Run", {"period_end": "2026-06-30"})
+		invoicing.run_monthly_billing(today="2026-07-01")
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.collect_due_invoices(today="2026-07-01")
+		collected = frappe.db.get_value("Billing Run", "2026-06-30", "status")
+		self.assertNotEqual(collected, "Drafting")
+
+		invoicing.run_monthly_billing(today="2026-07-01")
+		self.assertEqual(frappe.db.get_value("Billing Run", "2026-06-30", "status"), collected)
 
 
 class TestFanOutRun(IntegrationTestCase):
@@ -394,7 +677,8 @@ class TestFanOutRun(IntegrationTestCase):
 		from central.billing.tests.utils import purge_teams
 
 		purge_teams(self.TEAMS)
-		frappe.db.delete("Error Log", {"method": run.BILLING_RUN_FAILURE})
+		for name in frappe.get_all("Error Log", filters={"method": run.BILLING_RUN_FAILURE}, pluck="name"):
+			frappe.delete_doc("Error Log", name, ignore_permissions=True)
 		frappe.db.commit()
 
 	def test_one_failing_team_does_not_take_the_run_down(self):
@@ -417,8 +701,10 @@ class TestFanOutRun(IntegrationTestCase):
 
 		# The casualty is logged under the one title an operator can count.
 		self.assertTrue(
-			frappe.db.exists(
-				"Error Log", {"method": run.BILLING_RUN_FAILURE, "reference_name": "team-fanout-b"}
+			frappe.get_all(
+				"Error Log",
+				limit=1,
+				filters={"method": run.BILLING_RUN_FAILURE, "reference_name": "team-fanout-b"},
 			)
 		)
 
@@ -489,7 +775,18 @@ class TestFanOutRun(IntegrationTestCase):
 		self.assertGreaterEqual(drafting["pages"], 1)
 		for team in self.TEAMS:
 			inv = frappe.get_doc("Invoice", {"team": team, "period_end": "2026-06-30"})
-			self.assertNotEqual(inv.status, "Draft")
+			self.assertTrue(inv.due_date or inv.status != "Outstanding")
+
+	def test_a_sweep_before_the_draft_tick_does_not_stop_the_draft(self):
+		from central.billing.tests.utils import run_enqueued_inline
+
+		frappe.db.delete("Billing Run", {"period_end": "2026-06-30"})
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.collect_due_invoices(today="2026-07-01")
+			run.draft_monthly_invoices(today="2026-07-01")
+
+		for team in self.TEAMS:
+			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
 
 	def test_collection_tick_alone_settles_nothing(self):
 		# Order matters: the collect tick only ever touches drafts that already exist,
@@ -514,17 +811,17 @@ class TestFanOutRun(IntegrationTestCase):
 		frappe.db.commit()
 		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
 			run.collect_due_invoices(today="2026-07-01")
-		self.assertNotEqual(frappe.db.get_value("Invoice", {"team": "team-fanout-a"}, "status"), "Draft")
+		self.assertTrue(frappe.db.get_value("Invoice", {"team": "team-fanout-a"}, "due_date"))
 
 		# Drafting catches up after the first sweep — team-b is now a Draft.
 		run.draft_team_invoice("team-fanout-b", "2026-06-01", "2026-06-30")
 		frappe.db.commit()
-		self.assertEqual(frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "status"), "Draft")
+		self.assertFalse(frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "due_date"))
 
 		# The next daily sweep collects it — nothing is stranded.
 		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
 			run.collect_due_invoices(today="2026-07-01")
-		self.assertNotEqual(frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "status"), "Draft")
+		self.assertTrue(frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "due_date"))
 
 	def test_the_sweep_takes_every_closed_period_draft_not_one_exact_month(self):
 		# period_end <= cutoff, not ==: a draft an earlier run left behind in an older
@@ -629,8 +926,10 @@ class TestFanOutRun(IntegrationTestCase):
 		for team in self.TEAMS:
 			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
 		self.assertFalse(
-			frappe.db.exists(
-				"Error Log", {"method": run.BILLING_RUN_FAILURE, "reference_name": "team-fanout-b"}
+			frappe.get_all(
+				"Error Log",
+				limit=1,
+				filters={"method": run.BILLING_RUN_FAILURE, "reference_name": "team-fanout-b"},
 			)
 		)
 
@@ -649,8 +948,10 @@ class TestFanOutRun(IntegrationTestCase):
 
 		self.assertEqual(blocked.call_count, run.CONTENTION_RETRIES)
 		self.assertTrue(
-			frappe.db.exists(
-				"Error Log", {"method": run.BILLING_RUN_FAILURE, "reference_name": "team-fanout-a"}
+			frappe.get_all(
+				"Error Log",
+				limit=1,
+				filters={"method": run.BILLING_RUN_FAILURE, "reference_name": "team-fanout-a"},
 			)
 		)
 

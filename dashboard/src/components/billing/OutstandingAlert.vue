@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { Alert } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useInvoices } from '@/composables/useInvoices'
 import { billingPeriod } from '@/lib/date'
 import { formatDate, money, plural } from '@/lib/format'
+import { invoiceToOpen } from '@/lib/invoiceToOpen'
 import { attemptStory } from '@/lib/status'
 import type { PaymentAttempt, Statement } from '@/types/billing'
 
@@ -12,6 +14,7 @@ const props = defineProps<{
 	attempts: PaymentAttempt[] | null
 }>()
 const router = useRouter()
+const { invoices } = useInvoices()
 
 const currency = computed(() => props.statement?.currency ?? 'INR')
 const earlier = computed(() =>
@@ -20,12 +23,17 @@ const earlier = computed(() =>
 const outstanding = computed(
 	() => Number(props.statement?.closing_outstanding ?? 0) + earlier.value,
 )
-const openRows = computed(() =>
+const unsettledRows = computed(() =>
 	(props.statement?.rows ?? []).filter(
-		(r) => r.status === 'Open' || r.status === 'Overdue',
+		(r) => r.status === 'Outstanding' || r.status === 'Overdue',
 	),
 )
+// Only an issued invoice is owed. One not issued yet is still being prepared.
+const openRows = computed(() => unsettledRows.value.filter((r) => r.is_issued))
 const hasOutstanding = computed(() => outstanding.value > 0)
+const allHeld = computed(
+	() => unsettledRows.value.length > 0 && openRows.value.length === 0,
+)
 const isOverdue = computed(() =>
 	openRows.value.some((r) => r.status === 'Overdue'),
 )
@@ -64,31 +72,92 @@ const title = computed(() => {
 				: `on ${plural(rows.length, 'open invoice')}`
 	const andEarlier =
 		earlier.value > 0 && rows.length ? ' and earlier invoices' : ''
-	const s = story.value
-	const inFlight = s.inFlight ?? preWindowInFlight.value
-	if (inFlight)
-		return `${head} ${label}${andEarlier} · payment processing since ${formatDate(inFlight.at)}`
-	if (s.failed)
-		return `${head} ${label}${andEarlier} · ${plural(s.failed, 'failed attempt')}`
 	return `${head} ${label}${andEarlier}`
+})
+const detail = computed(() => {
+	const inFlight = story.value.inFlight ?? preWindowInFlight.value
+	if (inFlight) return `Payment processing since ${formatDate(inFlight.at)}.`
+	if (story.value.failed)
+		return `${plural(story.value.failed, 'payment attempt')} failed. Pay now to keep your servers running.`
+	return isOverdue.value ? 'Pay now to keep your servers running.' : ''
+})
+
+// The statement holds only Billable invoices. An issued invoice always has a
+// due date.
+const statementInvoices = computed(() =>
+	(props.statement?.rows ?? []).map((r) => ({
+		name: r.invoice,
+		status: r.status,
+		period_start: r.period_start,
+		due_date: r.due_date,
+		invoice_type: 'Billable',
+	})),
+)
+
+// Both sources together, so a list out of step with the statement cannot hide
+// an overdue invoice. The statement copy wins, as it drives this banner.
+const owedInvoices = computed(() => {
+	const fromStatement = new Set(statementInvoices.value.map((r) => r.name))
+	return [
+		...statementInvoices.value,
+		...invoices.value.filter((r) => !fromStatement.has(r.name)),
+	]
 })
 
 const action = computed(() => ({
 	label:
-		props.attempts === null || story.value.inFlight || preWindowInFlight.value
+		props.attempts === null ||
+		story.value.inFlight ||
+		preWindowInFlight.value ||
+		allHeld.value
 			? 'View invoice'
 			: 'Pay now',
 	onClick: () => {
-		router.push({ name: 'BillingInvoices' })
+		const invoice = invoiceToOpen(owedInvoices.value)
+		router.push({
+			name: 'BillingInvoices',
+			query: invoice ? { invoice } : {},
+		})
 	},
 }))
 </script>
 
 <template>
-	<Alert
+	<section
 		v-if="hasOutstanding"
-		:title="title"
-		:theme="isOverdue ? 'red' : 'amber'"
-		:primary-action="action"
-	/>
+		role="alert"
+		class="flex flex-wrap items-center gap-3.5 rounded-6 border px-4 py-3.5"
+		:class="
+			isOverdue
+				? 'border-outline-red-2 bg-surface-red-1'
+				: 'border-outline-amber-2 bg-surface-amber-1'
+		"
+	>
+		<span
+			class="grid size-8 shrink-0 place-items-center rounded-4"
+			:class="isOverdue ? 'bg-surface-red-2' : 'bg-surface-amber-2'"
+		>
+			<span
+				class="lucide-circle-alert size-4"
+				:class="isOverdue ? 'text-ink-red-6' : 'text-ink-amber-6'"
+				aria-hidden="true"
+			/>
+		</span>
+		<div class="min-w-0 flex-[1_1_20rem]">
+			<p
+				class="text-p-base-medium"
+				:class="isOverdue ? 'text-ink-red-8' : 'text-ink-amber-8'"
+			>
+				{{ title }}
+			</p>
+			<p
+				v-if="detail"
+				class="mt-0.5 text-p-sm"
+				:class="isOverdue ? 'text-ink-red-6' : 'text-ink-amber-6'"
+			>
+				{{ detail }}
+			</p>
+		</div>
+		<Button variant="solid" :label="action.label" @click="action.onClick" />
+	</section>
 </template>

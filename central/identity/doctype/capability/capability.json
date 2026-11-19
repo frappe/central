@@ -53,14 +53,9 @@
    "link_fieldname": "capability",
    "parent_doctype": "Team Role",
    "table_fieldname": "capabilities"
-  },
-  {
-   "group": "Diagnostics",
-   "link_doctype": "IAM Permission Probe",
-   "link_fieldname": "capability"
   }
  ],
- "modified": "2026-06-08 00:00:00.000000",
+ "modified": "2026-10-10 10:27:25.616292",
  "modified_by": "Administrator",
  "module": "Identity",
  "name": "Capability",
@@ -87,5 +82,6 @@
  "sort_field": "name",
  "sort_order": "ASC",
  "states": [],
- "title_field": "capability"
+ "title_field": "capability",
+ "track_changes": 1
 }

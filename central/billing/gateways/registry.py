@@ -28,7 +28,9 @@ def resolve_gateway_for_currency(currency: str) -> str:
 	for name in names:
 		if frappe.db.get_value("Payment Gateway", name, "is_enabled"):
 			return name
-	raise GatewayNotFound(f"No enabled payment gateway is configured as the default for {currency}.")
+	raise GatewayNotFound(
+		_("No enabled payment gateway is configured as the default for {0}.").format(currency)
+	)
 
 
 def supported_currencies() -> list[str]:
@@ -49,6 +51,12 @@ def get_adapter(gateway) -> GatewayAdapter:
 	PayPal is a directly-settled standalone gateway (ADR 0007, superseding ADR 0005):
 	its own merchant account settles us, so top-ups carry native PayPal capture ids
 	that the reconciliation job (#21) matches against PayPal's ledger."""
+	return adapter_class(gateway.adapter_key)(gateway)
+
+
+def adapter_class(adapter_key: str) -> type[GatewayAdapter]:
+	"""The adapter class for an adapter key, for work that needs no credentials, such as
+	reading a webhook body that was already verified."""
 	from central.billing.gateways.paypal_adapter import PayPalAdapter
 	from central.billing.gateways.razorpay_adapter import RazorpayAdapter
 	from central.billing.gateways.stripe_adapter import StripeAdapter
@@ -58,9 +66,6 @@ def get_adapter(gateway) -> GatewayAdapter:
 		"Razorpay": RazorpayAdapter,
 		"Paypal": PayPalAdapter,
 	}
-
-	adapter_class = adapters.get(gateway.adapter_key)
-	if not adapter_class:
-		frappe.throw(_("No GatewayAdapter registered for adapter_key '{0}'").format(gateway.adapter_key))
-
-	return adapter_class(gateway)
+	if adapter_key not in adapters:
+		frappe.throw(_("No GatewayAdapter registered for adapter_key '{0}'").format(adapter_key))
+	return adapters[adapter_key]

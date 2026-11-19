@@ -1,0 +1,197 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-17 12:00:00.000000",
+ "description": "One subject's usage of one meter on one UTC day, as its service reported it. The monthly Usage Rollup is computed from these rows (ADR 0026).",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "service",
+  "meter",
+  "subject",
+  "dimension",
+  "day",
+  "aggregation",
+  "column_break_who",
+  "team",
+  "subscription",
+  "resource_type",
+  "section_quantity",
+  "quantity",
+  "unit",
+  "source_amount",
+  "source_currency",
+  "column_break_when",
+  "as_of",
+  "landed_at",
+  "estimated",
+  "invoice",
+  "written_off"
+ ],
+ "fields": [
+  {
+   "fieldname": "service",
+   "fieldtype": "Link",
+   "label": "Service",
+   "options": "Service",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "meter",
+   "fieldtype": "Data",
+   "label": "Meter",
+   "reqd": 1
+  },
+  {
+   "fieldname": "subject",
+   "fieldtype": "Data",
+   "label": "Subject",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "The bucket, or the Grove team and model, as the service names it."
+  },
+  {
+   "fieldname": "dimension",
+   "fieldtype": "Data",
+   "label": "Dimension",
+   "not_nullable": 1,
+   "in_standard_filter": 1,
+   "description": "What a service splits a subject's usage by, such as the AI model. Blank when it does not."
+  },
+  {
+   "fieldname": "day",
+   "fieldtype": "Date",
+   "label": "Day (UTC)",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "aggregation",
+   "fieldtype": "Select",
+   "label": "Aggregation",
+   "options": "Level\nSum",
+   "reqd": 1,
+   "description": "Level: the day's peak. Sum: the day's total."
+  },
+  {
+   "fieldname": "column_break_who",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "label": "Team",
+   "options": "Team",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "subscription",
+   "fieldtype": "Link",
+   "label": "Subscription",
+   "options": "Subscription",
+   "reqd": 1
+  },
+  {
+   "fieldname": "resource_type",
+   "fieldtype": "Link",
+   "label": "Resource Type",
+   "options": "Resource Type"
+  },
+  {
+   "fieldname": "section_quantity",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "quantity",
+   "fieldtype": "Float",
+   "label": "Quantity",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "unit",
+   "fieldtype": "Data",
+   "label": "Unit"
+  },
+  {
+   "fieldname": "source_amount",
+   "fieldtype": "Float",
+   "label": "Source Amount",
+   "description": "The service's own price for the day, when it prices usage (Grove, in USD)."
+  },
+  {
+   "fieldname": "source_currency",
+   "fieldtype": "Link",
+   "label": "Source Currency",
+   "options": "Currency"
+  },
+  {
+   "fieldname": "column_break_when",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "as_of",
+   "fieldtype": "Datetime",
+   "label": "Read At",
+   "description": "When the service took the reading."
+  },
+  {
+   "fieldname": "landed_at",
+   "fieldtype": "Datetime",
+   "label": "Landed At",
+   "description": "When Central last wrote this row."
+  },
+  {
+   "fieldname": "estimated",
+   "fieldtype": "Check",
+   "label": "Estimated",
+   "default": "0",
+   "description": "No reading came for this day, so Central used the last one."
+  },
+  {
+   "fieldname": "invoice",
+   "fieldtype": "Link",
+   "label": "Invoice",
+   "options": "Invoice",
+   "description": "The invoice that billed this day. A billed day is never changed."
+  },
+  {
+   "fieldname": "written_off",
+   "fieldtype": "Check",
+   "label": "Written Off",
+   "default": "0",
+   "description": "Usage from before the service started billing. Kept as a record, never billed."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-18 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Usage Day",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 0
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

@@ -7,6 +7,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api import servers
+from central.billing.tests.utils import make_plan
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
@@ -65,6 +66,23 @@ class TestRegistry(IntegrationTestCase):
 
 		self.assertNotIn(name, {row["name"] for row in servers.registry(self.team)["sites"]})
 
+	def test_a_server_lists_with_its_plan_title(self):
+		plan = make_plan("zz-registry-plan", title="Growth")
+		frappe.get_doc(
+			{
+				"doctype": "Virtual Machine",
+				"resource_id": "server-zz-registry-plan",
+				"team": self.team,
+				"region": self.cluster,
+				"status": "Running",
+				"plan": plan,
+			}
+		).insert()
+
+		rows = {row["resource_id"]: row for row in servers.registry(self.team)["servers"]}
+
+		self.assertEqual(rows["server-zz-registry-plan"]["plan_title"], "Growth")
+
 
 class TestServerHostnames(IntegrationTestCase):
 	"""server_hostnames() lists what a server answers, so terminate can say what stops working."""
@@ -121,6 +139,33 @@ class TestServerHostnames(IntegrationTestCase):
 				{"hostname": "shop.example.com", "kind": "Custom domain"},
 			],
 		)
+
+	def test_a_renamed_site_shows_once_at_its_new_address(self):
+		site = frappe.get_doc(
+			{
+				"doctype": "Site",
+				"site_name": f"site-abc.{self.zone}",
+				"subdomain": "acme",
+				"renamed_at": frappe.utils.now_datetime(),
+				"team": self.team,
+				"server": self.server.name,
+			}
+		).insert(ignore_permissions=True)
+		for domain in (site.name, f"acme.{self.zone}"):
+			frappe.get_doc(
+				{
+					"doctype": "Site Domain",
+					"domain": domain,
+					"route_type": "Site",
+					"team": self.team,
+					"region": self.cluster,
+					"server": self.server.name,
+				}
+			).insert(ignore_permissions=True)
+
+		hostnames = servers.server_hostnames(self.team, self.server.resource_id)
+
+		self.assertEqual(hostnames, [{"hostname": f"acme.{self.zone}", "kind": "Site"}])
 
 	def test_a_user_outside_the_team_is_refused(self):
 		frappe.set_user(ensure_user("hostnames.outsider@example.test"))

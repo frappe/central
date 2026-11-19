@@ -8,6 +8,7 @@ Top-ups credit the wallet only after the gateway confirms the money moved
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
@@ -22,7 +23,13 @@ from central.billing.api.dashboard._shared import (
 	_resolve_team,
 	_team_currency,
 )
-from central.billing.revenue import credits
+from central.billing.doctype.billing_profile.billing_profile import get_payment_date
+from central.billing.doctype.invoice.invoice import is_issued
+from central.billing.doctype.top_up_order.top_up_order import TopupOrder
+from central.billing.gateways.base import VerifiedPayment
+from central.billing.payments import setup_lockout
+from central.billing.revenue import credits, tax
+from central.billing.revenue.invoicing import wallet_draw
 
 
 @frappe.whitelist()
@@ -53,12 +60,12 @@ def get_forecast(team: str | None = None) -> dict:
 	subtotal = frappe.utils.flt(invoice.get("subtotal"))
 	projected_total = frappe.utils.flt(invoice.get("total"))
 	credit_balance = frappe.utils.flt(credits.get_balance(team)["balance"])
-	shortfall = max(0.0, frappe.utils.flt(projected_total - credit_balance, 2))
 	currency = projection["currency"] or _team_currency(team)
-	tax = {
-		"output_tax_amount": frappe.utils.flt(invoice.get("output_tax_amount")),
-		"output_tax_type": invoice.get("output_tax_type"),
-	}
+	tax_amount = frappe.utils.flt(invoice.get("output_tax_amount"))
+	collectable = frappe.utils.flt(invoice.get("expected_collection"))
+	# This month's bill is charged on next month's payment date.
+	pay_on = get_payment_date(team, frappe.utils.add_days(month_end, 1))
+	shortfall = wallet_draw.get_wallet_shortfall(team, currency, collectable, tax_amount, pay_on)
 
 	return {
 		"period_start": str(month_start),
@@ -75,9 +82,12 @@ def get_forecast(team: str | None = None) -> dict:
 		"measured": frappe.utils.flt(invoice.get("measured")),
 		"estimated": frappe.utils.flt(invoice.get("estimated")),
 		"has_estimates": bool(invoice.get("has_estimates")),
-		"tax_amount": tax["output_tax_amount"],
-		"tax_type": tax["output_tax_type"],
+		"tax_amount": tax_amount,
+		"tax_type": invoice.get("output_tax_type"),
+		**_tax_names(team, projection["invoice"]),
 		"credit_balance": credit_balance,
+		# What is collected after TDS, the amount the shortfall is measured against.
+		"expected_collection": collectable,
 		"shortfall": shortfall,
 		"days_remaining": (month_end - today).days,
 		"currency": currency,
@@ -85,6 +95,17 @@ def get_forecast(team: str | None = None) -> dict:
 		"credit_alert": shortfall > 0,
 		# Spell out each service/plan + metered overage driving the projection.
 		"line_items": [_describe_line(team, frappe._dict(li)) for li in line_items],
+	}
+
+
+def _tax_names(team: str, invoice: dict | None) -> dict:
+	"""Names the forecast's tax from the projected bill it totals, None without one. The
+	limit note stays on the team's tax today: it describes an off-session limit, not this bill."""
+	names = tax.TaxNames(team)
+	return {
+		"tax_label": names.label(invoice) if invoice else None,
+		"tax_note": names.note(invoice) if invoice else None,
+		"limit_tax_note": tax.get_tax_names(team)["limit_tax_note"],
 	}
 
 
@@ -306,10 +327,31 @@ def list_invoices(team: str | None = None) -> list[dict]:
 			"amount_paid",
 			"currency",
 			"due_date",
+			"erpnext_invoice",
+			*tax.LABEL_FIELDS,
 		],
 		order_by="period_start desc",
 	)
+	names = tax.TaxNames(team)
+	for row in rows:
+		row["has_pdf"] = bool(row.pop("erpnext_invoice"))
+		row["tax_note"] = names.note(row)
 	return rows
+
+
+@frappe.whitelist(methods=["GET"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
+def download_invoice_pdf(name: str) -> None:
+	"""The customer's copy of the statutory invoice, as ERPNext renders it."""
+	from central.billing.ingester.erpnext_sync import sales_invoice_pdf
+
+	team, sales_invoice = frappe.db.get_value("Invoice", name, ["team", "erpnext_invoice"]) or (None, None)
+	_require_view(team)
+	if not sales_invoice:
+		frappe.throw(_("This invoice has not been issued yet, so it has no PDF."), frappe.DoesNotExistError)
+	frappe.local.response.filename = f"{sales_invoice.replace('/', '-')}.pdf"
+	frappe.local.response.filecontent = sales_invoice_pdf(sales_invoice)
+	frappe.local.response.type = "download"
 
 
 @frappe.whitelist()
@@ -318,14 +360,12 @@ def get_invoice(name: str) -> dict:
 	team = frappe.db.get_value("Invoice", name, "team")
 	_require_view(team)
 	doc = frappe.get_doc("Invoice", name)
-	from central.billing.payments.charges import _IN_FLIGHT
+	from central.billing.payments.charges import in_flight_attempt
 
 	# An attempt already charging (or captured and awaiting the settlement webhook)
 	# means the money is moving — the UI must show a "settling" state, not a Pay
 	# button, so the customer can't fire a second charge (#10).
-	payment_in_progress = bool(
-		frappe.db.exists("Payment Attempt", {"invoice": name, "status": ["in", _IN_FLIGHT]})
-	)
+	payment_in_progress = bool(in_flight_attempt(name))
 
 	# Which method settled it — a quiet receipt line on the paid invoice. Read
 	# from the capturing attempt (not the team's current default), so history
@@ -359,11 +399,18 @@ def get_invoice(name: str) -> dict:
 		"output_tax_rate": doc.output_tax_rate,
 		"output_tax_amount": doc.output_tax_amount,
 		"zero_rating_reason": doc.zero_rating_reason,
+		# Named from the invoice's own rate and zero-rating, so an issued invoice keeps its tax.
+		"tax_label": tax.TaxNames(doc.team).label(doc),
+		"tax_reason": tax.TaxNames.reason(doc),
 		"total": doc.total,
 		"credit_applied": doc.credit_applied,
+		"advance_tax_applied": doc.advance_tax_applied,
 		"expected_collection": doc.expected_collection,
 		"amount_paid": doc.amount_paid,
 		"due_date": str(doc.due_date) if doc.due_date else None,
+		"hold_reason": doc.hold_reason,
+		"is_issued": is_issued(doc),
+		"has_pdf": bool(doc.erpnext_invoice),
 		"payment_in_progress": payment_in_progress,
 		"paid_with": paid_with,
 		"items": [_describe_line(doc.team, li) for li in doc.items],
@@ -547,32 +594,67 @@ def get_credit_balance(team: str | None = None) -> dict:
 @frappe.whitelist()
 def credit_ledger(team: str | None = None, limit: int = 50) -> list[dict]:
 	team = _resolve_team(team)
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Credit Ledger Entry",
 		filters={"team": team},
 		fields=[
+			"name",
 			"entry_type",
 			"amount",
+			"tax_amount",
 			"running_balance",
 			"currency",
 			"note",
 			"created_at",
 			"reference_type",
 			"reference_name",
+			"advance_id",
+			"gateway_payment_id",
 		],
 		order_by="creation desc",
 		limit=limit,
 	)
+	# Each top-up is named from the GST it was paid with, not the team's tax today.
+	names = tax.TaxNames(team)
+	for row in rows:
+		# A top-up booked in the accounting system has a receipt to download.
+		row["has_receipt"] = bool(row.pop("advance_id"))
+		# Only money paid in through a gateway carries a real GST rate; returned
+		# credit carries back a share of GST whose ratio is not a rate.
+		is_top_up = bool(row.pop("gateway_payment_id"))
+		row["tax_label"] = names.paid_label(row.amount, row.tax_amount) if is_top_up else None
+	return rows
+
+
+@frappe.whitelist(methods=["GET"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
+def download_topup_receipt(name: str) -> None:
+	"""The receipt voucher for a wallet top-up, as the accounting system renders it."""
+	from central.billing.ingester.advance import receipt_pdf
+
+	team, advance_id = frappe.db.get_value("Credit Ledger Entry", name, ["team", "advance_id"]) or (
+		None,
+		None,
+	)
+	_require_view(team)
+	if not advance_id:
+		frappe.throw(_("This top-up has no receipt yet."), frappe.DoesNotExistError)
+	frappe.local.response.filename = f"{advance_id.replace('/', '-')}.pdf"
+	frappe.local.response.filecontent = receipt_pdf(advance_id)
+	frappe.local.response.type = "download"
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def pay_invoice(invoice: str | None = None) -> dict:
 	"""Postpaid one-off settlement of an outstanding invoice (team-scoped)."""
+	# The payment date holds back automatic charges only. A customer who clicks Pay may pay early.
 	team = frappe.db.get_value("Invoice", invoice, "team")
 	_require_manage(team)
 	from central.billing.payments import charges
 
-	return charges.pay_invoice(invoice)
+	# Over the silent ceiling the customer is sent to checkout; the team keeps its mode.
+	return charges.pay_invoice(invoice, on_session=True)
 
 
 @frappe.whitelist()
@@ -610,9 +692,11 @@ def get_fallback_offer(invoice: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def pay_invoice_checkout(invoice: str | None = None) -> dict:
 	"""Open an on-session gateway checkout to pay an invoice yourself
 	(collection_mode = manual_checkout). Any amount — on-session has no ₹15k limit."""
+	# The payment date holds back automatic charges only. A customer who clicks Pay may pay early.
 	team = frappe.db.get_value("Invoice", invoice, "team")
 	_require_manage(team)
 	from central.billing.payments import charges
@@ -621,6 +705,7 @@ def pay_invoice_checkout(invoice: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def confirm_invoice_checkout(
 	attempt: str | None = None,
 	razorpay_order_id: str | None = None,
@@ -660,10 +745,19 @@ def get_topup_options(team: str | None = None) -> dict:
 		from central.billing.gateways.registry import get_adapter
 
 		publishable_key = get_adapter(frappe.get_doc("Payment Gateway", card_gw)).get_credential("api_key")
-	return {"currency": currency, "instruments": tiles, "publishable_key": publishable_key}
+	return {
+		"currency": currency,
+		"instruments": tiles,
+		"publishable_key": publishable_key,
+		# GST charged on top of a top-up, as a percentage. 0 where none applies.
+		"gst_rate": frappe.utils.flt(credits.top_up_gst_rate(team) * 100, 2),
+		# The GST named as invoices name it ("IGST 18%", "No GST (SEZ)"); None with no GST.
+		"tax_label": tax.get_tax_names(team)["tax_label"],
+	}
 
 
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def create_topup_order(
 	team: str | None = None,
 	amount: float | None = None,
@@ -689,54 +783,37 @@ def create_topup_order(
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
 		frappe.throw(_("Top-up amount must be greater than zero."), frappe.ValidationError)
+	# Before the gateway customer is minted, so a locked team makes no gateway call.
+	setup_lockout.check(team, frappe.session.user)
 	currency = _team_currency(team)
-	display_paypal = False
-	if method == "paypal":
-		pp = frappe.get_doc("Payment Gateway", _paypal_gateway_for_currency(currency))
-		if pp.is_paypal_via_razorpay():
-			gw = _enabled_gateway_for_currency(currency, "Razorpay")
-			if not gw:
-				frappe.throw(
-					_("PayPal via Razorpay needs an enabled Razorpay gateway that handles {0}.").format(
-						currency
-					),
-					frappe.ValidationError,
-				)
-			display_paypal = True
-		else:
-			gw = pp.name
-	elif instrument:
-		# The recharge surface: the customer picked an instrument and that decides the
-		# rail (ADR 0023). Resolving by currency default instead would put every INR
-		# top-up on one provider, including the card ones Stripe should take.
-		from central.billing.payments import instruments as instrument_catalogue
-
-		gw = instrument_catalogue.gateway_for(instrument, currency, instrument_catalogue.RECHARGE)
-		if not gw:
-			frappe.throw(
-				_("{0} isn't available for {1} top-ups.").format(instrument, currency),
-				frappe.ValidationError,
-			)
-	else:
-		gw = gateway or _gateway_for_currency(currency)
+	gw, display_paypal = _top_up_gateway(currency, gateway, method, instrument)
 	from central.billing.gateways.registry import get_adapter
 
 	gw_doc = frappe.get_doc("Payment Gateway", gw)
 	adapter = get_adapter(gw_doc)
-	# Mint-or-reuse the team's customer at this gateway *before* the order, so the
-	# top-up attaches to the one customer every later charge reuses (the card #05 and
-	# mandate #08 paths share this same Gateway Customer row). ensure_gateway_customer
-	# commits the row the instant it mints, so a failed order can't orphan it.
+	# The team's one gateway customer, committed on mint so a failed order can't orphan it.
+	from central.billing.gateways.base import customer_safe_gateway_errors
 	from central.billing.payments.payments import ensure_gateway_customer
 
-	customer_id = ensure_gateway_customer(team, gw, adapter)
-	receipt = f"topup-{team}-{frappe.generate_hash(length=8)}"
-	notes = {"team": team, "purpose": "wallet_topup"}
+	with customer_safe_gateway_errors():
+		customer_id = ensure_gateway_customer(team, gw, adapter)
 	# Both rails collect the card in-app: Razorpay in its hosted sheet over the
 	# returned order, Stripe via a PaymentIntent the SPA confirms with Stripe.js
 	# (no hosted-Checkout redirect). The India-export billing address rides on the
 	# Stripe PaymentIntent from the Billing Profile, so it's never re-asked.
-	handles = adapter.create_order(amount, currency, receipt, notes=notes, customer=customer_id)
+	# GST is charged on top of the credit. The wallet gets the credit, and the GST
+	# is held to pay the GST of the invoices the credit is used for.
+	gst = credits.top_up_gst(team, amount)
+	total = frappe.utils.flt(amount + gst, 2)
+	# The split is stored on the order before the payer acts, so the wallet gets what
+	# was ordered even if the tax rate changes before the payment is captured.
+	order = TopupOrder.start(team, gw, currency, total, credit=amount, gst=gst)
+	receipt = order.name
+	with customer_safe_gateway_errors():
+		handles = adapter.create_order(
+			total, currency, receipt, notes={"team": team, "purpose": "wallet_topup"}, customer=customer_id
+		)
+	order.record_gateway_order(handles.get("order_id") or handles.get("payment_intent_id"))
 	# The SPA branches on adapter_key: Stripe → PaymentIntent Element, Razorpay → hosted
 	# sheet, Paypal → PayPal Buttons against the returned order_id (ADR 0007). For a
 	# Via-Razorpay PayPal top-up the adapter_key is Razorpay (settlement runs there) and
@@ -746,13 +823,50 @@ def create_topup_order(
 		"adapter_key": gw_doc.adapter_key,
 		"display_paypal": display_paypal,
 		"amount": amount,
+		"gst": gst,
+		"total": total,
 		"currency": currency,
 		"receipt": receipt,
 		**handles,
 	}
 
 
+def _top_up_gateway(
+	currency: str, gateway: str | None, method: str | None, instrument: str | None
+) -> tuple[str, bool]:
+	"""The gateway a top-up goes to, and whether its sheet shows the PayPal block."""
+	if method == "paypal":
+		pp = frappe.get_doc("Payment Gateway", _paypal_gateway_for_currency(currency))
+		if not pp.is_paypal_via_razorpay():
+			return pp.name, False
+		gw = _enabled_gateway_for_currency(currency, "Razorpay")
+		if not gw:
+			frappe.throw(
+				_(
+					"PayPal through Razorpay needs an enabled Razorpay gateway that supports {0}. Choose another payment method, or contact support."
+				).format(currency),
+				frappe.ValidationError,
+			)
+		return gw, True
+	if not instrument:
+		return gateway or _gateway_for_currency(currency), False
+
+	# The recharge surface: the customer picked an instrument and that decides the
+	# rail (ADR 0023). Resolving by currency default instead would put every INR
+	# top-up on one provider, including the card ones Stripe should take.
+	from central.billing.payments import instruments as instrument_catalogue
+
+	gw = instrument_catalogue.gateway_for(instrument, currency, instrument_catalogue.RECHARGE)
+	if not gw:
+		frappe.throw(
+			_("{0} isn't available for {1} top-ups.").format(instrument, currency),
+			frappe.ValidationError,
+		)
+	return gw, False
+
+
 @frappe.whitelist(methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def confirm_topup(
 	team: str | None = None,
 	amount: float | None = None,
@@ -763,76 +877,64 @@ def confirm_topup(
 	payment_intent: str | None = None,
 	paypal_order_id: str | None = None,
 ) -> dict:
-	"""Credit the wallet only after the gateway confirms the money really moved.
-	Razorpay confirms via the checkout-callback signature; Stripe by retrieving the
-	PaymentIntent the SPA charged; PayPal by capturing the approved order. Each
-	credits the server-confirmed amount/currency (never a client-supplied figure)
-	and records the gateway's own reference — for PayPal the capture id, which
-	settles directly and so reconciles against PayPal's ledger (#21, ADR 0007). The
-	wallet is credited in the team's own currency. Idempotent on the gateway payment
-	id, so a capture webhook crediting in parallel is a no-op."""
+	"""Credit the wallet once the gateway confirms the payment for a top-up we stored.
+
+	The payment is read back from the gateway, matched to the team's own Top-up Order by
+	the gateway's order id, and must cover that order. Nothing the browser sends decides
+	the team, the amount or the credit. `amount` is ignored and kept for older clients.
+	The capture webhook credits through the same order, so the two book one credit."""
 	team = _resolve_team(team, authz.MANAGE)
-	currency = _team_currency(team)
-	amount = frappe.utils.flt(amount)
 	from central.billing.gateways.registry import get_adapter
 
 	gw_doc = frappe.get_doc("Payment Gateway", gateway)
 	adapter = get_adapter(gw_doc)
-	if gw_doc.adapter_key == "Razorpay":
-		# The callback signature binds order_id|payment_id, NOT the amount — so the
-		# request figure can't be trusted. Fetch the payment server-side and credit
-		# what Razorpay actually captured, mirroring the Stripe/PayPal branches.
-		ok = adapter.verify_payment_signature(
+	if gw_doc.adapter_key == "Paypal":
+		order = _team_top_up_order(team, gw_doc.name, paypal_order_id)
+		payment = _paypal_capture(adapter, paypal_order_id)
+	elif gw_doc.adapter_key == "Razorpay":
+		signed = adapter.verify_payment_signature(
 			{
 				"razorpay_order_id": razorpay_order_id,
 				"razorpay_payment_id": razorpay_payment_id,
 				"razorpay_signature": razorpay_signature,
 			}
 		)
-		reference = razorpay_payment_id
-		if ok:
-			payment = adapter.get_payment(razorpay_payment_id)
-			ok = payment.get("status") == "captured"
-			minor = payment.get("amount")
-			if minor is None:
-				# A captured payment always carries an amount; a response without
-				# one must not fall through to the client-supplied figure.
-				frappe.throw(_("Razorpay reported no amount for this payment."), frappe.ValidationError)
-			amount = frappe.utils.flt(minor) / 100
-			if payment.get("currency"):
-				currency = payment["currency"].upper()
-	elif gw_doc.adapter_key == "Paypal":
-		# Capture the order the buyer approved in PayPal Buttons; credit what PayPal
-		# actually took (major units already) and key the wallet entry on the capture id.
-		capture = adapter.capture_order(paypal_order_id)
-		ok = capture.get("status") == "COMPLETED"
-		reference = capture.get("id")
-		if capture.get("amount") is None:
-			frappe.throw(_("PayPal reported no amount for this capture."), frappe.ValidationError)
-		amount = frappe.utils.flt(capture["amount"])
-		if capture.get("currency"):
-			currency = capture["currency"].upper()
+		if not signed:
+			_payment_not_confirmed()
+		order = _team_top_up_order(team, gw_doc.name, razorpay_order_id)
+		payment = adapter.verify_payment(razorpay_payment_id)
 	else:
-		# In-app PaymentIntent (Stripe): the SPA confirmed the card with Stripe.js;
-		# trust the intent the gateway reports, including the amount/currency it
-		# actually charged — never a client-supplied figure.
-		intent = adapter.get_payment_intent(payment_intent)
-		ok = intent.get("status") == "succeeded"
-		reference = intent.get("id")
-		minor = intent.get("amount_received") or intent.get("amount")
-		if minor is None:
-			frappe.throw(_("Stripe reported no amount for this payment intent."), frappe.ValidationError)
-		amount = frappe.utils.flt(minor) / 100
-		if intent.get("currency"):
-			currency = intent["currency"].upper()
-	if not ok:
-		frappe.throw(_("Payment confirmation failed."), frappe.ValidationError)
-	return credits.purchase(
-		team,
-		amount,
-		currency,
-		reference_name=reference,
-		note=f"Wallet top-up ({reference})",
-		gateway_payment_id=reference,
-		gateway=gw_doc.adapter_key,
+		order = _team_top_up_order(team, gw_doc.name, payment_intent)
+		payment = adapter.verify_payment(payment_intent)
+	return order.credit_wallet(payment)
+
+
+def _team_top_up_order(team: str, gateway: str, gateway_order_id: str | None) -> TopupOrder:
+	"""The caller's own top-up for this gateway order. Another team's order is not found."""
+	name = gateway_order_id and frappe.db.get_value(
+		"Top-up Order", {"team": team, "gateway": gateway, "gateway_order_id": gateway_order_id}, "name"
+	)
+	if not name:
+		_payment_not_confirmed()
+	return frappe.get_doc("Top-up Order", name)
+
+
+def _paypal_capture(adapter, paypal_order_id: str) -> VerifiedPayment:
+	"""Capture the order the buyer approved and read back what PayPal took."""
+	capture = adapter.capture_order(paypal_order_id)
+	return VerifiedPayment(
+		payment_id=capture.get("id"),
+		captured=capture.get("status") == "COMPLETED",
+		amount=frappe.utils.flt(capture.get("amount")),
+		currency=(capture.get("currency") or "").upper(),
+		order_id=paypal_order_id,
+	)
+
+
+def _payment_not_confirmed():
+	frappe.throw(
+		_(
+			"The payment could not be confirmed. Check your credit balance and payment history before paying again. Contact support if you were charged but no credit appears."
+		),
+		frappe.ValidationError,
 	)

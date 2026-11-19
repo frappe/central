@@ -7,16 +7,24 @@ owns everything that spans them: which teams to visit, in what order, and how th
 work is spread over workers.
 """
 
+import datetime
 import random
 import time
 
 import frappe
+from croniter import croniter
+from frappe import _
 from frappe.query_builder.functions import Count
 
+from central.billing.doctype.billing_event import billing_event
 from central.billing.doctype.billing_run.billing_run import snapshot
+from central.billing.doctype.billing_run_team.billing_run_team import FAILED, has_same_outcome, record_outcome
+from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.platform import metrics
+from central.billing.platform.jobs import each_isolated
 from central.billing.revenue.invoicing.generate import generate_team_invoice
-from central.billing.revenue.invoicing.lifecycle import held_drafts, open_and_collect
+from central.billing.revenue.invoicing.lifecycle import held_drafts, open_and_collect, settle_internal_teams
+from central.billing.states import record_team_event
 
 # How many teams / invoices one page job is responsible for.
 PAGE_SIZE = 500
@@ -38,6 +46,8 @@ COLLECT_PAGE_SIZE = 100
 # and give the queue a worker (`bench worker --queue billing`).
 BILLING_QUEUE = "billing"
 
+
+DRAFT_TICK = "central.billing.revenue.invoicing.draft_monthly_invoices"
 
 # Every unit failure is logged under this one title, so an operator (and
 # `billing_run_status`) can count a run's casualties with a single filter.
@@ -74,7 +84,9 @@ def billing_queue() -> str:
 	return "long"
 
 
-def _contain(unit: str, doctype: str, name: str, error: Exception, undo: bool) -> None:
+def _contain(
+	unit: str, doctype: str, name: str, error: Exception, undo: bool, is_repeat: bool = False
+) -> None:
 	"""Contain one unit's failure so the run survives it — or refuse to.
 
 	Order matters. The **file log** is written first and unconditionally, because it
@@ -98,6 +110,8 @@ def _contain(unit: str, doctype: str, name: str, error: Exception, undo: bool) -
 			frappe.db.rollback(save_point=_SAVEPOINT)
 		except Exception as rollback_failed:
 			raise error from rollback_failed
+	if is_repeat:
+		return
 	frappe.log_error(
 		title=BILLING_RUN_FAILURE,
 		message=f"{unit}\n\n{frappe.get_traceback()}",
@@ -121,8 +135,7 @@ def draft_team_invoice(team: str, period_start, period_end, counters: dict | Non
 	so a caller part-way through a page keeps the teams it already billed.
 
 	A contained failure is not re-raised, and needn't be: drafting is idempotent per
-	(team, period), so re-running the phase retries exactly the teams that failed.
-	A partial run is resumable for free.
+	(team, period), and `retry_failed_invoices` tries the failed teams again every hour.
 
 	Lock contention is not a failure at all, though, and is retried here rather than
 	contained — see `_CONTENTION`. InnoDB has already rolled the transaction back by
@@ -139,15 +152,51 @@ def draft_team_invoice(team: str, period_start, period_end, counters: dict | Non
 			frappe.db.rollback()
 			if attempt == CONTENTION_RETRIES - 1:
 				# Out of patience: record it and let the next tick pick the team up.
-				_contain(unit, "Team", team, error, undo=False)
+				_record_invoice_failure(unit, team, period_end, error, undo=False)
 				_tally(counters, "failed")
 				return []
 			# Jittered, so a whole page of retriers doesn't re-collide in lockstep.
 			time.sleep(CONTENTION_BACKOFF * (attempt + 1) + random.uniform(0, CONTENTION_BACKOFF))
 		except Exception as error:
-			_contain(unit, "Team", team, error, undo=True)
+			_record_invoice_failure(unit, team, period_end, error, undo=True)
 			_tally(counters, "failed")
 			return []
+
+
+def _record_invoice_failure(unit: str, team: str, period_end, error: Exception, undo: bool) -> None:
+	"""Keep why the team has no invoice where an operator looks. A retry that meets the
+	same error adds no second log row or event."""
+	reason = str(error) or type(error).__name__
+	is_repeat = has_same_outcome(team, period_end, FAILED, reason)
+	_contain(unit, "Team", team, error, undo=undo, is_repeat=is_repeat)
+	record_outcome(team, period_end, FAILED, reason=reason)
+	if not is_repeat:
+		record_team_event(
+			team, "Invoice Generation Failed", "Invoice", reason=reason, outcome=billing_event.FAILED
+		)
+
+
+def retry_failed_invoices() -> int:
+	"""Draft again every team whose invoice failed, for any closed month, one commit per team.
+
+	The monthly tick comes once and bills one month. Without this a failed team waits for an
+	operator, and its month is never billed once the next month closes."""
+	# Oldest first: a retry that fails again moves its row to the back of the queue.
+	failed = frappe.get_all(
+		"Billing Run Team",
+		filters={"outcome": FAILED},
+		fields=["name", "team", "period_end"],
+		order_by="modified asc",
+		limit=PAGE_SIZE,
+	)
+	rows = {row.name: row for row in failed}
+
+	def retry(name: str) -> list[str]:
+		row = rows[name]
+		return draft_team_invoice(row.team, frappe.utils.get_first_day(row.period_end), row.period_end)
+
+	each_isolated("Invoice retry", "Billing Run Team", list(rows), retry)
+	return len(failed)
 
 
 def settle_draft(invoice: str, counters: dict | None = None) -> dict | None:
@@ -173,10 +222,10 @@ def settle_draft(invoice: str, counters: dict | None = None) -> dict | None:
 
 
 def release_held_drafts(team: str) -> None:
-	"""Queue the settlement of whatever was held for this team's billing details.
+	"""Queue the settlement of whatever this team has held back.
 
-	Enqueued, not inline: the customer is waiting on a form, not on a charge. A team
-	with nothing held queues nothing.
+	Called when something that holds an invoice may have cleared. Enqueued, not
+	inline: nobody is waiting on a charge. A team with nothing held queues nothing.
 	"""
 	if not held_drafts(team, limit=1):
 		return
@@ -330,7 +379,7 @@ def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> 
 
 
 def draft_pages(cutoff, page_size: int = COLLECT_PAGE_SIZE):
-	"""Yield every still-Draft invoice for a month that closed on or before `cutoff`,
+	"""Yield every invoice not yet collected for a month that closed on or before `cutoff`,
 	one bounded page at a time.
 
 	`<=`, not `==`: collection sweeps every draft whose period has ended, not one exact
@@ -345,7 +394,7 @@ def draft_pages(cutoff, page_size: int = COLLECT_PAGE_SIZE):
 	while True:
 		page = frappe.get_all(
 			"Invoice",
-			filters={"status": "Draft", "period_end": ("<=", cutoff), "name": (">", after)},
+			filters=[*unissued_filters(), ["period_end", "<=", cutoff], ["name", ">", after]],
 			pluck="name",
 			order_by="name asc",
 			limit=page_size,
@@ -357,13 +406,13 @@ def draft_pages(cutoff, page_size: int = COLLECT_PAGE_SIZE):
 
 
 def drafts_to_settle(cutoff, page_size: int = COLLECT_PAGE_SIZE):
-	"""Every settleable Draft on or before `cutoff`, page by page, flattened."""
+	"""Every invoice not yet collected on or before `cutoff`, page by page, flattened."""
 	for page in draft_pages(cutoff, page_size):
 		yield from page
 
 
 def drafts_in_range(cutoff, after: str, until: str) -> list[str]:
-	"""The still-Draft invoices in one cursor slice `(after, until]`, for any month
+	"""The invoices not yet collected in one cursor slice `(after, until]`, for any month
 	that closed on or before `cutoff`.
 
 	Re-read at run time, not carried in the job: by the time a page job starts, some
@@ -373,7 +422,7 @@ def drafts_in_range(cutoff, after: str, until: str) -> list[str]:
 	return frappe.get_all(
 		"Invoice",
 		filters=[
-			["status", "=", "Draft"],
+			*unissued_filters(),
 			["period_end", "<=", cutoff],
 			["name", ">", after],
 			["name", "<=", until],
@@ -394,7 +443,7 @@ def settle_draft_page(cutoff, after: str, until: str) -> dict:
 	with metrics.timed("billing.settle_page", cutoff=str(cutoff)) as counters:
 		counters.update(settled=0, held=0, failed=0)
 		for invoice in drafts_in_range(cutoff, after, until):
-			# Only a claimed invoice settled. A held draft stays Draft for the next
+			# Only a claimed invoice settled. A held invoice stays uncollected for the next
 			# run, and one another worker took is neither ours to count nor a failure.
 			result = settle_draft(invoice, counters) or {}
 			if result.get("held"):
@@ -406,14 +455,14 @@ def settle_draft_page(cutoff, after: str, until: str) -> dict:
 
 
 def open_drafts(cutoff, enqueue: bool = False) -> list[str]:
-	"""Phase-2 orchestrator: open every Draft for a month closed on or before `cutoff`.
+	"""Phase-2 orchestrator: collect every uncollected invoice for a month closed on or before `cutoff`.
 
 	Page jobs, not a job per invoice — same reason as drafting, plus one specific to
 	collection: a job per invoice puts the run's gateway concurrency at the mercy of
 	how many workers happen to be free. A page job holds its invoices and works them
 	in order, so in-flight charges never exceed the billing worker count.
 
-	Claiming Draft -> Open under a row lock already makes two workers on one invoice
+	Claiming the invoice under a row lock already makes two workers on one invoice
 	harmless; the deduplicated page job id keeps them from queueing at all. Because a
 	settled draft drops out of the scan, re-running this against the same cutoff only
 	ever picks up what is still owed — which is exactly what the daily sweep relies on.
@@ -450,7 +499,7 @@ def billing_period(today=None) -> tuple:
 
 
 def draft_monthly_invoices(today=None) -> dict:
-	"""Tick 1 (1st, off-peak): draft the just-closed month, one job per team.
+	"""Tick 1 (1st, 08:00 IST, after the UTC month closes): draft the just-closed month, one job per team.
 
 	Drafting and collection are separate ticks, not one job that does both: rating is
 	heavy and local, collection is slow and external, and a run that interleaves them
@@ -459,9 +508,10 @@ def draft_monthly_invoices(today=None) -> dict:
 	Drafting fires once, on the 1st — not the 28th — because a month billed in arrears
 	is not closed until it ends; drafting on the 28th would bill days that had not
 	happened yet. Collection does not run a fixed few hours later hoping drafting is
-	done: it is a daily sweep (`collect_due_invoices`) that drains whatever has drafted,
-	so a run that overruns the day is finished by the next sweep, not abandoned.
+	done: it is an hourly sweep (`collect_due_invoices`) that drains whatever has drafted,
+	so a run that overruns is finished by the next sweep, not abandoned.
 	"""
+	settle_internal_teams()
 	period_start, period_end = billing_period(today)
 	snapshot(billing_run_status(today), "Drafting")
 	fanned = generate_draft_invoices(period_start, period_end, enqueue=True)
@@ -470,7 +520,7 @@ def draft_monthly_invoices(today=None) -> dict:
 
 
 def collect_due_invoices(today=None) -> dict:
-	"""Tick 2 (daily): open + collect every Draft whose month has already closed.
+	"""Tick 2 (hourly): collect every uncollected invoice whose month has already closed.
 
 	Daily, not a single tick a fixed few hours after drafting: at a million teams the
 	draft page jobs may still be finishing when collection first fires, and a one-shot
@@ -482,25 +532,50 @@ def collect_due_invoices(today=None) -> dict:
 	until nothing is owed: drafts that appeared after the previous sweep get collected on
 	the next one, and a draft a settle page left behind — this month's or an older run's
 	— is swept up rather than stranded. Once the run has drained it is a cheap indexed
-	no-op (no Draft for a closed period left to find).
+	no-op (no uncollected invoice for a closed period left to find).
 
-	`open_drafts` skips anything already Open/Paid, so re-firing never double-charges;
+	`open_drafts` skips anything already collecting or Paid, so re-firing never double-charges;
 	`settle_draft` defers dunning on failure, so a slow sweep never makes a customer late.
 	"""
 	_, period_end = billing_period(today)
+	retry_failed_invoices()
 	# Recorded before fanning out, so the record of what the run has achieved (and what it
 	# still owes) exists even if collection then falls over.
 	status = billing_run_status(today)
 	metrics.emit("billing.run_status", **status)
 	# Only claim to be collecting when something is owed, so a period that finished
 	# does not flip Complete -> Collecting -> Complete on every later sweep.
-	snapshot(status, "Collecting" if status["pending_collection"] else None)
+	_snapshot_started(status, "Collecting" if status["pending_collection"] else None)
 	fanned = open_drafts(period_end, enqueue=True)
 	metrics.emit("billing.collect_tick", period_end=str(period_end), pages=len(fanned))
 	# Re-derived after the sweep has been handed out: nothing owed means the period is done.
 	done = billing_run_status(today)
-	snapshot(done, "Complete" if not done["pending_collection"] else None)
+	is_done = not done["pending_collection"] and not done["failures"]
+	_snapshot_started(done, "Complete" if is_done else None)
 	return {"period_end": str(period_end), "pages": len(fanned)}
+
+
+def _snapshot_started(status: dict, to_state: str | None) -> None:
+	"""Update the period's run only once the draft tick has started it."""
+	# A sweep before the draft tick would complete an empty run, and the draft could not reopen it.
+	if frappe.db.exists("Billing Run", status["period_end"]):
+		snapshot(status, to_state)
+
+
+def has_draft_tick_passed(now=None) -> bool:
+	"""Whether this month's draft tick has fired."""
+	now = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
+	# The schedule is read from hooks, so the tick's time is set in one place.
+	last_tick = croniter(_draft_tick_schedule(), now).get_prev(datetime.datetime)
+	return last_tick >= frappe.utils.get_datetime(frappe.utils.get_first_day(now))
+
+
+def _draft_tick_schedule() -> str:
+	crons = frappe.get_hooks("scheduler_events").get("cron", {})
+	schedule = next((cron for cron, methods in crons.items() if DRAFT_TICK in methods), None)
+	if not schedule:
+		frappe.throw(_("{0} has no cron in hooks").format(DRAFT_TICK))
+	return schedule
 
 
 def billing_run_status(today=None) -> dict:
@@ -530,7 +605,7 @@ def billing_run_status(today=None) -> dict:
 		).run(as_dict=True)
 	}
 	drafted = sum(n for status, n in counts.items() if status != "Cancelled")
-	pending_collection = counts.get("Draft", 0)
+	pending_collection = frappe.db.count("Invoice", [*unissued_filters(), ["period_end", "=", period_end]])
 	return {
 		"period_start": str(period_start),
 		"period_end": str(period_end),
@@ -538,22 +613,18 @@ def billing_run_status(today=None) -> dict:
 		"drafted": drafted,
 		"pending_draft": max(teams - drafted, 0),
 		"pending_collection": pending_collection,
-		"collected": drafted - pending_collection,
+		"collected": drafted - pending_collection - counts.get("Waived", 0),
 		"by_status": counts,
-		"failures": frappe.db.count(
-			"Error Log", {"method": BILLING_RUN_FAILURE, "creation": [">=", period_end]}
-		),
+		"failures": frappe.db.count("Billing Run Team", {"period_end": period_end, "outcome": FAILED}),
 	}
 
 
 def run_monthly_billing(today=None) -> dict:
-	"""Bill the just-closed month end-to-end, inline.
-
-	The monthly scheduler event runs this. The two fan-out ticks above are not
-	scheduled; an operator runs them by hand to spread a large run over the billing
-	queue. Same work, same idempotency.
-	"""
+	"""Bill the just-closed month end-to-end in one job, for a small site or a test."""
+	settle_internal_teams()
 	period_start, period_end = billing_period(today)
+	# A new run starts as Drafting; a rerun after collection keeps the state it reached.
+	snapshot(billing_run_status(today))
 	drafted = generate_draft_invoices(period_start, period_end)
 	opened = open_drafts(period_end)
 	return {

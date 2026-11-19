@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Alert, Button, Dialog, TextInput } from 'frappe-ui'
 import { computed, ref } from 'vue'
+import CopyButton from '@/components/common/CopyButton.vue'
 import { copyToClipboard } from '@/lib/clipboard'
 import { reportError, successToast } from '@/lib/feedback'
 import type { BucketCredentials } from '@/types/storage'
@@ -11,6 +12,7 @@ const secretRevealed = ref(false)
 
 const fields = computed(() => {
 	const value = credentials.value
+
 	if (!value) return []
 
 	return [
@@ -22,6 +24,7 @@ const fields = computed(() => {
 
 const maskedSecret = computed(() => {
 	const secret = credentials.value?.secret_access_key ?? ''
+
 	return secretRevealed.value
 		? secret
 		: `${secret.slice(0, 4)}${'•'.repeat(28)}${secret.slice(-4)}`
@@ -29,6 +32,7 @@ const maskedSecret = computed(() => {
 
 const environment = computed(() => {
 	const value = credentials.value
+
 	if (!value) return ''
 
 	return [
@@ -42,10 +46,13 @@ const environment = computed(() => {
 const copy = async (value: string, label: string): Promise<void> => {
 	if (await copyToClipboard(value)) {
 		successToast(`${label} copied`)
+
 		return
 	}
 
-	reportError(`${label} could not be copied. Select it and copy by hand.`)
+	reportError(
+		`Could not copy ${label.toLowerCase()}. Select it and copy it manually.`,
+	)
 }
 </script>
 
@@ -73,13 +80,10 @@ const copy = async (value: string, label: string): Promise<void> => {
 				class="field"
 			>
 				<template #suffix>
-					<Button
-						variant="ghost"
+					<CopyButton
 						size="sm"
-						icon="lucide-copy"
+						:text="field.value"
 						:label="`Copy ${field.label.toLowerCase()}`"
-						tooltip="Copy"
-						@click="copy(field.value, field.label)"
 					/>
 				</template>
 			</TextInput>
@@ -99,13 +103,10 @@ const copy = async (value: string, label: string): Promise<void> => {
 						:tooltip="secretRevealed ? 'Hide' : 'Show'"
 						@click="secretRevealed = !secretRevealed"
 					/>
-					<Button
-						variant="ghost"
+					<CopyButton
 						size="sm"
-						icon="lucide-copy"
+						:text="credentials.secret_access_key"
 						label="Copy secret key"
-						tooltip="Copy"
-						@click="copy(credentials.secret_access_key, 'Secret key')"
 					/>
 				</template>
 			</TextInput>

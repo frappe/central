@@ -5,6 +5,7 @@ rollups, the team table, and the delinquency / payment-failure drill-downs.
 """
 
 import frappe
+from frappe import _
 
 from central.billing.api.admin._shared import (
 	_STANDING_RANK,
@@ -15,6 +16,7 @@ from central.billing.api.admin._shared import (
 	_to_inr,
 )
 from central.billing.authz import require_operator
+from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.revenue import credits
 
 
@@ -70,7 +72,11 @@ def adjust_team_credits(
 	"""Manual wallet correction for any team — operator only. The one HTTP door to
 	`credits.adjust_credits`; the primitive itself is not whitelisted."""
 	require_operator()
-	return credits.adjust_credits(team, amount, entry_type, currency=currency, note=note)
+	try:
+		return credits.adjust_credits(team, amount, entry_type, currency=currency, note=note)
+	except credits.InsufficientCredits as error:
+		# The ledger raises this without a message, so Desk would show nothing.
+		frappe.throw(str(error), credits.InsufficientCredits, title=_("Not enough credit"))
 
 
 @frappe.whitelist()
@@ -162,9 +168,7 @@ def list_teams() -> list[dict]:
 		currency = _team_currency(t["team"])
 		t["mrr"] = frappe.utils.flt(t["mrr"], 2)
 		t["tier"] = frappe.db.get_value("Billing Profile", t["team"], "trust_tier") or "—"
-		t["open_invoices"] = frappe.db.count(
-			"Invoice", {"team": t["team"], "status": ["in", ["Open", "Overdue"]]}
-		)
+		t["open_invoices"] = frappe.db.count("Invoice", [*owed_filters(), ["team", "=", t["team"]]])
 		t["invoices"] = frappe.db.count("Invoice", {"team": t["team"]})
 		# Credit normalised to INR so the whole row reads on one (INR-equiv.) axis.
 		t["credit_balance"] = frappe.utils.flt(
@@ -213,7 +217,7 @@ def get_delinquent_teams() -> list[dict]:
 		seen.add(s.team)
 		overdue = frappe.get_all(
 			"Invoice",
-			filters={"team": s.team, "status": ["in", ["Open", "Overdue"]]},
+			filters=[*owed_filters(), ["team", "=", s.team]],
 			fields=["name", "status", "total", "amount_paid", "due_date"],
 			order_by="due_date asc",
 		)
@@ -228,3 +232,13 @@ def get_delinquent_teams() -> list[dict]:
 			}
 		)
 	return rows
+
+
+@frappe.whitelist(methods=["POST"])
+def clear_setup_lock(team: str) -> dict:
+	"""Let a team that failed too many setups or top-ups try again now (operator only)."""
+	require_operator()
+	from central.billing.payments import setup_lockout
+
+	setup_lockout.clear(team)
+	return {"team": team, "cleared_at": frappe.db.get_value("Billing Profile", team, "setup_lock_cleared_at")}

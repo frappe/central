@@ -51,6 +51,15 @@ class TestCargoEnrollment(IntegrationTestCase):
 		self.assertTrue(secret)
 		self.assertEqual(self.post.call_args.kwargs["json"]["webhook_secret"], secret)
 
+	def test_the_cargo_secret_survives_a_later_save(self):
+		"""Frappe deletes a Password whose column is empty when the document is saved."""
+		self.instance.enroll_cargo()
+		secret = self.instance.reload().get_password("cargo_webhook_secret")
+
+		self.instance.save()
+
+		self.assertEqual(self.instance.reload().get_password("cargo_webhook_secret"), secret)
+
 	def test_enroll_raises_when_cargo_has_not_answered_yet(self):
 		self.get.return_value = self.response({}, 503)
 
@@ -163,8 +172,10 @@ class TestCargoFollowsAtlas(IntegrationTestCase):
 		self.assertTrue(self.instance.get_password("webhook_secret"))
 		self.assertEqual(self.instance.cargo_status, "Draft")
 		self.assertTrue(
-			frappe.db.exists(
-				"Error Log", {"reference_doctype": "Region", "reference_name": self.instance.name}
+			frappe.get_all(
+				"Error Log",
+				limit=1,
+				filters={"reference_doctype": "Region", "reference_name": self.instance.name},
 			)
 		)
 

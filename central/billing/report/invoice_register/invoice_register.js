@@ -27,7 +27,7 @@ frappe.query_reports["Invoice Register"] = {
 			fieldname: "status",
 			label: __("Status"),
 			fieldtype: "Select",
-			options: ["", "Draft", "Open", "Paid", "Overdue", "Waived", "Cancelled"].join("\n"),
+			options: ["", "Outstanding", "Paid", "Overdue", "Waived", "Cancelled"].join("\n"),
 		},
 		{
 			fieldname: "invoice_type",

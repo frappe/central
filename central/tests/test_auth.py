@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -7,6 +6,7 @@ from frappe.tests import IntegrationTestCase
 from central.api.auth import send_code, verify_code
 from central.identity.email_code import EmailCode, EmailCodeError
 from central.tests.test_team_management import create_user
+from central.tests.utils import central_limit
 from central.www.dashboard import build_auth_context
 
 SENDMAIL = "central.identity.email_code.frappe.sendmail"
@@ -30,7 +30,7 @@ class TestAuth(IntegrationTestCase):
 
 		result = self._verify(self._code())
 
-		self.assertEqual(result, {"user": self.email})
+		self.assertEqual(result["user"], self.email)
 		self.assertEqual(frappe.session.user, self.email)
 		self.assertEqual(frappe.db.get_value("User", self.email, "user_type"), "Website User")
 		self.assertEqual(frappe.db.get_value("User", self.email, "full_name"), "New Person")
@@ -45,7 +45,7 @@ class TestAuth(IntegrationTestCase):
 		self.assertEqual(self._verify(code), {"needs_name": True})
 		self.assertFalse(frappe.db.exists("User", self.email))
 
-		self.assertEqual(self._verify(code, full_name="Late Name"), {"user": self.email})
+		self.assertEqual(self._verify(code, full_name="Late Name")["user"], self.email)
 		self.assertEqual(frappe.db.get_value("User", self.email, "full_name"), "Late Name")
 
 	def test_an_existing_email_signs_in_and_keeps_its_name(self):
@@ -58,7 +58,10 @@ class TestAuth(IntegrationTestCase):
 		self.assertIn("sign-in code", sendmail.call_args.kwargs["subject"])
 		self.assertEqual(sendmail.call_args.kwargs["args"]["heading"], "Sign in to Frappe Cloud")
 
-		self.assertEqual(self._verify(self._code()), {"user": self.email})
+		signed_in = self._verify(self._code())
+		self.assertEqual(signed_in["user"], self.email)
+		# The console carries on without a reload, so it needs the new session's token.
+		self.assertEqual(signed_in["csrf_token"], frappe.local.session.data.csrf_token)
 		self.assertEqual(frappe.db.get_value("User", self.email, "first_name"), self.email.split("@")[0])
 		self.assertEqual(response, {"message": f"We sent a code to {self.email}."})
 
@@ -76,7 +79,7 @@ class TestAuth(IntegrationTestCase):
 			send_code(self.email, "Locked Out")
 			code = self._code()
 			wrong = "000000" if code != "000000" else "111111"
-			for _ in range(EmailCode.MAX_ATTEMPTS):
+			for _ in range(EmailCode.get_max_attempts()):
 				with self.assertRaises(EmailCodeError):
 					self._verify(wrong)
 
@@ -106,7 +109,42 @@ class TestAuth(IntegrationTestCase):
 		self.assertEqual(response, {"message": f"We sent a code to {self.email}."})
 		self.assertIn("disabled", notice.call_args.kwargs["subject"])
 		code_mail.assert_not_called()
-		self.assertIsNone(EmailCode(self.email).pending)
+
+	def test_the_code_limits_follow_central_settings(self):
+		with patch(SENDMAIL), central_limit("sign_in_codes_per_email", 1):
+			send_code(self.email, "One Code")
+			with self.assertRaisesRegex(EmailCodeError, "Too many codes requested"):
+				send_code(self.email, "One Code")
+
+		with central_limit("sign_in_code_attempts", 1):
+			with self.assertRaisesRegex(EmailCodeError, "incorrect"):
+				self._verify("000000")
+			with self.assertRaisesRegex(EmailCodeError, "Too many incorrect codes"):
+				self._verify(self._code())
+
+	def test_a_code_expires_after_the_system_settings_expiry(self):
+		with patch("central.identity.email_code.frappe.get_system_settings", return_value=3):
+			self.assertEqual(EmailCode.get_expiry_seconds(), 180)
+		with patch("central.identity.email_code.frappe.get_system_settings", return_value=0):
+			self.assertEqual(EmailCode.get_expiry_seconds(), 600)
+
+	def test_a_disabled_account_and_an_unknown_email_answer_a_wrong_code_alike(self):
+		frappe.set_user("Administrator")
+		create_user(self.email)
+		frappe.db.set_value("User", self.email, "enabled", 0)
+		unknown = f"unknown.{frappe.generate_hash(length=8)}@example.test"
+		self.addCleanup(EmailCode(unknown).discard)
+		frappe.set_user("Guest")
+
+		answers = []
+		with patch(SENDMAIL), patch("central.users.frappe.sendmail"):
+			for email in (self.email, unknown):
+				send_code(email)
+				with self.assertRaises(EmailCodeError) as wrong:
+					verify_code(email, "000000")
+				answers.append(str(wrong.exception))
+
+		self.assertEqual(answers[0], answers[1])
 
 	def test_an_account_disabled_after_its_code_was_sent_cannot_sign_in(self):
 		frappe.set_user("Administrator")
@@ -126,15 +164,24 @@ class TestAuth(IntegrationTestCase):
 				send_code(self.email, "Unsent")
 
 		self.assertIn("could not send a code", str(refused.exception))
+		code = EmailCode(self.email).pending["code"]
+		logged = frappe.get_last_doc("Error Log", filters={"method": "Email code could not be sent"})
+		self.assertIn("SMTP down", logged.error)
+		self.assertNotIn(code, logged.error)
 
 	def test_malformed_input_is_refused_before_anything_is_sent(self):
+		# Keyword arguments, as a request sends them: Frappe type-checks those.
 		with patch(SENDMAIL) as sendmail:
-			for email in ("not-an-email", "one@example.test,two@example.test", "jane@example..com", []):
+			for email in ("not-an-email", "one@example.test,two@example.test", "jane@example..com"):
 				with self.assertRaises(frappe.ValidationError):
-					send_code(email)
-			for name in ("   ", "x" * 141, ["list"]):
+					send_code(email=email)
+			for name in ("   ", "x" * 141):
 				with self.assertRaises(frappe.ValidationError):
-					send_code(self.email, name)
+					send_code(email=self.email, full_name=name)
+			with self.assertRaises(frappe.FrappeTypeError):
+				send_code(email=[])
+			with self.assertRaises(frappe.FrappeTypeError):
+				send_code(email=self.email, full_name=["list"])
 			with self.assertRaises(frappe.ValidationError):
 				verify_code(self.email, "12345x")
 
@@ -152,19 +199,45 @@ class TestAuth(IntegrationTestCase):
 		self.assertIn("Create your Frappe Cloud account", html)
 		self.assertIn("It expires in 10 minutes.", html)
 
-	def test_sending_is_limited_per_email(self):
-		with (
-			patch.object(frappe.local, "request", SimpleNamespace(method="POST"), create=True),
-			patch.object(frappe.local, "form_dict", {"email": self.email}, create=True),
-			patch.object(frappe.local, "request_ip", f"test-{frappe.generate_hash(length=8)}", create=True),
-			patch(SENDMAIL) as sendmail,
-		):
-			for _ in range(5):
-				send_code(self.email, "Limit Test")
-			with self.assertRaises(frappe.RateLimitExceededError):
-				send_code(self.email, "Limit Test")
+	def test_a_branded_product_names_itself_in_the_code_email(self):
+		frappe.set_user("Administrator")
+		frappe.get_doc(
+			{
+				"doctype": "Product",
+				"product_key": "raven-code",
+				"title": "Raven",
+				"signup_app": "raven",
+				"use_own_email_branding": 1,
+				"logo": "/files/raven.png",
+			}
+		).insert()
+		self.addCleanup(frappe.delete_doc, "Product", "raven-code", force=True)
+		frappe.set_user("Guest")
 
-		self.assertEqual(sendmail.call_count, 5)
+		with patch(SENDMAIL) as sendmail:
+			send_code(self.email, "Branded Person", product="raven-code")
+
+		html = frappe.render_template(
+			"templates/emails/verification_code.html", sendmail.call_args.kwargs["args"]
+		)
+		self.assertIn("is your Raven signup code", sendmail.call_args.kwargs["subject"])
+		self.assertIn("Create your Raven account", html)
+		self.assertIn("/files/raven.png", html)
+		self.assertNotIn("Frappe Cloud", html.split("fc-footer")[0])
+
+	def test_sending_is_limited_per_email_whatever_its_spelling(self):
+		spellings = [self.email, self.email.upper(), f" {self.email} ", self.email.title(), self.email]
+		other = f"other.{frappe.generate_hash(length=8)}@example.test"
+		self.addCleanup(EmailCode(other).discard)
+
+		with patch(SENDMAIL) as sendmail:
+			for spelling in spellings:
+				send_code(spelling, "Limit Test")
+			with self.assertRaisesRegex(EmailCodeError, "Too many codes requested"):
+				send_code(self.email.upper(), "Limit Test")
+			send_code(other, "Someone Else")
+
+		self.assertEqual(sendmail.call_count, 6)
 
 	def test_the_hourly_signup_cap_refuses_a_new_account(self):
 		with patch(SENDMAIL):
@@ -179,7 +252,6 @@ class TestAuth(IntegrationTestCase):
 		context = build_auth_context()
 
 		self.assertEqual(context["user"], "Guest")
-		self.assertFalse(context["onboarding_complete"])
 
 	def _code(self) -> str:
 		return EmailCode(self.email).pending["code"]

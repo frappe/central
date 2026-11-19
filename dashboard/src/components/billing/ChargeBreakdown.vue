@@ -144,9 +144,7 @@ function isEstimated(li: BillingLine): boolean {
 	<div v-else class="space-y-4">
 		<section v-if="servers.length">
 			<div class="mb-1 flex items-center justify-between gap-3">
-				<span
-					class="text-p-xs font-medium uppercase tracking-wide text-ink-gray-5"
-				>
+				<span class="text-sm-medium text-ink-gray-6">
 					{{ serverGroups.length === 1 ? 'Servers' : `Servers · ${serverGroups.length}` }}
 				</span>
 				<span class="text-p-sm tabular-nums text-ink-gray-5">
@@ -200,7 +198,7 @@ function isEstimated(li: BillingLine): boolean {
 								<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
 								<p
 									v-if="li.detail || showRate(li, group)"
-									class="truncate text-p-sm text-ink-gray-5"
+									class="break-words text-p-sm text-ink-gray-5"
 								>
 									{{ li.detail }}
 									<template v-if="showRate(li, group)">
@@ -232,11 +230,7 @@ function isEstimated(li: BillingLine): boolean {
 
 		<section v-if="services.length">
 			<div class="mb-1 flex items-center justify-between gap-3">
-				<span
-					class="text-p-xs font-medium uppercase tracking-wide text-ink-gray-5"
-				>
-					Services
-				</span>
+				<span class="text-sm-medium text-ink-gray-6"> Services </span>
 				<span class="text-p-sm tabular-nums text-ink-gray-5">
 					{{ money(sum(services), currency) }}
 				</span>
@@ -249,7 +243,7 @@ function isEstimated(li: BillingLine): boolean {
 				>
 					<div class="min-w-0">
 						<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
-						<p v-if="li.detail" class="truncate text-p-sm text-ink-gray-5">
+						<p v-if="li.detail" class="break-words text-p-sm text-ink-gray-5">
 							{{ li.detail }}
 						</p>
 					</div>

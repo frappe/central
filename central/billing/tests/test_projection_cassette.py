@@ -32,8 +32,8 @@ class TestRecording(IntegrationTestCase):
 
 	def test_a_key_is_stable_across_formatting(self):
 		self.assertEqual(
-			cassette.key("Invoice", {"team": "x", "status": "Open"}),
-			cassette.key("Invoice", {"status": "Open", "team": "x"}),
+			cassette.key("Invoice", {"team": "x", "status": "Outstanding"}),
+			cassette.key("Invoice", {"status": "Outstanding", "team": "x"}),
 		)
 
 	def test_different_reads_get_different_keys(self):

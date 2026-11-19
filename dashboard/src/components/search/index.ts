@@ -1,15 +1,23 @@
 import { useColorScheme } from 'frappe-ui'
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { sidebarSections } from '@/components/navigation/list'
 import { useAppMenu } from '@/composables/useAppMenu'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useInvoices } from '@/composables/useInvoices'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useServers } from '@/composables/useServers'
+import { openSettings, useSettingsTabs } from '@/composables/useSettings'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { openTeamSwitcher } from '@/composables/useTeamSwitcher'
+import { getServerActions } from '@/lib/capabilities'
 import { billingPeriod } from '@/lib/date'
 import { money } from '@/lib/format'
+import {
+	getServerMenuGroups,
+	type ServerMenuVerb,
+	withSubmenuItems,
+} from '@/lib/serverMenu'
 
 export interface SearchItem {
 	name: string
@@ -31,14 +39,21 @@ export function useSearchIndex() {
 		canViewBilling,
 		canManageMembers,
 		isMember,
+		canPowerServer,
+		canResizeServer,
+		canSnapshotServer,
+		canTerminateServer,
+		canOpenConsole,
 	} = useCapabilities()
 
-	const { open: openServer } = useServers()
-	const { servers } = useServerMapData()
+	const router = useRouter()
+	const { open: openServer, openBench, openConsole, openSite } = useServers()
+	const { servers, sites } = useServerMapData()
+	const { availableTabs } = useSettingsTabs()
 	const { members } = useTeamMembers()
 	const { invoices } = useInvoices()
 	const { themeOptions } = useAppMenu()
-	const { setColorScheme } = useColorScheme()
+	const { colorScheme, setColorScheme } = useColorScheme()
 
 	return computed((): SearchGroups => {
 		// Insertion order is the display order: verbs first, then destinations.
@@ -94,9 +109,19 @@ export function useSearchIndex() {
 
 		if (pages.length) groups.Pages = { items: pages }
 
+		groups.Settings = {
+			items: availableTabs.value.map((tab) => ({
+				name: tab.label,
+				description: tab.description,
+				icon: tab.icon,
+				onSelect: () => openSettings(tab.value),
+			})),
+		}
+
 		groups.Theme = {
 			items: themeOptions.map((theme) => ({
 				name: theme.label,
+				description: colorScheme.value === theme.value ? 'Current' : undefined,
 				icon: theme.icon,
 				onSelect: () => setColorScheme(theme.value),
 			})),
@@ -111,10 +136,54 @@ export function useSearchIndex() {
 					name: server.title || server.resource_id,
 					description: server.region,
 					icon: 'lucide-server',
-					onSelect: canViewServers.value ? () => openServer(server) : undefined,
+					onSelect:
+						canOpenConsole.value && !server.is_access_locked
+							? () => openServer(server)
+							: () => void router.push(`/servers/${server.resource_id}`),
 				})),
 			}
 		}
+
+		// Type a server's name to act on it. The menu applies the same status and
+		// capability rules as the server's own Actions menu.
+		const serverActions = servers.value.flatMap((server) => {
+			const site = sites.value.find((row) => row.server === server.name)
+			const allowed = getServerActions(server, {
+				open: canOpenConsole.value,
+				power: canPowerServer.value,
+				resize: canResizeServer.value,
+				snapshot: canSnapshotServer.value,
+				terminate: canTerminateServer.value,
+				console: canOpenConsole.value,
+			})
+			const run = (verb: ServerMenuVerb): void => {
+				if (verb === 'ssh-console') void openConsole(server, 'ssh')
+				else if (verb === 'tty-console') void openConsole(server, 'tty')
+				else if (verb === 'pilot') void openBench(server)
+				else if (verb === 'open')
+					void (site ? openSite(site.name) : openBench(server))
+				// The server page opens the dialog or confirmation for this action.
+				else
+					void router.push({
+						path: `/servers/${server.resource_id}`,
+						query: verb === 'overview' ? {} : { action: verb },
+					})
+			}
+			const title = server.title || server.resource_id
+
+			// Locked actions are disabled, and the filter below leaves disabled ones out.
+			return getServerMenuGroups(server, allowed, run, { site: site?.name })
+				.flat()
+				.flatMap(withSubmenuItems)
+				.filter((option) => !option.disabled)
+				.map((option) => ({
+					name: `${option.label} ${title}`,
+					icon: String(option.icon),
+					onSelect: option.onClick,
+				}))
+		})
+		if (canViewServers.value && serverActions.length)
+			groups['Server actions'] = { searchOnly: true, items: serverActions }
 
 		if (isMember.value && members.value.length) {
 			groups['Team members'] = {

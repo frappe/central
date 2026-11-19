@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, TabButtons } from 'frappe-ui'
+import { Button, Skeleton, TabButtons } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BucketFiles from '@/components/addons/storage/BucketFiles.vue'
@@ -32,7 +32,7 @@ watch(
 	() => bucket.value?.name,
 	(name) => {
 		setBreadcrumbs([
-			{ label: 'Object storage', route: { path: '/object-storage' } },
+			{ label: 'Object Storage', route: { path: '/object-storage' } },
 			{ label: bucket.value ? bucketLabel(bucket.value) : 'Bucket' },
 		])
 
@@ -71,7 +71,16 @@ const tabs = [
 	{ label: 'Files', value: 'files', iconLeft: 'lucide-folder' },
 	{ label: 'Settings', value: 'settings', iconLeft: 'lucide-settings' },
 ]
-const activeTab = ref('files')
+
+const activeTab = computed({
+	get: () => (route.query.tab === 'settings' ? 'settings' : 'files'),
+	set: (tab: string) => {
+		router.replace({
+			query: { ...route.query, tab: tab === 'files' ? undefined : tab },
+		})
+	},
+})
+
 const credentials = ref<BucketCredentials | null>(null)
 
 const copyEndpoint = async (endpoint: string): Promise<void> => {
@@ -80,7 +89,7 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 		return
 	}
 
-	reportError('The endpoint could not be copied. Select it and copy by hand.')
+	reportError('Could not copy the endpoint. Select it and copy it manually.')
 }
 </script>
 
@@ -90,8 +99,8 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 			class="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col p-3 md:p-4 lg:pt-8"
 		>
 			<div v-if="loading" class="space-y-3" aria-busy="true">
-				<div class="h-8 w-48 animate-pulse rounded-4 bg-surface-gray-2" />
-				<div class="h-5 w-72 animate-pulse rounded-4 bg-surface-gray-2" />
+				<Skeleton class="h-8 w-48 rounded-4" />
+				<Skeleton class="h-5 w-72 rounded-4" />
 			</div>
 
 			<EmptyState
@@ -112,7 +121,7 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 				description="It may have been deleted, or it belongs to another team."
 			>
 				<template #action>
-					<Button label="Back to object storage" route="/object-storage" />
+					<Button label="Back to Object Storage" route="/object-storage" />
 				</template>
 			</EmptyState>
 
@@ -159,13 +168,13 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 				<TabButtons
 					v-model="activeTab"
 					:options="tabs"
-					class="mt-6 self-start"
+					class="mt-4 self-start"
 				/>
 
 				<BucketFiles
 					v-if="activeTab === 'files'"
 					:bucket="bucket"
-					:can-download="canManageServices"
+					:can-manage="canManageServices"
 					class="mt-4 min-h-0 flex-1"
 				/>
 
@@ -173,7 +182,7 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 					v-else
 					:bucket="bucket"
 					:can-manage="canManageServices"
-					class="mt-6 min-h-0 overflow-y-auto"
+					class="mt-4 min-h-0 overflow-y-auto"
 					@rotated="credentials = $event"
 					@deleted="router.push('/object-storage')"
 				/>

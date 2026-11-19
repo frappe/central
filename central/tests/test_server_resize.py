@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, call, patch
 import frappe
 from frappe.tests import UnitTestCase
 
-from central.errors import AtlasConnectionError
+from central.errors import AtlasConnectionError, AtlasRejected
+from central.integrations.atlas import SLEEP_OFF_SETTINGS
 from central.integrations.servers import resize_server
 
 SHAPE = {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 50}
@@ -25,6 +26,7 @@ class TestServerResize(UnitTestCase):
 		memory_mib: int = 2048,
 		disk_mib: int = 25600,
 		sleep_after_idle_seconds: int = 0,
+		deep_sleep_after_idle_seconds: int = 0,
 	):
 		return {
 			"current_state": state,
@@ -32,6 +34,7 @@ class TestServerResize(UnitTestCase):
 				"cpu_millicores": cpu_millicores,
 				"memory_mib": memory_mib,
 				"sleep_after_idle_seconds": sleep_after_idle_seconds,
+				"deep_sleep_after_idle_seconds": deep_sleep_after_idle_seconds,
 			},
 			"disk": {"size_mib": disk_mib},
 		}
@@ -56,6 +59,25 @@ class TestServerResize(UnitTestCase):
 		self.client.update_disk.assert_not_called()
 		self.observe.assert_called_once_with(self.server)
 
+	def test_a_sleeping_server_wakes_before_it_stops_for_a_resize(self):
+		"""Atlas refuses to stop a sleeping VM, so a compute change starts it first."""
+		self.client.get_vm.side_effect = [
+			self.remote("paused"),
+			self.remote("paused"),
+			self.remote("running"),
+			self.remote("running"),
+			self.remote("stopped"),
+			self.remote("stopped"),
+			self.remote("running"),
+		]
+
+		resize_server(self.server, SHAPE)
+
+		self.assertEqual(
+			self.client.vm_action.call_args_list,
+			[call("vm-00001", "start"), call("vm-00001", "stop"), call("vm-00001", "start")],
+		)
+
 	def test_disk_only_grow_is_online_and_keeps_the_server_up(self):
 		"""Disk grows through the online disk API, so the server is neither stopped nor resized."""
 		self.client.get_vm.return_value = self.remote("running", 2000, 4096)
@@ -76,7 +98,7 @@ class TestServerResize(UnitTestCase):
 
 		self.client.vm_action.assert_not_called()
 		self.client.resize.assert_not_called()
-		self.client.disable_idle_shutdown.assert_called_once_with("vm-00001")
+		self.client.set_compute_settings.assert_called_once_with("vm-00001", SLEEP_OFF_SETTINGS)
 
 	def test_disk_only_grow_on_a_sleeping_server_stays_online(self):
 		"""The disk grows online, and the idle change sends no resource values, so Atlas takes
@@ -88,7 +110,25 @@ class TestServerResize(UnitTestCase):
 		self.client.vm_action.assert_not_called()
 		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
 		self.client.resize.assert_not_called()
-		self.client.disable_idle_shutdown.assert_called_once_with("vm-00001")
+		self.client.set_compute_settings.assert_called_once_with("vm-00001", SLEEP_OFF_SETTINGS)
+
+	def test_a_disk_grow_turns_deep_sleep_off_before_the_disk_grows(self):
+		"""Atlas refuses a disk past the offload limit while deep sleep is set, so sleep goes off first."""
+		self.client.get_vm.return_value = self.remote(
+			"running", 2000, 4096, deep_sleep_after_idle_seconds=3600
+		)
+
+		resize_server(self.server, {**SHAPE, "disk_gigabytes": 100})
+
+		self.assertEqual(
+			[
+				entry[0]
+				for entry in self.client.method_calls
+				if entry[0] in ("set_compute_settings", "update_disk")
+			],
+			["set_compute_settings", "update_disk"],
+		)
+		self.client.set_compute_settings.assert_called_once_with("vm-00001", SLEEP_OFF_SETTINGS)
 
 	def test_stopped_server_is_resized_then_started(self):
 		self.client.get_vm.side_effect = [
@@ -122,6 +162,47 @@ class TestServerResize(UnitTestCase):
 		)
 		self.client.resize.assert_called_once_with("vm-00001", 2000, 4096, 51200)
 
+	def test_a_fractional_vcpu_is_sent_as_whole_millicores(self):
+		"""Atlas accepts only integer millicores, and 1/8 vCPU is 125."""
+		self.client.get_vm.side_effect = [
+			self.remote("stopped"),
+			self.remote("stopped"),
+			self.remote("running"),
+		]
+
+		resize_server(self.server, {"vcpus": 0.125, "memory_megabytes": 512, "disk_gigabytes": 10})
+
+		self.client.resize.assert_called_once_with("vm-00001", 125, 512, 10240)
+		self.assertIsInstance(self.client.resize.call_args.args[1], int)
+
+	def test_a_refused_resize_starts_a_running_server_again(self):
+		"""Atlas keeps the old shape when no host has room, so the server must not stay stopped."""
+		self.client.get_vm.side_effect = [
+			self.remote("running"),
+			self.remote("running"),
+			self.remote("stopped"),
+			self.remote("stopped"),
+			self.remote("running"),
+		]
+		self.client.resize.side_effect = AtlasRejected("No host has capacity.", "out_of_capacity")
+
+		with self.assertRaises(AtlasRejected):
+			resize_server(self.server, SHAPE)
+
+		self.assertEqual(
+			self.client.vm_action.call_args_list, [call("vm-00001", "stop"), call("vm-00001", "start")]
+		)
+		self.observe.assert_not_called()
+
+	def test_a_refused_resize_leaves_a_stopped_server_stopped(self):
+		self.client.get_vm.side_effect = [self.remote("stopped"), self.remote("stopped")]
+		self.client.resize.side_effect = AtlasRejected("No host has capacity.", "out_of_capacity")
+
+		with self.assertRaises(AtlasRejected):
+			resize_server(self.server, SHAPE)
+
+		self.client.vm_action.assert_not_called()
+
 	def test_server_that_never_stops_times_out(self):
 		self.client.get_vm.return_value = self.remote("running")
 
@@ -133,6 +214,37 @@ class TestServerResize(UnitTestCase):
 
 		self.client.resize.assert_not_called()
 		self.client.update_disk.assert_not_called()
+
+	def test_rescue_compute_resize_fails_before_power_changes(self):
+		for selected, active in ((True, False), (True, True), (False, True)):
+			with self.subTest(selected=selected, active=active):
+				self.client.get_vm.return_value = {
+					**self.remote("running"),
+					"is_rescue_mode_enabled": selected,
+					"is_in_rescue_mode": active,
+				}
+				with self.assertRaises(AtlasRejected):
+					resize_server(self.server, SHAPE)
+		self.client.vm_action.assert_not_called()
+		self.client.resize.assert_not_called()
+		self.client.update_disk.assert_not_called()
+
+	def test_rescue_disk_growth_rejects_idle_change_before_growing(self):
+		self.client.get_vm.return_value = {
+			**self.remote("running", sleep_after_idle_seconds=60),
+			"is_in_rescue_mode": True,
+		}
+		with self.assertRaises(AtlasRejected):
+			resize_server(self.server, {"vcpus": 1, "memory_megabytes": 2048, "disk_gigabytes": 50})
+		self.client.update_disk.assert_not_called()
+		self.client.vm_action.assert_not_called()
+
+	def test_rescue_disk_growth_without_idle_change_stays_supported(self):
+		self.client.get_vm.return_value = {**self.remote("running"), "is_in_rescue_mode": True}
+		resize_server(self.server, {"vcpus": 1, "memory_megabytes": 2048, "disk_gigabytes": 50})
+		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
+		self.client.set_compute_settings.assert_not_called()
+		self.client.vm_action.assert_not_called()
 
 
 class TestConsoleResize(UnitTestCase):
@@ -195,3 +307,49 @@ class TestResizeJobTimeout(UnitTestCase):
 
 		self.assertGreater(job_timeout, 2 * POWER_WAIT_SECONDS)
 		self.assertEqual(lock.call_args.kwargs["timeout"], job_timeout)
+
+
+class TestTrialUpgradeBucket(UnitTestCase):
+	def succeed(self, from_plan: str, plan: str, bundles_storage: bool = True):
+		action = frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "resize",
+				"status": "Sent",
+				"server": "server-1",
+				"request_payload": {"plan": plan, "from_plan": from_plan, "shape": SHAPE},
+			}
+		)
+		resource_action = "central.infrastructure.doctype.resource_action.resource_action"
+		with (
+			patch.object(action, "db_set"),
+			patch(f"{resource_action}.is_trial_plan", side_effect=lambda name: name == "trial"),
+			patch(
+				"central.integrations.pilot.plan_includes_storage",
+				return_value=bundles_storage,
+			),
+			patch(f"{resource_action}.frappe.enqueue") as enqueue,
+			# The server is not in the database; its activity feed is tested elsewhere.
+			patch(f"{resource_action}.ActivityEvent.record_action"),
+		):
+			action.transition("Succeeded")
+
+		return enqueue
+
+	def test_a_move_off_a_trial_plan_attaches_the_bucket(self):
+		enqueue = self.succeed("trial", "paid")
+
+		enqueue.assert_called_once_with(
+			"central.integrations.pilot.attach_bundled_bucket",
+			server="server-1",
+			queue="long",
+			enqueue_after_commit=True,
+			job_id="bundled-bucket:server-1",
+			deduplicate=True,
+		)
+
+	def test_a_move_between_paid_plans_attaches_nothing(self):
+		self.succeed("paid", "bigger").assert_not_called()
+
+	def test_a_trial_upgrade_without_storage_attaches_nothing(self):
+		self.succeed("trial", "compute-only", bundles_storage=False).assert_not_called()

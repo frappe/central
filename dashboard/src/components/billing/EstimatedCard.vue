@@ -1,179 +1,89 @@
 <script setup lang="ts">
 import {
 	Alert,
+	Badge,
 	Button,
 	Dialog,
+	dayjs,
 	LoadingText,
 	TextInput,
 	Tooltip,
 	useCall,
 } from 'frappe-ui'
-import type { ChartTooltipItem } from 'frappe-ui/charts'
-import { ChartTooltip } from 'frappe-ui/charts'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import TranslatedText from '@/components/common/TranslatedText.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
+import { useSpendingLimits } from '@/composables/useSpendingLimits'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { ordinalDate } from '@/lib/date'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { currencySymbol, money } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { BillingSettings } from '@/types/billing'
 
-// Estimated this cycle — the projected month-end bill, when it bills + days left,
-// and the configurable billing alert (spend-alert threshold). Mirrors the FC v2
-// prototype: the alert is a quiet ghost button pinned to the card's foot that
-// tints amber/red as spend nears/crosses the threshold, and opens a small dialog.
-// Reads get_forecast (+ get_billing_settings).
 defineProps<{ active?: boolean }>()
-defineEmits<{ open: [] }>()
+defineEmits<{ open: []; openTiers: [] }>()
+
 const { forecast, currency } = useBillingOverview()
 const { activeTeam } = useSession()
 const { canManageBilling } = useCapabilities()
+const {
+	current: tierCurrent,
+	spendingLimit: limit,
+	runningMonthly: running,
+	limitKnown,
+	limitFailed,
+} = useSpendingLimits()
 
 const loading = computed(() => forecast.loading && !forecast.data)
 const fc = computed(() => forecast.data)
+// The headline is what the cycle will cost with tax, the same figure the card is
+// charged. The budget alert compares the cycle before tax; the spending limit is
+// compared with what runs now, the figure the server-create check uses.
 const projected = computed(() => Number(fc.value?.projected_total ?? 0))
-const billsOn = computed(() =>
-	fc.value?.period_end ? ordinalDate(fc.value.period_end) : '',
-)
+const taxAmount = computed(() => Number(fc.value?.tax_amount ?? 0))
+const subtotal = computed(() => Number(fc.value?.subtotal ?? 0))
+const hasCycle = computed(() => projected.value > 0)
 const daysRemaining = computed(() => fc.value?.days_remaining ?? null)
 
-// Owed vs inferred. Fall back to treating the whole projection as owed when the
-// split is absent (an older cached response), never the other way round — calling
-// a fact an estimate is the less honest failure.
-const measured = computed(() => Number(fc.value?.measured ?? projected.value))
-const estimated = computed(() => Number(fc.value?.estimated ?? 0))
-const taxAmount = computed(() => Number(fc.value?.tax_amount ?? 0))
-// Nothing accrued yet: the tray would open on an empty list, so the affordance
-// that opens it is not offered. An action that leads nowhere is worse than no
-// action — it reads as something being broken.
-const hasCycle = computed(() => projected.value > 0)
+const cycleLabel = computed(() => {
+	if (!fc.value?.period_start || !fc.value.period_end) return __('This cycle')
 
-// Against last month. A projected total on its own answers "how much"; the
-// question people actually open this for is "is it going up", and that needs the
-// month before it. Compared like for like — a full projected month against a
-// full billed one — and shown only once there is a month to compare against.
-const previousTotal = computed(() => fc.value?.previous_total ?? null)
-const previousLabel = computed(() => fc.value?.previous_label ?? null)
-const change = computed(() => {
-	if (!hasCycle.value || !previousTotal.value || !previousLabel.value)
-		return null
-	const delta = projected.value - previousTotal.value
-	// Under a percent either way is noise, not news.
-	if (Math.abs(delta) < previousTotal.value * 0.01) {
-		return {
-			icon: null,
-			amount: null,
-			tint: '',
-			caption: `About the same as ${previousLabel.value}`,
-		}
-	}
-	const up = delta > 0
-	return {
-		icon: up ? 'lucide-arrow-up-right' : 'lucide-arrow-down-left',
-		amount: money(Math.abs(delta), currency.value),
-		tint: up ? 'text-ink-red-7' : 'text-ink-green-7',
-		caption: `vs ${previousLabel.value}`,
-	}
-})
-const taxLabel = computed(() => fc.value?.tax_type || 'tax')
+	const start = dayjs(fc.value.period_start)
 
-const MEASURED_COLOR = 'var(--chart-categorical-1)'
-const ESTIMATED_COLOR = 'var(--chart-categorical-2)'
-const TAX_COLOR = 'var(--chart-categorical-3)'
-const allSegments = computed(() => {
-	const rows = [
-		{ label: 'So far', amount: measured.value, color: MEASURED_COLOR },
-		{
-			label: 'Estimated',
-			amount: estimated.value,
-			color: ESTIMATED_COLOR,
-		},
-	].filter((row) => row.amount > 0)
-	if (taxAmount.value)
-		rows.push({
-			label: taxLabel.value,
-			amount: taxAmount.value,
-			color: TAX_COLOR,
-		})
-	return rows
-})
-
-const hiddenSegments = ref<string[]>([])
-const isHidden = (label: string): boolean =>
-	hiddenSegments.value.includes(label)
-const segments = computed(() => {
-	const visible = allSegments.value.filter((s) => !isHidden(s.label))
-	const total = visible.reduce((t, s) => t + s.amount, 0)
-	if (total <= 0) return []
-	return visible.map((s) => ({ ...s, pct: (s.amount / total) * 100 }))
-})
-const pctByLabel = computed(
-	() => new Map(segments.value.map((s) => [s.label, s.pct])),
-)
-function toggleSegment(label: string): void {
-	if (!isHidden(label)) {
-		if (segments.value.length === 1) return
-		hiddenSegments.value = [...hiddenSegments.value, label]
-	} else {
-		hiddenSegments.value = hiddenSegments.value.filter((l) => l !== label)
-	}
-}
-
-function formatPercent(percent: number): string {
-	if (!percent) return '0%'
-	if (percent < 1) return '<1%'
-	return `${Math.round(percent)}%`
-}
-
-const hovered = ref<string | null>(null)
-const dimmed = (label: string): boolean =>
-	hovered.value !== null && !isHidden(hovered.value) && hovered.value !== label
-
-const tooltipOpen = ref(false)
-const tooltipX = ref(0)
-const tooltipY = ref(0)
-const tooltipItems = computed<ChartTooltipItem[]>(() => {
-	const segment = segments.value.find((s) => s.label === hovered.value)
-	if (!segment) return []
-	return [
-		{
-			name: segment.label,
-			label: segment.label,
-			color: segment.color,
-			value: segment.amount,
-			formattedValue: money(segment.amount, currency.value),
-			percent: segment.pct,
-		},
+	const range = [
+		start.format('MMMM'),
+		start.format('D'),
+		dayjs(fc.value.period_end).format('D MMM'),
 	]
+	return __('{0} cycle · {1} – {2}', range)
 })
-function onSegmentEnter(label: string, event: MouseEvent): void {
-	hovered.value = label
-	tooltipX.value = event.clientX
-	tooltipY.value = event.clientY
-	tooltipOpen.value = true
-}
-function onSegmentMove(event: MouseEvent): void {
-	if (!tooltipOpen.value) return
-	tooltipX.value = event.clientX
-	tooltipY.value = event.clientY
-}
-function onSegmentLeave(): void {
-	hovered.value = null
-	tooltipOpen.value = false
-}
+
+const scale = computed(() => Math.max(running.value, limit.value))
+
+const percentOf = (amount: number): string =>
+	`${scale.value ? (amount / scale.value) * 100 : 0}%`
+
+const withinLimit = computed(() =>
+	limit.value ? Math.min(running.value, limit.value) : running.value,
+)
+
+const overLimit = computed(() =>
+	limit.value ? Math.max(0, running.value - limit.value) : 0,
+)
 
 // ── Billing alert (spend-alert threshold) ────────────────────────────────────
-// Notify the team once projected spend crosses this amount (0 = off). Stored on
-// the Billing Profile via get/save_billing_settings.
+// Notify the team once projected spend before tax crosses this amount (0 = off).
+// Stored on the Billing Profile via get/save_billing_settings.
 const settings = useCall<BillingSettings, { team: string }>({
 	url: method(API.billingSettings),
 	params: () => ({ team: activeTeam.value! }),
 	immediate: false,
 	refetch: true,
 })
+
 const saveAlert = useCall<
 	unknown,
 	{ team: string; spend_alert_threshold: number }
@@ -182,9 +92,11 @@ const saveAlert = useCall<
 	method: 'POST',
 	immediate: false,
 })
+
 whenTeamReady(() => settings.reload())
 
 const spendAlert = ref(0)
+
 watch(
 	() => settings.data,
 	(d) => {
@@ -196,22 +108,26 @@ watch(
 // Alert relationship to the current estimate, so the button says something useful
 // at a glance and only tints when it's worth noticing.
 const crossed = computed(
-	() => spendAlert.value > 0 && projected.value >= spendAlert.value,
+	() => spendAlert.value > 0 && subtotal.value >= spendAlert.value,
 )
+
 const near = computed(
 	() =>
 		spendAlert.value > 0 &&
 		!crossed.value &&
-		projected.value >= 0.8 * spendAlert.value,
+		subtotal.value >= 0.8 * spendAlert.value,
 )
+
 const alertLabel = computed(() => {
-	if (spendAlert.value <= 0) return 'Set a budget alert'
-	if (crossed.value)
-		return `Over your ${money(spendAlert.value, currency.value)} alert`
-	if (near.value)
-		return `Nearing your ${money(spendAlert.value, currency.value)} alert`
-	return `Budget alert at ${money(spendAlert.value, currency.value)}`
+	if (spendAlert.value <= 0) return __('Set a budget alert')
+
+	const amount = money(spendAlert.value, currency.value)
+	if (crossed.value) return __('Over your {0} alert before tax', [amount])
+	if (near.value) return __('Nearing your {0} alert before tax', [amount])
+
+	return __('Budget alert at {0} before tax', [amount])
 })
+
 const alertTint = computed(() =>
 	crossed.value ? 'text-ink-red-7' : near.value ? 'text-ink-amber-6' : '',
 )
@@ -220,188 +136,225 @@ const alertTint = computed(() =>
 const dialogOpen = ref(false)
 const draft = ref(0)
 const formError = ref('')
+
 function openDialog(): void {
 	draft.value = spendAlert.value
 	formError.value = ''
 	dialogOpen.value = true
 }
+
 watch(draft, () => (formError.value = ''))
+
 async function submitAlert(): Promise<void> {
 	try {
 		await saveAlert.submit({
 			team: activeTeam.value!,
 			spend_alert_threshold: Number(draft.value) || 0,
 		})
+
 		if (saveAlert.error) throw saveAlert.error
+
 		spendAlert.value = Number(draft.value) || 0
-		successToast('Billing alert saved')
+		successToast(__('Billing alert saved'))
 		dialogOpen.value = false
 		settings.reload()
 	} catch (e) {
-		formError.value = getErrorMessage(e, "The budget alert couldn't be saved.")
+		formError.value = getErrorMessage(
+			e,
+			__("The budget alert couldn't be saved."),
+		)
 	}
 }
+
+const saveBudgetAlertErrorTitle = __("Couldn't save the budget alert")
 </script>
 
 <template>
 	<div
-		class="rounded-6 border bg-surface-base p-5 transition-colors"
-		:class="active ? 'border-outline-gray-4' : 'border-outline-gray-2'"
+		class="flex flex-col gap-4 px-4 py-3 transition-colors"
+		:class="active ? 'bg-surface-gray-1' : ''"
 	>
-		<div class="flex h-6 items-center justify-between gap-2">
-			<button
-				v-if="hasCycle"
-				type="button"
-				class="text-p-sm text-ink-gray-5 transition-colors hover:text-ink-gray-7"
-				@click="$emit('open')"
-			>
-				This cycle
-			</button>
-			<span v-else class="text-p-sm text-ink-gray-5">This cycle</span>
-			<div class="flex items-center gap-0.5">
+		<div class="flex items-center justify-between gap-3">
+			<h2 class="flex items-center gap-2 text-sm-medium text-ink-gray-6">
+				<span
+					class="size-1.5 rounded-9 ring-[3px]"
+					:class="
+						overLimit
+							? 'bg-surface-amber-5 ring-outline-amber-2'
+							: 'bg-surface-gray-6 ring-outline-gray-1'
+					"
+					aria-hidden="true"
+				/>
+				{{ cycleLabel }}
+			</h2>
+
+			<div class="flex items-center gap-2">
 				<Tooltip v-if="canManageBilling" :text="alertLabel">
-					<button
-						type="button"
-						class="grid size-6 place-items-center rounded-4 transition-colors hover:bg-surface-gray-2"
-						:class="
-							alertTint || 'text-ink-gray-4 hover:text-ink-gray-6'
-						"
-						aria-label="Budget alert"
-						@click="openDialog"
-					>
-						<span class="lucide-bell size-4" aria-hidden="true" />
-					</button>
+					<Button size="xs" :label="__('Budget alerts')" @click="openDialog">
+						<template #icon>
+							<span
+								class="lucide-bell size-4"
+								:class="alertTint || 'text-ink-gray-6'"
+								aria-hidden="true"
+							/>
+						</template>
+					</Button>
 				</Tooltip>
-				<button
-					v-if="hasCycle"
-					type="button"
-					class="grid size-6 place-items-center rounded-4 text-ink-gray-4 hover:bg-surface-gray-2 hover:text-ink-gray-6"
-					aria-label="Breakdown"
-					@click="$emit('open')"
-				>
-					<span class="lucide-chevron-right size-4" aria-hidden="true" />
-				</button>
 			</div>
 		</div>
 
-		<LoadingText v-if="loading" :lines="2" class="mt-2 w-40" />
+		<LoadingText v-if="loading" :lines="3" class="w-56" />
 
 		<template v-else>
-			<div class="mt-1.5 flex flex-wrap items-baseline gap-x-2.5">
-				<span class="text-2xl-semibold tabular-nums text-ink-gray-9">
-					{{ money(projected, currency) }}
-				</span>
-				<span v-if="change" class="flex min-w-0 items-center gap-1 text-sm">
+			<div class="flex flex-col gap-1">
+				<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
 					<span
-						v-if="change.icon"
-						class="size-4 shrink-0"
-						:class="[change.tint, change.icon]"
-						aria-hidden="true"
-					/>
-					<span
-						v-if="change.amount"
-						class="text-sm-medium tabular-nums"
-						:class="change.tint"
+						class="text-4xl-semibold leading-tight tabular-nums text-ink-gray-9"
 					>
-						{{ change.amount }}
+						{{ money(projected, currency) }}
 					</span>
-					<span class="truncate text-ink-gray-5">{{ change.caption }}</span>
-				</span>
-			</div>
-			<p class="mt-1 text-p-sm text-ink-gray-5">
-				<template v-if="!hasCycle">
-					Nothing has been billed yet this cycle
-				</template>
-				<template v-else>
-					<template v-if="billsOn">Bills {{ billsOn }}</template>
-					<template v-if="daysRemaining != null">
-						· {{ daysRemaining }} days left</template
+					<span v-if="!hasCycle" class="text-base text-ink-gray-5">
+						{{ __('nothing billed yet this cycle') }}
+					</span>
+					<Badge
+						v-if="hasCycle && daysRemaining != null"
+						:label="__('Bills in {0} days', [daysRemaining])"
+					/>
+				</div>
+
+				<p v-if="hasCycle" class="text-sm text-ink-gray-6">
+					<span class="tabular-nums">{{ money(subtotal, currency) }}</span>
+					<template v-if="taxAmount">
+						+
+						<span class="tabular-nums">{{ money(taxAmount, currency) }}</span>
+						{{ fc?.tax_label || fc?.tax_type || __('tax') }}
+					</template>
+					·
+					<button
+						type="button"
+						class="text-ink-gray-9 underline decoration-dotted underline-offset-[3px] transition-colors hover:decoration-solid"
+						@click="$emit('open')"
 					>
-				</template>
+						{{ __('See breakdown') }}
+					</button>
+				</p>
+			</div>
+
+			<p v-if="limitFailed" class="text-sm text-ink-gray-6">
+				{{ __("Couldn't load your spending limit.") }}
 			</p>
 
-			<template v-if="segments.length">
-				<div class="mt-4 flex h-2 gap-0.5" aria-hidden="true">
-					<span
-						v-for="segment in segments"
-						:key="segment.label"
-						class="h-full rounded-[4px] transition-[opacity,transform,width] duration-150"
-						:class="[
-							dimmed(segment.label) ? 'opacity-75' : '',
-							hovered === segment.label ? 'scale-y-125' : '',
-						]"
-						:style="{ width: `${segment.pct}%`, backgroundColor: segment.color }"
-						@mouseenter="onSegmentEnter(segment.label, $event)"
-						@mousemove="onSegmentMove"
-						@mouseleave="onSegmentLeave"
+			<LoadingText v-else-if="!limitKnown" :lines="2" class="w-56" />
+
+			<div v-else class="flex flex-col gap-2">
+				<div
+					class="flex flex-wrap justify-between gap-x-3 gap-y-1 text-sm text-ink-gray-6"
+				>
+					<span>
+						<TranslatedText :text="__('Running now: {0} a month before tax')">
+							<template #0>
+								<span class="tabular-nums text-ink-gray-9"
+									>{{ money(running, currency) }}</span
+								>
+							</template>
+						</TranslatedText>
+					</span>
+
+					<span v-if="overLimit" class="tabular-nums text-ink-amber-6">
+						{{ __('{0} over the limit', [money(overLimit, currency)]) }}
+					</span>
+				</div>
+
+				<div class="relative h-2 overflow-hidden rounded-2 bg-surface-gray-2">
+					<div
+						class="absolute inset-y-0 left-0 bg-surface-gray-10 transition-[width] duration-300"
+						:style="{ width: percentOf(withinLimit) }"
+					/>
+					<div
+						v-if="overLimit"
+						class="absolute inset-y-0 bg-[repeating-linear-gradient(135deg,var(--surface-amber-5)_0_6px,var(--surface-amber-7)_6px_12px)] transition-[width] duration-300"
+						:style="{ left: percentOf(limit), width: percentOf(overLimit) }"
+					/>
+					<div
+						v-if="limit"
+						class="absolute inset-y-0 -ml-px w-0.5 bg-surface-base"
+						:style="{ left: percentOf(limit) }"
+						aria-hidden="true"
 					/>
 				</div>
-				<ChartTooltip
-					:open="tooltipOpen"
-					:x="tooltipX"
-					:y="tooltipY"
-					:items="tooltipItems"
-				/>
-				<div class="mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-0.5">
-					<Button
-						v-for="segment in allSegments"
-						:key="segment.label"
-						variant="ghost"
-						size="xs"
-						:aria-pressed="!isHidden(segment.label)"
-						:label="`${isHidden(segment.label) ? 'Show' : 'Hide'} ${segment.label}`"
-						@click="toggleSegment(segment.label)"
-						@mouseenter="hovered = segment.label"
-						@mouseleave="hovered = null"
-						@focus="hovered = segment.label"
-						@blur="hovered = null"
+
+				<div class="text-sm text-ink-gray-6">
+					<span v-if="limit && tierCurrent?.tier">
+						<TranslatedText
+							:text="__('Spending limit {0} on the {1}. Taxes are added on top.')"
+						>
+							<template #0>
+								<span class="tabular-nums text-ink-gray-9"
+									>{{ money(limit, currency) }}</span
+								>
+							</template>
+							<template #1>
+								<button
+									type="button"
+									class="text-ink-gray-9 underline decoration-dotted underline-offset-[3px] transition-colors hover:decoration-solid"
+									@click="$emit('openTiers')"
+								>
+									{{ __('{0} tier', [tierCurrent?.tier]) }}
+								</button>
+							</template>
+						</TranslatedText>
+					</span>
+					<!-- A manual limit can exist without a tier. -->
+					<span v-else-if="limit">
+						<TranslatedText
+							:text="__('Spending limit {0}. Taxes are added on top.')"
+						>
+							<template #0>
+								<span class="tabular-nums text-ink-gray-9"
+									>{{ money(limit, currency) }}</span
+								>
+							</template>
+						</TranslatedText>
+					</span>
+					<button
+						v-else
+						type="button"
+						class="text-ink-gray-9 underline underline-offset-[3px]"
+						@click="$emit('openTiers')"
 					>
-						<span class="flex items-center gap-1.5">
-							<span
-								class="size-2 shrink-0 rounded-full"
-								:class="isHidden(segment.label) ? 'opacity-30' : ''"
-								:style="{ backgroundColor: segment.color }"
-							/>
-							<span
-								:class="
-									isHidden(segment.label) ? 'text-ink-gray-4' : 'text-ink-gray-6'
-								"
-							>
-								{{ segment.label }}
-							</span>
-							<span
-								v-if="!isHidden(segment.label)"
-								class="tabular-nums text-ink-gray-4"
-							>
-								{{ formatPercent(pctByLabel.get(segment.label) ?? 0) }}
-							</span>
-						</span>
-					</Button>
+						{{ __('Spending limits') }}
+					</button>
 				</div>
-			</template>
+			</div>
 		</template>
 
-		<Dialog v-model:open="dialogOpen" title="Set a budget alert">
+		<Dialog v-model:open="dialogOpen" :title="__('Set a budget alert')">
 			<template #default>
-				<Alert v-if="formError" class="mb-4" theme="red" :title="formError" />
+				<Alert
+					v-if="formError"
+					class="mb-4"
+					theme="red"
+					:title="saveBudgetAlertErrorTitle"
+					:description="formError"
+				/>
 				<TextInput
 					v-model="draft"
+					autofocus
 					type="number"
-					:label="`Alert me above (${currencySymbol(currency)})`"
+					:label="__('Alert me above, excluding tax ({0})', [currencySymbol(currency)])"
 					min="0"
 					placeholder="20000"
 				/>
 				<p class="mt-2 text-p-sm text-ink-gray-5">
-					We'll notify the team once projected spend crosses this. Set 0 to turn
-					it off.
+					{{ __("We'll notify the team once projected spend before tax crosses this. Set 0 to turn it off.") }}
 				</p>
 			</template>
 			<template #actions>
 				<div class="flex justify-end gap-2">
-					<Button label="Cancel" @click="dialogOpen = false" />
+					<Button :label="__('Cancel')" @click="dialogOpen = false" />
 					<Button
 						variant="solid"
-						label="Set alert"
+						:label="__('Set alert')"
 						:loading="saveAlert.loading"
 						@click="submitAlert"
 					/>

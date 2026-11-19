@@ -178,20 +178,15 @@ def recompute_trust_tier(team: str, paid_invoice_count: int, cumulative_paid):
 
 	promoted = (profile.trust_tier or "") != target.tier
 	profile.trust_tier_level = target.name
-	profile.trust_tier = target.tier
 	if promoted:
 		profile.promoted_at = frappe.utils.now_datetime()
 		profile.promotion_basis = (
 			f"{paid_invoice_count} paid invoices + cumulative {cumulative_paid} → {target.tier}"
 		)
 
+	# The profile re-checks mandate ceilings against the new cap when it saves.
+	profile.flags.tier_set_by_system = True
 	profile.save(ignore_permissions=True)
-
-	# Mandate ceilings are tied to the cap; a raised cap needs customer re-consent
-	# (the team is held at the old ceiling until re-authorisation). #08
-	from central.billing.payments import mandates
-
-	mandates.reconcile_mandates_to_cap(team)
 	return _tier_result(team, profile)
 
 

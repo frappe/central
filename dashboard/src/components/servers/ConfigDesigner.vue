@@ -6,14 +6,14 @@ import {
 	capacityLimits,
 	clamp,
 	estimateConfig,
-	formatGb,
-	formatVcpu,
 	maxAffordableDisk,
 	maxAffordableVcpu,
 	maxDiskForCapacity,
 	maxVcpuForCapacity,
 	ramFor,
 } from '@/lib/composed'
+import { money } from '@/lib/format'
+import { formatGb, formatVcpu } from '@/lib/units'
 import type { Capacity, ComposedConfig, Profile, RateCard } from '@/types/api'
 
 // Design-your-own config controls (#84). Compute and Storage are both discrete
@@ -22,10 +22,11 @@ import type { Capacity, ComposedConfig, Profile, RateCard } from '@/types/api'
 // ratio, shown as a derived pill — never independently chosen, so an off-ratio shape
 // can't be expressed. Both sliders have a hard stop at `available` headroom. The
 // price is shown by the parent; the server re-validates everything at provision (#83).
-const props = defineProps<{
+interface Props {
 	profiles: Profile[]
 	rateCard: RateCard
 	available: number
+	currency: string
 	// The region's live capacity — the slider's second hard stop (below headroom), so a
 	// customer can't design a config the region can't currently seat. Absent → no cap.
 	capacity?: Capacity | null
@@ -33,7 +34,11 @@ const props = defineProps<{
 	initial?: ComposedConfig | null
 	/** Resize keeps disk on its own control. This slider then only moves CPU. */
 	hideDisk?: boolean
-}>()
+	minimumDisk?: number
+	fixedDisk?: number
+}
+
+const props = defineProps<Props>()
 
 // The chosen config (null while invalid / over headroom) — the parent provisions it.
 const config = defineModel<ComposedConfig | null>({ required: true })
@@ -49,8 +54,21 @@ const profile = computed<Profile | null>(
 const vcpuSteps = computed<number[]>(() =>
 	[...(profile.value?.vcpu_steps ?? [])].sort((a, b) => a - b),
 )
-const diskSteps = computed<number[]>(() =>
-	[...(profile.value?.disk_steps ?? [])].sort((a, b) => a - b),
+const diskSteps = computed<number[]>(() => {
+	const minimum = props.minimumDisk ?? 0
+	const steps = (profile.value?.disk_steps ?? []).filter(
+		(disk) => disk >= minimum,
+	)
+	// A running disk can be between catalog steps or below the profile minimum.
+	if (
+		minimum &&
+		(!profile.value?.disk_max || minimum <= profile.value.disk_max)
+	)
+		steps.push(minimum)
+	return [...new Set(steps)].sort((a, b) => a - b)
+})
+const diskProfile = computed<Profile | null>(() =>
+	profile.value ? { ...profile.value, disk_steps: diskSteps.value } : null,
 )
 
 // Both sliders are index-based over their ladder, so dragging always lands on a rung.
@@ -60,7 +78,11 @@ const vcpus = computed<number>(
 	() => vcpuSteps.value[vcpuIndex.value] ?? vcpuSteps.value[0] ?? 0,
 )
 const diskGb = computed<number>(
-	() => diskSteps.value[diskIndex.value] ?? diskSteps.value[0] ?? 0,
+	() =>
+		props.fixedDisk ??
+		diskSteps.value[diskIndex.value] ??
+		diskSteps.value[0] ??
+		0,
 )
 
 // frappe-ui's Slider is espresso-styled (dark surface-gray fill + white thumb) and
@@ -82,33 +104,33 @@ const ram = computed<number>(() =>
 // AND the region's live capacity (the more restrictive of the two), each given the
 // other's current value.
 const maxVcpuIndex = computed<number>(() =>
-	profile.value
+	diskProfile.value
 		? indexOf(
 				vcpuSteps.value,
 				Math.min(
 					maxAffordableVcpu(
-						profile.value,
+						diskProfile.value,
 						props.rateCard,
 						props.available,
 						diskGb.value,
 					),
-					maxVcpuForCapacity(profile.value, props.capacity),
+					maxVcpuForCapacity(diskProfile.value, props.capacity),
 				),
 			)
 		: 0,
 )
 const maxDiskIndex = computed<number>(() =>
-	profile.value
+	diskProfile.value
 		? indexOf(
 				diskSteps.value,
 				Math.min(
 					maxAffordableDisk(
-						profile.value,
+						diskProfile.value,
 						props.rateCard,
 						props.available,
 						vcpus.value,
 					),
-					maxDiskForCapacity(profile.value, props.capacity),
+					maxDiskForCapacity(diskProfile.value, props.capacity),
 				),
 			)
 		: 0,
@@ -202,12 +224,19 @@ watch([maxVcpuIndex, maxDiskIndex], () => {
 	if (diskIndex.value > maxDiskIndex.value) diskIndex.value = maxDiskIndex.value
 })
 
+watch(diskSteps, () => {
+	diskIndex.value = Math.min(
+		diskIndex.value,
+		Math.max(0, diskSteps.value.length - 1),
+	)
+})
+
 // Publish the chosen config — null while there's no priceable, in-headroom shape.
 watch(
 	[profile, vcpus, ram, diskGb, overHeadroom],
 	() => {
 		config.value =
-			profile.value && !overHeadroom.value
+			profile.value && !overHeadroom.value && diskGb.value > 0
 				? {
 						sub_category: profileName.value,
 						vcpus: vcpus.value,
@@ -307,7 +336,9 @@ function indexOf(ladder: number[], value: number): number {
 			</div>
 
 			<p v-if="overHeadroom" class="text-p-xs text-ink-red-6">
-				This config is over your remaining spending limit.
+				{{ __('This config is over your spending limit. Up to {0} a month fits, before tax.', [
+						money(available, currency, { trimTrailingZeros: true }),
+					]) }}
 			</p>
 			<p v-else-if="cappedByCapacity" class="text-p-xs text-ink-gray-5">
 				Sizes are limited by this region's available capacity right now.

@@ -62,27 +62,6 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					condition: canViewServers.value,
 				},
 				{
-					label: 'Snapshots',
-					icon: 'lucide-camera',
-					to: '/servers/snapshots',
-					condition: canViewServers.value,
-				},
-				{
-					label: 'SSH Keys',
-					icon: 'lucide-key-round',
-					to: '/servers/ssh-keys',
-					condition: canViewServers.value,
-				},
-				{
-					label: 'Object storage',
-					icon: 'lucide-archive',
-					to: '/object-storage',
-					condition:
-						features.addons && features.storage && canViewServices.value,
-				},
-				// The sent-invitations page (/team/invitations) still exists but has
-				// no sidebar entry — pending invites are managed from the Team page.
-				{
 					label: 'Team',
 					icon: 'lucide-users',
 					to: '/team/members',
@@ -92,7 +71,28 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 		},
 
 		{
+			label: 'Services',
+			collapsible: true,
+			items: [
+				{
+					label: 'Object Storage',
+					icon: 'lucide-archive',
+					to: '/object-storage',
+					condition:
+						features.addons && features.storage && canViewServices.value,
+				},
+				{
+					label: 'LLM',
+					icon: 'lucide-bot',
+					to: '/llm',
+					condition: features.addons && features.llm && canViewServices.value,
+				},
+			],
+		},
+
+		{
 			label: 'Billing',
+			collapsible: true,
 			items: [
 				{
 					label: 'Overview',
@@ -107,15 +107,9 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					condition: canViewBilling.value,
 				},
 				{
-					label: 'Reports',
-					icon: 'lucide-chart-no-axes-column',
-					to: '/billing/reports',
-					condition: canViewBilling.value,
-				},
-				{
-					label: 'Limit tiers',
-					icon: 'lucide-layers',
-					to: '/billing/limits',
+					label: 'Payments',
+					icon: 'lucide-wallet',
+					to: '/billing/payments',
 					condition: canViewBilling.value,
 				},
 			],

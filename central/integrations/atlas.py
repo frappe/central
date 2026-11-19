@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import json
+from datetime import datetime
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import quote, urlsplit
 
 import frappe
 import requests
 from frappe import _
+from frappe.monitor import get_trace_id
 
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasRequestUncertain, AtlasResourceGone
 from central.iam import can, user_has_operator_bypass
@@ -13,19 +16,26 @@ from central.identity.doctype.team.tenant import validate_tenant_id
 from central.sso import central_url, mint_atlas_token
 
 if TYPE_CHECKING:
-	from datetime import datetime
-
 	from central.infrastructure.doctype.region.region import Region
 
 
 # The tag that ties a region's Machine image to the Central snapshot it holds.
 SNAPSHOT_TAG = "central_snapshot"
-# The region's host (Metal) refuses guest metadata beyond these limits.
-MAXIMUM_METADATA_ENTRIES = 64
+# Atlas and the region's host (Metal) refuse guest metadata beyond these limits.
+# Atlas measures the whole map as compact JSON.
+MAXIMUM_METADATA_ENTRIES = 16
 MAXIMUM_METADATA_KEY_BYTES = 128
-MAXIMUM_METADATA_VALUE_BYTES = 1024
+MAXIMUM_METADATA_BYTES = 48 * 1024
 # The largest page that the Atlas list routes return.
 HOST_PAGE_SIZE = 100
+# Atlas refuses to grow a VM with deep sleep or coma past their size limit, so sleep goes off as one set.
+SLEEP_OFF_SETTINGS = {
+	"sleep_after_idle_seconds": 0,
+	"deep_sleep_after_idle_seconds": 0,
+	"coma_after_idle_seconds": 0,
+}
+
+ConsoleMode = Literal["ssh", "tty"]
 
 
 class AtlasClient:
@@ -64,6 +74,7 @@ class AtlasClient:
 
 		tenant_id = frappe.db.get_value("Team", team, "tenant_id")
 		validate_tenant_id(tenant_id)
+
 		return cls(instance, tenant_id)
 
 	def _get(self, path: str, params: dict | None = None) -> dict:
@@ -76,25 +87,34 @@ class AtlasClient:
 
 	@staticmethod
 	def _validate_metadata(metadata: dict[str, str]) -> None:
-		"""Metal refuses these only after Atlas saved a draft machine."""
+		"""Metal refuses a long key only after Atlas saved a draft machine."""
 		if len(metadata) > MAXIMUM_METADATA_ENTRIES:
 			frappe.throw(_("Guest metadata has more than {0} entries.").format(MAXIMUM_METADATA_ENTRIES))
-		for key, value in metadata.items():
+
+		for key in metadata:
 			if len(key.encode()) > MAXIMUM_METADATA_KEY_BYTES:
 				frappe.throw(
 					_("Guest metadata key {0} is longer than {1} bytes.").format(
 						key, MAXIMUM_METADATA_KEY_BYTES
 					)
 				)
-			if len(value.encode()) > MAXIMUM_METADATA_VALUE_BYTES:
-				frappe.throw(
-					_("Guest metadata {0} is longer than {1} bytes.").format(
-						key, MAXIMUM_METADATA_VALUE_BYTES
-					)
-				)
+		if (
+			len(json.dumps(metadata, ensure_ascii=False, separators=(",", ":")).encode())
+			> MAXIMUM_METADATA_BYTES
+		):
+			frappe.throw(_("Guest metadata is larger than {0} bytes.").format(MAXIMUM_METADATA_BYTES))
 
 	def get_vm(self, name: str) -> dict:
 		return self._get(f"virtual-machines/{quote(name, safe='')}")
+
+	def get_vm_metrics(self, name: str, start: datetime, end: datetime | None = None) -> dict:
+		"""The host's samples of a VM from `start` to `end` or now, one every `sample_interval_seconds`.
+		Atlas widens the interval as the window grows."""
+		params = {"start": start.isoformat()}
+		if end:
+			params["end"] = end.isoformat()
+
+		return self._get(f"virtual-machines/{quote(name, safe='')}/metrics", params)
 
 	def list_vms(self, limit: int = 100, offset: int = 0) -> list[dict]:
 		"""One page of this tenant's servers, newest first."""
@@ -102,6 +122,7 @@ class AtlasClient:
 		items = page.get("items")
 		if not isinstance(items, list):
 			frappe.throw(_("Atlas returned an invalid server page."), AtlasConnectionError)
+
 		return items
 
 	def list_hosts(self) -> list[dict]:
@@ -116,6 +137,16 @@ class AtlasClient:
 			if not page.get("has_more"):
 				return hosts
 
+	def get_host_id(self, title: str) -> str:
+		"""The ID of the region's Metal host named `title`."""
+		hosts = self.list_hosts()
+		for host in hosts:
+			if host.get("title") == title:
+				return host["id"]
+
+		titles = ", ".join(host.get("title") or host.get("id") for host in hosts)
+		frappe.throw(_("Atlas has no host named {0}. Its hosts are: {1}.").format(frappe.bold(title), titles))
+
 	def grant_host_access(self, host_id: str, email: str, expires_at: datetime) -> dict:
 		"""Open one host, or every host for `all`, to one person. A repeated grant moves the end time."""
 		path = f"hosts/{quote(host_id, safe='')}/access/grant"
@@ -124,6 +155,10 @@ class AtlasClient:
 	def revoke_host_access(self, host_id: str, email: str) -> None:
 		"""Close one host, or every host for `all`, to one person. Revoking twice is safe."""
 		self._request("POST", f"hosts/{quote(host_id, safe='')}/access/revoke", payload={"email": email})
+
+	def close_sessions(self, email: str) -> None:
+		"""End every live Warpgate session of one person in this region. Closing twice is safe."""
+		self._request("POST", "warpgate/sessions/close", payload={"email": email})
 
 	def vm_action(self, name: str, action: str) -> dict:
 		path = f"virtual-machines/{quote(name, safe='')}"
@@ -134,27 +169,30 @@ class AtlasClient:
 
 		return self._request("POST", f"{path}/actions/{action}")
 
+	def set_rescue_mode(self, name: str, enabled: bool) -> dict:
+		"""Select the image for the next cold boot without restarting the VM."""
+		action = "enable-rescue-mode" if enabled else "disable-rescue-mode"
+		return self._request("POST", f"virtual-machines/{quote(name, safe='')}/actions/{action}")
+
 	def resize(self, name: str, cpu_millicores: int, memory_mib: int, disk_mib: int) -> dict:
-		"""Set CPU, memory and disk in one call, and turn idle shutdown off. Atlas takes a
+		"""Set CPU, memory and disk in one call, and turn sleep off. Atlas takes a
 		resource change only on a stopped VM, resizes it in place or moves it to a host that
 		fits (reporting a `migrating` state meanwhile), and never shrinks the disk."""
 		payload = {
 			"cpu_millicores": cpu_millicores,
 			"memory_mib": memory_mib,
 			"disk_mib": disk_mib,
-			"sleep_after_idle_seconds": 0,
+			**SLEEP_OFF_SETTINGS,
 		}
 		return self._request(
 			"POST", f"virtual-machines/{quote(name, safe='')}/actions/resize", payload=payload
 		)
 
-	def disable_idle_shutdown(self, name: str) -> dict:
-		"""Turn idle shutdown off. Atlas keeps every omitted resize field, so this works in any
-		VM state."""
+	def set_compute_settings(self, name: str, settings: dict[str, int | bool]) -> dict:
+		"""Change sleep and CPU burst without resources. Atlas keeps every omitted resize field,
+		so this works in any VM state."""
 		return self._request(
-			"POST",
-			f"virtual-machines/{quote(name, safe='')}/actions/resize",
-			payload={"sleep_after_idle_seconds": 0},
+			"POST", f"virtual-machines/{quote(name, safe='')}/actions/resize", payload=settings
 		)
 
 	def update_disk(self, name: str, disk_mib: int) -> dict:
@@ -171,7 +209,31 @@ class AtlasClient:
 			payload={"ssh_keys": public_keys},
 		)
 
-	def get_console_url(self, name: str, mode: str) -> str:
+	def update_network(self, name: str, payload: dict) -> dict:
+		"""Change network settings. Atlas replaces each firewall field it gets and keeps the rest."""
+		return self._request("PATCH", f"virtual-machines/{quote(name, safe='')}/network", payload=payload)
+
+	def attach_public_ip(self, name: str, version: int) -> dict:
+		"""Attach a public address from the region's pool. Atlas attaches it after the reply."""
+		return self._request(
+			"PUT",
+			f"virtual-machines/{quote(name, safe='')}/public-ipv{version}",
+			payload={"public_ip": "auto"},
+		)
+
+	def detach_public_ip(self, name: str, version: int) -> dict:
+		"""Detach the public address. An address from the pool goes back to it."""
+		return self._request("DELETE", f"virtual-machines/{quote(name, safe='')}/public-ipv{version}")
+
+	def set_termination_protection(self, name: str, enabled: bool) -> dict:
+		"""Turn termination protection on or off. Atlas refuses to delete a protected VM."""
+		return self._request(
+			"PATCH",
+			f"virtual-machines/{quote(name, safe='')}/termination-protection",
+			payload={"enabled": enabled},
+		)
+
+	def get_console_url(self, name: str, mode: ConsoleMode) -> str:
 		"""Return the Atlas console page for a single-use token. The token expires in 30 seconds.
 
 		The token goes in the URL fragment, so the browser never sends it to a server."""
@@ -185,7 +247,17 @@ class AtlasClient:
 			frappe.throw(_("Atlas returned an invalid console token."), AtlasConnectionError)
 
 		base_url, _region_id = self._configuration()
+
 		return f"{base_url}/vm_console#token={quote(token, safe='')}"
+
+	def create_investigation(self, problem: str, context: dict | None, requested_by: str | None) -> dict:
+		"""Hand a problem to the region's read-only investigator. Atlas works on it in the background."""
+		payload = {"problem": problem, "context": context, "requested_by": requested_by}
+		return self._request("POST", "investigations", payload=payload)
+
+	def get_investigation(self, investigation_id: str) -> dict:
+		"""The status, report, and scrubbed tool log of one investigation."""
+		return self._get(f"investigations/{quote(investigation_id, safe='')}")
 
 	def check_connection(self) -> None:
 		response = self._get("images", params={"limit": 1})
@@ -231,6 +303,7 @@ class AtlasClient:
 		items = page.get("items")
 		if not isinstance(items, list):
 			frappe.throw(_("Atlas returned an invalid image page."), AtlasConnectionError)
+
 		return items[0] if items else None
 
 	def get_machine_image(self, image_id: str) -> dict:
@@ -335,6 +408,8 @@ class AtlasClient:
 		headers = {
 			"Authorization": f"Bearer {token}",
 			"X-Tenant-ID": str(self.tenant_id),
+			# Atlas logs under the same trace ID as Central's Error Log. Requests drops it when None.
+			"X-Frappe-Request-Id": get_trace_id(),
 			"Accept": "application/json",
 		}
 
@@ -390,12 +465,18 @@ class AtlasClient:
 
 	def _error_message(self, response: requests.Response) -> str | None:
 		"""The `error.message` an Atlas error body carries, escaped and bounded, or None."""
+		message = self._error_field(response, "message")
+		return frappe.utils.escape_html(message[:1000]) if message else None
+
+	def _error_field(self, response: requests.Response, field: str) -> str | None:
 		try:
 			error = response.json().get("error", {})
 		except (ValueError, AttributeError):
 			return None
-		message = error.get("message") if isinstance(error, dict) else None
-		return frappe.utils.escape_html(message[:1000]) if isinstance(message, str) else None
+
+		value = error.get(field) if isinstance(error, dict) else None
+
+		return value if isinstance(value, str) else None
 
 	def _read_response(self, response: requests.Response, method: str = "GET") -> dict:
 		if response.status_code in (401, 403):
@@ -412,7 +493,7 @@ class AtlasClient:
 		if response.status_code == 503:
 			reason = self._error_message(response)
 			if reason:
-				raise AtlasRejected(reason)
+				raise AtlasRejected(reason, self._error_field(response, "code"))
 
 		if method != "GET" and response.status_code >= 500:
 			raise AtlasRequestUncertain(_("Atlas could not confirm the operation result."))
@@ -425,10 +506,13 @@ class AtlasClient:
 			)
 			if method != "GET" and response.status_code < 400:
 				error_type = AtlasRequestUncertain
-			raise error_type(
-				self._error_message(response)
-				or _("Atlas returned HTTP {0} for the regional request.").format(response.status_code)
-			)
+
+			message = self._error_message(response) or _(
+				"Atlas returned HTTP {0} for the regional request."
+			).format(response.status_code)
+			if error_type is AtlasRejected:
+				raise AtlasRejected(message, self._error_field(response, "code"))
+			raise error_type(message)
 
 		if response.status_code == 204:
 			return {}

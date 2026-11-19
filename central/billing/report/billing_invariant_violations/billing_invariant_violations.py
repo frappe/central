@@ -1,39 +1,54 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Billing Invariant Violations — the money facts that no longer add up.
-
-Every row is a place where two independent derivations of the same number disagree:
-a wallet whose balance is not its ledger, an invoice whose subtotal is not its lines,
-a payment we believe we captured with no attempt behind it.
-
-**An empty report is the success case.** This is the one report you want blank.
-
-It recomputes live from `platform.invariants` — the same function the daily audit
-runs, so what the job asserts and what a human reads can never drift apart. Nothing is
-stored, so there is no snapshot to go stale.
-
-Amounts are split per currency: INR and USD never share a column or a total
-(report/_currency.split_currency_columns).
-"""
 
 import frappe
 from frappe import _
 
-from central.billing.platform import invariants
+from central.billing.platform import invariants, readiness
 from central.billing.report._currency import split_currency_columns
+from central.billing.report._paging import first_rows
+
+KINDS = {"Money": invariants.CHECKS, "Readiness": readiness.CHECKS}
+
+
+def _selected_checks(filters: dict) -> dict:
+	"""The checks the filters ask for, as {code: (kind, title)}."""
+	only = filters.get("check") or None
+	return {
+		code: (kind, title)
+		for kind, registry in KINDS.items()
+		if not filters.get("kind") or kind == filters["kind"]
+		for code, (title, _fn) in registry.items()
+		if not only or code == only
+	}
+
+
+def _title(check: str) -> str:
+	return next(registry[check][0] for registry in KINDS.values() if check in registry)
+
+
+def _violations(filters: dict, selected: dict) -> list:
+	found = []
+	for registry in KINDS.values():
+		for code in registry:
+			if code in selected:
+				found.extend(invariants.audit(only=code, checks=registry))
+	if filters.get("team"):
+		found = [v for v in found if v.team == filters["team"]]
+	return sorted(found, key=lambda v: abs(v.drift), reverse=True)
 
 
 def execute(filters: dict | None = None):
 	filters = filters or {}
-	violations = invariants.audit(only=filters.get("check") or None)
-
-	if filters.get("team"):
-		violations = [v for v in violations if v.team == filters["team"]]
+	selected = _selected_checks(filters)
+	violations = _violations(filters, selected)
+	if filters.get("view") == "Summary":
+		return _summary(violations, selected)
 
 	rows = [
 		{
 			"check": v.check,
-			"title": invariants.CHECKS[v.check][0],
+			"title": _title(v.check),
 			"team": v.team,
 			"subject_doctype": v.subject_doctype,
 			"subject": v.subject,
@@ -49,15 +64,43 @@ def execute(filters: dict | None = None):
 	# Splits expected/actual/drift into one column per currency when the run spans more
 	# than one, and drops the standalone currency column. Mutates `rows` in place.
 	columns = split_currency_columns(_columns(), rows, ("expected", "actual", "drift"))
-	return columns, rows, _message(rows), _chart(violations)
+	rows, message = first_rows(rows, _message(rows))
+	return columns, rows, message, _chart(violations)
 
 
-def _message(rows: list[dict]) -> str:
+def _summary(violations: list, selected: dict):
+	"""One row per check that ran: how many violations, across how many teams."""
+	rows = []
+	for check, (kind, title) in selected.items():
+		hits = [v for v in violations if v.check == check]
+		rows.append(
+			{
+				"check": check,
+				"kind": kind,
+				"title": title,
+				"violations": len(hits),
+				"teams": len({v.team for v in hits if v.team}),
+				"example": hits[0].detail if hits else "",
+			}
+		)
+	rows.sort(key=lambda row: (-row["violations"], row["check"]))
+	columns = [
+		{"label": _("Check"), "fieldname": "check", "fieldtype": "Data", "width": 70},
+		{"label": _("Kind"), "fieldname": "kind", "fieldtype": "Data", "width": 100},
+		{"label": _("What it asserts"), "fieldname": "title", "fieldtype": "Data", "width": 280},
+		{"label": _("Violations"), "fieldname": "violations", "fieldtype": "Int", "width": 100},
+		{"label": _("Teams"), "fieldname": "teams", "fieldtype": "Int", "width": 80},
+		{"label": _("Example"), "fieldname": "example", "fieldtype": "Data", "width": 460},
+	]
+	return columns, rows, _message(violations), _chart(violations)
+
+
+def _message(rows: list) -> str:
 	if not rows:
-		return _("✅ Every money invariant holds. This report is meant to be empty.")
+		return _("✅ Every money invariant and readiness check holds. This report is meant to be empty.")
 	return _(
-		"⚠️ {0} violation(s). Each is a number the system derives two ways and gets two "
-		"answers for — money has drifted. Worst drift first."
+		"⚠️ {0} violation(s). Money checks are numbers the system derives two ways and gets two "
+		"answers for; readiness checks are data the next billing run would bill wrongly. Worst drift first."
 	).format(len(rows))
 
 
@@ -70,7 +113,7 @@ def _chart(violations: list) -> dict | None:
 	labels = sorted(counts)
 	return {
 		"data": {
-			"labels": [f"{k} — {invariants.CHECKS[k][0]}" for k in labels],
+			"labels": [f"{k} — {_title(k)}" for k in labels],
 			"datasets": [{"name": _("Violations"), "values": [counts[k] for k in labels]}],
 		},
 		"type": "bar",

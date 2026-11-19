@@ -1,11 +1,5 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Resolve a request's country from its IP.
-
-Ported from press (`press.utils.get_country_info`): we ask ip-api.com to geolocate
-the caller and cache the answer per IP. Used at signup to seed a team's billing
-currency from where the user is signing up from.
-"""
 
 from __future__ import annotations
 
@@ -20,11 +14,8 @@ IP_COUNTRY_TTL_SECONDS = 30 * 24 * 60 * 60
 
 
 def get_country_from_ip(ip: str | None = None) -> str | None:
-	"""Country name (e.g. "India") for `ip`, or None when it can't be determined.
-
-	Falls back to the current request's IP. Returns None on any miss — no IP, a
-	private/localhost address, a lookup failure, or during tests — so every caller
-	must tolerate None (we default the currency in that case). Never raises."""
+	"""The country name for `ip`, or for the request IP, or None when it cannot be found.
+	Never raises, so callers must handle None."""
 	if frappe.flags.in_test:
 		return None
 
@@ -35,7 +26,7 @@ def get_country_from_ip(ip: str | None = None) -> str | None:
 	# Per-IP key with a TTL rather than one ever-growing `ip_country_map` hash: a
 	# hash field never expires, so it accreted a row per distinct signup IP forever.
 	# Only `set_value` takes a TTL, so the read and the write stay separate here.
-	key = f"ip_country:{ip}"
+	key = _country_cache_key(ip)
 	info = frappe.cache.get_value(key)
 	if info is None:
 		# A failed lookup is not cached, so a rate-limited answer is not pinned for a month.
@@ -46,22 +37,36 @@ def get_country_from_ip(ip: str | None = None) -> str | None:
 	return (info or {}).get("country")
 
 
+def warm_country_cache(ip: str | None = None) -> None:
+	"""Look up the request's country in a background job when it is not cached yet.
+
+	A signup sends its code a minute or more before its team is created, so the team's
+	billing then reads the country from the cache instead of waiting on the lookup."""
+	ip = _clean_public_ip(ip or getattr(frappe.local, "request_ip", None))
+	if not ip or frappe.cache.get_value(_country_cache_key(ip)) is not None:
+		return
+
+	frappe.enqueue(
+		"central.geo.get_country_from_ip",
+		ip=ip,
+		queue="short",
+		enqueue_after_commit=True,
+		job_id=f"ip-country:{ip}",
+		deduplicate=True,
+	)
+
+
+def _country_cache_key(ip: str) -> str:
+	return f"ip_country:{ip}"
+
+
 def _clean_public_ip(raw: str | None) -> str | None:
-	"""Canonical, globally-routable IP for `raw`, or None.
-
-	`request_ip` can be derived from a client-supplied `X-Forwarded-For` header, so
-	it is untrusted: validate it as a real IP address before it ever reaches the
-	outbound lookup URL or the cache key. This shuts the door on a spoofed or
-	malformed value injecting into the request, and drops private/loopback/reserved
-	addresses that can't be geolocated anyway (they fall back to India/INR at the
-	caller). Returns the library's canonical string form, which by construction
-	contains no URL-significant characters.
-
-	(Trusting X-Forwarded-For at all is a deployment concern — the edge proxy must
-	overwrite, not append, the client's header. This function only guarantees the
-	value is well-formed, not that it's honest.)"""
+	"""The canonical form of `raw` when it is a public IP address, otherwise None.
+	`request_ip` can come from a client header, so it is validated before it reaches the lookup
+	URL or the cache key."""
 	if not raw:
 		return None
+
 	# An X-Forwarded-For chain is "client, proxy1, proxy2"; the client is first.
 	candidate = str(raw).split(",")[0].strip()
 	try:
@@ -77,6 +82,7 @@ def _clean_public_ip(raw: str | None) -> str | None:
 		or addr.is_unspecified
 	):
 		return None
+
 	return addr.compressed
 
 
@@ -91,9 +97,10 @@ def _lookup_ip(ip: str) -> dict:
 		url = f"http://ip-api.com/json/{ip}?fields=status,country,countryCode"
 
 	try:
-		data = requests.get(url, timeout=5).json()
+		data = requests.get(url, timeout=2).json()
 		if data.get("status") != "fail":
 			return data
 	except Exception:
 		frappe.log_error(title="IP country lookup failed")
+
 	return {}

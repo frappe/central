@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Billing details are asked for when credits stop covering the bill, not before.
+"""Billing details and a payment method are asked for when credits stop covering
+the bill, not before.
 
 Provisioning is allowed while the wallet funds it; the invoice is held until the
 details arrive.
@@ -81,7 +82,7 @@ class CreditFundedTestBase(IntegrationTestCase):
 					"doctype": "Invoice",
 					"team": TEAM,
 					"invoice_type": invoice_type,
-					"status": "Draft",
+					"status": "Outstanding",
 					"period_start": "2026-06-01",
 					"period_end": period_end,
 					"currency": "INR",
@@ -111,13 +112,13 @@ class TestCreditFundedProvisioning(CreditFundedTestBase):
 		# Still no legal name or address on file — and nothing asked for one.
 		self.assertFalse(frappe.db.get_value("Billing Profile", TEAM, "legal_name"))
 
-	def test_details_are_asked_for_once_credits_fall_short(self):
+	def test_a_payment_method_is_asked_for_once_credits_fall_short(self):
 		self._grant(500)  # a third of the plan's monthly rate
 
 		with self.assertRaises(frappe.ValidationError) as caught:
 			self._purchase()
 
-		self.assertIn("legal name", str(caught.exception))
+		self.assertEqual(caught.exception.envelope["code"], "PAYMENT_METHOD_REQUIRED")
 
 	def test_no_credits_asks_for_details_as_before(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -139,7 +140,19 @@ class TestCreditFundedProvisioning(CreditFundedTestBase):
 			with self.assertRaises(frappe.ValidationError):
 				self._purchase()
 
-	def test_a_complete_profile_needs_no_credits(self):
+	def test_a_complete_profile_without_a_payment_method_is_refused(self):
+		complete_billing_profile(TEAM)
+
+		with self.assertRaises(frappe.ValidationError):
+			self._purchase()
+
+	def test_a_payment_method_needs_no_credits(self):
+		complete_billing_profile(TEAM)
+		with patch("central.resource_actions.has_active_payment_method", return_value=True):
+			self.assertEqual(self._purchase(), RATE)
+
+	@IntegrationTestCase.change_settings("Central Settings", require_payment_method=0)
+	def test_a_complete_profile_is_enough_when_the_requirement_is_off(self):
 		complete_billing_profile(TEAM)
 
 		self.assertEqual(self._purchase(), RATE)
@@ -191,13 +204,36 @@ class TestConcurrentFunding(CreditFundedTestBase):
 
 class TestCreditFundedHeadroom(CreditFundedTestBase):
 	def test_headroom_is_the_wallet_under_the_tier_cap(self):
-		self._grant(3000)
+		self._grant(3540)  # 3,000 before GST
 
 		self.assertEqual(settlement.credit_funded_headroom(TEAM), 3000)
 
 	def test_the_tier_cap_still_bounds_a_large_wallet(self):
 		set_team_tier(TEAM, level="t0", max_spend=1000)
 		self._grant(9000)
+
+		self.assertEqual(settlement.credit_funded_headroom(TEAM), 1000)
+
+	def test_promotional_credit_also_pays_the_gst(self):
+		self._grant(1180)
+
+		self.assertEqual(settlement.credit_funded_headroom(TEAM), 1000)
+
+	def test_a_top_up_funds_its_pre_tax_amount_and_its_gst_pays_the_tax(self):
+		credits.purchase(TEAM, 1180, "INR", gateway_payment_id="pi_headroom", gateway="Stripe")
+		self._grant(1180)
+
+		self.assertEqual(settlement.credit_funded_headroom(TEAM), 2000)
+
+	def test_top_up_gst_a_bill_already_used_is_not_counted_again(self):
+		credits.purchase(TEAM, 1180, "INR", gateway_payment_id="pi_gst_used", gateway="Stripe")
+
+		with patch.object(credits, "advance_gst_balance", return_value=0):
+			self.assertEqual(settlement.credit_funded_headroom(TEAM), 847.46)  # 1,000 / 1.18
+
+	def test_expired_promotional_credit_funds_nothing(self):
+		credits.grant_promotional_credits(TEAM, 1180, "INR", expires_on=frappe.utils.nowdate())
+		self._grant(1180)
 
 		self.assertEqual(settlement.credit_funded_headroom(TEAM), 1000)
 
@@ -225,7 +261,7 @@ class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
 		result = invoicing.open_and_collect(invoice)
 
 		self.assertEqual(result["held"], "billing_details")
-		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Draft")
+		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Outstanding")
 		# Credits are untouched: nothing was settled against an invoice never issued.
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 5000)
 		self.assertTrue(
@@ -254,7 +290,7 @@ class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
 
 		self.assertEqual(counters["held"], 1)
 		self.assertEqual(counters["settled"], 0)
-		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Draft")
+		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Outstanding")
 
 	def test_completing_the_profile_settles_what_was_held(self):
 		# Otherwise the customer waits for the next monthly run to be billed for
@@ -281,6 +317,7 @@ class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
 				legal_name="Acme Pvt Ltd",
 				address_line1="1 Main Street",
 				city="Pune",
+				state="Maharashtra",
 				country="India",
 			)
 
@@ -302,7 +339,7 @@ class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
 		result = invoicing.open_and_collect(invoice)
 
 		self.assertTrue(result["cost_report"])
-		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Open")
+		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Outstanding")
 
 
 class TestBillingDetailsEscalation(CreditFundedTestBase):
@@ -313,7 +350,7 @@ class TestBillingDetailsEscalation(CreditFundedTestBase):
 		return self._draft(period_end=frappe.utils.add_days(frappe.utils.nowdate(), -grace - 1))
 
 	def test_credit_stops_funding_once_a_bill_has_waited_too_long(self):
-		self._grant(5000)
+		self._grant(5900)  # 5,000 before GST
 		self.assertEqual(settlement.credit_funded_headroom(TEAM), 5000)
 
 		self._overdue_draft()
@@ -323,7 +360,7 @@ class TestBillingDetailsEscalation(CreditFundedTestBase):
 			self._purchase()
 
 	def test_a_bill_still_inside_the_grace_period_funds_as_before(self):
-		self._grant(5000)
+		self._grant(5900)
 		self._draft(period_end=frappe.utils.nowdate())
 
 		self.assertEqual(settlement.credit_funded_headroom(TEAM), 5000)
@@ -402,3 +439,53 @@ class TestBillingDetailsReminder(CreditFundedTestBase):
 		with patch.object(frappe, "enqueue") as enqueue:
 			settlement.run_billing_details_reminder()
 		return [team for call in enqueue.call_args_list for team in call.kwargs["teams"]]
+
+
+class TestPaymentStanding(CreditFundedTestBase):
+	"""A team buys more only when it can pay and is not behind on paying."""
+
+	def _invoice(self, status, amount_paid=0):
+		name = self._draft()
+		frappe.db.set_value("Invoice", name, {"status": status, "amount_paid": amount_paid})
+		return name
+
+	def _manual_checkout(self):
+		complete_billing_profile(TEAM, currency="INR")
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Manual Checkout")
+
+	def test_an_overdue_invoice_refuses_a_server_even_with_credit(self):
+		self._grant(5000)
+		self._invoice("Overdue")
+
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self._purchase()
+		self.assertEqual(caught.exception.envelope["code"], "PAYMENT_OVERDUE")
+
+	def test_a_suspended_subscription_refuses_a_server(self):
+		self._grant(5000)
+		self._run_server()
+		frappe.db.set_value("Subscription", {"team": TEAM}, "account_standing", "Suspended")
+
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self._purchase()
+		self.assertEqual(caught.exception.envelope["code"], "PAYMENT_OVERDUE")
+
+	def test_manual_checkout_alone_is_not_a_way_to_pay(self):
+		self._manual_checkout()
+
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self._purchase()
+		self.assertEqual(caught.exception.envelope["code"], "PAYMENT_METHOD_REQUIRED")
+
+	def test_manual_checkout_after_a_paid_invoice_is_a_way_to_pay(self):
+		self._manual_checkout()
+		self._invoice("Paid", amount_paid=1000)
+
+		self.assertEqual(self._purchase(), RATE)
+
+	def test_an_invoice_paid_only_by_credit_does_not_count(self):
+		self._manual_checkout()
+		self._invoice("Paid", amount_paid=0)
+
+		with self.assertRaises(frappe.ValidationError):
+			self._purchase()

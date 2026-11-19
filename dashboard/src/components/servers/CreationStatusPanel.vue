@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Alert } from 'frappe-ui'
 import { computed, onUnmounted, ref } from 'vue'
+import { useSupport } from '@/composables/useSupport'
 import { getCreationStage } from '@/lib/status'
 import type { ActionStatus } from '@/types/serverCreation'
 
@@ -43,10 +44,22 @@ const failurePrimaryAction = computed(() =>
 			}
 		: { label: 'Change configuration', onClick: () => emit('edit') },
 )
+// The ticket carries the request, so support can find it in Central and in the region.
+const { getContactSupportOption } = useSupport()
+const supportAction = computed(() => {
+	const option = getContactSupportOption({
+		Server: props.action?.title,
+		Request: props.action?.action,
+		Error: props.action?.error?.code,
+	})
+	return option
+		? { label: 'Contact support', onClick: option.onClick }
+		: undefined
+})
 const failureSecondaryAction = computed(() =>
 	canRetry.value
 		? { label: 'Change configuration', onClick: () => emit('edit') }
-		: undefined,
+		: supportAction.value,
 )
 const failureTitle = computed(
 	() => props.action?.error?.title ?? `Couldn't create ${props.action?.title}`,
@@ -121,6 +134,7 @@ const checkedAgo = computed(() => {
 				:title="`${action?.title} is unconfirmed`"
 				:description="unresolvedDescription"
 				:primary-action="checkAction"
+				:secondary-action="supportAction"
 			/>
 			<Alert
 				v-else-if="action?.error"
@@ -146,7 +160,7 @@ const checkedAgo = computed(() => {
 					<span aria-hidden="true">·</span>
 					<button
 						type="button"
-						class="shrink-0 rounded-2 font-medium text-ink-gray-8 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-outline-gray-4 disabled:text-ink-gray-5"
+						class="shrink-0 rounded-2 text-sm-medium text-ink-gray-8 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-outline-gray-4 disabled:text-ink-gray-5"
 						:disabled="checking"
 						@click="emit('check')"
 					>

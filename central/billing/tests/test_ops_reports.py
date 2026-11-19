@@ -36,15 +36,17 @@ class TestWebhookLag(BillingTestCase):
 	def setUp(self):
 		self.gateway = make_stripe_gateway().name
 
-	def _webhook(self, received, processed):
+	def _webhook(self, received, processed, occurred=None, status="Processed", deliveries=1):
 		event = frappe.get_doc(
 			{
 				"doctype": "Webhook Event",
 				"gateway": self.gateway,
 				"gateway_event_id": frappe.generate_hash(length=10),
 				"event_type": "payment_intent.succeeded",
-				"status": "Processed",
+				"status": status,
 				"processed_at": processed,
+				"occurred_at": occurred,
+				"deliveries": deliveries,
 			}
 		).insert(ignore_permissions=True)
 		frappe.db.set_value("Webhook Event", event.name, "creation", received, update_modified=False)
@@ -68,25 +70,74 @@ class TestWebhookLag(BillingTestCase):
 		self.assertEqual(rows[0]["events"], 2)
 		self.assertEqual(rows[0]["slow"], 1)
 
-	def test_an_unprocessed_webhook_has_no_lag_to_report(self):
-		frappe.get_doc(
-			{
-				"doctype": "Webhook Event",
-				"gateway": self.gateway,
-				"gateway_event_id": frappe.generate_hash(length=10),
-				"event_type": "payment_intent.succeeded",
-				"status": "Received",
-			}
-		).insert(ignore_permissions=True)
-		_columns, rows, _msg, _chart, _summary = webhook_lag.execute({"gateway": self.gateway})
-		self.assertEqual(rows, [])
+	def test_a_late_delivery_is_measured_from_when_the_gateway_raised_it(self):
+		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:01", occurred="2026-06-10 08:30:00")
+		self._webhook("2026-06-10 11:00:00", "2026-06-10 11:00:01", occurred="2026-06-10 10:59:59")
+		_columns, rows, _msg, _chart, _summary = webhook_lag.execute(
+			{"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)
+		self.assertEqual(rows[0]["delivery_worst_seconds"], 5400.0)
+		self.assertEqual(rows[0]["delivered_late"], 1)
+		self.assertEqual(rows[0]["slow"], 0)
+
+	def test_unknown_delivery_times_are_blank_not_zero(self):
+		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:01")
+		_columns, rows, _msg, _chart, summary = webhook_lag.execute(
+			{"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)
+		self.assertIsNone(rows[0]["delivery_median_seconds"])
+		self.assertIsNone(rows[0]["delivery_worst_seconds"])
+		delivery_p95 = next(s for s in summary if s["label"] == "p95 Delivery (s)")
+		self.assertIsNone(delivery_p95["value"])
+		self.assertNotIn("indicator", delivery_p95)
+
+	def test_failed_events_and_repeat_deliveries_are_counted(self):
+		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:01", deliveries=3)
+		self._webhook("2026-06-10 10:05:00", None, status="Failed")
+		_columns, rows, _msg, _chart, _summary = webhook_lag.execute(
+			{"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)
+		self.assertEqual(rows[0]["events"], 2)
+		self.assertEqual(rows[0]["failed"], 1)
+		self.assertEqual(rows[0]["repeat_deliveries"], 2)
+
+	def test_the_chart_plots_delivery_only_when_every_day_has_a_time(self):
+		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:02")
+		self._webhook("2026-06-11 10:00:00", "2026-06-11 10:00:03", occurred="2026-06-11 09:58:00")
+		filters = {"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+
+		chart = webhook_lag.execute(filters)[3]
+		self.assertEqual(chart["data"]["labels"], ["2026-06-10", "2026-06-11"])
+		self.assertEqual([d["values"] for d in chart["data"]["datasets"]], [[2.0, 3.0]])
+
+		chart = webhook_lag.execute({**filters, "from_date": "2026-06-11"})[3]
+		self.assertEqual([d["values"] for d in chart["data"]["datasets"]], [[120.0], [3.0]])
+
+	def test_a_day_where_every_event_failed_draws_no_processing_line(self):
+		self._webhook("2026-06-10 10:00:00", "2026-06-10 10:00:02")
+		self._webhook("2026-06-11 10:00:00", None, status="Failed")
+
+		chart = webhook_lag.execute(
+			{"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)[3]
+		self.assertIsNone(chart)
+
+	def test_a_late_event_still_waiting_counts_its_delivery_but_no_processing(self):
+		self._webhook("2026-06-10 10:00:00", None, occurred="2026-06-10 09:00:00", status="Received")
+		_columns, rows, _msg, _chart, _summary = webhook_lag.execute(
+			{"from_date": "2026-06-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)
+		self.assertEqual(rows[0]["waiting"], 1)
+		self.assertEqual(rows[0]["delivered_late"], 1)
+		self.assertEqual(rows[0]["delivery_worst_seconds"], 3600.0)
+		self.assertIsNone(rows[0]["worst_seconds"])
 
 
 class TestDunningRecovery(BillingTestCase):
 	def test_an_invoice_that_went_overdue_then_paid_counts_as_recovered(self):
-		_event("Invoice", "INV-A", "Open", "Overdue")
+		_event("Invoice", "INV-A", "Outstanding", "Overdue")
 		_event("Invoice", "INV-A", "Overdue", "Paid", day="2026-06-20")
-		_event("Invoice", "INV-B", "Open", "Overdue")
+		_event("Invoice", "INV-B", "Outstanding", "Overdue")
 
 		_columns, rows, _msg, _chart, _summary = dunning_recovery.execute(
 			{"from_date": "2026-06-01", "to_date": "2026-06-30"}
@@ -98,14 +149,14 @@ class TestDunningRecovery(BillingTestCase):
 		self.assertEqual(row["recovery_rate"], 50.0)
 
 	def test_an_invoice_paid_without_going_overdue_is_not_in_the_denominator(self):
-		_event("Invoice", "INV-C", "Open", "Paid")
+		_event("Invoice", "INV-C", "Outstanding", "Paid")
 		_columns, rows, _msg, _chart, _summary = dunning_recovery.execute(
 			{"from_date": "2026-06-01", "to_date": "2026-06-30"}
 		)
 		self.assertEqual(rows, [])
 
 	def test_a_recovery_after_the_window_still_counts(self):
-		_event("Invoice", "INV-D", "Open", "Overdue", day="2026-06-28")
+		_event("Invoice", "INV-D", "Outstanding", "Overdue", day="2026-06-28")
 		_event("Invoice", "INV-D", "Overdue", "Paid", day="2026-07-03")
 		_columns, rows, _msg, _chart, _summary = dunning_recovery.execute(
 			{"from_date": "2026-06-01", "to_date": "2026-06-30"}
@@ -124,7 +175,7 @@ class TestGatewayAuthRateOverTime(BillingTestCase):
 				{
 					"doctype": "Invoice",
 					"team": self.team,
-					"status": "Open",
+					"status": "Outstanding",
 					"period_start": "2026-05-01",
 					"period_end": "2026-05-31",
 					"currency": "USD",
@@ -190,3 +241,77 @@ class TestInvoluntaryChurn(BillingTestCase):
 			{"from_date": "2026-06-01", "to_date": "2026-06-30"}
 		)
 		self.assertEqual(_row(rows)["recovered"], 0)
+
+
+class TestNewSignupsCountsOnlyMoney(BillingTestCase):
+	"""A signup is activated by money the customer paid, never by welcome credit alone."""
+
+	def _paid_invoice(self, team, amount_paid, credit_applied=0, paid_at="2026-07-03 10:00:00"):
+		frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": team,
+				"status": "Paid",
+				"period_start": "2026-06-01",
+				"period_end": "2026-06-30",
+				"currency": "INR",
+				"subtotal": 1000,
+				"total": 1000,
+				"credit_applied": credit_applied,
+				"amount_paid": amount_paid,
+				"paid_at": paid_at,
+			}
+		).insert(ignore_permissions=True)
+
+	def _stages(self, *teams):
+		from central.billing.report.new_signups import new_signups
+
+		_columns, rows, *_ = new_signups.execute({"from_date": "2026-01-01"})
+		return {row["team"]: row["stage"] for row in rows if row["team"] in teams}
+
+	def test_an_invoice_welcome_credit_covered_does_not_activate(self):
+		ensure_team("team-signup-credit")
+		self._paid_invoice("team-signup-credit", amount_paid=0, credit_applied=1000)
+		self.assertEqual(self._stages("team-signup-credit"), {"team-signup-credit": "Signed Up"})
+
+	def test_a_paid_invoice_or_a_top_up_activates(self):
+		from central.billing.revenue import credits
+
+		ensure_team("team-signup-card")
+		ensure_team("team-signup-topup")
+		self._paid_invoice("team-signup-card", amount_paid=1000)
+		credits._book_entry("team-signup-topup", "Credit", 500, "INR", extra={"paid_in": 1})
+
+		self.assertEqual(
+			self._stages("team-signup-card", "team-signup-topup"),
+			{"team-signup-card": "Activated", "team-signup-topup": "Activated"},
+		)
+
+	def test_an_abandoned_card_setup_is_not_a_payment_method(self):
+		from central.billing.report.new_signups import new_signups
+
+		ensure_team("team-signup-abandoned")
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": "team-signup-abandoned",
+				"gateway": make_stripe_gateway().name,
+				"method_type": "Card",
+				"status": "Cancelled",
+			}
+		).db_insert()
+
+		_columns, rows, *_ = new_signups.execute({"from_date": "2026-01-01"})
+		row = next(r for r in rows if r["team"] == "team-signup-abandoned")
+		self.assertIsNone(row["first_method"])
+		self.assertEqual(row["stage"], "Signed Up")
+
+	def test_first_paid_is_when_the_invoice_was_paid(self):
+		from central.billing.report.new_signups import new_signups
+
+		ensure_team("team-signup-paid-at")
+		self._paid_invoice("team-signup-paid-at", amount_paid=1000, paid_at="2026-07-03 10:00:00")
+
+		_columns, rows, *_ = new_signups.execute({"from_date": "2026-01-01"})
+		row = next(r for r in rows if r["team"] == "team-signup-paid-at")
+		self.assertEqual(str(row["first_paid"]), "2026-07-03 10:00:00")

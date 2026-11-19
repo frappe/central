@@ -97,7 +97,7 @@ class TestDailyLines(DerivationTestBase):
 		self.assertEqual([li["derivation"]["locked_rate"] for li in lines], [3000.0, 6000.0])
 
 
-class TestChurnDates(DerivationTestBase):
+class TestResizeDates(DerivationTestBase):
 	def setUp(self):
 		super().setUp()
 		# 2000 all month, bumped to 4000 for nine hours on the 15th.
@@ -109,14 +109,13 @@ class TestChurnDates(DerivationTestBase):
 		hourly = [li for li in self._lines() if li["unit"] == "hour"]
 		self.assertTrue(hourly)
 		why = hourly[0]["derivation"]["why"]
-		self.assertIn("less than 24 hours", why)
+		self.assertIn("plan changed", why)
 
 	def test_it_names_every_config_that_shared_the_date(self):
 		# This is the answer to "why is my bill itemised by the hour on the 15th".
 		hourly = [li for li in self._lines() if li["unit"] == "hour"]
 		configs = hourly[0]["derivation"]["configs_on_this_date"]
 		self.assertEqual(len(configs), 3)
-		self.assertTrue(any(c["held_under_24h"] for c in configs))
 
 	def test_the_two_passes_partition_the_month_without_overlap(self):
 		# Daily and hourly must tile the period exactly: no date billed twice, none

@@ -30,9 +30,7 @@ const groups = computed(() => {
 <template>
 	<div v-if="caps.length" class="space-y-7">
 		<section v-for="group in groups" :key="group.label">
-			<h4
-				class="mb-3 text-xs font-medium uppercase tracking-wide text-ink-gray-4"
-			>
+			<h4 class="mb-3 text-xs-medium uppercase text-ink-gray-4">
 				{{ group.label }}
 			</h4>
 			<!-- Every row here is granted, so a per-row check said nothing — the

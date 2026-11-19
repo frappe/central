@@ -1,0 +1,43 @@
+queue_rules:
+  - name: backport
+    queue_conditions:
+      - base = main
+      - head ~= ^mergify/bp/main/
+      - -draft
+      - -conflict
+      - check-success = Server
+      - check-success = Patches listed
+      - check-success = Frappe Linter
+    merge_method: merge
+    update_method: merge
+    batch_size: 1
+
+pull_request_rules:
+  - name: backport to main
+    conditions:
+      - base = develop
+      - label = backport-main
+    actions:
+      backport:
+        branches:
+          - main
+        assignees:
+          - "{{ author }}"
+
+  - name: merge backports to main
+    conditions:
+      - base = main
+      - head ~= ^mergify/bp/main/
+    actions:
+      queue:
+        name: backport
+
+  - name: close pull requests to main that are not backports
+    conditions:
+      - base = main
+      - -head ~= ^mergify/bp/main/
+      - label != emergency
+    actions:
+      close:
+        message: |
+          Changes reach `main` only as backports. Open this pull request against `develop` and add the `backport-main` label. In an emergency, a repository admin adds the `emergency` label and merges it.

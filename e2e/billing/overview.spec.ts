@@ -4,7 +4,7 @@ import { test } from './fixtures'
 test('Shows the billing cards', async ({ page, users }) => {
 	await users.signIn({ scenario: 'ready' })
 
-	await page.goto('/dashboard/billing')
+	await page.goto('/dashboard/billing/payments')
 
 	await expect(page.getByRole('heading', { name: 'Payment methods' })).toBeVisible()
 	await expect(page.getByRole('heading', { name: 'Billing details' })).toBeVisible()
@@ -22,8 +22,8 @@ test('Shows the wallet balance', async ({ page, users, billing }) => {
 	const { team } = await users.signIn({ scenario: 'ready' })
 	await billing.addCredits({ team, amount: 500 })
 
-	await page.goto('/dashboard/billing')
+	await page.goto('/dashboard/billing/payments')
 
 	await expect(page.getByText('Prepaid credits')).toBeVisible()
-	await expect(page.getByText('Balance ₹500.00')).toBeVisible()
+	await expect(page.getByText('₹500.00 balance')).toBeVisible()
 })

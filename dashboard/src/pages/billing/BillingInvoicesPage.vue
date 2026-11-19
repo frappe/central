@@ -1,9 +1,19 @@
 <script setup lang="ts">
-import { Badge, Button, LoadingText, Spinner } from 'frappe-ui'
+import {
+	Alert,
+	Badge,
+	Button,
+	LoadingText,
+	Spinner,
+	TabButtons,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import InvoiceListView from '@/components/billing/InvoiceListView.vue'
+import RefundsCard from '@/components/billing/RefundsCard.vue'
+import StatementCard from '@/components/billing/StatementCard.vue'
 import SidePanel from '@/components/common/SidePanel.vue'
+import { useBillingReports } from '@/composables/useBillingReports'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useInvoiceDetail } from '@/composables/useInvoiceDetail'
 import { useInvoices } from '@/composables/useInvoices'
@@ -11,7 +21,9 @@ import { usePayInvoice } from '@/composables/usePayInvoice'
 import { usePayInvoiceCheckout } from '@/composables/usePayInvoiceCheckout'
 import { billingPeriod, shortDate } from '@/lib/date'
 import { money } from '@/lib/format'
+import { downloadInvoice } from '@/lib/invoicePdf'
 import { invoiceTheme } from '@/lib/status'
+import { __ } from '@/lib/translate'
 import type { InvoiceSummary } from '@/types/billing'
 
 // Billing › Invoices (#70) — list (left) + docked 24rem receipt panel (right)
@@ -20,9 +32,16 @@ import type { InvoiceSummary } from '@/types/billing'
 // raw reportview), so we filter client-side over that list.
 const route = useRoute()
 const { canManageBilling } = useCapabilities()
+const reports = useBillingReports({ statementOnly: true })
+const view = ref('invoices')
+const viewOptions = [
+	{ label: 'All invoices', value: 'invoices', iconLeft: 'lucide-receipt' },
+	{ label: 'Statement', value: 'statement', iconLeft: 'lucide-file-text' },
+]
 const {
 	invoices,
 	loading: invoicesLoading,
+	error: invoicesError,
 	reload: reloadInvoices,
 } = useInvoices()
 
@@ -31,6 +50,7 @@ const selected = ref<InvoiceSummary | null>(null)
 const {
 	activeTeam,
 	detail,
+	isPreparing,
 	isPayable,
 	isOverdue,
 	settling,
@@ -41,6 +61,15 @@ const {
 	reload: reloadDetail,
 	eventDetail,
 } = useInvoiceDetail()
+
+// The invoice's own GST ("IGST 18%", "No GST (SEZ)"), so an issued invoice keeps its tax.
+const taxLineLabel = computed(() => {
+	const invoice = detail.data
+	if (!invoice) return ''
+	if (invoice.tax_label) return invoice.tax_label
+	if (!invoice.output_tax_rate) return invoice.output_tax_type || __('Tax')
+	return `${invoice.output_tax_type || __('Tax')} ${invoice.output_tax_rate}%`
+})
 
 // Activity is folded away by default — for a settled invoice the log is
 // reference, not news. Fold it again when switching invoices.
@@ -74,7 +103,7 @@ watch(activeTeam, (team, previous) => {
 	shown.value = null
 })
 
-// Open OR Overdue is still collectable — an overdue invoice is the one the customer
+// Outstanding OR Overdue is still collectable — an overdue invoice is the one the customer
 // most needs to settle (dunning failed on the card), so it must offer Pay too.
 const canPay = computed(
 	() =>
@@ -83,6 +112,10 @@ const canPay = computed(
 		!settling.value &&
 		hasDue.value,
 )
+
+watch(view, () => {
+	selected.value = null
+})
 
 function refresh(): void {
 	reloadInvoices()
@@ -119,20 +152,46 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 		<!-- LIST — capped and centered so rows stay scannable when the panel is
          closed; the cap matches the Limit tiers page. -->
 		<div class="min-w-0 flex-1 overflow-y-auto">
-			<InvoiceListView
-				:invoices="invoices"
-				:loading="invoicesLoading && !invoices.length"
-				:active-name="selected?.name"
-				class="mx-auto w-full max-w-3xl p-3 md:p-4"
-				@row-click="selectRow"
-			/>
+			<div
+				class="mx-auto flex w-full max-w-3xl flex-col gap-4 p-3 md:p-4 lg:pt-8"
+			>
+				<TabButtons
+					v-model="view"
+					class="self-start"
+					aria-label="Invoice views"
+					:options="viewOptions"
+				/>
+
+				<template v-if="view === 'invoices'">
+					<Alert
+						v-if="invoicesError"
+						theme="red"
+						:title="__('Couldn\'t load your invoices')"
+						:description="__('Retry, or contact support if this keeps happening.')"
+						:primary-action="{ label: __('Retry'), onClick: reloadInvoices }"
+					/>
+					<InvoiceListView
+						v-else
+						:invoices="invoices"
+						:loading="invoicesLoading && !invoices.length"
+						:active-name="selected?.name"
+						@row-click="selectRow"
+					/>
+					<RefundsCard />
+				</template>
+				<StatementCard
+					v-else
+					:statement="reports.statement.data ?? null"
+					:loading="reports.statementLoading.value"
+					:export-url="reports.exportUrl('statement')"
+					@retry="reports.statement.reload()"
+				/>
+			</div>
 		</div>
 
 		<!-- Docked receipt panel — the shared SidePanel, slides in beside the
          list, never over it. Header carries all invoice identity: number +
-         status together, so the body never needs a labelled "Status" row.
-         GROUNDING GAP (#70): no email-invoice / download-PDF endpoints yet,
-         so both header actions stay disabled until the backend lands them. -->
+         status together, so the body never needs a labelled "Status" row. -->
 		<SidePanel
 			:open="!!selected"
 			@update:open="(v: boolean) => !v && (selected = null)"
@@ -158,17 +217,11 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 			<template #actions>
 				<Button
 					variant="ghost"
-					icon="lucide-mail"
-					:disabled="true"
-					title="Email invoice (coming soon)"
-					label="Email invoice"
-				/>
-				<Button
-					variant="ghost"
 					icon="lucide-download"
-					:disabled="true"
-					title="Download PDF (coming soon)"
+					:disabled="!shown?.has_pdf"
+					:title="shown?.has_pdf ? 'Download PDF' : 'The PDF is ready once the invoice is issued'"
 					label="Download PDF"
+					@click="shown && downloadInvoice(shown.name)"
 				/>
 			</template>
 
@@ -211,24 +264,16 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 							</dd>
 						</div>
 						<div
-							v-if="detail.data.output_tax_amount"
+							v-if="detail.data.output_tax_amount || detail.data.tax_label"
 							class="flex justify-between gap-3"
 						>
-							<dt class="text-ink-gray-5">
-								{{ detail.data.output_tax_type || 'Tax' }}
-								<template v-if="detail.data.output_tax_rate">
-									({{ detail.data.output_tax_rate }}%)</template
-								>
-							</dt>
+							<dt class="text-ink-gray-5">{{ taxLineLabel }}</dt>
 							<dd class="tabular-nums text-ink-gray-8">
 								{{ money(detail.data.output_tax_amount, detail.data.currency) }}
 							</dd>
 						</div>
-						<p
-							v-if="detail.data.zero_rating_reason"
-							class="text-p-sm text-ink-gray-5"
-						>
-							{{ detail.data.zero_rating_reason }}
+						<p v-if="detail.data.tax_reason" class="text-p-sm text-ink-gray-5">
+							{{ detail.data.tax_reason }}
 						</p>
 						<div
 							v-if="detail.data.credit_applied"
@@ -240,7 +285,18 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 							</dd>
 						</div>
 						<div
-							class="mt-1 flex justify-between gap-3 border-t border-outline-gray-1 pt-2.5 font-semibold"
+							v-if="detail.data.advance_tax_applied"
+							class="flex justify-between gap-3"
+						>
+							<dt class="text-ink-green-5">
+								{{ __('{0} paid with top-ups', [detail.data.tax_label || __('GST')]) }}
+							</dt>
+							<dd class="tabular-nums text-ink-green-5">
+								−{{ money(detail.data.advance_tax_applied, detail.data.currency) }}
+							</dd>
+						</div>
+						<div
+							class="mt-1 flex justify-between gap-3 border-t border-outline-gray-1 pt-2.5 text-sm-semibold"
 						>
 							<dt class="text-ink-gray-8">Total</dt>
 							<dd class="tabular-nums text-ink-gray-9">
@@ -340,7 +396,12 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 			<!-- The footer carries only the one state-dependent action. Settling an
            invoice is the helpful way out of an overdue state, not a
            destructive act — the default solid, not red. -->
-			<template v-if="detail.data && (canPay || settling)" #footer>
+			<template v-if="isPreparing" #footer>
+				<p class="text-p-sm text-ink-gray-6">
+					This invoice is being prepared. You can pay it once it is issued.
+				</p>
+			</template>
+			<template v-else-if="detail.data && (canPay || settling)" #footer>
 				<Button
 					v-if="canPay"
 					variant="solid"

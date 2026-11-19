@@ -52,6 +52,10 @@ class InsufficientCredits(frappe.ValidationError):
 	"""A debit would drive the wallet negative."""
 
 
+class WalletDrift(frappe.ValidationError):
+	"""The wallet's balance is not what its ledger adds up to, so no money may move."""
+
+
 def _backoff(attempt: int) -> None:
 	"""Wait before retrying a deadlocked booking, jittered so retriers don't
 	re-collide in lockstep."""
@@ -107,12 +111,43 @@ def _lock_and_read_balance(team: str, currency: str) -> float:
 	wallet = frappe.qb.DocType("Credit Wallet")
 	rows = (
 		frappe.qb.from_(wallet)
-		.select(wallet.balance)
+		.select(wallet.balance, wallet.last_entry)
 		.where(wallet.name == wallet_name(team, currency))
 		.for_update()
-		.run(pluck=True)
+		.run(as_dict=True)
 	)
-	return frappe.utils.flt(rows[0]) if rows else 0.0
+	if not rows:
+		return 0.0
+	balance = frappe.utils.flt(rows[0].balance)
+	_refuse_drifted_wallet(team, currency, balance, rows[0].last_entry)
+	return balance
+
+
+def _refuse_drifted_wallet(team: str, currency: str, balance: float, last_entry: str | None) -> None:
+	"""Stop every booking on a wallet whose balance is not the one its last ledger entry left.
+
+	A locking read on the entry's primary key sees the latest committed row, not this
+	transaction's snapshot, and takes no gap lock. Ledger entries are never updated, so
+	the lock contends with nothing."""
+	entry = frappe.qb.DocType("Credit Ledger Entry")
+	rows = (
+		frappe.qb.from_(entry)
+		.select(entry.running_balance)
+		.where(entry.name == last_entry)
+		.for_update()
+		.run(pluck=True)
+		if last_entry
+		else []
+	)
+	expected = frappe.utils.flt(rows[0]) if rows else 0.0
+	if abs(balance - expected) <= 0.01:
+		return
+	raise WalletDrift(
+		_(
+			"Credits for team {0} are on hold: the {1} wallet shows {2} but its last ledger entry left {3}. "
+			"An operator must correct the ledger before credits can be used or added."
+		).format(team, currency, balance, expected)
+	)
 
 
 def lock_team_wallet(team: str, currency: str | None = None) -> float:
@@ -138,6 +173,8 @@ def _book_entry(
 	note: str | None = None,
 	gateway_payment_id: str | None = None,
 	expires_on=None,
+	extra: dict | None = None,
+	retry_deadlock: bool = True,
 ):
 	"""Append one ledger entry under the per-wallet lock, retrying on deadlock.
 
@@ -148,6 +185,10 @@ def _book_entry(
 	re-locks the wallet and re-reads the now-current balance, so the
 	double-spend / InsufficientCredits guards still hold. `InsufficientCredits`
 	and bad-amount errors are NOT retried — they are deterministic outcomes.
+
+	`retry_deadlock=False` re-raises the deadlock at once. A booking made inside a
+	larger transaction cannot be retried alone: InnoDB has already rolled back the
+	whole transaction, the caller's earlier writes and savepoints included.
 
 	`gateway_payment_id` (top-ups) makes the booking idempotent on the gateway
 	payment: the synchronous confirm callback and the async webhook race to credit
@@ -174,8 +215,11 @@ def _book_entry(
 				note,
 				gateway_payment_id,
 				expires_on,
+				extra,
 			)
 		except frappe.QueryDeadlockError:
+			if not retry_deadlock:
+				raise
 			# The transaction is already rolled back by InnoDB; sync Frappe's state
 			# and back off before trying again.
 			frappe.db.rollback()
@@ -201,6 +245,7 @@ def _book_entry_once(
 	note: str | None,
 	gateway_payment_id: str | None = None,
 	expires_on=None,
+	extra: dict | None = None,
 ):
 	"""One booking attempt under the per-wallet lock; returns (doc, new_balance)."""
 	_ensure_wallet(team, currency)
@@ -228,6 +273,7 @@ def _book_entry_once(
 		note=note,
 		gateway_payment_id=gateway_payment_id,
 		expires_on=expires_on,
+		extra=extra,
 	)
 
 
@@ -242,6 +288,7 @@ def _post_entry(
 	note: str | None = None,
 	gateway_payment_id: str | None = None,
 	expires_on=None,
+	extra: dict | None = None,
 ):
 	"""Append one entry against an already-locked wallet; returns (doc, new_balance).
 
@@ -252,22 +299,15 @@ def _post_entry(
 	new_balance = balance + (amount if entry_type == "Credit" else -amount)
 	if new_balance < 0:
 		raise InsufficientCredits(
-			f"Debit of {amount} {currency} exceeds wallet balance {balance} for {team}."
+			_("Debit of {0} {1} exceeds wallet balance {2} for {3}.").format(amount, currency, balance, team)
 		)
 
-	# Advance the authoritative balance on the locked anchor, then append the
-	# immutable ledger entry mirroring it. Both commit together under the lock.
+	# Append the immutable ledger entry, then advance the authoritative balance on the
+	# locked anchor and point it at that entry. Both commit together under the lock.
 	# `set_value` skips the controller, so the guard above is the only
 	# application-level check — the CHECK (balance >= 0) constraint on the column
 	# is what makes a negative balance impossible even for a caller that bypasses
 	# this function.
-	frappe.db.set_value(
-		"Credit Wallet",
-		wallet_name(team, currency),
-		"balance",
-		new_balance,
-		update_modified=False,
-	)
 	entry = frappe.get_doc(
 		{
 			"doctype": "Credit Ledger Entry",
@@ -282,8 +322,15 @@ def _post_entry(
 			"expires_on": expires_on,
 			"note": note,
 			"created_at": frappe.utils.now_datetime(),
+			**(extra or {}),
 		}
 	).insert(ignore_permissions=True)
+	frappe.db.set_value(
+		"Credit Wallet",
+		wallet_name(team, currency),
+		{"balance": new_balance, "last_entry": entry.name},
+		update_modified=False,
+	)
 	return entry, new_balance
 
 
@@ -325,6 +372,7 @@ def purchase(
 	note: str | None = None,
 	gateway_payment_id: str | None = None,
 	gateway: str | None = None,
+	credit=None,
 ) -> dict:
 	"""Top-up: book a credit entry for purchased credits.
 
@@ -336,18 +384,74 @@ def purchase(
 	payment, and the unique-key + under-lock guard ensure it books one credit.
 	`gateway` (the provider/adapter key) namespaces that id so ids only unique within
 	a gateway can't collide across gateways — see `_namespaced_payment_id`.
+
+	`amount` is what the customer paid. For a team that pays GST on top of its
+	top-ups, the wallet is credited without the GST, which is kept on the entry to
+	pay the GST of the invoices this credit is later used for. `credit` is the wallet
+	credit the order was made for, when the gateway kept it.
 	"""
+	wallet, gst = _top_up_split(team, amount, credit) if gateway_payment_id else (amount, 0)
 	entry, new_balance = _book_entry(
 		team,
 		"Credit",
-		amount,
+		wallet,
 		currency,
 		reference_type="Payment Method" if payment_method else "Top-up",
 		reference_name=payment_method or reference_name,
 		note=note or "Credit top-up",
 		gateway_payment_id=_namespaced_payment_id(gateway, gateway_payment_id),
+		extra={"tax_amount": gst, "paid_in": 1 if gateway_payment_id else 0},
 	)
+	if gateway_payment_id:
+		# Money received, so the accounting system books it as an advance.
+		from central.billing.ingester import advance
+
+		advance.enqueue_sync(entry.name)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
+
+
+def top_up_gst_rate(team: str) -> float:
+	"""The GST rate added on top of this team's top-ups, as a fraction. 0 if none."""
+	from central.billing.revenue.tax import resolve_tax
+
+	return frappe.utils.flt(resolve_tax(team, 100)["output_tax_amount"]) / 100
+
+
+def top_up_gst(team: str, credit) -> float:
+	"""GST to charge on top of a top-up of `credit`."""
+	return frappe.utils.flt(frappe.utils.flt(credit) * top_up_gst_rate(team), 2)
+
+
+def _top_up_split(team: str, paid, ordered=None) -> tuple[float, float]:
+	"""Credit and GST of a captured top-up: as ordered when known, else at today's rate."""
+	ordered = frappe.utils.flt(ordered)
+	if 0 < ordered <= frappe.utils.flt(paid):
+		return ordered, frappe.utils.flt(frappe.utils.flt(paid) - ordered, 2)
+	return split_top_up(team, paid)
+
+
+def split_top_up(team: str, paid) -> tuple[float, float]:
+	"""What a customer paid for a top-up, split into wallet credit and GST."""
+	credit = frappe.utils.flt(frappe.utils.flt(paid) / (1 + top_up_gst_rate(team)), 2)
+	return credit, frappe.utils.flt(frappe.utils.flt(paid) - credit, 2)
+
+
+def advance_gst_balance(team: str, currency: str) -> float:
+	"""GST paid with top-ups that no invoice has used yet."""
+	cle = frappe.qb.DocType("Credit Ledger Entry")
+	paid = (
+		frappe.qb.from_(cle)
+		.select(Sum(cle.tax_amount))
+		.where((cle.team == team) & (cle.currency == currency) & (cle.entry_type == "Credit"))
+	).run()[0][0]
+	inv = frappe.qb.DocType("Invoice")
+	# Cancelled invoices count too: what one gives back is booked again as credit.
+	used = (
+		frappe.qb.from_(inv)
+		.select(Sum(inv.advance_tax_applied))
+		.where((inv.team == team) & (inv.currency == currency))
+	).run()[0][0]
+	return frappe.utils.flt(frappe.utils.flt(paid) - frappe.utils.flt(used), 2)
 
 
 def apply_credit(team, amount, currency=None, reference_type=None, reference_name=None, note=None) -> dict:
@@ -378,20 +482,74 @@ def refund_to_wallet(
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-def promotional_expiry_date(on_date=None):
-	"""When a promotional credit granted today stops being usable.
+def return_credit(
+	team: str,
+	amount,
+	currency: str,
+	reference_type: str,
+	reference_name: str,
+	note: str,
+	paid_in: bool = False,
+	tax_amount: float = 0,
+	advance_id: str | None = None,
+) -> dict:
+	"""Give credit back to the wallet, as the kind of credit it was when it was spent.
 
-	`None` when the configured validity is 0 — the grant never expires, same as
-	purchased credit."""
+	Paid-in credit comes back with the GST paid on it, so it pays invoice GST again.
+	Promotional credit comes back with a fresh expiry.
+	"""
+	entry, new_balance = _book_entry(
+		team,
+		"Credit",
+		amount,
+		currency,
+		reference_type=reference_type,
+		reference_name=reference_name,
+		note=note,
+		expires_on=None if paid_in else promotional_expiry_date(),
+		extra={"paid_in": int(paid_in), "tax_amount": tax_amount, "advance_id": advance_id},
+	)
+	return {"ledger_entry": entry.name, "new_balance": new_balance}
+
+
+def promotional_expiry_date(on_date=None):
+	"""When a promotional credit granted today stops being usable."""
 	from central.billing import settings
 
-	days = settings.promotional_credit_validity_days()
-	if not days:
-		return None
-	return frappe.utils.add_days(on_date or frappe.utils.nowdate(), days)
+	return frappe.utils.add_days(
+		on_date or frappe.utils.nowdate(), settings.promotional_credit_validity_days()
+	)
 
 
-def grant_promotional_credits(team, amount, currency, note=None, expires_on=None) -> dict:
+def promotional_credit_without_expiry() -> list[dict]:
+	"""Promotional credit with no expiry date: a grant, or unpaid credit that an invoice or a refund gave back.
+
+	Admin credit is an operator's decision and has no expiry. A refund of an overcharge to the wallet is
+	money, so a Refund entry counts only when that refund gave back promotional credit."""
+	entry = frappe.qb.DocType("Credit Ledger Entry")
+	refund = frappe.qb.DocType("Refund")
+	promotional_refunds = frappe.qb.from_(refund).select(refund.name).where(refund.promotional_amount > 0)
+	is_promotional = entry.reference_type.isin(("Promotion", "Invoice")) | (
+		(entry.reference_type == "Refund") & entry.reference_name.isin(promotional_refunds)
+	)
+	return (
+		frappe.qb.from_(entry)
+		.select(entry.name, entry.team, entry.currency, entry.amount, entry.creation)
+		.where((entry.entry_type == "Credit") & (entry.paid_in == 0) & entry.expires_on.isnull())
+		.where(is_promotional)
+		.run(as_dict=True)
+	)
+
+
+def grant_promotional_credits(
+	team,
+	amount,
+	currency,
+	note=None,
+	expires_on=None,
+	instrument_fingerprint: str | None = None,
+	retry_deadlock: bool = True,
+) -> dict:
 	"""Book a promotional/welcome credit — free credits granted at signup.
 
 	Tagged `reference_type="Promotion"` so the one-time signup grant is
@@ -400,7 +558,12 @@ def grant_promotional_credits(team, amount, currency, note=None, expires_on=None
 	Promotional credit is the only kind that expires, and the date is stamped on the
 	entry at grant time rather than derived from the setting when it is read. A team
 	granted credit under a 90-day policy keeps its 90 days when the policy changes to
-	60 — what a customer was given is a fact about that grant, not a live lookup."""
+	60 — what a customer was given is a fact about that grant, not a live lookup.
+
+	`instrument_fingerprint` is the card or account a welcome credit was earned with. It is
+	unique on the ledger, so a second grant for the same card raises UniqueValidationError.
+
+	`retry_deadlock=False` is for a grant inside a larger transaction; see `_book_entry`."""
 	entry, new_balance = _book_entry(
 		team,
 		"Credit",
@@ -409,6 +572,8 @@ def grant_promotional_credits(team, amount, currency, note=None, expires_on=None
 		reference_type="Promotion",
 		note=note or "Welcome credits",
 		expires_on=expires_on if expires_on is not None else promotional_expiry_date(),
+		extra={"instrument_fingerprint": instrument_fingerprint},
+		retry_deadlock=retry_deadlock,
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
@@ -513,7 +678,7 @@ def credit_lots(team: str, currency: str) -> list[dict]:
 	cle = frappe.qb.DocType("Credit Ledger Entry")
 	rows = (
 		frappe.qb.from_(cle)
-		.select(cle.name, cle.entry_type, cle.amount, cle.expires_on, cle.creation)
+		.select(cle.name, cle.entry_type, cle.amount, cle.expires_on, cle.creation, cle.paid_in)
 		.where((cle.team == team) & (cle.currency == currency))
 		.orderby(cle.creation)
 		.run(as_dict=True)
@@ -614,22 +779,30 @@ def run_credit_expiry(on_date=None) -> dict:
 		.run(as_dict=True)
 	)
 
-	swept, total = 0, 0.0
-	for scope in scopes:
-		# A wallet with nothing in it has nothing to expire; skip before taking a lock.
-		if (
-			frappe.utils.flt(
-				frappe.db.get_value("Credit Wallet", wallet_name(scope.team, scope.currency), "balance")
-			)
-			<= 0
-		):
-			continue
-		for expiry in expire_credits(scope.team, scope.currency, on_date):
-			swept += 1
-			total += expiry["amount"]
-			frappe.logger("billing").info(
-				f"expired {expiry['amount']} {scope.currency} of promotional credit "
-				f"for {scope.team} (grant {expiry['expired_grant']})"
-			)
+	from central.billing.platform.jobs import each_isolated
 
-	return {"wallets": len(scopes), "entries": swept, "amount": total}
+	# A wallet with nothing in it has nothing to expire; skip before taking a lock.
+	wallets = {wallet_name(scope.team, scope.currency): scope for scope in scopes}
+	funded = [
+		name
+		for name in wallets
+		if frappe.utils.flt(frappe.db.get_value("Credit Wallet", name, "balance")) > 0
+	]
+	results = each_isolated(
+		"Credit expiry",
+		"Credit Wallet",
+		funded,
+		lambda name: _expire_wallet(wallets[name].team, wallets[name].currency, on_date),
+	)
+	expiries = [expiry for result in results for expiry in result]
+	return {"wallets": len(scopes), "entries": len(expiries), "amount": sum(e["amount"] for e in expiries)}
+
+
+def _expire_wallet(team: str, currency: str, on_date) -> list[dict]:
+	expiries = expire_credits(team, currency, on_date)
+	for expiry in expiries:
+		frappe.logger("billing").info(
+			f"expired {expiry['amount']} {currency} of promotional credit "
+			f"for {team} (grant {expiry['expired_grant']})"
+		)
+	return expiries

@@ -1,0 +1,82 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "reservation_section",
+  "blocked_name",
+  "parent_domain",
+  "column_break_reservation",
+  "match_mode",
+  "enabled"
+ ],
+ "fields": [
+  {
+   "fieldname": "reservation_section",
+   "fieldtype": "Section Break",
+   "label": "Reservation"
+  },
+  {
+   "fieldname": "blocked_name",
+   "fieldtype": "Data",
+   "label": "Name",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "Name relative to the parent domain, such as proxy or proxy-."
+  },
+  {
+   "fieldname": "parent_domain",
+   "fieldtype": "Data",
+   "label": "Parent Domain",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Only names below this domain match. Example: in-mumbai.frappe.dev."
+  },
+  {
+   "fieldname": "column_break_reservation",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "match_mode",
+   "fieldtype": "Select",
+   "label": "Match Mode",
+   "options": "Exact\nPrefix",
+   "default": "Exact",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Exact blocks only the name. Prefix also blocks names that start with it."
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "default": "1",
+   "in_standard_filter": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-26 00:00:00.000000",
+ "module": "Infrastructure",
+ "name": "Blocked Domain",
+ "naming_rule": "Random",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "search_fields": "blocked_name,parent_domain",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "blocked_name",
+ "track_changes": 1
+}

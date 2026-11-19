@@ -2,10 +2,11 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from pydantic import ValidationError
 
 from central.billing.catalog.server_plans import _profiles
 from central.resource_actions import _build_server_configuration, image_shape
-from central.server_models import CreateServerInput
+from central.server_models import CreateServerInput, ResourceQuantity
 
 
 class TestServerProvisioningShapes(IntegrationTestCase):
@@ -16,17 +17,18 @@ class TestServerProvisioningShapes(IntegrationTestCase):
 			{"resource_type": "Disk", "quantity": 20},
 		]
 
-	def test_fractional_cpu_configuration_is_rejected_without_rounding(self):
-		for value in (0.125, 0.25, 0.5, 1.5):
-			with self.subTest(value=value), self.assertRaises(frappe.ValidationError):
-				image_shape(self.composition(value), {"rootfs_size_mib": 8192})
+	def test_fractional_cpu_is_sent_in_millicores(self):
+		for value, millicores in ((0.125, 125), (0.25, 250), (0.5, 500), (1.5, 1500)):
+			with self.subTest(value=value):
+				shape = image_shape(self.composition(value), {"rootfs_size_mib": 8192})
+				self.assertEqual(shape["cpu_millicores"], millicores)
 
 	def test_whole_cpus_allow_sub_gib_memory(self):
 		shape = image_shape(self.composition(1), {"rootfs_size_mib": 8192})
-		self.assertEqual(shape, {"virtual_cpu_count": 1, "memory_mib": 512, "disk_mib": 20480})
+		self.assertEqual(shape, {"cpu_millicores": 1000, "memory_mib": 512, "disk_mib": 20480})
 
 	def test_invalid_cpu_numbers_fail_as_validation_errors(self):
-		for value in (0, -1, 33, float("nan"), float("inf")):
+		for value in (0, -1, 0.05, 0.0001, 33, float("nan"), float("inf")):
 			with self.subTest(value=value), self.assertRaises(frappe.ValidationError):
 				image_shape(self.composition(value), {"rootfs_size_mib": 8192})
 
@@ -34,16 +36,25 @@ class TestServerProvisioningShapes(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			image_shape(self.composition(1), {"rootfs_size_mib": 20481})
 
-	def test_profile_without_whole_cpu_steps_is_not_offered(self):
+	def test_profile_offers_fractional_cpu_steps(self):
 		rows = [
 			frappe._dict(name="small", ram_ratio=4, vcpu_steps="0.125,0.25,0.5", disk_min=10, disk_max=100),
-			frappe._dict(name="mixed", ram_ratio=4, vcpu_steps="0.5,1,2", disk_min=10, disk_max=100),
+			frappe._dict(name="none", ram_ratio=4, vcpu_steps="", disk_min=10, disk_max=100),
 		]
 		with patch("central.billing.api.dashboard.catalog.frappe.get_all", return_value=rows):
 			profiles = _profiles(["Server"])
 
-		self.assertEqual([profile["sub_category"] for profile in profiles], ["mixed"])
-		self.assertEqual(profiles[0]["vcpu_steps"], [1, 2])
+		self.assertEqual([profile["sub_category"] for profile in profiles], ["small"])
+		self.assertEqual(profiles[0]["vcpu_steps"], [0.125, 0.25, 0.5])
+
+	def test_plan_can_include_any_catalog_resource_type(self):
+		row = ResourceQuantity(resource_type="Storage", quantity=80.0, unit="GB")
+
+		self.assertEqual(row.resource_type, "Storage")
+
+	def test_shape_resource_needs_its_own_unit(self):
+		with self.assertRaises(ValidationError):
+			ResourceQuantity(resource_type="Compute", quantity=1.0, unit="GB")
 
 	def build_ubuntu_configuration(self, ssh_key_ids: list[str], resolved_keys: list[str]):
 		server_input = CreateServerInput.model_validate(
@@ -72,11 +83,14 @@ class TestServerProvisioningShapes(IntegrationTestCase):
 					10.0,
 				),
 			),
+			patch("central.resource_actions.get_minimum_memory_mib", return_value=0),
 			patch("central.resource_actions.resolve_team_ssh_keys", return_value=resolved_keys) as resolve,
 			patch("central.resource_actions.get_team_currency", return_value="USD"),
 			patch("central.resource_actions.frappe.db.get_value", return_value="Monthly"),
 		):
-			configuration, _rate = _build_server_configuration(server_input, None)
+			configuration, _rate, _subdomain = _build_server_configuration(
+				server_input, None, is_free_trial=False
+			)
 
 		resolve.assert_called_once_with("team-a", ssh_key_ids)
 		return configuration

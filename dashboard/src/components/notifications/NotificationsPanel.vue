@@ -4,6 +4,7 @@ import {
 	dayjsLocal,
 	MobileNavItem,
 	Popover,
+	ScrollArea,
 	Select,
 	SidebarItem,
 	TabButtons,
@@ -11,7 +12,6 @@ import {
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import EmptyState from '@/components/common/EmptyState.vue'
-import Scrollbar from '@/components/common/Scrollbar.vue'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useNotifications } from '@/composables/useNotifications'
 import type { NotificationSeverity, TeamNotification } from '@/types/billing'
@@ -51,6 +51,7 @@ const CATEGORIES = [
 	{ label: 'Billing', value: 'Billing', icon: 'lucide-credit-card' },
 	{ label: 'Server', value: 'Server', icon: 'lucide-server' },
 	{ label: 'Team', value: 'Team', icon: 'lucide-users' },
+	{ label: 'Trial', value: 'Trial', icon: 'lucide-hourglass' },
 ]
 
 const badge = computed(() =>
@@ -140,7 +141,7 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 			<header
 				class="flex items-center gap-1 border-b border-outline-gray-1 py-2 pl-4 pr-2"
 			>
-				<span class="mr-auto text-base font-medium">Notifications</span>
+				<span class="mr-auto text-base-medium">Notifications</span>
 
 				<Button
 					v-if="unread > 0"
@@ -162,7 +163,7 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 				<Select v-model="category" class="ml-auto" :options="CATEGORIES" />
 			</div>
 
-			<Scrollbar v-if="items.length" class="min-h-0 flex-1">
+			<ScrollArea v-if="items.length" class="min-h-0 flex-1">
 				<button
 					v-for="(n, i) in items"
 					:key="n.name"
@@ -190,9 +191,7 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 					<!-- notif tile body -->
 					<span class="min-w-0 flex-1">
 						<span class="flex items-start gap-2">
-							<span
-								class="min-w-0 flex-1 text-base font-medium text-ink-gray-9"
-							>
+							<span class="min-w-0 flex-1 text-base-medium text-ink-gray-9">
 								{{ n.title }}
 							</span>
 							<span class="shrink-0 whitespace-nowrap text-xs text-ink-gray-5">
@@ -208,7 +207,7 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 						</span>
 					</span>
 				</button>
-			</Scrollbar>
+			</ScrollArea>
 
 			<div v-else class="min-h-0 flex-1 px-4 pb-3">
 				<EmptyState

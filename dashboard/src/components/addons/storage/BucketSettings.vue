@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { Badge, Button } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { Button, Skeleton } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
+import BucketOriginsDialog from '@/components/addons/storage/BucketOriginsDialog.vue'
 import BucketQuotaDialog from '@/components/addons/storage/BucketQuotaDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import CopyableValue from '@/components/common/CopyableValue.vue'
 import SettingsSection from '@/components/common/SettingsSection.vue'
+import UsageCard from '@/components/common/UsageCard.vue'
 import { bucketLabel, useObjectStorage } from '@/composables/useObjectStorage'
-import { copyToClipboard } from '@/lib/clipboard'
-import { getErrorMessage, reportError, successToast } from '@/lib/feedback'
+import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 import type { BucketCredentials, StorageBucket } from '@/types/storage'
 
 interface Props {
@@ -25,9 +28,19 @@ const {
 	usageLoading,
 	usageError,
 	loadUsage,
+	origins,
+	originsLoading,
+	originsError,
+	loadOrigins,
 	rotateCredentials,
 	deleteBucket,
 } = useObjectStorage()
+
+watch(
+	() => props.bucket.name,
+	(name) => loadOrigins(name),
+	{ immediate: true },
+)
 
 const formatBytes = (bytes: number): string => {
 	const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
@@ -42,13 +55,6 @@ const formatBytes = (bytes: number): string => {
 const percentOf = (used: number, limit: number | null): number | null =>
 	limit ? Math.min(Math.round((used / limit) * 100), 100) : null
 
-const usageTheme = (percent: number): 'gray' | 'amber' | 'red' => {
-	if (percent >= 90) return 'red'
-	if (percent >= 75) return 'amber'
-
-	return 'gray'
-}
-
 const meters = computed(() => {
 	const current = usage.value
 	if (!current) return []
@@ -58,7 +64,7 @@ const meters = computed(() => {
 			label: 'Stored',
 			icon: 'lucide-hard-drive',
 			used: formatBytes(current.used_bytes),
-			limit: current.quota_bytes && formatBytes(current.quota_bytes),
+			limit: current.quota_bytes ? formatBytes(current.quota_bytes) : null,
 			percent: percentOf(current.used_bytes, current.quota_bytes),
 		},
 		{
@@ -83,15 +89,7 @@ const quotaSummary = computed(() =>
 		: 'No quota is set, so the bucket grows as you upload.',
 )
 
-const copy = async (value: string, label: string): Promise<void> => {
-	if (await copyToClipboard(value)) {
-		successToast(`${label} copied`)
-		return
-	}
-
-	reportError(`${label} could not be copied. Select it and copy by hand.`)
-}
-
+const originsTarget = ref<StorageBucket | null>(null)
 const quotaTarget = ref<StorageBucket | null>(null)
 const rotateTarget = ref<StorageBucket | null>(null)
 const deleteTarget = ref<StorageBucket | null>(null)
@@ -130,17 +128,15 @@ const remove = async (target: StorageBucket): Promise<void> => {
 	<div class="divide-y divide-outline-gray-1">
 		<SettingsSection
 			title="Quota"
-			:help="`Cap how much this bucket can hold. ${quotaSummary}`"
+			help="Bucket storage limit"
+			:description="quotaSummary"
 			:aria-busy="usageLoading"
 		>
 			<template v-if="canManage" #actions>
 				<Button label="Set quota" @click="quotaTarget = bucket" />
 			</template>
 
-			<div
-				v-if="usageLoading && !usage"
-				class="h-9 animate-pulse rounded-4 bg-surface-gray-2"
-			/>
+			<Skeleton v-if="usageLoading && !usage" class="h-9 rounded-4" />
 
 			<div
 				v-else-if="usageError"
@@ -156,51 +152,14 @@ const remove = async (target: StorageBucket): Promise<void> => {
 			</div>
 
 			<div v-else class="grid gap-3 md:grid-cols-2 md:gap-4">
-				<div
-					v-for="meter in meters"
-					:key="meter.label"
-					class="space-y-4 rounded-6 bg-surface-gray-1 p-4"
-				>
-					<div class="flex items-center justify-between gap-3">
-						<span class="flex items-center gap-2 text-sm text-ink-gray-6">
-							<span :class="meter.icon" class="size-4 text-ink-gray-5" />
-
-							{{ meter.label }}
-						</span>
-
-						<Badge
-							v-if="meter.percent !== null"
-							:label="`${meter.percent}% used`"
-							:theme="usageTheme(meter.percent)"
-						/>
-					</div>
-
-					<p class="flex items-baseline gap-1.5">
-						<span class="text-2xl-semibold tabular-nums text-ink-gray-9">
-							{{ meter.used }}
-						</span>
-
-						<span v-if="meter.limit" class="text-sm text-ink-gray-5">
-							of {{ meter.limit }}
-						</span>
-					</p>
-
-					<div
-						v-if="meter.percent !== null"
-						class="h-1.5 overflow-hidden rounded-full bg-surface-gray-3"
-					>
-						<div
-							class="h-full rounded-full bg-surface-gray-9"
-							:style="{ width: `${meter.percent}%` }"
-						/>
-					</div>
-				</div>
+				<UsageCard v-for="meter in meters" :key="meter.label" v-bind="meter" />
 			</div>
 		</SettingsSection>
 
 		<SettingsSection
 			title="Connection"
-			help="Point any S3 client at these. The secret key is shown once, when the bucket is created or its key is rotated."
+			help="S3 connection details"
+			description="Use these values in your S3 client. The secret key is shown only when you create or rotate it."
 		>
 			<template v-if="canManage" #actions>
 				<Button label="Rotate key" @click="rotateTarget = bucket" />
@@ -212,29 +171,59 @@ const remove = async (target: StorageBucket): Promise<void> => {
 					:key="row.label"
 					class="flex items-center gap-3"
 				>
-					<dt class="w-24 shrink-0 text-sm text-ink-gray-5">
-						{{ row.label }}
-					</dt>
+					<dt class="w-24 shrink-0 text-sm text-ink-gray-5">{{ row.label }}</dt>
 
-					<dd class="min-w-0 flex-1 truncate font-mono text-sm text-ink-gray-8">
-						{{ row.value }}
+					<dd class="min-w-0">
+						<CopyableValue :value="row.value" :label="row.label" />
 					</dd>
-
-					<Button
-						variant="ghost"
-						icon="lucide-copy"
-						:label="`Copy ${row.label.toLowerCase()}`"
-						tooltip="Copy"
-						@click="copy(row.value, row.label)"
-					/>
 				</div>
 			</dl>
 		</SettingsSection>
 
 		<SettingsSection
+			:title="__('Browser access')"
+			:help="__('Allowed origins')"
+			:description="
+				__(
+					'Websites that may upload to and read from this bucket in a browser, with a presigned URL. This dashboard always may.',
+				)
+			"
+			:aria-busy="originsLoading"
+		>
+			<template v-if="canManage" #actions>
+				<Button :label="__('Edit origins')" @click="originsTarget = bucket" />
+			</template>
+
+			<Skeleton v-if="originsLoading && !origins" class="h-9 rounded-4" />
+
+			<div
+				v-else-if="originsError"
+				class="flex items-center justify-between gap-3 text-sm text-ink-gray-5"
+			>
+				{{ __("Allowed origins couldn't load.") }}
+				<Button
+					variant="ghost"
+					size="sm"
+					:label="__('Retry')"
+					@click="loadOrigins(bucket.name)"
+				/>
+			</div>
+
+			<ul v-else-if="origins?.length" class="space-y-1">
+				<li v-for="origin in origins" :key="origin">
+					<CopyableValue :value="origin" :label="__('Origin')" />
+				</li>
+			</ul>
+
+			<p v-else class="text-sm text-ink-gray-5">
+				{{ __('No other website is allowed.') }}
+			</p>
+		</SettingsSection>
+
+		<SettingsSection
 			v-if="canManage"
 			title="Delete bucket"
-			help="Removes the bucket and its key for good. Empty it first: a bucket that still holds objects can't be deleted."
+			description="Permanently deletes the bucket and its access key. Delete all objects first."
 		>
 			<template #actions>
 				<Button
@@ -246,6 +235,7 @@ const remove = async (target: StorageBucket): Promise<void> => {
 		</SettingsSection>
 
 		<BucketQuotaDialog v-model="quotaTarget" :usage="usage" />
+		<BucketOriginsDialog v-model="originsTarget" :origins="origins" />
 
 		<ConfirmDialog
 			v-model:target="rotateTarget"
@@ -271,6 +261,7 @@ const remove = async (target: StorageBucket): Promise<void> => {
 			confirm-label="Delete bucket"
 			theme="red"
 			size="md"
+			:confirm-text="deleteTarget ? bucketLabel(deleteTarget) : undefined"
 			:loading="busy"
 			:error="actionError"
 			@confirm="remove"

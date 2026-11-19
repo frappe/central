@@ -23,7 +23,7 @@ export interface Team {
 	/**	Tenant ID : Int - Permanent numeric network identity shared by this Team. Assigned by Central.	*/
 	tenant_id?: number
 	/**	Status : Select	*/
-	status: 'Active' | 'Suspended'
+	status: 'Active' | 'Suspended' | 'Archived'
 	/**	Staging Trial : Check - Staging trials: create servers on free welcome credits without a full billing profile. Central sets it from Billing Settings when the team is created. Only a System Manager can change it.	*/
 	is_staging_trial?: 0 | 1
 	/**	Members : Table - Team Member	*/

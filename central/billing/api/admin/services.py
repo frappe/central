@@ -35,9 +35,9 @@ def get_team_services(team: str, cluster: str | None = None) -> dict:
 def subscribe_team_service(team: str, plan: str, cluster: str | None = None) -> dict:
 	"""Subscribe a team to a team-level service, or switch it onto a different plan in
 	the same family (an upgrade). Idempotent per (team, family, cluster). Requires the
-	team's billing profile to be complete."""
+	team's billing profile to be complete. An operator may use a retired plan."""
 	require_operator()
 	require_billing_profile(team, "subscribe to a service")
 	from central.billing.catalog.subscriptions import provision_service_subscription
 
-	return provision_service_subscription(team, plan, cluster=cluster)
+	return provision_service_subscription(team, plan, cluster=cluster, allow_unlisted_plan=True)

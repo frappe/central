@@ -3,8 +3,11 @@ from frappe.desk.reportview import execute as reportview_execute
 from frappe.tests import IntegrationTestCase
 
 from central.permissions import (
+	billing_record_has_permission,
+	billing_record_query_conditions,
 	pilot_credential_has_permission,
 	pilot_credential_query_conditions,
+	realtime_has_permission,
 	team_notification_has_permission,
 	team_notification_query_conditions,
 	team_service_has_permission,
@@ -26,6 +29,20 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
+	def test_realtime_doctype_rooms_are_for_operators_only(self):
+		mine = self._team("Realtime Mine", self.viewer, "Viewer")
+		theirs = self._team("Realtime Theirs", self.other_user, "Viewer")
+
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			realtime_has_permission("Site", "")
+		self.assertTrue(realtime_has_permission("Team", mine.name))
+		with self.assertRaises(frappe.PermissionError):
+			realtime_has_permission("Team", theirs.name)
+
+		frappe.set_user("Administrator")
+		self.assertTrue(realtime_has_permission("Site", ""))
+
 	def test_desk_list_apis_are_team_scoped(self):
 		team_a = self._team("Team Scoped A", self.viewer, "Viewer")
 		team_b = self._team("Team Scoped B", self.owner, "Owner")
@@ -43,22 +60,6 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 		self.assertTrue(frappe.has_permission("Site", "read", site_a.name))
 		self.assertFalse(frappe.has_permission("Site", "read", site_b.name))
 		self.assertFalse(frappe.has_permission("Site", "write", site_a.name))
-
-	def test_permission_probe_lists_are_self_scoped(self):
-		team = self._team("Probe Scoped", self.viewer, "Viewer")
-		viewer_probe = self._probe(self.viewer, team.name, "server:view")
-		other_probe = self._probe(self.other_user, team.name, "server:view")
-
-		frappe.set_user(self.viewer)
-		list_names = set(frappe.get_list("IAM Permission Probe", pluck="name"))
-		reportview_names = {row.name for row in reportview_execute("IAM Permission Probe", fields=["name"])}
-
-		self.assertIn(viewer_probe.name, list_names)
-		self.assertNotIn(other_probe.name, list_names)
-		self.assertIn(viewer_probe.name, reportview_names)
-		self.assertNotIn(other_probe.name, reportview_names)
-		self.assertTrue(frappe.has_permission("IAM Permission Probe", "read", viewer_probe.name))
-		self.assertFalse(frappe.has_permission("IAM Permission Probe", "read", other_probe.name))
 
 	def test_notification_preferences_are_owned_and_team_scoped(self):
 		team = self._team("Preference Scoped", self.viewer, "Viewer")
@@ -99,6 +100,51 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 				}
 			).insert()
 
+	def test_notification_digest_settings_are_owned_and_team_scoped(self):
+		team = self._team("Digest Scoped", self.viewer, "Viewer")
+		other_team = self._team("Other Digest Scoped", self.other_user, "Viewer")
+
+		frappe.set_user(self.viewer)
+		setting = frappe.get_doc(
+			{
+				"doctype": "Notification Digest Setting",
+				"user": self.viewer,
+				"team": team.name,
+			}
+		).insert()
+		other_setting = frappe.get_doc(
+			{
+				"doctype": "Notification Digest Setting",
+				"user": self.other_user,
+				"team": other_team.name,
+			}
+		).insert(ignore_permissions=True)
+
+		self.assertEqual(frappe.get_list("Notification Digest Setting", pluck="name"), [setting.name])
+		self.assertTrue(frappe.has_permission("Notification Digest Setting", "read", setting.name))
+		self.assertFalse(frappe.has_permission("Notification Digest Setting", "read", other_setting.name))
+
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc(
+				{
+					"doctype": "Notification Digest Setting",
+					"user": self.other_user,
+					"team": team.name,
+				}
+			).insert()
+
+		setting.user = self.other_user
+		with self.assertRaises(frappe.PermissionError):
+			setting.save()
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc(
+				{
+					"doctype": "Notification Digest Setting",
+					"user": self.viewer,
+					"team": other_team.name,
+				}
+			).insert()
+
 	def test_internal_team_records_remain_operator_only(self):
 		frappe.set_user(self.viewer)
 		for query_conditions, has_permission in (
@@ -119,6 +165,31 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 			with self.subTest(query_conditions=query_conditions.__name__):
 				self.assertEqual(query_conditions(), "")
 				self.assertTrue(has_permission(frappe._dict(team="any-team")))
+
+	def test_billing_records_are_operator_only_even_on_the_users_own_team(self):
+		"""Customers reach billing data through the billing API, never the raw record."""
+		mine = self._team("Billing Mine", self.viewer, "Admin")
+
+		frappe.set_user(self.viewer)
+		self.assertEqual(billing_record_query_conditions(), "1 = 0")
+		self.assertFalse(billing_record_has_permission(frappe._dict(team=mine.name)))
+		self.assertFalse(billing_record_has_permission(frappe._dict(team="another-team")))
+
+		frappe.set_user("Administrator")
+		self.assertEqual(billing_record_query_conditions(), "")
+		self.assertTrue(billing_record_has_permission(frappe._dict(team=mine.name)))
+
+	def test_every_team_scoped_billing_doctype_is_wired_in_both_layers(self):
+		for doctype in ("Invoice", "Payment Attempt", "Credit Ledger Entry", "Top-up Order", "Refund"):
+			with self.subTest(doctype=doctype):
+				self.assertIn(
+					"central.permissions.billing_record_query_conditions",
+					frappe.get_hooks("permission_query_conditions").get(doctype, []),
+				)
+				self.assertIn(
+					"central.permissions.billing_record_has_permission",
+					frappe.get_hooks("has_permission").get(doctype, []),
+				)
 
 	def _team(self, label: str, user: str, role: str):
 		members = [{"user": self.owner, "role": "Owner", "status": "Active"}]
@@ -155,15 +226,5 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 				"site_name": f"{label}-{self.suffix}.example.test",
 				"team": team,
 				"server": machine.name,
-			}
-		).insert(ignore_permissions=True)
-
-	def _probe(self, user: str, team: str, capability: str):
-		return frappe.get_doc(
-			{
-				"doctype": "IAM Permission Probe",
-				"user": user,
-				"team": team,
-				"capability": capability,
 			}
 		).insert(ignore_permissions=True)

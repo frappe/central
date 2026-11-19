@@ -38,6 +38,7 @@ BOUNDARY_ALLOWLIST = {
 GUARD_ALLOWLIST = {
 	"api/dashboard/account.py::whoami",  # reports the caller's own session/scope
 	"api/dashboard/account.py::get_billing_geo",  # static country/state lists
+	"api/metering.py::report",  # a service, not a team: accept_report checks its HMAC signature first
 }
 
 # Calling any of these on the first lines is what "guarded" means (security.md §3).
@@ -52,6 +53,24 @@ GUARD_TOKENS = (
 	"_require_view",
 	"_assert_owns",
 )
+
+# Payment routes that must carry @rate_limit, by file.
+RATE_LIMITED_ROUTES = {
+	"api/billing_api.py": {
+		"add_payment_method",
+		"confirm_payment_method",
+		"create_payment_method_checkout",
+		"confirm_payment_method_checkout",
+		"get_checkout_status",
+	},
+	"api/dashboard/invoices.py": {
+		"pay_invoice",
+		"pay_invoice_checkout",
+		"confirm_invoice_checkout",
+		"create_topup_order",
+		"confirm_topup",
+	},
+}
 
 # A decorator that authenticates + binds the team before the body runs.
 AUTH_DECORATORS = {"pilot_credential_auth"}
@@ -137,6 +156,19 @@ class TestWhitelistBoundary(BillingTestCase):
 			f"whitelisted endpoints with no authz guard on entry: {unguarded}",
 		)
 
+	def test_payment_routes_are_rate_limited(self):
+		"""Every route that charges, starts a checkout or saves a card carries a rate limit."""
+		missing = []
+		for path, rel in _billing_files():
+			if rel not in RATE_LIMITED_ROUTES:
+				continue
+			tree = ast.parse(path.read_text())
+			limited = {
+				fn.name for fn, _inside, names in _whitelisted_functions(tree, "") if "rate_limit" in names
+			}
+			missing += [f"{rel}::{name}" for name in RATE_LIMITED_ROUTES[rel] - limited]
+		self.assertEqual(missing, [], f"payment routes with no rate limit: {missing}")
+
 
 class TestAuditedPrimitivesStayInternal(BillingTestCase):
 	"""One regression per audit exploit: the de-whitelisted primitives must be
@@ -155,7 +187,7 @@ class TestAuditedPrimitivesStayInternal(BillingTestCase):
 		"central.billing.payments.charges.pay_invoice",
 		"central.billing.catalog.plans.create_configured_plan",
 		"central.billing.catalog.plans.get_plan_pricing",
-		"central.billing.revenue.erpnext_sync.sync_invoice",
+		"central.billing.ingester.erpnext_sync.sync_invoice",
 	)
 
 	def test_primitives_are_rejected_at_the_http_door(self):
