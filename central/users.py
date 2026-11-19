@@ -185,6 +185,9 @@ def _send_disabled_notice(email: str) -> None:
 					"Contact support to restore access."
 				)
 			],
+			"footer_note": _(
+				"You are receiving this because someone tried to sign in to Frappe Cloud with this email."
+			),
 		},
 	)
 

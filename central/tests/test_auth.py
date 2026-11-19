@@ -110,7 +110,6 @@ class TestAuth(IntegrationTestCase):
 		self.assertIn("disabled", notice.call_args.kwargs["subject"])
 		code_mail.assert_not_called()
 
-		# The notice must say why and what to do, not just carry a heading.
 		from frappe.utils.jinja import get_email_from_template
 
 		html, _text = get_email_from_template(
