@@ -10,6 +10,7 @@ from central.billing.catalog.plan_setup import AI_PLAN, ensure_ai_plan
 from central.billing.platform import readiness
 from central.billing.revenue import exchange_rates, grove_bridge, service_reports, usage_recount
 from central.billing.revenue.invoicing.generate import generate_team_invoice
+from central.billing.revenue.usage_ledger import write_days
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team
 from central.services import ai
@@ -25,8 +26,11 @@ class FakeGrove:
 
 	def __init__(self):
 		self.landed: dict[tuple, dict] = {}
+		self.failing: set[str] = set()
 
 	def get_usage(self, teams, pulled_after=None, pulled_until=None, **_ignored):
+		if teams[0] in self.failing:
+			raise ConnectionError("Grove did not answer")
 		costs = self.landed.get((teams[0], pulled_after[:10]), {})
 		return {
 			"model_summary": [
@@ -78,8 +82,9 @@ class AIBillingCase(IntegrationTestCase):
 		self.grove.landed[(team, day)] = costs
 
 	def read(self, *days: str, teams=None):
+		subjects = grove_bridge.billed_subjects(AI_SERVICE, teams or list(self.services))
 		with patch.object(grove_bridge.GroveClient, "from_settings", return_value=self.grove):
-			grove_bridge.read_page(teams or list(self.services), list(days))
+			write_days(grove_bridge.read_days(subjects, {team: list(days) for team in subjects}).rows)
 
 	def days(self, team: str, **filters):
 		return frappe.get_all(
@@ -118,10 +123,11 @@ class TestAIBilling(AIBillingCase):
 
 	def test_one_team_that_fails_does_not_stop_the_page(self):
 		self.land(TEAM_INR, "2026-06-10", {"gpt-4o": 1.0})
-		missing = "team-ai-billing-unknown"
+		self.land(TEAM_USD, "2026-06-10", {"gpt-4o": 1.0})
+		self.grove.failing.add(TEAM_USD)
 		with patch("frappe.log_error") as log_error:
-			self.read("2026-06-10", teams=[missing, TEAM_INR])
-		self.assertEqual(len(self.days(TEAM_INR)), 1)
+			self.read("2026-06-10")
+		self.assertEqual((len(self.days(TEAM_INR)), len(self.days(TEAM_USD))), (1, 0))
 		self.assertIn("1 team(s) not read", log_error.call_args.kwargs["title"])
 
 	def test_the_usd_invoice_bills_each_model_at_its_cost(self):
@@ -219,6 +225,10 @@ class TestAIBilling(AIBillingCase):
 		with patch.object(grove_bridge.GroveClient, "from_settings", return_value=self.grove):
 			grove_bridge.backfill("2026-06-01")
 		self.assertEqual([(d.quantity, d.written_off) for d in self.days(TEAM_USD)], [(1.0, 1), (2.0, 1)])
+		# Explicit days: where the hourly reading starts is not moved.
+		self.assertFalse(
+			frappe.db.get_value("Team Service", self.services[TEAM_USD].name, "usage_read_until")
+		)
 
 	def test_the_hourly_recount_writes_one_rollup_per_model(self):
 		self.land(TEAM_USD, "2026-06-10", {"gpt-4o": 3.0, "claude-sonnet": 1.0})

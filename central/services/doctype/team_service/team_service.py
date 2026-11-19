@@ -240,7 +240,7 @@ def billed_subjects(service: str, external_ids: list[str] | None = None) -> dict
 	rows = frappe.get_all(
 		"Team Service",
 		filters=filters,
-		fields=["name", "external_id", "team", "subscription", "region", "creation"],
+		fields=["name", "external_id", "team", "subscription", "region", "creation", "usage_read_until"],
 		order_by="name asc",
 	)
 	return {row.external_id: row for row in rows}

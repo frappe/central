@@ -2,10 +2,12 @@
 # For license information, please see license.txt
 
 import datetime
+from zoneinfo import ZoneInfo
 
 import frappe
 
 from central.billing.platform.jobs import each_isolated
+from central.billing.revenue.service_reports import MAXIMUM_DIMENSION
 from central.billing.revenue.usage_ledger import utc_today, write_days
 from central.integrations.grove import GroveClient
 from central.services.doctype.service.service import AI_METER, AI_SERVICE, NANO_PER_UNIT
@@ -15,10 +17,13 @@ from central.services.doctype.team_service.team_service import billed_subjects
 PAGE_SIZE = 200
 LOGGED_FAILURES = 50
 ONE_DAY = datetime.timedelta(days=1)
+# A team further behind is caught up over the next hours, so one run stays bounded.
+CATCH_UP_DAYS = 7
+BACKFILL_PAGE_DAYS = 7
 
 
 def read_ai_usage() -> int:
-	"""Hourly, until Grove reports usage itself: read each AI team's cost that landed yesterday and today."""
+	"""Hourly, until Grove reports usage itself: read each AI team's cost per model and landing day."""
 	from central.billing.revenue.invoicing.run import billing_queue
 
 	if not frappe.db.get_value("Service", AI_SERVICE, "central_reads"):
@@ -26,40 +31,49 @@ def read_ai_usage() -> int:
 	if not frappe.get_cached_doc("AI Settings").is_enrolled:
 		return 0
 	subscribe_ai_teams()
-	today = utc_today()
-	# A landing day is final once it ends, so only yesterday and today can still change.
-	days = [str(today - ONE_DAY), str(today)]
 	teams = sorted(billed_subjects(AI_SERVICE))
 	for start in range(0, len(teams), PAGE_SIZE):
 		frappe.enqueue(
 			"central.billing.revenue.grove_bridge.read_page",
 			queue=billing_queue(),
 			teams=teams[start : start + PAGE_SIZE],
-			days=days,
 		)
 	return len(teams)
 
 
-def read_page(teams: list[str], days: list[str]) -> int:
-	"""Read one page of AI teams' landing days and write them."""
+def read_page(teams: list[str]) -> int:
+	"""Read one page of AI teams from the day each was last read through today, and write them."""
+	subjects = billed_subjects(AI_SERVICE, teams)
+	bill_from = frappe.db.get_value("Service", AI_SERVICE, "bill_from")
+	today = utc_today()
+	plan = {team: _days_to_read(service, bill_from, today) for team, service in subjects.items()}
+	read = read_days(subjects, {team: days for team, days in plan.items() if days})
+	written = write_days(read.rows).count
+	# Only after its rows are written, so a team that failed is read again from the same day.
+	_mark_read({subjects[team].name: plan[team][-1] for team in read.teams})
+	return written
+
+
+def read_days(subjects: dict, days: dict) -> frappe._dict:
+	"""Grove's landing days for each team, as Usage Day rows, and the teams read in full."""
 	client = GroveClient.from_settings()
 	meter = frappe.get_doc("Service", AI_SERVICE).get_meter(AI_METER)
-	subjects = billed_subjects(AI_SERVICE, teams)
-	rows, failed = [], []
-	for team in teams:
+	rows, read, failed = [], [], []
+	for team, team_days in days.items():
 		# One team's failure, of any kind, must not stop the page's other teams.
 		try:
-			for day in days:
-				rows += landing_rows(client, subjects[team], meter, day)
+			team_rows = [row for day in team_days for row in landing_rows(client, subjects[team], meter, day)]
 		except Exception as error:
 			failed.append(f"{team}: {error!r}")
+			continue
+		rows += team_rows
+		read.append(team)
 	if failed:
 		frappe.log_error(
 			title=f"AI usage: {len(failed)} team(s) not read",
 			message="\n".join(failed[:LOGGED_FAILURES]),
 		)
-	# A day another worker wrote meanwhile is written again by the next hour's reading.
-	return write_days(rows).count
+	return frappe._dict(rows=rows, teams=read)
 
 
 def landing_rows(client: GroveClient, team_service, meter, day: str) -> list[dict]:
@@ -71,6 +85,10 @@ def landing_rows(client: GroveClient, team_service, meter, day: str) -> list[dic
 		[team_service.external_id], pulled_after=_rfc3339(start), pulled_until=_rfc3339(until)
 	)
 	as_of = frappe.utils.convert_utc_to_system_timezone(now).replace(tzinfo=None)
+	models = usage.get("model_summary") or []
+	# Fails the team rather than cutting the name: two cut names could merge and lose one model's cost.
+	if too_long := [model["model"] for model in models if len(model["model"]) > MAXIMUM_DIMENSION]:
+		raise ValueError(f"model name over {MAXIMUM_DIMENSION} characters: {too_long[0][:MAXIMUM_DIMENSION]}")
 	return [
 		meter.get_day_row(
 			team_service,
@@ -81,7 +99,7 @@ def landing_rows(client: GroveClient, team_service, meter, day: str) -> list[dic
 			source_currency="USD",
 			as_of=as_of,
 		)
-		for model in usage.get("model_summary") or []
+		for model in models
 	]
 
 
@@ -95,16 +113,41 @@ def subscribe_ai_teams() -> None:
 	each_isolated("AI subscription", "Team Service", names, _subscribe)
 
 
-def backfill(since: str, until: str | None = None) -> int:
+def backfill(since: str) -> int:
 	"""Store each AI team's landing days from `since` up to the day before billing starts, written off."""
 	# Kept so the record outlives Grove's 90-day purge; days before Service.bill_from never bill.
-	last = frappe.utils.getdate(until or frappe.db.get_value("Service", AI_SERVICE, "bill_from")) - ONE_DAY
-	day, days = frappe.utils.getdate(since), []
-	while day <= last:
-		days.append(str(day))
-		day += ONE_DAY
-	teams = sorted(billed_subjects(AI_SERVICE))
-	return sum(read_page(teams, days[start : start + 7]) for start in range(0, len(days), 7))
+	last = frappe.utils.getdate(frappe.db.get_value("Service", AI_SERVICE, "bill_from")) - ONE_DAY
+	days = _days(frappe.utils.getdate(since), last)
+	subjects = billed_subjects(AI_SERVICE)
+	written = 0
+	for start in range(0, len(days), BACKFILL_PAGE_DAYS):
+		page = days[start : start + BACKFILL_PAGE_DAYS]
+		written += write_days(read_days(subjects, {team: page for team in subjects}).rows).count
+	return written
+
+
+def _days_to_read(team_service, bill_from, today: datetime.date) -> list[str]:
+	"""From the day the team was last read, or first billed, through today, at most CATCH_UP_DAYS."""
+	first = team_service.usage_read_until
+	if not first:
+		started = _utc_day(team_service.creation)
+		first = max(started, frappe.utils.getdate(bill_from)) if bill_from else started
+	first = frappe.utils.getdate(first)
+	return _days(first, min(today, first + (CATCH_UP_DAYS - 1) * ONE_DAY))
+
+
+def _days(first: datetime.date, last: datetime.date) -> list[str]:
+	return [str(first + offset * ONE_DAY) for offset in range((last - first).days + 1)]
+
+
+def _mark_read(last_days: dict) -> None:
+	"""Keep the last day read of each team service, where its next reading starts."""
+	by_day: dict = {}
+	for name, day in last_days.items():
+		by_day.setdefault(day, []).append(name)
+	service = frappe.qb.DocType("Team Service")
+	for day, names in by_day.items():
+		frappe.qb.update(service).set(service.usage_read_until, day).where(service.name.isin(names)).run()
 
 
 def _subscribe(name: str) -> None:
@@ -113,6 +156,12 @@ def _subscribe(name: str) -> None:
 	if service.subscription:
 		# A scheduled job with no user; Team Service is operator-only.
 		service.save(ignore_permissions=True)
+
+
+def _utc_day(moment: datetime.datetime) -> datetime.date:
+	"""The UTC day of a system-time moment."""
+	zone = ZoneInfo(frappe.utils.get_system_timezone())
+	return frappe.utils.get_datetime(moment).replace(tzinfo=zone).astimezone(datetime.UTC).date()
 
 
 def _rfc3339(moment: datetime.datetime) -> str:

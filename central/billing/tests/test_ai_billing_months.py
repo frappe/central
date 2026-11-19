@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import frappe
 
-from central.billing.revenue import exchange_rates, usage_recount
+from central.billing.revenue import exchange_rates, grove_bridge, usage_recount
 from central.billing.revenue.invoicing.generate import team_clusters
 from central.billing.revenue.metered_lines import MAXIMUM_DESCRIPTION, line_description
 from central.billing.revenue.metering import metered_line_items_for_clusters
@@ -19,6 +19,7 @@ from central.billing.tests.test_ai_billing import (
 	rate_on,
 	run_inline,
 )
+from central.services.doctype.service.service import AI_SERVICE
 
 JULY = ("2026-07-01", "2026-07-31")
 AUGUST = ("2026-08-01", "2026-08-31")
@@ -88,6 +89,40 @@ class TestAIBillingMonths(AIBillingCase):
 		self.assertEqual(len({d.invoice for d in claude}), 1, "each credit day is billed once, in August")
 		self.assertTrue(all(d.invoice for d in claude))
 
+	def test_each_team_is_read_from_where_it_was_last_read(self):
+		service = self.services[TEAM_USD].name
+		frappe.db.set_value("Team Service", service, "usage_read_until", "2026-06-10")
+		for day, cost in (("2026-06-10", 1.0), ("2026-06-11", 2.0), ("2026-06-12", 4.0)):
+			self.land(TEAM_USD, day, {"gpt-4o": cost})
+		self.read_page("2026-06-12", TEAM_USD)
+		self.assertEqual([d.quantity for d in self.days(TEAM_USD)], [1.0, 2.0, 4.0])
+		self.assertEqual(str(frappe.db.get_value("Team Service", service, "usage_read_until")), "2026-06-12")
+
+	def test_a_team_never_read_starts_at_bill_from_and_catches_up_a_week_a_run(self):
+		frappe.db.set_value("Service", AI_SERVICE, "bill_from", "2026-06-01")
+		service = self.services[TEAM_USD].name
+		frappe.db.set_value("Team Service", service, "creation", "2026-05-01 10:00:00")
+		for day in range(1, 13):
+			self.land(TEAM_USD, f"2026-06-{day:02}", {"gpt-4o": 1.0})
+		self.read_page("2026-06-12", TEAM_USD)
+		self.assertEqual(str(frappe.db.get_value("Team Service", service, "usage_read_until")), "2026-06-07")
+		self.read_page("2026-06-12", TEAM_USD)
+		self.assertEqual(len(self.days(TEAM_USD)), 12)
+		self.assertEqual(str(frappe.db.get_value("Team Service", service, "usage_read_until")), "2026-06-12")
+
+	def test_a_team_that_fails_keeps_its_read_day(self):
+		for team in (TEAM_USD, TEAM_INR):
+			frappe.db.set_value("Team Service", self.services[team].name, "usage_read_until", "2026-06-11")
+			self.land(team, "2026-06-12", {"gpt-4o": 1.0})
+		# An overlong model name fails its team, not the page: cutting it could merge two models.
+		self.land(TEAM_INR, "2026-06-12", {"x" * 141: 1.0})
+		with patch("frappe.log_error") as log_error:
+			self.read_page("2026-06-12", TEAM_USD, TEAM_INR)
+		self.assertIn("1 team(s) not read", log_error.call_args.kwargs["title"])
+		self.assertEqual((len(self.days(TEAM_USD)), len(self.days(TEAM_INR))), (1, 0))
+		read_until = frappe.db.get_value("Team Service", self.services[TEAM_INR].name, "usage_read_until")
+		self.assertEqual(str(read_until), "2026-06-11")
+
 	def test_forecasts_and_rerating_see_ai_but_no_other_blank_cluster_usage(self):
 		self.land(TEAM_USD, "2026-06-10", {"gpt-4o": 3.0})
 		self.read("2026-06-10")
@@ -116,3 +151,10 @@ class TestAIBillingMonths(AIBillingCase):
 		description = line_description(rollup, 84.1)
 		self.assertLessEqual(len(description), MAXIMUM_DESCRIPTION)
 		self.assertTrue(description.endswith("rate of 2026-06-01"))
+
+	def read_page(self, today: str, *teams: str):
+		with (
+			patch.object(grove_bridge, "utc_today", return_value=frappe.utils.getdate(today)),
+			patch.object(grove_bridge.GroveClient, "from_settings", return_value=self.grove),
+		):
+			grove_bridge.read_page(list(teams))
