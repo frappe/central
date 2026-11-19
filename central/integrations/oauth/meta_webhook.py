@@ -6,8 +6,8 @@ from frappe.integrations.doctype.webhook.webhook import get_next_retry, log_requ
 from frappe.utils import add_to_date, now_datetime
 from frappe.utils.password import get_decrypted_password
 
-from central.integrations.oauth.oauth import PROVIDER
 from central.integrations.oauth.meta import ROUTE, delete_routes
+from central.integrations.oauth.oauth import PROVIDER
 
 WEBHOOK = "Meta to site"
 SITE_HANDLER_PATH = "/api/method/whatsapp.whatsapp.webhook.handler"

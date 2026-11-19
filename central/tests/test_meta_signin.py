@@ -10,7 +10,6 @@ from frappe.utils import set_request
 
 from central.api.oauth import disconnect, relay_token, start
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.integrations.oauth.oauth import PROVIDER
 from central.integrations.oauth.meta import (
 	GRAPH_URL,
 	NO_PHONE_NUMBER,
@@ -20,6 +19,7 @@ from central.integrations.oauth.meta import (
 	ROUTE,
 	WABA_IN_USE,
 )
+from central.integrations.oauth.oauth import PROVIDER
 from central.integrations.oauth.setup import ensure_email_oauth_providers
 from central.permissions import meta_webhook_route_has_permission, meta_webhook_route_query_conditions
 from central.tests import test_email_oauth

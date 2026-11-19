@@ -11,6 +11,7 @@ from frappe import _
 
 from central.api.pilot import pilot_credential_auth
 from central.iam import can
+from central.integrations.oauth.meta import connect_whatsapp, disconnect_whatsapp
 from central.integrations.oauth.oauth import (
 	CALLBACK_PATH,
 	PROVIDER,
@@ -22,7 +23,6 @@ from central.integrations.oauth.oauth import (
 	remember_code_owner,
 	start_sign_in,
 )
-from central.integrations.oauth.meta import connect_whatsapp, disconnect_whatsapp
 
 LOGIN_PATH = "/dashboard/login"
 
