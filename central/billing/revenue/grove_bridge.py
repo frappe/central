@@ -9,6 +9,7 @@ import frappe
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue.service_reports import MAXIMUM_DIMENSION
 from central.billing.revenue.usage_ledger import utc_today, write_days
+from central.billing.revenue.usage_recount import dimension_room
 from central.integrations.grove import GroveClient
 from central.services.doctype.service.service import AI_METER, AI_SERVICE, NANO_PER_UNIT
 from central.services.doctype.team_service.team_service import billed_subjects
@@ -86,9 +87,10 @@ def landing_rows(client: GroveClient, team_service, meter, day: str) -> list[dic
 	)
 	as_of = frappe.utils.convert_utc_to_system_timezone(now).replace(tzinfo=None)
 	models = usage.get("model_summary") or []
+	room = _model_room(team_service)
 	# Fails the team rather than cutting the name: two cut names could merge and lose one model's cost.
-	if too_long := [model["model"] for model in models if len(model["model"]) > MAXIMUM_DIMENSION]:
-		raise ValueError(f"model name over {MAXIMUM_DIMENSION} characters: {too_long[0][:MAXIMUM_DIMENSION]}")
+	if too_long := [model["model"] for model in models if len(model["model"]) > room]:
+		raise ValueError(f"model name over {room} characters: {too_long[0][:room]}")
 	return [
 		meter.get_day_row(
 			team_service,
@@ -134,6 +136,12 @@ def _days_to_read(team_service, bill_from, today: datetime.date) -> list[str]:
 		first = max(started, frappe.utils.getdate(bill_from)) if bill_from else started
 	first = frappe.utils.getdate(first)
 	return _days(first, min(today, first + (CATCH_UP_DAYS - 1) * ONE_DAY))
+
+
+def _model_room(team_service) -> int:
+	"""The longest model name both the team's Usage Day and its monthly rollup key can hold."""
+	subject = frappe.db.get_value("Subscription", team_service.subscription, "service_subject")
+	return min(MAXIMUM_DIMENSION, dimension_room(AI_SERVICE, subject))
 
 
 def _days(first: datetime.date, last: datetime.date) -> list[str]:

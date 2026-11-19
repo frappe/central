@@ -20,6 +20,9 @@ PAGE_SIZE = 200
 # Past this many months with a billed rollup, the recount stops and logs a warning.
 MONTHS_AHEAD = 24
 _SEPARATOR = "|"
+# Usage Rollup.idempotency_key is a Data field.
+MAXIMUM_ROLLUP_KEY = 140
+_KEY_JOIN = "::"
 
 
 @dataclass
@@ -116,8 +119,13 @@ def recount_month(
 
 
 def rollup_key(service: str, resource_id: str, month: datetime.date, dimension: str = "") -> str:
-	key = f"{service}::{resource_id}::{month:%Y-%m}"
-	return f"{key}::{dimension}" if dimension else key
+	key = _KEY_JOIN.join((service, resource_id, f"{month:%Y-%m}"))
+	return _KEY_JOIN.join((key, dimension)) if dimension else key
+
+
+def dimension_room(service: str, resource_id: str) -> int:
+	"""The longest dimension a rollup key of this subject has room for."""
+	return MAXIMUM_ROLLUP_KEY - len(rollup_key(service, resource_id, datetime.date.today())) - len(_KEY_JOIN)
 
 
 def _recount_encoded(encoded: str) -> MonthCount | None:

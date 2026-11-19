@@ -124,6 +124,24 @@ class TestAIBillingMonths(AIBillingCase):
 		read_until = frappe.db.get_value("Team Service", self.services[TEAM_INR].name, "usage_read_until")
 		self.assertEqual(str(read_until), "2026-06-11")
 
+	def test_a_model_name_too_long_for_the_rollup_key_fails_its_team(self):
+		subject = frappe.db.get_value("Subscription", self.services[TEAM_INR].subscription, "service_subject")
+		room = usage_recount.dimension_room(AI_SERVICE, subject)
+		self.assertLess(room, grove_bridge.MAXIMUM_DIMENSION)
+		frappe.db.set_value("Team Service", self.services[TEAM_INR].name, "usage_read_until", "2026-06-11")
+		self.land(TEAM_INR, "2026-06-12", {"x" * (room + 1): 1.0})
+		with patch("frappe.log_error") as log_error:
+			self.read_page("2026-06-12", TEAM_INR)
+		self.assertIn("1 team(s) not read", log_error.call_args.kwargs["title"])
+		read_until = frappe.db.get_value("Team Service", self.services[TEAM_INR].name, "usage_read_until")
+		self.assertEqual(str(read_until), "2026-06-11")
+
+		# A name that just fits is billed on a rollup of its own.
+		self.land(TEAM_INR, "2026-06-12", {"x" * room: 1.0})
+		self.read_page("2026-06-12", TEAM_INR)
+		self.recount(rate_on("2026-06-01"))
+		self.assertTrue(frappe.db.exists("Usage Rollup", {"team": TEAM_INR, "dimension": "x" * room}))
+
 	def test_forecasts_and_rerating_see_ai_but_no_other_blank_cluster_usage(self):
 		self.land(TEAM_USD, "2026-06-10", {"gpt-4o": 3.0})
 		self.read("2026-06-10")
