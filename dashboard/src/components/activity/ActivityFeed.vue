@@ -163,7 +163,7 @@ const loadActivityErrorTitle = __("Couldn't load the activity")
 				:key="month.label"
 				class="mt-6 first:mt-2"
 			>
-				<h3 class="px-2 pb-1.5 text-sm-medium text-ink-gray-5">
+				<h3 class="px-2 pb-1.5 text-sm-medium leading-tighter text-ink-gray-5">
 					{{ month.label }}
 				</h3>
 

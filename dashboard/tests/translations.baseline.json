@@ -78,7 +78,7 @@
 	"src/components/servers/detail/AddressesSection.vue": 32,
 	"src/components/servers/detail/Header.vue": 12,
 	"src/components/servers/detail/NetworkingTab.vue": 5,
-	"src/components/servers/detail/OverviewTab.vue": 21,
+	"src/components/servers/detail/OverviewTab.vue": 19,
 	"src/components/servers/detail/ServerMetricChart.vue": 2,
 	"src/components/servers/detail/SettingsTab.vue": 23,
 	"src/components/servers/detail/WireGuardSection.vue": 8,
