@@ -13,6 +13,7 @@
   "enabled",
   "central_reads",
   "expected_cadence",
+  "bill_from",
   "connection_section",
   "report_secret",
   "meters_section",
@@ -69,6 +70,12 @@
    "options": "Hourly\nDaily"
   },
   {
+   "fieldname": "bill_from",
+   "fieldtype": "Date",
+   "label": "Bill From",
+   "description": "The first UTC day that bills. Usage before it is kept as written off. Blank: every day bills."
+  },
+  {
    "fieldname": "connection_section",
    "fieldtype": "Section Break",
    "label": "Connection"
@@ -93,7 +100,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-11-17 12:00:00.000000",
+ "modified": "2026-11-18 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Service",

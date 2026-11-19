@@ -38,6 +38,8 @@
   "gst_status_daily_limit",
   "section_break_reports",
   "reporting_usd_to_inr",
+  "section_break_exchange_rates",
+  "exchange_rate_url",
   "tab_operator_alerts",
   "section_operator_alerts",
   "operator_alert_channel",
@@ -301,6 +303,19 @@
    "description": "Margin reports and dashboards turn USD revenue into INR at this rate, to compare it with the INR bare metal cost. Leave 0 to leave USD revenue out."
   },
   {
+   "fieldname": "section_break_exchange_rates",
+   "fieldtype": "Section Break",
+   "label": "Exchange Rates"
+  },
+  {
+   "default": "https://api.frankfurter.dev/v2",
+   "description": "The rate API that gives billing the USD rate of the 1st of each month, for usage billed in another currency.",
+   "fieldname": "exchange_rate_url",
+   "fieldtype": "Data",
+   "label": "Exchange Rate API URL",
+   "options": "URL"
+  },
+  {
    "fieldname": "tab_operator_alerts",
    "fieldtype": "Tab Break",
    "label": "Operator Alerts"
@@ -561,7 +576,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-06 17:30:00.000000",
+ "modified": "2026-11-19 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

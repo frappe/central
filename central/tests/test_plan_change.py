@@ -192,9 +192,8 @@ class TestPilotPlanChange(PlanChangeCase):
 
 		self.assertEqual([plan["name"] for plan in options["plans"]], ["plan-25gb", "plan-50gb"])
 
-	def get_product_plan_options(self, **product_values) -> dict:
-		"""The plan list of a server whose site belongs to a Raven product with a note on Pro."""
-		self.server.db_set({"disk_gigabytes": 25, "plan": None})
+	def set_product(self, **product_values) -> None:
+		"""Put the site in a Raven product with a note on the Pro plan."""
 		product = frappe.get_doc(
 			{
 				"doctype": "Product",
@@ -209,6 +208,11 @@ class TestPilotPlanChange(PlanChangeCase):
 		product.flags.ignore_links = True
 		product.insert()
 		self.site().db_set("product", product.name)
+
+	def get_product_plan_options(self, **product_values) -> dict:
+		"""The plan list of a server whose site belongs to a Raven product with a note on Pro."""
+		self.server.db_set({"disk_gigabytes": 25, "plan": None})
+		self.set_product(**product_values)
 		menu = {
 			"currency": "USD",
 			"plans": {
@@ -239,3 +243,19 @@ class TestPilotPlanChange(PlanChangeCase):
 		options = self.get_product_plan_options(hide_plan_specs=1)
 
 		self.assertEqual([plan["subtitle"] for plan in options["plans"]], ["", ""])
+
+	def get_summary_ai_credits(self) -> dict:
+		credits = {"state": "Active", "window": "Total", "cap": 5.0, "spent": 0.0}
+		with patch(
+			"central.services.doctype.ai_trial_key.ai_trial_key.AITrialKey.get_server_credits",
+			return_value=credits,
+		):
+			return billing_api.get_billing_summary()["ai_credits"]
+
+	def test_the_ai_credit_carries_the_note_of_the_sites_product(self):
+		self.set_product(ai_credit_note="Used for AI replies and summaries.")
+
+		self.assertEqual(self.get_summary_ai_credits()["note"], "Used for AI replies and summaries.")
+
+	def test_the_ai_credit_has_no_note_without_a_product(self):
+		self.assertIsNone(self.get_summary_ai_credits()["note"])

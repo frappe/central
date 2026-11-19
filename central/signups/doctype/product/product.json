@@ -32,7 +32,9 @@
   "email_notes",
   "plans_section",
   "hide_plan_specs",
-  "plan_notes"
+  "plan_notes",
+  "ai_section",
+  "ai_credit_note"
  ],
  "fields": [
   {
@@ -188,13 +190,24 @@
    "fieldtype": "Table",
    "label": "Plan Notes",
    "options": "Product Plan Note"
+  },
+  {
+   "fieldname": "ai_section",
+   "fieldtype": "Section Break",
+   "label": "AI"
+  },
+  {
+   "description": "One sentence the in-app billing shows under the AI credit bar on a site of this product, such as Used for AI replies and ticket summaries. Leave empty to show a general line.",
+   "fieldname": "ai_credit_note",
+   "fieldtype": "Small Text",
+   "label": "AI Credit Note"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
  "make_attachments_public": 1,
- "modified": "2026-11-18 12:00:00.000000",
+ "modified": "2026-11-19 12:00:00.000000",
  "modified_by": "prathamesh@frappe.io",
  "module": "Signups",
  "name": "Product",

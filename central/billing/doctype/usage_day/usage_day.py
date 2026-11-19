@@ -10,9 +10,11 @@ class UsageDay(Document):
 
 
 def on_doctype_update() -> None:
-	# One row per subject, meter and UTC day: a re-sent line lands on the same row.
+	# One row per subject, meter, dimension and UTC day: a re-sent line lands on the same row.
 	frappe.db.add_unique(
-		"Usage Day", ["service", "subject", "meter", "day"], constraint_name="unique_usage_day"
+		"Usage Day",
+		["service", "subject", "meter", "dimension", "day"],
+		constraint_name="unique_usage_day_dimension",
 	)
 	# The recount reads a subscription's days; the invoice stamps and audits by invoice.
 	frappe.db.add_index("Usage Day", ["subscription", "day"])

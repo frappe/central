@@ -21,6 +21,7 @@ _DAY_FIELDS = (
 	"service",
 	"meter",
 	"subject",
+	"dimension",
 	"day",
 	"aggregation",
 	"team",
@@ -31,6 +32,7 @@ _DAY_FIELDS = (
 	"source_amount",
 	"source_currency",
 	"as_of",
+	"written_off",
 )
 _INSERT_FIELDS = (*_META_FIELDS, *_DAY_FIELDS, "landed_at", "estimated")
 
@@ -81,14 +83,18 @@ def _changed(rows: list[dict], existing: dict) -> list[tuple]:
 
 
 def _merged(rows: list[dict]) -> list[dict]:
-	"""One line per subject, meter and day: a batch may carry the same day twice."""
+	"""One line per subject, meter, dimension and day: a batch may carry the same day twice."""
 	kept: dict = {}
+	bill_from = _bill_from({row["service"] for row in rows})
 	for row in rows:
-		# Float columns are NOT NULL in Frappe, so a blank amount is stored as 0.
+		# Float columns are NOT NULL in Frappe, so a blank amount is stored as 0. A blank dimension is
+		# stored as "", not NULL, so the unique key still holds.
 		row = {
 			**row,
+			"dimension": row.get("dimension") or "",
 			"quantity": frappe.utils.flt(row.get("quantity")),
 			"source_amount": frappe.utils.flt(row.get("source_amount")),
+			"written_off": _is_before_billing(row, bill_from.get(row["service"])),
 		}
 		key = _key(row)
 		if key not in kept or is_newer(kept[key], row):
@@ -120,16 +126,15 @@ def fill_missing_days(today=None) -> int:
 
 
 def prune_old_days(today=None) -> int:
-	"""Daily: delete billed days older than the kept months. The monthly rollup keeps their total."""
+	"""Daily: delete billed or written-off days older than the kept months."""
+	# The monthly rollup keeps a billed day's total; a written-off day was never going to bill.
 	cutoff = frappe.utils.add_months(_utc_date(today).replace(day=1), -KEPT_MONTHS)
+	table = frappe.qb.DocType(DOCTYPE)
+	done = table.invoice.isnotnull() | (table.written_off == 1)
 	deleted = 0
-	while names := frappe.get_all(
-		DOCTYPE,
-		filters={"day": ["<", cutoff], "invoice": ["is", "set"]},
-		pluck="name",
-		limit=DELETE_PAGE,
-	):
-		table = frappe.qb.DocType(DOCTYPE)
+	while names := (
+		frappe.qb.from_(table).select(table.name).where((table.day < cutoff) & done).limit(DELETE_PAGE)
+	).run(pluck=True):
 		frappe.qb.from_(table).delete().where(table.name.isin(names)).run()
 		deleted += len(names)
 	return deleted
@@ -169,7 +174,22 @@ def _live_subjects(services: set) -> set:
 
 
 def _key(row) -> tuple:
-	return (row["service"], row["subject"], row["meter"], str(frappe.utils.getdate(row["day"])))
+	day = str(frappe.utils.getdate(row["day"]))
+	return (row["service"], row["subject"], row["meter"], row.get("dimension") or "", day)
+
+
+def _bill_from(services: set) -> dict:
+	"""The first billed day of each service that starts billing later than its usage."""
+	rows = frappe.get_all(
+		"Service",
+		filters={"name": ["in", list(services)], "bill_from": ["is", "set"]},
+		fields=["name", "bill_from"],
+	)
+	return {row.name: row.bill_from for row in rows}
+
+
+def _is_before_billing(row: dict, bill_from) -> int:
+	return int(bool(bill_from) and frappe.utils.getdate(row["day"]) < frappe.utils.getdate(bill_from))
 
 
 def _existing_days(rows: list[dict]) -> dict:
@@ -190,7 +210,7 @@ def _days_where(condition) -> dict:
 	day = frappe.qb.DocType(DOCTYPE)
 	found = (
 		frappe.qb.from_(day)
-		.select(day.name, day.service, day.subject, day.meter, day.day, day.aggregation)
+		.select(day.name, day.service, day.subject, day.meter, day.dimension, day.day, day.aggregation)
 		.select(day.quantity, day.as_of, day.estimated, day.invoice)
 		.where(condition)
 	).run(as_dict=True)

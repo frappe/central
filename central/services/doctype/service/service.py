@@ -8,7 +8,10 @@ from frappe.model.document import Document
 STORAGE_SERVICE = "storage"
 AI_SERVICE = "ai"
 STORAGE_METER = "bytes_stored"
+AI_METER = "cost"
 BYTES_PER_GB = 1_000_000_000
+# Grove keeps cost to nine decimal places of a dollar.
+NANO_PER_UNIT = 1_000_000_000
 
 # Seeded disabled: an operator turns a service on once it holds the secret it signs with.
 SERVICES = (
@@ -25,6 +28,24 @@ SERVICES = (
 				"unit": "GB",
 				"unit_divisor": BYTES_PER_GB,
 				"label": "Storage",
+			},
+		],
+	},
+	{
+		"service_name": AI_SERVICE,
+		"title": "AI",
+		"plan_category": "AI Tokens",
+		"central_reads": 1,
+		"meters": [
+			{
+				"meter_key": AI_METER,
+				"aggregation": "Sum",
+				"resource_type": "AI Usage",
+				"unit": "USD",
+				"unit_divisor": NANO_PER_UNIT,
+				"cost_currency": "USD",
+				"allow_negative": 1,
+				"label": "AI",
 			},
 		],
 	},

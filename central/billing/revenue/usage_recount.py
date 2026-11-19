@@ -11,6 +11,7 @@ from central.billing.doctype.billing_profile.billing_profile import get_team_cur
 from central.billing.doctype.billing_run_team.billing_run_team import FAILED
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue import usage_ledger
+from central.billing.revenue.exchange_rates import fix_month_rate
 from central.billing.revenue.metering import ingest_rollup, live_rollup
 from central.billing.revenue.usage_ledger import DOCTYPE, LEVEL
 
@@ -19,6 +20,9 @@ PAGE_SIZE = 200
 # Past this many months with a billed rollup, the recount stops and logs a warning.
 MONTHS_AHEAD = 24
 _SEPARATOR = "|"
+# Usage Rollup.idempotency_key is a Data field.
+MAXIMUM_ROLLUP_KEY = 140
+_KEY_JOIN = "::"
 
 
 @dataclass
@@ -28,6 +32,7 @@ class MonthCount:
 	month: datetime.date
 	rollup: str
 	days: list[str]
+	quantity: float
 
 
 @dataclass
@@ -64,9 +69,10 @@ def recount_team(team: str, period_end) -> Counted:
 	"""Recompute the team's usage for the month that ends on `period_end`, and return what was counted."""
 	month = _month_of(period_end)
 	counted = Counted()
-	for subscription, resource_type in _unbilled_meters(team, period_end):
-		written = recount_month(subscription, resource_type, month, drafting=True)
-		if written and written.month == month:
+	for subscription, resource_type, dimension in _unbilled_meters(team, period_end):
+		written = recount_month(subscription, resource_type, month, drafting=True, dimension=dimension)
+		# A month below zero bills nothing. Its days stay unbilled, so the credit goes into the next month.
+		if written and written.month == month and written.quantity >= 0:
 			counted.rollups.append(written.rollup)
 			counted.days.extend(written.days)
 	return counted
@@ -91,43 +97,56 @@ def release_invoice(invoice: str) -> None:
 	usage_ledger.release_days(invoice)
 
 
-def recount_month(subscription: str, resource_type: str, month, drafting: bool = False) -> MonthCount | None:
+def recount_month(
+	subscription: str, resource_type: str, month, drafting: bool = False, dimension: str = ""
+) -> MonthCount | None:
 	"""Write the first open month at or after `month` from the days not yet billed."""
 	# A billed or closed month is never recounted, so its late days go into the next open month.
 	# The month a draft is billing stays open, even when an earlier draft of it billed nothing.
-	meter = _meter(subscription, resource_type)
+	meter = _meter(subscription, resource_type, dimension)
 	if not meter:
 		return None
 	month = _month_of(month)
-	closed = _closed_months(meter, keep_open=month if drafting else None)
+	drafted = month if drafting else None
+	closed = _closed_months(meter, keep_open=drafted)
 	for _ in range(MONTHS_AHEAD):
 		if month not in closed and not _is_billed(meter, month):
-			return _write_month(meter, month, closed)
+			return _write_month(meter, month, closed, final=month == drafted)
 		closed.add(month)
 		month = _next_month(month)
 	frappe.logger("billing").warning(f"Usage of {subscription} has no open month before {month}")
 	return None
 
 
-def rollup_key(service: str, resource_id: str, month: datetime.date) -> str:
-	return f"{service}::{resource_id}::{month:%Y-%m}"
+def rollup_key(service: str, resource_id: str, month: datetime.date, dimension: str = "") -> str:
+	key = _KEY_JOIN.join((service, resource_id, f"{month:%Y-%m}"))
+	return _KEY_JOIN.join((key, dimension)) if dimension else key
+
+
+def dimension_room(service: str, resource_id: str) -> int:
+	"""The longest dimension a rollup key of this subject has room for."""
+	return MAXIMUM_ROLLUP_KEY - len(rollup_key(service, resource_id, datetime.date.today())) - len(_KEY_JOIN)
 
 
 def _recount_encoded(encoded: str) -> MonthCount | None:
-	subscription, resource_type, month = encoded.split(_SEPARATOR)
-	return recount_month(subscription, resource_type, month)
+	# The dimension is last and may itself hold the separator.
+	subscription, resource_type, month, dimension = encoded.split(_SEPARATOR, 3)
+	return recount_month(subscription, resource_type, month, dimension=dimension)
 
 
-def _meter(subscription: str, resource_type: str):
-	"""What a subscription's days of one resource type are counted with."""
+def _meter(subscription: str, resource_type: str, dimension: str = ""):
+	"""What a subscription's days of one resource type and dimension are counted with."""
 	meter = frappe.db.get_value(
 		DOCTYPE,
-		{"subscription": subscription, "resource_type": resource_type},
-		["service", "unit", "aggregation"],
+		{"subscription": subscription, "resource_type": resource_type, "dimension": dimension},
+		["service", "meter", "unit", "aggregation"],
 		as_dict=True,
 	)
 	if not meter:
 		return None
+	cost_currency = frappe.db.get_value(
+		"Service Meter", {"parent": meter.service, "meter_key": meter.meter}, "cost_currency"
+	)
 	owner = frappe.db.get_value(
 		"Subscription", subscription, ["team", "cluster", "service_subject"], as_dict=True
 	)
@@ -138,31 +157,38 @@ def _meter(subscription: str, resource_type: str):
 		team=owner.team,
 		cluster=owner.cluster,
 		subject=owner.service_subject,
+		dimension=dimension,
+		cost_currency=cost_currency,
 	)
 
 
-def _write_month(meter, month: datetime.date, closed: set) -> MonthCount | None:
+def _write_month(meter, month: datetime.date, closed: set, final: bool) -> MonthCount | None:
 	"""Count the month's own unbilled days and the late days of closed months into its rollup."""
 	days = [day for day in _unbilled_days(meter, month) if _month_of(day.day) in (closed | {month})]
+	currency = get_team_currency(meter.team)
+	terms = _cost_terms(meter, currency, month, final)
+	quantity = sum(_weight(day) for day in days)
 	key = ingest_rollup(
 		{
-			"idempotency_key": rollup_key(meter.service, meter.subject, month),
+			"idempotency_key": rollup_key(meter.service, meter.subject, month, meter.dimension),
 			"resource_id": meter.subject,
 			"resource_type": meter.resource_type,
+			"dimension": meter.dimension,
 			"meter_type": "Gauge" if meter.aggregation == LEVEL else "Counter",
 			"team": meter.team,
 			"cluster": meter.cluster,
-			"currency": get_team_currency(meter.team),
+			"currency": currency,
 			"period_start": month,
 			"period_end": _month_end(month),
-			"quantity": sum(_weight(day) for day in days),
+			"quantity": quantity,
 			"unit": meter.unit,
+			"locked_terms": terms,
 		}
 	)
 	if not key:
 		return None
 	rollup = live_rollup(frappe.db.get_value("Usage Rollup", {"idempotency_key": key}, "name"))
-	return MonthCount(month, rollup, [day.name for day in days])
+	return MonthCount(month, rollup, [day.name for day in days], quantity)
 
 
 def _unbilled_days(meter, month: datetime.date) -> list:
@@ -174,7 +200,9 @@ def _unbilled_days(meter, month: datetime.date) -> list:
 		.where(
 			(day.subscription == meter.subscription)
 			& (day.resource_type == meter.resource_type)
+			& (day.dimension == meter.dimension)
 			& day.invoice.isnull()
+			& (day.written_off == 0)
 			& (day.day <= _month_end(month))
 		)
 		.for_update()
@@ -183,7 +211,7 @@ def _unbilled_days(meter, month: datetime.date) -> list:
 
 def _is_billed(meter, month: datetime.date) -> bool:
 	"""Whether an invoice billed the month. Locks its rollup, so a draft cannot bill it meanwhile."""
-	key = rollup_key(meter.service, meter.subject, month)
+	key = rollup_key(meter.service, meter.subject, month, meter.dimension)
 	name = frappe.db.get_value("Usage Rollup", {"idempotency_key": key}, "name", for_update=True)
 	if not name:
 		return False
@@ -214,13 +242,18 @@ def _changed_months(since, now) -> set[str]:
 	day = frappe.qb.DocType(DOCTYPE)
 	rows = (
 		frappe.qb.from_(day)
-		.select(day.subscription, day.resource_type, day.day)
+		.select(day.subscription, day.resource_type, day.day, day.dimension)
 		.distinct()
-		.where((day.landed_at > since) & (day.landed_at <= now) & day.resource_type.isnotnull())
+		.where(
+			(day.landed_at > since)
+			& (day.landed_at <= now)
+			& day.resource_type.isnotnull()
+			& (day.written_off == 0)
+		)
 	).run()
 	return {
-		_SEPARATOR.join((subscription, resource_type, f"{frappe.utils.getdate(on):%Y-%m-01}"))
-		for subscription, resource_type, on in rows
+		_SEPARATOR.join((subscription, resource_type, f"{frappe.utils.getdate(on):%Y-%m-01}", dimension))
+		for subscription, resource_type, on, dimension in rows
 	}
 
 
@@ -229,15 +262,32 @@ def _unbilled_meters(team: str, period_end) -> set[tuple]:
 	return set(
 		(
 			frappe.qb.from_(day)
-			.select(day.subscription, day.resource_type)
+			.select(day.subscription, day.resource_type, day.dimension)
 			.distinct()
 			.where(
 				(day.team == team)
 				& day.invoice.isnull()
+				& (day.written_off == 0)
 				& (day.day <= period_end)
 				& day.resource_type.isnotnull()
 			)
 		).run()
+	)
+
+
+def _cost_terms(meter, currency: str, month: datetime.date, final: bool) -> frappe._dict | None:
+	"""A meter that counts money bills that amount, converted at the month's rate, with no allowance."""
+	if not meter.cost_currency:
+		return None
+	found = fix_month_rate(meter.cost_currency, currency, month, final=final)
+	return frappe._dict(
+		team=meter.team,
+		cluster=meter.cluster,
+		currency=currency,
+		allowance=0,
+		rate=found.rate,
+		rate_date=found.rate_date if found.fixed else None,
+		is_converted=meter.cost_currency != currency,
 	)
 
 

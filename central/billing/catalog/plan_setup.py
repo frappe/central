@@ -83,3 +83,29 @@ def _ensure_rates(slug, rates):
 	for currency, rate in rates.items():
 		if currency not in priced:
 			set_catalog_rate("Plan", slug, currency, rate)
+
+
+AI_PLAN = "ai-usage"
+AI_CATEGORY = "AI Tokens"
+AI_RESOURCE_TYPE = "AI Usage"
+
+
+def ensure_ai_plan() -> None:
+	"""Seed the plan every AI team is subscribed to. Safe to call repeatedly."""
+	# AI is billed at Grove's cost, converted at the month's rate, so the catalog rate stays 0.
+	if frappe.db.exists("Plan", AI_PLAN) or not frappe.db.exists("Plan Category", AI_CATEGORY):
+		return
+	doc = frappe.get_doc(
+		{
+			"doctype": "Plan",
+			"title": "AI Usage",
+			"category": AI_CATEGORY,
+			"billing_cycle": "Monthly",
+			"is_active": 1,
+			"includes": [{"resource_type": AI_RESOURCE_TYPE, "quantity": 0, "unit": "Nos"}],
+		}
+	)
+	doc.name = AI_PLAN
+	doc.flags.name_set = True
+	doc.insert(ignore_permissions=True)
+	_ensure_rates(AI_PLAN, {"INR": 0, "USD": 0})
