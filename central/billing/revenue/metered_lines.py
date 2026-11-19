@@ -22,13 +22,13 @@ def line_description(rollup, rate: float) -> str:
 	return " · ".join(part for part in ((rollup.dimension or "")[:room], conversion) if part)
 
 
-def rollups_in(rollup, clusters: list, team_level: bool):
+def rollups_in(table, clusters: list, team_level: bool):
 	"""Rollups in one of `clusters`, and with `team_level` the team's AI usage, which has no cluster."""
-	condition = _in_clusters(rollup.cluster, clusters) if clusters else None
+	condition = _in_clusters(table.cluster, clusters) if clusters else None
 	if not team_level:
 		return condition
 	# Only AI: another service's blank-cluster rollups were never billed by the team run.
-	ai = _is_blank(rollup.cluster) & (rollup.resource_type == AI_RESOURCE_TYPE)
+	ai = _is_blank(table.cluster) & (table.resource_type == AI_RESOURCE_TYPE)
 	return ai if condition is None else condition | ai
 
 
