@@ -20,6 +20,7 @@ selects one of two modes:
 
 import frappe
 from frappe import _
+from frappe.query_builder.functions import Coalesce
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
 from central.billing.revenue.metered_lines import line_description, rollups_in
@@ -369,7 +370,8 @@ def _metered_lines(
 		.select(
 			Rollup.resource_id,
 			Rollup.resource_type,
-			Rollup.dimension,
+			# A blank dimension is stored as NULL or "", and a forecast merges lines on it.
+			Coalesce(Rollup.dimension, "").as_("dimension"),
 			Rollup.meter_type,
 			Rollup.quantity,
 			Rollup.unit,
@@ -455,6 +457,7 @@ def _metered_lines(
 			"plan": None,
 			"cluster": r.cluster,
 			"resource_type": r.resource_type,
+			"dimension": r.dimension,
 			"unit": r.unit,
 			"description": line_description(r, rate),
 			"quantity": billable_qty,

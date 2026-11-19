@@ -44,7 +44,7 @@ class EstimateTestBase(IntegrationTestCase):
 		frappe.db.delete("Virtual Machine", {"team": TEAM})
 		frappe.db.commit()
 
-	def _rollup(self, month: str, quantity: float):
+	def _rollup(self, month: str, quantity: float, dimension: str = ""):
 		"""One grandfathered transfer rollup for `month` (YYYY-MM), 100 GB allowance."""
 		frappe.get_doc(
 			{
@@ -53,6 +53,7 @@ class EstimateTestBase(IntegrationTestCase):
 				"team": TEAM,
 				"cluster": CLUSTER,
 				"resource_type": "Transfer",
+				"dimension": dimension,
 				"meter_type": "Counter",
 				"period_start": f"{month}-01 00:00:00",
 				"period_end": f"{month}-28 23:59:59",
@@ -61,7 +62,7 @@ class EstimateTestBase(IntegrationTestCase):
 				"currency": "INR",
 				"locked_allowance": 100,
 				"locked_rate": 0.5,
-				"idempotency_key": f"{RESOURCE}:Counter:{month}-01",
+				"idempotency_key": f"{RESOURCE}:Counter:{month}-01:{dimension}",
 				"sequence": 0,
 			}
 		).insert(ignore_permissions=True)
@@ -79,6 +80,17 @@ class TestFuturePeriods(EstimateTestBase):
 		self.assertEqual(lines[0]["basis"], ESTIMATED)
 		self.assertEqual(lines[0]["amount"], 100.0)  # (50 + 100 + 150) / 3
 		self.assertIn("3-month average", lines[0]["estimated_from"])
+
+	def test_each_dimension_is_projected_as_its_own_line(self):
+		for month in ("2026-03", "2026-04", "2026-05"):
+			self._rollup(month, 200, dimension="gpt-4o")
+			self._rollup(month, 400, dimension="claude-sonnet")
+
+		lines = estimate.metered_lines(TEAM, [CLUSTER], "2026-06-01", "2026-06-30", today="2026-05-20")
+		self.assertEqual(
+			sorted((line["dimension"], line["amount"]) for line in lines),
+			[("claude-sonnet", 150.0), ("gpt-4o", 50.0)],
+		)
 
 	def test_no_history_projects_no_line_rather_than_a_zero_one(self):
 		# Silence is not evidence of zero usage; asserting zero would be a claim we
