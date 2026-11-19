@@ -487,6 +487,132 @@ class TestEmailFanout(EngineTestBase):
 		self.assertNotIn(self.user_b, all_recipients)
 
 
+class TestPilotFlapEmailLimit(EngineTestBase):
+	"""A Pilot reports every failed probe, so the feed is busy but the inbox stops at four."""
+
+	def setUp(self):
+		super().setUp()
+		self.user_a = make_user("flap-a@example.com")
+		self.user_b = make_user("flap-b@example.com")
+		team = frappe.get_doc("Team", TEAM)
+		for user in (self.user_a, self.user_b):
+			team.append("members", {"user": user, "role": "Billing", "status": "Active"})
+		team.save(ignore_permissions=True)
+		self.enqueue = self.enterContext(patch("central.notification.engine.frappe.enqueue"))
+
+	def _ensure_pilot_events(self):
+		self._ensure_event_type("site_unavailable", required_cap="billing:view")
+		self._ensure_event_type("site_recovered", required_cap="billing:view")
+
+	def _dispatch(self, event, message="down", reference_name="acme.frappe.cloud", team=TEAM):
+		from central.notification.engine import dispatch
+
+		return dispatch(
+			team,
+			event,
+			message=message,
+			reference_doctype="Site",
+			reference_name=reference_name,
+		)
+
+	def _flap(self, reference_name="acme.frappe.cloud", team=TEAM):
+		return [
+			self._dispatch("site_unavailable", message="down", reference_name=reference_name, team=team),
+			self._dispatch("site_recovered", message="up", reference_name=reference_name, team=team),
+			self._dispatch("site_unavailable", message="down", reference_name=reference_name, team=team),
+			self._dispatch("site_recovered", message="up", reference_name=reference_name, team=team),
+		]
+
+	def test_the_fifth_alert_for_a_reference_sends_no_email(self):
+		self._ensure_pilot_events()
+
+		for result in self._flap():
+			self.assertTrue(result["created"])
+			self.assertGreater(result["emails_queued"], 0)
+
+		fifth = self._dispatch("site_unavailable", message="down again")
+
+		self.assertTrue(fifth["created"])
+		self.assertEqual(fifth["emails_queued"], 0)
+		self.assertEqual(fifth["email_attempted"], 0)
+		self.assertEqual(frappe.db.count("Team Notification", {"team": TEAM}), 5)
+
+	def test_email_resumes_after_the_window(self):
+		from central.notification.engine import DEDUP_WINDOW_MINUTES
+
+		self._ensure_pilot_events()
+		self._flap()
+
+		cutoff = frappe.utils.add_to_date(None, minutes=-(DEDUP_WINDOW_MINUTES + 1))
+		for name in frappe.get_all("Team Notification", {"team": TEAM}, pluck="name"):
+			frappe.db.set_value("Team Notification", name, "creation", cutoff)
+
+		again = self._dispatch("site_unavailable", message="down again")
+
+		self.assertTrue(again["created"])
+		self.assertGreater(again["emails_queued"], 0)
+
+	def test_another_reference_on_the_same_team_still_emails(self):
+		self._ensure_pilot_events()
+		self._flap()
+
+		other = self._dispatch("site_unavailable", reference_name="other.frappe.cloud")
+
+		self.assertGreater(other["emails_queued"], 0)
+
+	def test_the_same_reference_on_another_server_still_emails(self):
+		from central.notification.engine import get_event_type, is_flapping
+
+		self._ensure_pilot_events()
+		for _ in range(4):
+			row = frappe.get_doc(
+				{
+					"doctype": "Team Notification",
+					"team": TEAM,
+					"title": "down",
+					"event_type": "site_unavailable",
+					"reference_name": "main",
+					"server": "vm-a",
+				}
+			)
+			row.flags.ignore_links = True
+			row.insert(ignore_permissions=True)
+
+		event = get_event_type("site_unavailable")
+		self.assertTrue(is_flapping(TEAM, event, "main", "vm-a"))
+		self.assertFalse(is_flapping(TEAM, event, "main", "vm-b"))
+
+	def test_the_same_reference_on_another_team_still_emails(self):
+		other_team = ensure_team("team-engine-other")
+		team = frappe.get_doc("Team", other_team)
+		if self.user_a not in [member.user for member in team.members]:
+			team.append("members", {"user": self.user_a, "role": "Billing", "status": "Active"})
+			team.save(ignore_permissions=True)
+
+		self._ensure_pilot_events()
+		self._flap()
+
+		other = self._dispatch("site_unavailable", team=other_team)
+
+		self.assertGreater(other["emails_queued"], 0)
+
+	def test_a_non_pilot_event_with_four_prior_alerts_still_emails(self):
+		self._ensure_pilot_events()
+		self._ensure_event_type("backup_failure", required_cap="billing:view", reportable_by=None)
+		self._flap()
+
+		backup = self._dispatch("backup_failure", message="backup failed")
+
+		self.assertGreater(backup["emails_queued"], 0)
+
+	def test_on_doctype_update_adds_the_flap_index(self):
+		from central.notification.doctype.team_notification.team_notification import on_doctype_update
+
+		on_doctype_update()
+
+		self.assertTrue(frappe.db.has_index("tabTeam Notification", "team_reference_name_creation_index"))
+
+
 class TestSaveUserPreferences(EngineTestBase):
 	def setUp(self):
 		super().setUp()

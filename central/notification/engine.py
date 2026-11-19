@@ -86,6 +86,8 @@ def dispatch(
 	title = _render_template(event.in_app_title, reader_ctx)
 	body = _render_template(event.in_app_body, reader_ctx)
 
+	flapping = is_flapping(team, event, reference_name, server)
+
 	doc = None
 	if event.create_in_app:
 		# create_notification is the only Team Notification insert path.
@@ -109,16 +111,20 @@ def dispatch(
 		)
 
 	notification = doc.name if doc else None
-	email_result = _fan_out_emails(
-		team,
-		event,
-		ctx,
-		message=message,
-		reference_doctype=reference_doctype,
-		reference_name=reference_name,
-		server=server,
-		affected_user=affected_user,
-		notification=notification,
+	email_result = (
+		{"queued": 0, "attempted": 0, "failed": 0}
+		if flapping
+		else _fan_out_emails(
+			team,
+			event,
+			ctx,
+			message=message,
+			reference_doctype=reference_doctype,
+			reference_name=reference_name,
+			server=server,
+			affected_user=affected_user,
+			notification=notification,
+		)
 	)
 
 	return {
@@ -280,6 +286,7 @@ def _render_template(template_str: str | None, ctx: dict) -> str | None:
 
 
 DEDUP_WINDOW_MINUTES = 60
+FLAP_EMAIL_LIMIT = 4
 
 
 def _is_duplicate(team, event_type, reference_name, server=None) -> bool:
@@ -309,6 +316,17 @@ def _is_duplicate(team, event_type, reference_name, server=None) -> bool:
 	)
 
 	return not state_changed
+
+
+def is_flapping(team: str, event, reference_name: str | None, server: str | None = None) -> bool:
+	if event.reportable_by != "Pilot" or not reference_name:
+		return False
+
+	cutoff = frappe.utils.add_to_date(None, minutes=-DEDUP_WINDOW_MINUTES)
+	subject = {"team": team, "reference_name": reference_name, "creation": (">=", cutoff)}
+	if server:
+		subject["server"] = server
+	return frappe.db.count("Team Notification", subject) >= FLAP_EMAIL_LIMIT
 
 
 def _fan_out_emails(
