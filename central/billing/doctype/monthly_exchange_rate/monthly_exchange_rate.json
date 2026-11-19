@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "format:{from_currency}-{to_currency}-{month}",
  "creation": "2026-11-18 10:00:00.000000",
- "description": "The exchange rate one month bills converted usage at, read once from the accounting system on the 1st and then fixed (ADR 0027).",
+ "description": "The exchange rate one month bills converted usage at, read from the accounting system and then fixed: on the 1st when it holds that day's rate, else at the month's invoice draft.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
@@ -19,6 +19,7 @@
  "fields": [
   {
    "fieldname": "month",
+   "in_standard_filter": 1,
    "fieldtype": "Date",
    "label": "Month",
    "reqd": 1,
@@ -27,6 +28,7 @@
   },
   {
    "fieldname": "from_currency",
+   "in_standard_filter": 1,
    "fieldtype": "Link",
    "label": "From Currency",
    "options": "Currency",
@@ -35,6 +37,7 @@
   },
   {
    "fieldname": "to_currency",
+   "in_standard_filter": 1,
    "fieldtype": "Link",
    "label": "To Currency",
    "options": "Currency",
@@ -70,7 +73,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-18 10:00:00.000000",
+ "modified": "2026-11-19 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Monthly Exchange Rate",

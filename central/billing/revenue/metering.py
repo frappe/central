@@ -67,6 +67,8 @@ def _metered_plan_for(resource_type: str):
 def _resolve_terms(meter: dict):
 	"""Ingest-time terms for a rollup, branching on the metered family's pricing mode.
 
+	- **Fixed by the caller** (`locked_terms`, such as a money meter's monthly rate):
+	  used as given, whatever the family's pricing mode.
 	- **Live** (e.g. snapshot): no price-lock needed — a live metered resource has its
 	  own resource_id from birth and survives VM termination. team/cluster/currency
 	  come from the meter payload; there is NO allowance and NO locked rate (the

@@ -121,9 +121,9 @@ def rollup_key(service: str, resource_id: str, month: datetime.date, dimension: 
 
 
 def _recount_encoded(encoded: str) -> MonthCount | None:
-	# The dimension is last and may itself hold the separator. A job queued before dimensions has none.
-	subscription, resource_type, month, *dimension = encoded.split(_SEPARATOR, 3)
-	return recount_month(subscription, resource_type, month, dimension="".join(dimension))
+	# The dimension is last and may itself hold the separator.
+	subscription, resource_type, month, dimension = encoded.split(_SEPARATOR, 3)
+	return recount_month(subscription, resource_type, month, dimension=dimension)
 
 
 def _meter(subscription: str, resource_type: str, dimension: str = ""):

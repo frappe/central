@@ -276,4 +276,5 @@ def _reconcile_category(doc, spec, behaviour) -> None:
 	doc.update(behaviour)
 	for rt in missing:
 		doc.append("allowed_resource_types", {"resource_type": rt})
+	# Seeded by install and migrate, which run with no user.
 	doc.save(ignore_permissions=True)
