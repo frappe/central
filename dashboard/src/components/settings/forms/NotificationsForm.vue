@@ -14,6 +14,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import { useChannelOffConfirm } from '@/composables/useChannelOffConfirm'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
@@ -156,61 +157,23 @@ function eventsOf(category: Category) {
 	return load.data?.catalog.find((c) => c.category === category)?.events ?? []
 }
 
-type Channel = 'email' | 'in_app'
-
-const offTarget = ref<{ category: Category; channel: Channel } | null>(null)
 const isTeamOwner = computed(() => Boolean(load.data?.is_team_owner))
-const offCriticalEvents = computed(() =>
-	offTarget.value
-		? eventsOf(offTarget.value.category).filter((event) => event.is_critical)
-		: [],
-)
-const offTitle = computed(() => {
-	if (!offTarget.value) return ''
-	const { category, channel } = offTarget.value
-	const label = CATEGORIES.find(({ key }) => key === category)?.label ?? ''
-	return channel === 'email'
-		? __('Turn off {0} emails?', [label])
-		: __('Turn off {0} in-app notifications?', [label])
+const {
+	offTarget,
+	offCriticalEvents,
+	offTitle,
+	isLastChannel,
+	offMessage,
+	offNote,
+	setChannel,
+	confirmOff,
+} = useChannelOffConfirm({
+	state,
+	eventsOf,
+	labelOf: (category) =>
+		CATEGORIES.find(({ key }) => key === category)?.label ?? '',
+	isTeamOwner,
 })
-const isLastChannel = computed(() => {
-	if (!offTarget.value || isTeamOwner.value) return false
-	const { category, channel } = offTarget.value
-	return !state[category][channel === 'email' ? 'in_app' : 'email']
-})
-const offMessage = computed(() => {
-	const isEmail = offTarget.value?.channel === 'email'
-	if (isTeamOwner.value)
-		return isEmail
-			? __(
-					'Regular emails stop. As the team owner, you still get these critical events by email:',
-				)
-			: __(
-					'Regular notifications stop showing in the app. As the team owner, you still see these critical events:',
-				)
-	return isEmail
-		? __('These critical events also stop reaching you by email:')
-		: __('These critical events also stop showing in the app:')
-})
-const offNote = computed(() => {
-	if (isTeamOwner.value || isLastChannel.value) return ''
-	return offTarget.value?.channel === 'email'
-		? __('You still see them in the app.')
-		: __('You still get them by email.')
-})
-
-function setChannel(category: Category, channel: Channel, on: boolean) {
-	if (on || !eventsOf(category).some((event) => event.is_critical)) {
-		state[category][channel] = on
-		return
-	}
-	offTarget.value = { category, channel }
-}
-
-function confirmOff(target: { category: Category; channel: Channel }) {
-	state[target.category][target.channel] = false
-	offTarget.value = null
-}
 
 function toggleEvent(category: Category, eventType: string, on: boolean) {
 	const muted = state[category].muted.filter((name) => name !== eventType)
