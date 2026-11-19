@@ -223,6 +223,17 @@ class TestAIBilling(AIBillingCase):
 			exchange_rates.fix_month_rate("USD", "INR", "2026-06-01", final=True)
 		self.assertEqual(exchange_rates.month_rate("USD", "INR", "2026-06-20").rate, 84.1)
 
+	def test_a_rate_api_that_gives_no_rate_is_not_asked_again_for_a_while(self):
+		with feed(None) as read:
+			for _ in range(2):
+				with self.assertRaises(frappe.ValidationError):
+					exchange_rates.month_rate("USD", "INR", "2026-04-10")
+			self.assertEqual(read.call_count, 1)
+			# The draft's final read asks the rate API again.
+			with self.assertRaises(frappe.ValidationError):
+				exchange_rates.month_rate("USD", "INR", "2026-04-10", fresh=True)
+		self.assertEqual(read.call_count, 2)
+
 	def test_with_no_rate_ever_kept_the_inr_draft_fails(self):
 		self.land(TEAM_INR, "2026-06-10", {"gpt-4o": 1.0})
 		self.read("2026-06-10")

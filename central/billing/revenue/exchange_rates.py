@@ -10,6 +10,7 @@ from central.billing.revenue.usage_ledger import utc_today
 DOCTYPE = "Monthly Exchange Rate"
 READING_KEY = "billing_month_rate_reading"
 READING_SECONDS = 60 * 60
+MISS_SECONDS = 5 * 60
 
 
 def month_rate(from_currency: str, to_currency: str, on, fresh: bool = False) -> frappe._dict:
@@ -82,7 +83,7 @@ def _reading(key: dict, fresh: bool) -> frappe._dict:
 	cache_key = reading_key(key)
 	if not fresh and (cached := frappe.cache.get_value(cache_key, expires=True)):
 		return frappe._dict(cached)
-	found = _required_rate(key)
+	found = _required_rate(key, fresh)
 	frappe.cache.set_value(cache_key, dict(found), expires_in_sec=READING_SECONDS)
 	return found
 
@@ -92,14 +93,25 @@ def reading_key(key: dict) -> str:
 	return f"{READING_KEY}:{key['from_currency']}:{key['to_currency']}:{key['month']}"
 
 
-def _required_rate(key: dict) -> frappe._dict:
-	found = found_rate(key)
+def _required_rate(key: dict, fresh: bool) -> frappe._dict:
+	found = _feed_rate(key, fresh) or _earlier_rate(key)
 	if not found:
 		frappe.throw(
 			_("The rate API gave no {0} to {1} rate for {2} and no earlier month's rate is kept.").format(
 				key["from_currency"], key["to_currency"], key["month"]
 			)
 		)
+	return found
+
+
+def _feed_rate(key: dict, fresh: bool) -> frappe._dict | None:
+	# A down API can take the full timeout on each read, so a miss is not asked again for a while.
+	miss_key = f"{reading_key(key)}:miss"
+	if not fresh and frappe.cache.get_value(miss_key, expires=True):
+		return None
+	found = feed_rate(key["from_currency"], key["to_currency"], key["month"])
+	if not found:
+		frappe.cache.set_value(miss_key, 1, expires_in_sec=MISS_SECONDS)
 	return found
 
 
