@@ -142,7 +142,7 @@ Credit Wallet ──team                           (lock anchor / cached balance
 Commitment ──team, ──currency              (spend floor)
 Usage Rollup ──team                            (metered aggregation)
 Usage Day ──team, ──subscription, ──invoice    (one subject's metered value for one UTC day, per dimension such as the AI model)
-Monthly Exchange Rate                          (the USD rate one month bills converted usage at, kept once the accounting system has the 1st's rate, or at the month's draft)
+Monthly Exchange Rate                          (the USD rate one month bills converted usage at: the rate API's rate for the 1st, kept from the 2nd or at the month's draft)
 ```
 
 Money records (Invoice, Payment Attempt, Refund, Credit Ledger Entry, Credit Wallet, Usage Day, Usage Rollup, Webhook Event, Billing Event, Top-up Order) are read-only in Desk and keep a change history, except Usage Day, which billing writes in bulk. `platform.records` refuses an edit or delete that billing code did not make through `save_billing_record` or `delete_billing_record`, Administrator included. The `ignore_permissions` flag alone does not allow the change. A `db_set` or `frappe.db.set_value` write does not run validation, so it needs no mark. A person changes them through the action that owns the change: cancel, refund, retry.
@@ -695,9 +695,13 @@ platform.sync.record_meter_rollups  (Central writes the runtime it bills)
 AI (ADR 0027): grove_bridge.read_ai_usage (hourly) → Usage Day per team, model, landing day (USD)
   → usage_recount → one Usage Rollup per subscription, month and model, at
     exchange_rates.fix_month_rate (1 for a USD team, the month's USD rate otherwise)
-  → the month's rate is kept (Monthly Exchange Rate) and locked on the rollup (rate_date) once
-    the accounting system has the 1st's rate; until then the recount uses the latest earlier rate
-    unlocked and re-rates later; the month's draft keeps and locks whatever rate it finds
+  → the rate is the rate API's (exchange_rate_feed, Billing Settings.exchange_rate_url, default
+    Frankfurter) for the month's 1st; it is kept (Monthly Exchange Rate) and locked on the rollup
+    (rate_date) from the 2nd (UTC) or by the month's draft, whichever is first; on the 1st the
+    recount uses it unlocked (read at most once an hour) and re-rates later
+  → with no rate from the API, the recount uses the latest earlier kept month's rate unlocked;
+    the draft keeps it as the month's rate with its own date (source "fallback: <month>"); with
+    no rate ever kept an INR draft fails
   → one invoice line per model: quantity in USD × rate, described with the model and, when
     converted, the rate and its date (from the rollup)
   → a model below zero for the month bills no line: its days stay unbilled, so the credit nets
@@ -706,8 +710,8 @@ AI (ADR 0027): grove_bridge.read_ai_usage (hourly) → Usage Day per team, model
     reads explicit days written off and does not move usage_read_until
   → forecasts, re-rating and the draft add the team's blank-cluster AI rollups in one place
     (metered_lines.rollups_in); other services' blank-cluster rollups are not billed
-  → readiness M2: a non-USD billing currency of an AI team with no kept rate for the month and
-    none in the accounting system
+  → readiness M2: a non-USD billing currency of an AI team with no kept rate for the month, none
+    from the rate API and no earlier kept rate
 ```
 
 ### F. Credits waterfall & wallet gating
