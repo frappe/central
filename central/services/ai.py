@@ -91,13 +91,13 @@ def get_overview(team: str) -> dict:
 
 
 def get_billing_rate(team: str) -> dict | None:
-	"""The rate this month's AI cost is billed at in the team's currency. None for a USD team."""
-	from central.billing.doctype.billing_profile.billing_profile import get_team_currency
+	"""The rate this month's AI cost is billed at in the team's currency. None unless that is not USD."""
 	from central.billing.revenue.exchange_rates import month_rate
 	from central.billing.revenue.usage_ledger import utc_today
 
-	currency = get_team_currency(team)
-	if currency == "USD":
+	# The same currency the team is subscribed and billed in; a team with none is not billed.
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	if not currency or currency == "USD":
 		return None
 	month = utc_today().replace(day=1)
 	try:

@@ -270,6 +270,8 @@ class TestAIBilling(AIBillingCase):
 
 	def test_the_overview_shows_an_inr_team_the_months_rate_without_storing_it(self):
 		self.assertIsNone(ai.get_billing_rate(TEAM_USD))
+		# A team with no billing currency is not billed, so it is not shown rupees either.
+		self.assertIsNone(ai.get_billing_rate("team-ai-billing-no-profile"))
 		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01")):
 			found = ai.get_billing_rate(TEAM_INR)
 		self.assertEqual((found["currency"], found["rate"]), ("INR", 84.1))
