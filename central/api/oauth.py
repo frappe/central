@@ -1,6 +1,6 @@
 """Sign a V2 site in to an OAuth provider in one click: a mailbox (mail providers) or a WhatsApp account (meta).
 
-Central holds Frappe Cloud's app for each provider; a site reaches `get_active_providers`, `start`, `relay_token` and `disconnect` through its Pilot.
+Central holds Frappe Cloud's app for each provider; a site reaches `get_active_providers`, `start` and `relay_token` through its Pilot.
 `central.api.email_oauth` is the old path of these endpoints, kept for live sites.
 """
 
@@ -11,7 +11,7 @@ from frappe import _
 
 from central.api.pilot import pilot_credential_auth
 from central.iam import can
-from central.integrations.oauth.meta import connect_whatsapp, disconnect_whatsapp
+from central.integrations.oauth.meta import connect_whatsapp
 from central.integrations.oauth.oauth import (
 	CALLBACK_PATH,
 	PROVIDER,
@@ -132,12 +132,3 @@ def relay_token(
 	if provider == "meta":
 		return connect_whatsapp(token["access_token"], credential.team, credential.server, site)
 	return token
-
-
-# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-@pilot_credential_auth
-def disconnect(waba_id: str) -> None:
-	"""Called by a site through its Pilot when it deletes a WhatsApp account: stop sending it that account's Meta webhooks."""
-	credential = frappe.local.pilot_credential
-	disconnect_whatsapp(waba_id, credential.team, credential.server)

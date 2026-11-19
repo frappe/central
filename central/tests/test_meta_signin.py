@@ -8,7 +8,8 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import set_request
 
-from central.api.oauth import disconnect, relay_token, start
+from central.api.meta_webhook import disconnect
+from central.api.oauth import relay_token, start
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.oauth.meta import (
 	GRAPH_URL,
@@ -351,12 +352,12 @@ class TestMetaSignIn(IntegrationTestCase):
 			token = PilotCredential.mint(
 				team=team, pilot_credential_id=f"oauth-{frappe.generate_hash(length=6)}", server=server
 			)
-			self.as_pilot("/api/method/central.api.oauth.disconnect", token)
+			self.as_pilot("/api/method/central.api.meta_webhook.disconnect", token)
 			with self.subTest(team=team, server=server), self.assertRaises(frappe.PermissionError):
 				disconnect(waba_id=waba_id)
 			self.assertTrue(frappe.db.exists(ROUTE, waba_id))
 
-		self.as_pilot("/api/method/central.api.oauth.disconnect")
+		self.as_pilot("/api/method/central.api.meta_webhook.disconnect")
 		disconnect(waba_id=waba_id)
 		self.assertFalse(frappe.db.exists(ROUTE, waba_id))
 		disconnect(waba_id=waba_id)  # a second call has nothing left to drop

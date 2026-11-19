@@ -12,8 +12,8 @@ for (const [size, viewport] of Object.entries(SIZES)) {
   test.describe(`WhatsApp disconnect (${size})`, () => {
     test.use({ viewport })
 
-    test('central.api.oauth.disconnect asks a site for its Pilot credential', async ({ request }) => {
-      const response = await request.post('/api/method/central.api.oauth.disconnect', {
+    test('central.api.meta_webhook.disconnect asks a site for its Pilot credential', async ({ request }) => {
+      const response = await request.post('/api/method/central.api.meta_webhook.disconnect', {
         data: { waba_id: '1029384756' },
         headers: { 'X-Pilot-Site': 'any-site.localhost' },
       })

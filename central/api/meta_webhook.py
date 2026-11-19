@@ -3,6 +3,8 @@ import json
 import frappe
 from werkzeug.wrappers import Response
 
+from central.api.pilot import pilot_credential_auth
+from central.integrations.oauth.meta import disconnect_whatsapp
 from central.integrations.oauth.meta_webhook import is_signed_by_meta, is_verify_token, relay
 
 
@@ -24,3 +26,12 @@ def handler() -> Response:
 	# Meta waits only a few seconds, so the sends to sites run in background jobs
 	relay(json.loads(raw))
 	return Response("OK", status=200, mimetype="text/plain")
+
+
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def disconnect(waba_id: str) -> None:
+	"""Called by a site through its Pilot when it deletes a WhatsApp account: stop sending it that account's Meta webhooks."""
+	credential = frappe.local.pilot_credential
+	disconnect_whatsapp(waba_id, credential.team, credential.server)
