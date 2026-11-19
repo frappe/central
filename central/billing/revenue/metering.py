@@ -24,6 +24,7 @@ from frappe.query_builder.functions import Coalesce
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
 from central.billing.revenue.metered_lines import line_description, rollups_in
+from central.billing.revenue.rollup_updates import apply_report, rerate
 
 
 def _metered_plan_for(resource_type: str):
@@ -201,6 +202,7 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 	Both reporting modes (ADR 0015) land as one Usage Rollup row per period; the locked
 	allowance + rate are stamped once, at first receipt, so the metered terms are
 	grandfathered and a later catalog change cannot move an existing rollup's price.
+	A converted rollup is re-rated on each report until its rate date is set.
 
 	- **Authoritative** (default): a re-push REPLACES the period quantity (recompute
 	  after an outage), never adds — the reporter holds the authoritative total.
@@ -231,7 +233,7 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 		existing = frappe.db.get_value(
 			"Usage Rollup",
 			{"idempotency_key": key},
-			["name", "quantity", "sequence", "superseded_by"],
+			["name", "quantity", "sequence", "superseded_by", "rate_date"],
 			as_dict=True,
 			for_update=True,
 		)
@@ -241,9 +243,14 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 			if existing.superseded_by:
 				head = live_rollup(existing.name)
 				existing = frappe.db.get_value(
-					"Usage Rollup", head, ["name", "quantity", "sequence"], as_dict=True, for_update=True
+					"Usage Rollup",
+					head,
+					["name", "quantity", "sequence", "rate_date"],
+					as_dict=True,
+					for_update=True,
 				)
-			_apply_report(existing, mode, qty, seq, refuse_lower)
+			apply_report(existing, mode, qty, seq, refuse_lower)
+			rerate(existing, meter.get("locked_terms"))
 			return key
 
 		terms = _resolve_terms(meter)
@@ -276,31 +283,8 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 _INGEST_RACE_RETRIES = 3
 
 
-def _apply_report(existing, mode: str, qty: float, seq: int, refuse_lower: bool) -> None:
-	"""Apply a report to the already-locked rollup row. Authoritative replaces the period
-	figure; Incremental accumulates only when the sequence advances (else a no-op)."""
-	if mode == "Incremental":
-		if seq <= frappe.utils.cint(existing.sequence):
-			return  # duplicate / out-of-order batch — already counted
-		frappe.db.set_value(
-			"Usage Rollup",
-			existing.name,
-			{"quantity": frappe.utils.flt(existing.quantity) + qty, "sequence": seq},
-		)
-	else:
-		# Authoritative: replace the period figure; the locked terms stay as first stamped.
-		if refuse_lower and qty < frappe.utils.flt(existing.quantity):
-			frappe.throw(
-				_("A usage total for this period can only increase ({0} is recorded).").format(
-					existing.quantity
-				),
-				frappe.ValidationError,
-			)
-		frappe.db.set_value("Usage Rollup", existing.name, "quantity", qty)
-
-
 def _insert_rollup(meter: dict, terms: dict, qty: float, seq: int, key: str) -> None:
-	"""Insert the period's rollup with its billing terms stamped once, at first receipt."""
+	"""Insert the period's rollup with its billing terms stamped at first receipt."""
 	frappe.get_doc(
 		{
 			"doctype": "Usage Rollup",
@@ -317,6 +301,7 @@ def _insert_rollup(meter: dict, terms: dict, qty: float, seq: int, key: str) -> 
 			"currency": terms["currency"],
 			"locked_allowance": terms["allowance"],
 			"locked_rate": terms["rate"],
+			"rate_date": terms.get("rate_date"),
 			"idempotency_key": key,
 			"sequence": seq,
 		}

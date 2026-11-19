@@ -180,7 +180,6 @@ def _write_month(meter, month: datetime.date, closed: set, final: bool) -> Month
 	if not key:
 		return None
 	rollup = live_rollup(frappe.db.get_value("Usage Rollup", {"idempotency_key": key}, "name"))
-	_rate_rollup(rollup, terms)
 	return MonthCount(month, rollup, [day.name for day in days], quantity)
 
 
@@ -282,16 +281,6 @@ def _cost_terms(meter, currency: str, month: datetime.date, final: bool) -> frap
 		rate_date=found.rate_date if found.fixed else None,
 		is_converted=meter.cost_currency != currency,
 	)
-
-
-def _rate_rollup(rollup: str, terms) -> None:
-	"""Keep a converted rollup at the month's latest rate, and lock it once that rate is fixed."""
-	if not (terms and terms.is_converted):
-		return
-	if frappe.db.get_value("Usage Rollup", rollup, "rate_date"):
-		return
-	# A converted rollup with no rate date is not locked yet, so a later recount re-rates it.
-	frappe.db.set_value("Usage Rollup", rollup, {"locked_rate": terms.rate, "rate_date": terms.rate_date})
 
 
 def _month_of(on) -> datetime.date:

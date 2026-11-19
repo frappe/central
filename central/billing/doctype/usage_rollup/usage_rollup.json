@@ -115,7 +115,7 @@
    "fieldname": "locked_rate",
    "fieldtype": "Currency",
    "label": "Locked Rate",
-   "description": "Per-unit overage rate, locked at first receipt"
+   "description": "Per-unit overage rate, locked at first receipt. A converted rollup is re-rated until its rate date is set."
   },
   {
    "fieldname": "rate_date",
@@ -162,7 +162,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-19 10:00:00.000000",
+ "modified": "2026-11-19 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Rollup",
