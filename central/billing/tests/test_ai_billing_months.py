@@ -65,8 +65,22 @@ class TestAIBillingMonths(AIBillingCase):
 		key = exchange_rates.month_key("USD", "INR", "2026-06-01")
 		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01", 84.1)):
 			exchange_rates.fix_month_rate("USD", "INR", "2026-06-01")
-		found = exchange_rates._store(key, rate_on("2026-06-01", 90))
+		found = exchange_rates._store(key, exchange_rates._as_rate(rate_on("2026-06-01", 90), fixed=False))
 		self.assertEqual((found.rate, found.fixed), (84.1, True))
+
+	def test_a_race_whose_winner_rolled_back_keeps_the_reading_unstored(self):
+		key = exchange_rates.month_key("USD", "INR", "2026-06-01")
+		with patch.object(exchange_rates, "accounting_rate", return_value=rate_on("2026-06-01", 84.1)):
+			exchange_rates.fix_month_rate("USD", "INR", "2026-06-01")
+		get_value = frappe.db.get_value
+
+		def winner_gone(*args, **kwargs):
+			return None if kwargs.get("for_update") else get_value(*args, **kwargs)
+
+		reading = exchange_rates._as_rate(rate_on("2026-06-01", 90), fixed=False)
+		with patch.object(frappe.db, "get_value", side_effect=winner_gone):
+			found = exchange_rates._store(key, reading)
+		self.assertEqual((found.rate, found.fixed), (90, False))
 
 	def test_a_model_below_zero_carries_its_credit_into_its_next_months(self):
 		self.land(TEAM_USD, "2026-06-10", {"gpt-4o": 4.0, "claude-sonnet": 0.5})

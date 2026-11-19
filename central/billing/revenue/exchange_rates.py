@@ -22,16 +22,12 @@ def month_rate(from_currency: str, to_currency: str, on) -> frappe._dict:
 
 def fix_month_rate(from_currency: str, to_currency: str, on, final: bool = False) -> frappe._dict:
 	"""The month's rate, stored once it is the 1st's, or with `final` whatever the latest is."""
-	if from_currency == to_currency:
-		return month_rate(from_currency, to_currency, on)
+	found = month_rate(from_currency, to_currency, on)
 	key = month_key(from_currency, to_currency, on)
-	if stored := stored_rate(key):
-		return stored
-	found = _required_rate(key)
 	# Until then a later reading may still find the 1st's rate, so the rate is not kept.
-	if final or frappe.utils.getdate(found.date) == key["month"]:
-		return _store(key, found)
-	return _as_rate(found, fixed=False)
+	if found.fixed or not (final or found.rate_date == key["month"]):
+		return found
+	return _store(key, found)
 
 
 def stored_rate(key: dict) -> frappe._dict | None:
@@ -76,7 +72,10 @@ def _required_rate(key: dict) -> frappe._dict:
 
 def _as_rate(found: frappe._dict, fixed: bool) -> frappe._dict:
 	return frappe._dict(
-		rate=frappe.utils.flt(found.exchange_rate), rate_date=frappe.utils.getdate(found.date), fixed=fixed
+		rate=frappe.utils.flt(found.exchange_rate),
+		rate_date=frappe.utils.getdate(found.date),
+		source=found.name,
+		fixed=fixed,
 	)
 
 
@@ -88,16 +87,15 @@ def _store(key: dict, found: frappe._dict) -> frappe._dict:
 			{
 				"doctype": DOCTYPE,
 				**key,
-				"rate": frappe.utils.flt(found.exchange_rate),
-				"rate_date": found.date,
-				"source": found.name,
+				"rate": found.rate,
+				"rate_date": found.rate_date,
+				"source": found.source,
 			}
 		).insert(ignore_permissions=True)
 	except frappe.DuplicateEntryError:
 		# Another worker stored the month first. Its rate is the month's, even if this read differs.
 		frappe.db.rollback(save_point="monthly_exchange_rate")
-		return frappe._dict(
-			frappe.db.get_value(DOCTYPE, key, ["rate", "rate_date"], as_dict=True, for_update=True),
-			fixed=True,
-		)
-	return _as_rate(found, fixed=True)
+		stored = frappe.db.get_value(DOCTYPE, key, ["rate", "rate_date"], as_dict=True, for_update=True)
+		# The other worker's row can be gone again if it rolled back; then this reading stays unstored.
+		return frappe._dict(stored, fixed=True) if stored else found
+	return frappe._dict(found, fixed=True)
