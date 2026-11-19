@@ -20,6 +20,9 @@ from central.billing.tests.test_ai_billing import (
 	run_inline,
 )
 
+JULY = ("2026-07-01", "2026-07-31")
+AUGUST = ("2026-08-01", "2026-08-31")
+
 
 class TestAIBillingMonths(AIBillingCase):
 	def recount(self, rate):
@@ -62,6 +65,28 @@ class TestAIBillingMonths(AIBillingCase):
 			exchange_rates.fix_month_rate("USD", "INR", "2026-06-01")
 		found = exchange_rates._store(key, rate_on("2026-06-01", 90))
 		self.assertEqual((found.rate, found.fixed), (84.1, True))
+
+	def test_a_model_below_zero_carries_its_credit_into_its_next_months(self):
+		self.land(TEAM_USD, "2026-06-10", {"gpt-4o": 4.0, "claude-sonnet": 0.5})
+		self.land(TEAM_USD, "2026-06-12", {"claude-sonnet": -2.0})
+		self.land(TEAM_USD, "2026-07-05", {"gpt-4o": 1.0, "claude-sonnet": 1.0})
+		self.land(TEAM_USD, "2026-08-05", {"gpt-4o": 1.0, "claude-sonnet": 2.0})
+		self.read("2026-06-10", "2026-06-12", "2026-07-05", "2026-08-05")
+
+		self.assertEqual(
+			[(li.description, li.amount) for li in self.invoice_lines(TEAM_USD)], [("gpt-4o", 4.0)]
+		)
+		# July nets -0.5 for the model, so it is still a credit and carries on.
+		self.assertEqual(
+			[(li.description, li.amount) for li in self.invoice_lines(TEAM_USD, JULY)], [("gpt-4o", 1.0)]
+		)
+		august = self.invoice_lines(TEAM_USD, AUGUST)
+		self.assertEqual(
+			[(li.description, li.amount) for li in august], [("claude-sonnet", 1.5), ("gpt-4o", 1.0)]
+		)
+		claude = self.days(TEAM_USD, dimension="claude-sonnet")
+		self.assertEqual(len({d.invoice for d in claude}), 1, "each credit day is billed once, in August")
+		self.assertTrue(all(d.invoice for d in claude))
 
 	def test_forecasts_and_rerating_see_ai_but_no_other_blank_cluster_usage(self):
 		self.land(TEAM_USD, "2026-06-10", {"gpt-4o": 3.0})

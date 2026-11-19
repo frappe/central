@@ -6,15 +6,6 @@ from frappe import _
 
 from central.billing.catalog.plan_setup import AI_RESOURCE_TYPE
 
-
-def billable_quantity(quantity: float, allowance: float) -> float:
-	"""The quantity a metered month bills: past the allowance, or a credit when it fell below zero."""
-	# Only a meter with no allowance goes below zero: a correction larger than the month's usage.
-	if quantity < 0 and not allowance:
-		return quantity
-	return max(0.0, quantity - allowance)
-
-
 # The Invoice Line Item description is a Data field.
 MAXIMUM_DESCRIPTION = 140
 

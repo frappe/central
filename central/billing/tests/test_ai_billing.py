@@ -135,16 +135,15 @@ class TestAIBilling(AIBillingCase):
 		)
 		self.assertTrue(all(d.invoice for d in self.days(TEAM_USD)))
 
-	def test_a_correction_nets_against_its_model_and_a_negative_model_is_a_credit(self):
+	def test_a_correction_nets_against_its_model_and_a_model_below_zero_bills_no_line(self):
 		# A correction is Grove's delta alone, recorded on the day it was resolved.
 		self.land(TEAM_USD, "2026-06-10", {"gpt-4o": 4.0, "claude-sonnet": 0.5})
 		self.land(TEAM_USD, "2026-06-12", {"gpt-4o": -1.0, "claude-sonnet": -2.0})
 		self.read("2026-06-10", "2026-06-12")
 		self.assertIn(-2.0, [d.quantity for d in self.days(TEAM_USD)])
 		lines = self.invoice_lines(TEAM_USD)
-		self.assertEqual(
-			[(line.description, line.amount) for line in lines], [("gpt-4o", 3.0), ("claude-sonnet", -1.5)]
-		)
+		self.assertEqual([(line.description, line.amount) for line in lines], [("gpt-4o", 3.0)])
+		self.assertFalse(any(d.invoice for d in self.days(TEAM_USD, dimension="claude-sonnet")))
 
 	def test_an_inr_invoice_converts_at_the_months_rate(self):
 		self.land(TEAM_INR, "2026-06-10", {"gpt-4o": 2.0})

@@ -22,7 +22,7 @@ import frappe
 from frappe import _
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
-from central.billing.revenue.metered_lines import billable_quantity, line_description, rollups_in
+from central.billing.revenue.metered_lines import line_description, rollups_in
 
 
 def _metered_plan_for(resource_type: str):
@@ -419,8 +419,8 @@ def _metered_lines(
 			resolved = r.locked_rate
 			allowance = frappe.utils.flt(r.locked_allowance)
 
-		billable_qty = billable_quantity(frappe.utils.flt(r.quantity), allowance)
-		if not billable_qty:
+		billable_qty = max(0.0, frappe.utils.flt(r.quantity) - allowance)
+		if billable_qty <= 0:
 			continue
 
 		# Usage ran past the allowance, so the overage must resolve to a rate. Surface the

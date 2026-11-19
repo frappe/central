@@ -29,6 +29,7 @@ class MonthCount:
 	month: datetime.date
 	rollup: str
 	days: list[str]
+	quantity: float
 
 
 @dataclass
@@ -67,7 +68,8 @@ def recount_team(team: str, period_end) -> Counted:
 	counted = Counted()
 	for subscription, resource_type, dimension in _unbilled_meters(team, period_end):
 		written = recount_month(subscription, resource_type, month, drafting=True, dimension=dimension)
-		if written and written.month == month:
+		# A month below zero bills nothing. Its days stay unbilled, so the credit goes into the next month.
+		if written and written.month == month and written.quantity >= 0:
 			counted.rollups.append(written.rollup)
 			counted.days.extend(written.days)
 	return counted
@@ -179,7 +181,7 @@ def _write_month(meter, month: datetime.date, closed: set, final: bool) -> Month
 		return None
 	rollup = live_rollup(frappe.db.get_value("Usage Rollup", {"idempotency_key": key}, "name"))
 	_rate_rollup(rollup, terms)
-	return MonthCount(month, rollup, [day.name for day in days])
+	return MonthCount(month, rollup, [day.name for day in days], quantity)
 
 
 def _unbilled_days(meter, month: datetime.date) -> list:
