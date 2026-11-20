@@ -1016,7 +1016,7 @@ class TestReportPilotEvent(EngineTestBase):
 			{"team": TEAM, "event_type": "resource_limit_breached"},
 			["title", "message", "action_label", "action_route"],
 		)[0]
-		self.assertEqual(row.title, "Resource limit breached: my-bench")
+		self.assertEqual(row.title, "Resource limit reached: my-bench")
 		self.assertEqual(row.message, "my-bench: cpu_usage_limit at 95.0%")
 		self.assertEqual((row.action_label, row.action_route), ("View server", "/servers/"))
 

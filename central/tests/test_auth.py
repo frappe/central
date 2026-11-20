@@ -110,6 +110,13 @@ class TestAuth(IntegrationTestCase):
 		self.assertIn("disabled", notice.call_args.kwargs["subject"])
 		code_mail.assert_not_called()
 
+		from frappe.utils.jinja import get_email_from_template
+
+		html, _text = get_email_from_template(
+			notice.call_args.kwargs["template"], notice.call_args.kwargs["args"]
+		)
+		self.assertIn("Contact support to restore access.", html)
+
 	def test_the_code_limits_follow_central_settings(self):
 		with patch(SENDMAIL), central_limit("sign_in_codes_per_email", 1):
 			send_code(self.email, "One Code")
