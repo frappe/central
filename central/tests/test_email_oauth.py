@@ -127,6 +127,33 @@ class TestEmailOAuth(IntegrationTestCase):
 			with self.subTest(url=url), self.assertRaises(frappe.PermissionError):
 				self.call_start(url)
 
+	def test_start_accepts_a_zone_route_before_it_is_recorded_active(self):
+		route = self.insert_site_domain(f"chosen-{frappe.generate_hash(length=6)}.{ZONE}")
+		for status in ("Pending", "Failed"):
+			route.db_set("status", status)
+			with self.subTest(status=status):
+				self.call_start(f"https://{route.name}{SITE_CALLBACK}", state=f"state-{status}")
+
+	def test_start_refuses_a_custom_domain_that_is_not_active(self):
+		route = self.insert_site_domain(f"mail-{frappe.generate_hash(length=6)}.customer.test")
+		route.db_set("status", "Pending")
+
+		with self.assertRaises(frappe.PermissionError):
+			self.call_start(f"https://{route.name}{SITE_CALLBACK}")
+
+	def insert_site_domain(self, domain: str):
+		region = frappe.db.get_value("Virtual Machine", self.server, "region")
+		return frappe.get_doc(
+			{
+				"doctype": "Site Domain",
+				"domain": domain,
+				"team": self.team,
+				"server": self.server,
+				"site": self.site,
+				"region": region,
+			}
+		).insert()
+
 	def test_start_refuses_a_provider_without_an_app(self):
 		self.as_pilot("/api/method/central.api.email_oauth.start")
 		for provider in ("google", "evil"):
