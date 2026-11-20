@@ -38,7 +38,7 @@ def connect_whatsapp(access_token: str, team: str, server: str | None, site: str
 
 	number = get_new_number(waba_id, access_token)
 	phone_id = number["id"]
-	call_graph("POST", f"{waba_id}/subscribed_apps", access_token)
+	subscribe_app(waba_id, config.client_id, access_token)
 	pin = f"{secrets.randbelow(10**6):06d}"
 	register(phone_id, access_token, pin)
 
@@ -55,6 +55,14 @@ def connect_whatsapp(access_token: str, team: str, server: str | None, site: str
 		"display_phone_number": number.get("display_phone_number"),
 		"verified_name": number.get("verified_name"),
 	}
+
+
+def subscribe_app(waba_id: str, app_id: str, access_token: str) -> None:
+	"""Subscribe the app to the WABA's webhooks. Meta can refuse the subscribe with a permission error
+	when the app is already subscribed, so a WABA that already has the app is left as it is."""
+	apps = call_graph("GET", f"{waba_id}/subscribed_apps", access_token)["data"]
+	if not any(app.get("whatsapp_business_api_data", {}).get("id") == app_id for app in apps):
+		call_graph("POST", f"{waba_id}/subscribed_apps", access_token)
 
 
 def get_waba_id(access_token: str, app_id: str, app_secret: str) -> str:

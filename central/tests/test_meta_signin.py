@@ -154,6 +154,7 @@ class TestMetaSignIn(IntegrationTestCase):
 			[
 				("GET", "debug_token"),
 				("GET", f"{waba_id}/phone_numbers"),
+				("GET", f"{waba_id}/subscribed_apps"),
 				("POST", f"{waba_id}/subscribed_apps"),
 				("POST", "phone-1/register"),
 			],
@@ -165,7 +166,7 @@ class TestMetaSignIn(IntegrationTestCase):
 		)
 		self.assertEqual(debug_token["headers"]["Authorization"], "Bearer meta-app-id|meta-secret")
 		# a number with no two-step PIN gets ours from register: its PIN is not set on its own
-		self.assertEqual(graph.call_args_list[3].kwargs["json"]["pin"], result["pin"])
+		self.assertEqual(graph.call_args_list[4].kwargs["json"]["pin"], result["pin"])
 
 		route = frappe.get_doc(ROUTE, waba_id)
 		self.assertEqual((route.team, route.server, route.site), (self.team, self.server, self.site))
@@ -198,15 +199,27 @@ class TestMetaSignIn(IntegrationTestCase):
 		self.assertEqual([c.args[0] for c in self.graph.call_args_list], ["GET", "GET"])
 		self.assertFalse(frappe.db.exists(ROUTE, waba_id))
 
+	def test_meta_sign_in_does_not_subscribe_the_app_again_to_a_waba_that_has_it(self):
+		waba_id = self.sign_in()
+		subscribed = [{"whatsapp_business_api_data": {"id": "meta-app-id", "name": "Frappe"}}]
+
+		self.relay(waba_id, graph_reply=fake_graph(waba_id, subscribed_apps=subscribed))
+
+		# Meta refuses a person's token this POST even when the app is already subscribed
+		self.assertNotIn(
+			("POST", f"{GRAPH_URL}/{waba_id}/subscribed_apps"), [c.args for c in self.graph.call_args_list]
+		)
+		self.assertTrue(frappe.db.exists(ROUTE, waba_id))
+
 	def test_meta_sign_in_replaces_another_two_step_pin_only_when_register_needs_it(self):
 		waba_id = self.sign_in()
 		register = [pin_mismatch(), {"success": True}]
 
 		result, _post, graph = self.relay(waba_id, graph_reply=fake_graph(waba_id, register=register))
 
-		calls = [c.args[1].removeprefix(f"{GRAPH_URL}/") for c in graph.call_args_list[3:]]
+		calls = [c.args[1].removeprefix(f"{GRAPH_URL}/") for c in graph.call_args_list[4:]]
 		self.assertEqual(calls, ["phone-1/register", "phone-1", "phone-1/register"])
-		self.assertEqual(graph.call_args_list[4].kwargs["json"], {"pin": result["pin"]})
+		self.assertEqual(graph.call_args_list[5].kwargs["json"], {"pin": result["pin"]})
 		self.assertTrue(frappe.db.exists(ROUTE, waba_id))
 
 	def test_meta_sign_in_keeps_the_pin_when_register_fails(self):
@@ -265,7 +278,7 @@ class TestMetaSignIn(IntegrationTestCase):
 				reply = fake_graph(waba_id)
 
 				def route_meanwhile(method, url, **kwargs):
-					if url.endswith("/subscribed_apps"):
+					if method == "POST" and url.endswith("/subscribed_apps"):
 						self.route_to(waba_id, other_site)
 					return reply(method, url, **kwargs)
 
@@ -417,7 +430,11 @@ def pin_mismatch() -> dict:
 
 
 def fake_graph(
-	waba_id: str, phone_numbers: list | None = None, register: list | None = None, waba_scope: bool = True
+	waba_id: str,
+	phone_numbers: list | None = None,
+	register: list | None = None,
+	waba_scope: bool = True,
+	subscribed_apps: list | None = None,
 ):
 	"""Meta's Graph API for one Embedded Signup: the WABA, its one new number, and success for each change.
 	`register` lists the replies to register, one per call."""
@@ -445,6 +462,7 @@ def fake_graph(
 			if phone_numbers is None
 			else phone_numbers
 		},
+		("GET", f"{waba_id}/subscribed_apps"): {"data": subscribed_apps or []},
 		("POST", f"{waba_id}/subscribed_apps"): {"success": True},
 		("POST", "phone-1"): {"success": True},
 		("POST", "phone-1/register"): register or [{"success": True}],
