@@ -53,6 +53,10 @@ Click **Choose events** under a category to turn email off for single events. Yo
 
 Some events are critical, such as a failed payment or a server that is down. They show **Always sent**. Critical events are emailed at once, even when you choose a digest. When a member turns **Email** or **In-app** off for the category, the member also stops getting critical events on that channel. The team owner always gets them by email and in the app. If the email to the team owner fails after every retry, the team's Admins get it. The console asks you to confirm before it turns off a channel that has critical events.
 
+## Repeated alerts
+
+A server or site can fail, recover, and fail again within minutes. Every change shows in the console. After 4 alerts about the same site or server within an hour, email stops until the hour passes. An alert about a server links to its server page.
+
 ## See also
 
 - [Profile and theme](/account/profile)
