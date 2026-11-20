@@ -2,6 +2,7 @@
 import { ErrorMessage } from 'frappe-ui'
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
+import TranslatedText from '@/components/common/TranslatedText.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useSession } from '@/composables/useSession'
 import { queryString } from '@/lib/auth'
@@ -35,21 +36,25 @@ async function signOut() {
 	<!-- Only a user with several teams can create the site on the wrong one. -->
 	<div v-if="teams.length > 1">
 		<p class="text-p-sm text-ink-gray-5">
-			Creating in
-			<span class="text-ink-gray-7">{{ activeTeamLabel }}</span>
-			as
-			<span
-				class="inline-block max-w-full truncate align-bottom text-ink-gray-7"
-				:title="currentUser ?? undefined"
-				>{{ currentUser }}</span
-			>.
+			<TranslatedText :text="__('Creating in {0} as {1}.')">
+				<template #0>
+					<span class="text-ink-gray-7">{{ activeTeamLabel }}</span>
+				</template>
+				<template #1>
+					<span
+						class="inline-block max-w-full truncate align-bottom text-ink-gray-7"
+						:title="currentUser ?? undefined"
+						>{{ currentUser }}</span
+					>
+				</template>
+			</TranslatedText>
 			<button
 				type="button"
-				class="text-p-sm-medium text-ink-gray-8 hover:underline focus-visible:underline disabled:opacity-60"
+				class="ms-1 text-p-sm-medium text-ink-gray-8 hover:underline focus-visible:underline disabled:opacity-60"
 				:disabled="isSigningOut"
 				@click="signOut"
 			>
-				{{ isSigningOut ? 'Signing out…' : 'Not you?' }}
+				{{ isSigningOut ? __('Signing out…') : __('Not you?') }}
 			</button>
 		</p>
 		<ErrorMessage v-if="error" class="mt-2" :message="error" />

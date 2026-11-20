@@ -7,7 +7,6 @@
 	"src/components/addons/storage/StorageSummary.vue": 6,
 	"src/components/auth/AuthErrorMessage.vue": 2,
 	"src/components/auth/AuthShell.vue": 2,
-	"src/components/auth/SignedInAs.vue": 3,
 	"src/components/auth/TermsNotice.vue": 2,
 	"src/components/billing/BillingCountryField.vue": 5,
 	"src/components/billing/BillingDetailsCard.vue": 12,
