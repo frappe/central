@@ -8,6 +8,7 @@ import { frappeErrorType } from '@/lib/auth'
 import type { ServerAccess } from '@/lib/capabilities'
 import { infoToast, reportError } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
+import { __ } from '@/lib/translate'
 import type { RefreshResponse } from '@/types/api'
 import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
 
@@ -194,7 +195,7 @@ async function getBenchLink(
 
 			// Without a waiting tab, the page itself must say why nothing opens yet.
 			if (!tab && !hasToldWaiting) {
-				infoToast("Pilot is starting. It opens here when it's ready.")
+				infoToast(__("Pilot is starting. It opens here when it's ready."))
 				hasToldWaiting = true
 			}
 			await new Promise((resolve) => setTimeout(resolve, 3000))
