@@ -9,6 +9,7 @@ from frappe.model.document import Document
 from pydantic import ValidationError
 from requests import RequestException
 
+from central.errors import PilotStarting
 from central.iam import can, user_has_operator_bypass
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.region.region import Region
@@ -480,6 +481,16 @@ class VirtualMachine(Document):
 					"This server's Pilot has not enrolled yet. Wait for setup to finish before opening the server dashboard. Contact support if setup does not finish."
 				),
 				frappe.ValidationError,
+			)
+
+		from central.integrations.pilot import is_pilot_reachable
+
+		if not is_pilot_reachable(gateway):
+			frappe.throw(
+				_(
+					"Pilot isn't answering yet. It starts a few minutes after the server boots, so try again shortly."
+				),
+				PilotStarting,
 			)
 
 		return f"{gateway}/?sid={mint_bench_login(audience)}"
