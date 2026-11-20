@@ -288,8 +288,8 @@
   "reportable_by": "None"
  },
  {
-  "action_label": null,
-  "action_route": null,
+  "action_label": "View server",
+  "action_route": "/servers/{{ server }}",
   "category": "Server",
   "create_in_app": 1,
   "direct_recipients": "None",
@@ -306,15 +306,15 @@
   "reportable_by": "Pilot"
  },
  {
-  "action_label": null,
-  "action_route": null,
+  "action_label": "View server",
+  "action_route": "/servers/{{ server }}",
   "category": "Server",
   "create_in_app": 1,
   "direct_recipients": "None",
   "docstatus": 0,
   "doctype": "Notification Event Type",
   "event_type": "site_unavailable",
-  "in_app_body": "Site {{ reference_title }} is unavailable: {{ message }}",
+  "in_app_body": "{% if context and context.sites %}{% for row in context.sites %}{{ row.site }}{% if row.status_code %} returned HTTP {{ row.status_code }}{% elif row.error %} did not respond ({{ row.error }}){% else %} did not respond{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}.{% else %}{{ reference_title }} did not respond to its health check.{% endif %}",
   "in_app_title": "Site unavailable: {{ reference_title }}",
   "modified": "2026-07-23 00:00:00",
   "name": "site_unavailable",
@@ -324,8 +324,8 @@
   "reportable_by": "Pilot"
  },
  {
-  "action_label": null,
-  "action_route": null,
+  "action_label": "View server",
+  "action_route": "/servers/{{ server }}",
   "category": "Server",
   "create_in_app": 1,
   "direct_recipients": "None",
@@ -342,8 +342,8 @@
   "reportable_by": "Pilot"
  },
  {
-  "action_label": null,
-  "action_route": null,
+  "action_label": "View server",
+  "action_route": "/servers/{{ server }}",
   "category": "Server",
   "create_in_app": 1,
   "direct_recipients": "None",
@@ -360,8 +360,8 @@
   "reportable_by": "Pilot"
  },
  {
-  "action_label": null,
-  "action_route": null,
+  "action_label": "View server",
+  "action_route": "/servers/{{ server }}",
   "category": "Server",
   "create_in_app": 1,
   "direct_recipients": "None",
