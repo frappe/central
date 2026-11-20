@@ -295,15 +295,18 @@ async function createSite() {
 					is available.
 				</p>
 
-				<Button
-					type="submit"
-					variant="solid"
-					size="md"
-					class="w-full"
-					label="Create my site"
-					:loading="creating"
-					:disabled="creating || !requestKey || !availability?.available"
-				/>
+				<div class="space-y-2">
+					<SignedInAs />
+					<Button
+						type="submit"
+						variant="solid"
+						size="md"
+						class="w-full"
+						label="Create my site"
+						:loading="creating"
+						:disabled="creating || !requestKey || !availability?.available"
+					/>
+				</div>
 				<AuthErrorMessage
 					v-if="error"
 					:message="error"
@@ -312,6 +315,5 @@ async function createSite() {
 				/>
 			</form>
 		</template>
-		<SignedInAs />
 	</AuthShell>
 </template>
