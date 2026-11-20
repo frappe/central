@@ -5,7 +5,6 @@ import { useRoute, useRouter } from 'vue-router'
 import AuthErrorMessage from '@/components/auth/AuthErrorMessage.vue'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import ProductLogo from '@/components/auth/ProductLogo.vue'
-import SignedInAs from '@/components/auth/SignedInAs.vue'
 import ContactSupportLink from '@/components/common/ContactSupportLink.vue'
 import RotatingText from '@/components/common/RotatingText.vue'
 import SetupJourney from '@/components/onboarding/SetupJourney.vue'
@@ -151,6 +150,5 @@ function tryAgain() {
 				:context="supportContext"
 			/>
 		</template>
-		<SignedInAs />
 	</AuthShell>
 </template>
