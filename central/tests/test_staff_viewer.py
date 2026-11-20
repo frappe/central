@@ -62,10 +62,10 @@ class TestStaffViewer(IntegrationTestCase):
 		rows = frappe.get_list("Team", filters={"name": self.team.name}, fields=["name", "owner_user"])
 		self.assertEqual(rows, [{"name": self.team.name, "owner_user": self.owner}])
 
-	def test_a_staff_viewer_manages_products_and_email_oauth_providers(self):
+	def test_a_staff_viewer_manages_products_and_oauth_providers(self):
 		frappe.set_user(self.staff)
 
-		for doctype in ("Product", "Email OAuth Provider"):
+		for doctype in ("Product", "OAuth Provider"):
 			for ptype in ("read", "write", "create", "delete"):
 				self.assertTrue(frappe.has_permission(doctype, ptype), (doctype, ptype))
 

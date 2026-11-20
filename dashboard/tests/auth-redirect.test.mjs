@@ -25,16 +25,19 @@ runInNewContext(
 )
 const { signInDestination } = exports
 
-test('sign-in returns to the mailbox callback with its query', () => {
-	const callback =
-		'/api/method/central.api.email_oauth.callback?state=s1&code=c1'
-	assert.equal(signInDestination({ 'redirect-to': callback }), callback)
-	assert.equal(
-		signInDestination({
-			'redirect-to': `https://central.example.com${callback}`,
-		}),
-		callback,
-	)
+test('sign-in returns to the provider callback, or its old path, with its query', () => {
+	for (const callback of [
+		'/api/method/central.api.oauth.callback?state=s1&code=c1',
+		'/api/method/central.api.email_oauth.callback?state=s1&code=c1',
+	]) {
+		assert.equal(signInDestination({ 'redirect-to': callback }), callback)
+		assert.equal(
+			signInDestination({
+				'redirect-to': `https://central.example.com${callback}`,
+			}),
+			callback,
+		)
+	}
 })
 
 test('sign-in refuses a foreign origin or a lookalike callback path', () => {
@@ -44,6 +47,9 @@ test('sign-in refuses a foreign origin or a lookalike callback path', () => {
 		'/api/method/central.api.email_oauth.callback_evil?state=s1',
 		'/api/method/central.api.email_oauth.callback',
 		'/api/method/central.api.other?next=/api/method/central.api.email_oauth.callback?',
+		'https://evil.example.com/api/method/central.api.oauth.callback?state=s1',
+		'/api/method/central.api.oauth.callback_evil?state=s1',
+		'/api/method/central.api.oauth.callback',
 	]) {
 		assert.equal(
 			signInDestination({ 'redirect-to': value }),

@@ -11,7 +11,7 @@ CRITICAL_DOCTYPES = (
 	"Central SSO Settings",
 	"Credit Ledger Entry",
 	"Credit Wallet",
-	"Email OAuth Provider",
+	"OAuth Provider",
 	"FrappeMail Service",
 	"Gateway Customer",
 	"GitHub Connection",
