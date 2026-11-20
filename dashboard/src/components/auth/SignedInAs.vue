@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, ErrorMessage } from 'frappe-ui'
+import { ErrorMessage } from 'frappe-ui'
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
@@ -8,7 +8,7 @@ import { queryString } from '@/lib/auth'
 
 const route = useRoute()
 const { currentUser, logout } = useAuth()
-const { activeTeamLabel } = useSession()
+const { teams, activeTeamLabel } = useSession()
 const isSigningOut = ref(false)
 const error = ref('')
 
@@ -32,25 +32,26 @@ async function signOut() {
 </script>
 
 <template>
-	<div class="mt-8 border-t border-outline-gray-2 pt-4">
-		<div class="flex items-center justify-between gap-2">
-			<div class="min-w-0 text-p-sm text-ink-gray-5">
-				<p class="truncate">
-					Signed in as
-					<span class="text-ink-gray-8">{{ currentUser }}</span>
-				</p>
-				<p class="truncate">
-					Team <span class="text-ink-gray-8">{{ activeTeamLabel }}</span>
-				</p>
-			</div>
-			<Button
-				variant="ghost"
-				size="sm"
-				label="Sign out"
-				:loading="isSigningOut"
+	<!-- Only a user with several teams can create the site on the wrong one. -->
+	<div v-if="teams.length > 1">
+		<p class="text-p-sm text-ink-gray-5">
+			Creating in
+			<span class="text-ink-gray-7">{{ activeTeamLabel }}</span>
+			as
+			<span
+				class="inline-block max-w-full truncate align-bottom text-ink-gray-7"
+				:title="currentUser ?? undefined"
+				>{{ currentUser }}</span
+			>.
+			<button
+				type="button"
+				class="text-p-sm-medium text-ink-gray-8 hover:underline focus-visible:underline disabled:opacity-60"
+				:disabled="isSigningOut"
 				@click="signOut"
-			/>
-		</div>
+			>
+				{{ isSigningOut ? 'Signing out…' : 'Not you?' }}
+			</button>
+		</p>
 		<ErrorMessage v-if="error" class="mt-2" :message="error" />
 	</div>
 </template>
