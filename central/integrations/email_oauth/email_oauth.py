@@ -65,7 +65,7 @@ def start_sign_in(
 
 def check_return_url(return_url: str, team: str, server: str | None) -> None:
 	url = urlsplit(return_url)
-	schemes = ("https", "http") if frappe.conf.developer_mode else ("https",)
+	schemes = ("https", "http")
 	if (
 		url.scheme in schemes
 		and "@" not in url.netloc
