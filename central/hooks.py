@@ -142,6 +142,7 @@ after_install = [
 	"central.billing.settings.ensure_minimum_invoice_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
 	"central.integrations.oauth.setup.ensure_email_oauth_providers",
+	"central.integrations.oauth.meta_webhook.ensure_meta_webhook",
 	"central.billing.navigation.ensure_workspace_sidebars",
 ]
 
@@ -354,6 +355,7 @@ after_migrate = [
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.gateways.setup.ensure_gateway_records",
 	"central.integrations.oauth.setup.ensure_email_oauth_providers",
+	"central.integrations.oauth.meta_webhook.ensure_meta_webhook",
 	"central.billing.navigation.ensure_workspace_sidebars",
 	# The Webhook that carries a team's tier to Grove, so an edit to its spec rolls out.
 	"central.services.doctype.ai_settings.ai_settings.sync_webhook",
@@ -374,6 +376,7 @@ before_tests = [
 	"central.billing.settings.ensure_welcome_credit_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
 	"central.integrations.oauth.setup.ensure_email_oauth_providers",
+	"central.integrations.oauth.meta_webhook.ensure_meta_webhook",
 	"central.billing.navigation.ensure_workspace_sidebars",
 	"central.users.ensure_staff_role_profile",
 ]
@@ -486,6 +489,7 @@ permission_query_conditions = {
 	"Firewall Ruleset": "central.permissions.firewall_ruleset_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
 	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
+	"Meta Webhook Route": "central.permissions.meta_webhook_route_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
 	"Site": "central.permissions.site_query_conditions",
 	"Site Domain": "central.permissions.site_domain_query_conditions",
@@ -507,6 +511,7 @@ has_permission = {
 	"Firewall Ruleset": "central.permissions.firewall_ruleset_has_permission",
 	"Virtual Machine": "central.permissions.server_has_permission",
 	"Pilot Credential": "central.permissions.pilot_credential_has_permission",
+	"Meta Webhook Route": "central.permissions.meta_webhook_route_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",
 	"Site": "central.permissions.site_has_permission",
 	"Site Domain": "central.permissions.site_domain_has_permission",

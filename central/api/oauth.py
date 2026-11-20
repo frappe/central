@@ -11,6 +11,7 @@ from frappe import _
 
 from central.api.pilot import pilot_credential_auth
 from central.iam import can
+from central.integrations.oauth.meta import connect_whatsapp
 from central.integrations.oauth.oauth import (
 	CALLBACK_PATH,
 	PROVIDER,
@@ -86,7 +87,7 @@ def site_params(note: dict, code: str | None, error: str | None, error_descripti
 		return {"error": error or "invalid_request", "error_description": error_description}
 	# the code goes only to the site's team, so a stranger's site never gets it (consent phishing)
 	if can(frappe.session.user, note["team"], "server:view", server=note["server"]):
-		remember_code_owner(code, note["team"], note["server"])
+		remember_code_owner(code, note)
 		return {"code": code}
 	return {"error": "not_team_member"}
 
@@ -112,10 +113,15 @@ def relay_token(
 	scope: str | None = None,
 ) -> dict:
 	"""Called by a site through its Pilot: swap a code or refresh token at the provider using Frappe Cloud's app secret."""
+	credential = frappe.local.pilot_credential
+	owner = {}
 	if grant_type == "authorization_code":  # initial exchange of the authorization code for a token
-		credential = frappe.local.pilot_credential
-		claim_code(code, credential.team, credential.server)
-	return exchange_token(
+		owner = claim_code(code, credential.team, credential.server)
+	# the site whose return URL the sign-in checked; a refresh or a domain with no site has none
+	site = owner.get("site")
+	if provider == "meta" and not site:
+		frappe.throw(_("This sign-in did not come from a site on this server"), frappe.PermissionError)
+	token = exchange_token(
 		provider,
 		grant_type,
 		code=code,
@@ -123,3 +129,6 @@ def relay_token(
 		refresh_token=refresh_token,
 		scope=scope,
 	)
+	if provider == "meta":
+		return connect_whatsapp(token["access_token"], credential.team, credential.server, site)
+	return token

@@ -23,6 +23,8 @@ SITE_CALLBACK_PATHS = {
 	**dict.fromkeys(("microsoft", "google", "yahoo", "yandex"), MAIL_CALLBACK_PATH),
 	"meta": "/api/method/whatsapp.whatsapp.oauth.callback",
 }
+# Meta's login dialog documents no PKCE parameters; its code is still single use and bound to one server
+WITHOUT_PKCE = ("meta",)
 NOTE_TTL = 10 * 60
 # Pilot keeps only an error's text; the site matches this to fall back to its normal mailbox form
 PROVIDER_UNAVAILABLE = "provider_unavailable"
@@ -41,10 +43,15 @@ def start_sign_in(
 	With `login_hint`, the provider goes to that account instead of asking which one."""
 	config = get_provider(provider)
 	check_return_url(provider, return_url, team, server)
+	# the calling site, so a sign-in needs no site name from Pilot
+	site = get_host_site(urlsplit(return_url).hostname, team, server)
+	if provider == "meta" and not site:
+		# refuse before Meta's signup changes anything at Meta: the route needs a site
+		frappe.throw(_("Return URL must be on a site of this server"), frappe.PermissionError)
 
 	frappe.cache.set_value(
 		note_key(state),
-		{"return_url": return_url, "team": team, "server": server},
+		{"return_url": return_url, "team": team, "server": server, "site": site},
 		expires_in_sec=NOTE_TTL,
 	)
 
@@ -55,13 +62,13 @@ def start_sign_in(
 		prompt = " ".join(p for p in params.pop("prompt", "").split() if p != "select_account")
 		if prompt:
 			params["prompt"] = prompt
+	if provider not in WITHOUT_PKCE:
+		params.update(code_challenge=code_challenge, code_challenge_method="S256")
 	authorize_url = WebApplicationClient(config.client_id).prepare_request_uri(
 		config.authorize_url,
 		redirect_uri=get_url(CALLBACK_PATH),
 		scope=" ".join(scopes),
 		state=state,
-		code_challenge=code_challenge,
-		code_challenge_method="S256",
 		**params,
 	)
 	# the site saves these scopes on its Connected App, so it keeps no list of its own
@@ -85,6 +92,17 @@ def check_return_url(provider: str, return_url: str, team: str, server: str | No
 	)
 
 
+def get_host_site(hostname: str, team: str, server: str) -> str | None:
+	"""The team's site on `server` that answers on `hostname`: its own address or an active domain."""
+	filters = {"team": team, "server": server}
+	if site := frappe.db.exists("Site", {"name": hostname, **filters}):
+		return site
+
+	# a Site Domain checks only the team of its site, so check the site's server here
+	site = frappe.db.get_value("Site Domain", {"name": hostname, "status": "Active", **filters}, "site")
+	return frappe.db.exists("Site", {"name": site, **filters}) if site else None
+
+
 def get_sign_in(state: str | None) -> dict | None:
 	return frappe.cache.get_value(note_key(state)) if state else None
 
@@ -101,18 +119,20 @@ def note_key(state: str) -> str:
 	return f"email_oauth:{state}"
 
 
-def remember_code_owner(code: str, team: str, server: str | None) -> None:
-	"""Remember which server's sign-in got `code`, so only that server can swap it."""
-	frappe.cache.set_value(code_key(code), {"team": team, "server": server}, expires_in_sec=NOTE_TTL)
+def remember_code_owner(code: str, note: dict) -> None:
+	"""Remember which server's and site's sign-in got `code`, so only that server can swap it."""
+	owner = {"team": note["team"], "server": note["server"], "site": note.get("site")}
+	frappe.cache.set_value(code_key(code), owner, expires_in_sec=NOTE_TTL)
 
 
-def claim_code(code: str | None, team: str, server: str | None) -> None:
-	"""Single use: a code swaps only for the server whose sign-in got it."""
+def claim_code(code: str | None, team: str, server: str | None) -> dict:
+	"""Single use: a code swaps only for the server whose sign-in got it. Returns its owner."""
 	key = code_key(code or "")
 	owner = frappe.cache.get_value(key)
 	frappe.cache.delete_value(key)
-	if owner != {"team": team, "server": server}:
+	if not owner or (owner["team"], owner["server"]) != (team, server):
 		frappe.throw(_("This sign-in code was not given to this server"), frappe.PermissionError)
+	return owner
 
 
 def code_key(code: str) -> str:
@@ -134,6 +154,8 @@ def exchange_token(provider: str, grant_type: str, **params: str | None) -> dict
 	}
 	if grant_type == "authorization_code":
 		data["redirect_uri"] = get_url(CALLBACK_PATH)
+	if provider in WITHOUT_PKCE:
+		data.pop("code_verifier", None)
 
 	response = requests.post(
 		config.token_url, data={k: v for k, v in data.items() if v}, timeout=30, allow_redirects=False
@@ -141,8 +163,23 @@ def exchange_token(provider: str, grant_type: str, **params: str | None) -> dict
 	token = response.json()
 	if not response.ok:
 		# Pilot keeps only this text, so the site can still tell invalid_grant apart (standard OAuth error code)
-		frappe.throw(token.get("error") or _("The mail provider refused the token request"))
+		frappe.throw(get_token_error(token) or _("The provider refused the token request"))
 	return token
+
+
+def get_token_error(token: dict) -> str | None:
+	error = token.get("error")
+	if not isinstance(error, dict):
+		return error
+	# Meta answers with a Graph error; these subcodes are its expired and used codes
+	if error.get("error_subcode") in (36007, 36009):
+		return "invalid_grant"
+	return get_meta_refusal(error)
+
+
+def get_meta_refusal(error: dict) -> str:
+	"""The site's code for a Graph error it has no message for, with Meta's text for users, if any."""
+	return f"meta_refused:{error.get('code')}:{error.get('error_user_msg') or ''}"
 
 
 def get_provider(provider: str) -> "OAuthProvider":

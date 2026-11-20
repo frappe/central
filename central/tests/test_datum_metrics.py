@@ -88,27 +88,29 @@ class TestCentralMetrics(IntegrationTestCase):
 		self.assertAlmostEqual(samples["central_email_oldest_unsent_seconds"], 1800, delta=10)
 
 	def test_webhook_requests_are_counted_by_webhook_and_status(self) -> None:
-		exhausted = frappe._dict(
-			webhook="vm-state",
-			status="Exhausted",
-			reference_doctype="Virtual Machine",
-			reference_document="vm-1",
-			error="Traceback (most recent call last):\n  ...\nrequests.exceptions.HTTPError: 502",
-		)
-		rows = [exhausted] * 2 + [frappe._dict(webhook="vm-state", status="Delivered")]
-		with patch("central.integrations.metrics.frappe.get_all", return_value=rows):
-			metrics = CentralMetrics()
-			metrics.add_webhooks()
+		webhook = f"vm-state-{frappe.generate_hash(length=6)}"
+		error = "Traceback (most recent call last):\n  ...\nrequests.exceptions.HTTPError: 502"
+		for status in ("Exhausted", "Exhausted", "Delivered"):
+			frappe.get_doc(
+				doctype="Webhook Request Log",
+				webhook=webhook,
+				status=status,
+				reference_doctype="Virtual Machine",
+				reference_document="vm-1",
+				error=error if status == "Exhausted" else None,
+			).db_insert()
 
+		metrics = CentralMetrics()
+		metrics.add_webhooks()
+
+		samples = [sample for sample in metrics.samples if sample["labels"].get("webhook") == webhook]
 		counts = {
 			sample["labels"]["status"]: sample["value"]
-			for sample in metrics.samples
+			for sample in samples
 			if sample["metric"] == "frappe_webhook_requests_last_day"
 		}
 		self.assertEqual(counts, {"Exhausted": 2.0, "Delivered": 1.0})
-		exhausted = [
-			sample for sample in metrics.samples if sample["metric"] == "frappe_webhook_request_exhausted"
-		]
+		exhausted = [sample for sample in samples if sample["metric"] == "frappe_webhook_request_exhausted"]
 		self.assertEqual(len(exhausted), 2)
 		self.assertEqual(exhausted[0]["labels"]["error"], "requests.exceptions.HTTPError: 502")
 

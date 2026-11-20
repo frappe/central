@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import frappe
+from frappe.query_builder.functions import Count
 from frappe.utils import get_datetime, get_system_timezone, now_datetime
 from frappe.utils.background_jobs import get_queue, get_queue_list
 from frappe.utils.file_lock import LockTimeoutError
@@ -249,31 +250,40 @@ class CentralMetrics:
 
 
 def add_webhook_requests(metrics: CentralMetrics, now: datetime) -> None:
-	"""Count the requests by webhook and status, and name the newest Exhausted ones with their first error line."""
-	rows = frappe.get_all(
-		"Webhook Request Log",
-		filters={"creation": (">", now - timedelta(days=1))},
-		fields=["webhook", "status", "reference_doctype", "reference_document", "error"],
-		order_by="creation desc",
+	"""Count the requests by webhook and status, and name the newest Exhausted ones with their first error line.
+	The counts are one grouped query: the Meta relay logs a row per event, too many to load each minute."""
+	log = frappe.qb.DocType("Webhook Request Log")
+	since = now - timedelta(days=1)
+	counts = (
+		frappe.qb.from_(log)
+		.select(log.webhook, log.status, Count("*").as_("count"))
+		.where(log.creation > since)
+		.groupby(log.webhook, log.status)
+		.run(as_dict=True)
 	)
-	for (webhook, status), count in Counter(
-		(row.webhook or "none", row.status or "none") for row in rows
-	).items():
-		metrics.add("frappe_webhook_requests_last_day", count, webhook=webhook, status=status)
-
-	named = Counter()
-	for row in rows:
-		webhook = row.webhook or "none"
-		if row.status != "Exhausted" or named[webhook] >= FAILURES_NAMED:
-			continue
-		named[webhook] += 1
+	for row in counts:
 		metrics.add(
-			"frappe_webhook_request_exhausted",
-			1,
-			webhook=webhook,
-			document=f"{row.reference_doctype} {row.reference_document}",
-			error=((row.error or "").strip().splitlines() or ["no error"])[-1][:120],
+			"frappe_webhook_requests_last_day",
+			row["count"],
+			webhook=row.webhook or "none",
+			status=row.status or "none",
 		)
+
+	for webhook in {row.webhook for row in counts if row.status == "Exhausted"}:
+		for row in frappe.get_all(
+			"Webhook Request Log",
+			filters={"creation": (">", since), "status": "Exhausted", "webhook": webhook},
+			fields=["reference_doctype", "reference_document", "error"],
+			order_by="creation desc",
+			limit=FAILURES_NAMED,
+		):
+			metrics.add(
+				"frappe_webhook_request_exhausted",
+				1,
+				webhook=webhook or "none",
+				document=f"{row.reference_doctype} {row.reference_document}",
+				error=((row.error or "").strip().splitlines() or ["no error"])[-1][:120],
+			)
 
 
 def count_request(request, response) -> None:
