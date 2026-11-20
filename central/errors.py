@@ -48,6 +48,11 @@ class CargoConnectionError(frappe.ValidationError):
 	"""A regional Cargo health check or webhook configuration call failed."""
 
 
+class PilotStarting(frappe.ValidationError):
+	"""A Running server's Pilot does not answer yet, so a login link would open a proxy error.
+	The console retries on this error until Pilot answers."""
+
+
 # code -> user-facing copy. Templates are formatted with the call's context (action,
 # region, resource_id, field); a missing placeholder renders empty rather than crashing
 # the error path. `message` may be overridden when Central owns customer-safe copy.

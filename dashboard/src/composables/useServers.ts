@@ -4,9 +4,11 @@ import { API, method } from '@/api/methods'
 import signingInHtml from '@/assets/signing-in.html?raw'
 import { useBusyRunner } from '@/composables/useBusyRunner'
 import { useSession } from '@/composables/useSession'
+import { frappeErrorType } from '@/lib/auth'
 import type { ServerAccess } from '@/lib/capabilities'
-import { reportError } from '@/lib/feedback'
+import { infoToast, reportError } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
+import { __ } from '@/lib/translate'
 import type { RefreshResponse } from '@/types/api'
 import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
 
@@ -173,6 +175,34 @@ function openLoadingTab(
 	return { tab: window.open(loadingUrl, target, features), loadingUrl }
 }
 
+/** The bench's login link. Central refuses one while Pilot is still starting after a create,
+ *  boot, or resize, so this asks again until Pilot answers, for up to 5 minutes. */
+async function getBenchLink(
+	server: VirtualMachineRow,
+	tab: Window | null,
+): Promise<string | undefined> {
+	const deadline = Date.now() + 5 * 60 * 1000
+	let hasToldWaiting = false
+	for (;;) {
+		try {
+			await submitOrThrow(benchLinkCall, { server: server.resource_id })
+			return benchLinkCall.data?.url
+		} catch (error) {
+			const isStarting = frappeErrorType(error) === 'PilotStarting'
+			if (!isStarting || Date.now() > deadline) throw error
+			// The person closed the waiting tab, so they no longer want the bench.
+			if (tab?.closed) return undefined
+
+			// Without a waiting tab, the page itself must say why nothing opens yet.
+			if (!tab && !hasToldWaiting) {
+				infoToast(__("Pilot is starting. It opens here when it's ready."))
+				hasToldWaiting = true
+			}
+			await new Promise((resolve) => setTimeout(resolve, 3000))
+		}
+	}
+}
+
 /** `inPlace` replaces this page, for a link that opens the bench without a click. */
 async function openBench(
 	server: VirtualMachineRow,
@@ -184,8 +214,9 @@ async function openBench(
 		? { tab: null, loadingUrl: '' }
 		: openLoadingTab()
 	try {
-		await submitOrThrow(benchLinkCall, { server: server.resource_id })
-		openResolvedUrl(benchLinkCall.data?.url, tab, 'server')
+		const url = await getBenchLink(server, tab)
+		if (tab?.closed) return
+		openResolvedUrl(url, tab, 'server')
 	} catch (error) {
 		tab?.close()
 		reportError(error, {
