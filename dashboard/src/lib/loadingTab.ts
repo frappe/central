@@ -45,6 +45,11 @@ export class LoadingTab {
 			message:
 				LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)],
 			back: __('Back to dashboard'),
+			// Frappe UI sets the resolved theme on the root element.
+			theme:
+				document.documentElement.getAttribute('data-theme') === 'dark'
+					? 'dark'
+					: 'light',
 		})
 		const pageUrl = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
 		const tab = window.open(pageUrl, target, features)

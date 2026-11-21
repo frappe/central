@@ -1,4 +1,4 @@
-import { useCall } from 'frappe-ui'
+import { useCall, useColorScheme } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBusyRunner } from '@/composables/useBusyRunner'
@@ -160,6 +160,15 @@ function reportOpenFailure(
 	reportError(error, options)
 }
 
+/** Pilot keeps its own theme, so the bench link carries this dashboard's choice to it. */
+function withColorScheme(url: string | undefined): string | undefined {
+	if (!url) return url
+
+	const link = new URL(url, window.location.href)
+	link.searchParams.set('theme', useColorScheme().colorScheme.value)
+	return link.href
+}
+
 /** The bench's login link. Central refuses one while Pilot is still starting after a create,
  *  boot, or resize, so this asks again until Pilot answers, for up to 5 minutes. */
 async function getBenchLink(
@@ -171,7 +180,7 @@ async function getBenchLink(
 	for (;;) {
 		try {
 			await submitOrThrow(benchLinkCall, { server: server.resource_id })
-			return benchLinkCall.data?.url
+			return withColorScheme(benchLinkCall.data?.url)
 		} catch (error) {
 			const isStarting = frappeErrorType(error) === 'PilotStarting'
 			if (!isStarting || Date.now() > deadline) throw error
