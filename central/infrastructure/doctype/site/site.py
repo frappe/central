@@ -281,9 +281,11 @@ class Site(Document):
 				rename_completed_at=frappe.utils.now_datetime(), rename_error=None, rename_diagnostic=None
 			)
 		elif task["status"] in {"failed", "killed"}:
+			diagnostic = frappe.as_json(task.get("failure"))
+			self.log_error(title="Pilot site rename failed", message=diagnostic)
 			updates.update(
 				rename_error=_("Pilot did not complete the site rename. Inspect the task in Pilot."),
-				rename_diagnostic=frappe.as_json(task.get("failure")),
+				rename_diagnostic=diagnostic,
 			)
 		frappe.db.set_value(
 			"Site",
