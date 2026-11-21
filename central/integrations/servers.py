@@ -16,7 +16,12 @@ from central.infrastructure.doctype.resource_action.resource_action import Resou
 from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.virtual_machine import firewall
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.integrations.atlas import SLEEP_OFF_SETTINGS, AtlasClient, ConsoleMode
+from central.integrations.atlas import (
+	OFFLOAD_OFF_SETTINGS,
+	SLEEP_OFF_SETTINGS,
+	AtlasClient,
+	ConsoleMode,
+)
 from central.server_models import ComputeSettings, FirewallChange
 from central.utils.units import (
 	gigabytes_to_mebibytes,
@@ -144,6 +149,12 @@ def set_compute_settings(server: VirtualMachine, settings: ComputeSettings) -> d
 	return changes
 
 
+def is_offload_allowed(memory_mib: int, disk_mib: int) -> bool:
+	"""Whether Atlas accepts deep sleep and coma for a server of this size: 4 GiB memory and
+	50 GiB disk at most, because a larger VM takes too long to upload and wake."""
+	return memory_mib <= 4096 and disk_mib <= 51200
+
+
 def get_rescue_state(server: VirtualMachine) -> dict:
 	"""Read rescue state without changing Central's mirror or contacting the guest."""
 	remote = get_remote_server(server)
@@ -170,10 +181,11 @@ def set_rescue_mode(server: VirtualMachine, enabled: bool) -> None:
 		)
 
 
-def resize_server(server: VirtualMachine, shape: dict) -> None:
+def resize_server(server: VirtualMachine, shape: dict, is_leaving_trial: bool = False) -> None:
 	"""Apply a new size on Atlas, then start the server. Safe to repeat: every call sets
 	absolute values. A CPU or memory change stops the server first; a disk-only grow does not.
-	Either path turns sleep off, including deep sleep and coma."""
+	Sleep stays as the owner set it, and ends when the server leaves its trial plan. Deep sleep
+	and coma go off when the new size is too large."""
 	client = get_client(server)
 	remote = client.get_vm(server.atlas_vm_id)
 	compute, disk = remote.get("compute") or {}, remote.get("disk") or {}
@@ -195,6 +207,14 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 		)
 		raise error
 
+	# A server that leaves its trial plan stops sleeping. Otherwise sleep stays, but Atlas checks the
+	# deep sleep and coma size limit against the new size, so those go off first when it is too large.
+	is_offloading = any(compute.get(field) for field in OFFLOAD_OFF_SETTINGS)
+	if is_leaving_trial and is_sleepy:
+		client.set_compute_settings(server.atlas_vm_id, SLEEP_OFF_SETTINGS)
+	elif is_offloading and not is_offload_allowed(memory_mib, disk_mib):
+		client.set_compute_settings(server.atlas_vm_id, OFFLOAD_OFF_SETTINGS)
+
 	if is_reshaping:
 		# Atlas refuses to stop a sleeping VM, so wake it first.
 		if remote.get("current_state") == "paused":
@@ -208,13 +228,12 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 			if remote.get("current_state") != "stopped":
 				wait_for_power_state(client, server.atlas_vm_id, "start", "running")
 			raise
-	else:
-		# Sleep goes off first: Atlas refuses a disk past the offload limit while deep sleep or coma is set.
-		if is_sleepy:
-			client.set_compute_settings(server.atlas_vm_id, SLEEP_OFF_SETTINGS)
+	elif disk_mib > (disk.get("size_mib") or 0):
+		# A sleeping VM reports stopped while Atlas still wants it running. Wake it before the online grow.
+		if remote.get("current_state") == "stopped" and remote.get("desired_state") == "running":
+			wait_for_power_state(client, server.atlas_vm_id, "start", "running")
 
-		if disk_mib > (disk.get("size_mib") or 0):
-			client.update_disk(server.atlas_vm_id, disk_mib)
+		client.update_disk(server.atlas_vm_id, disk_mib)
 
 	wait_for_power_state(client, server.atlas_vm_id, "start", "running")
 	observe_server(server)

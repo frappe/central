@@ -171,7 +171,9 @@ A region with **WireGuard Gateway** on serves customer devices at `https://wireg
 
 ## Compute settings
 
-Atlas owns the sleep and CPU burst settings of a VM. Central stores no copy. **Compute Settings** on the Virtual Machine form reads them from `GET /virtual-machines/{id}` and sends only the changed fields to `POST /virtual-machines/{id}/actions/resize`. Atlas takes these fields in any VM state. Use it for internal servers. A customer server that sleeps answers its first request late.
+Atlas owns the sleep and CPU burst settings of a VM. Central stores no copy. **Compute Settings** on the Virtual Machine form reads them from `GET /virtual-machines/{id}` and sends only the changed fields to `POST /virtual-machines/{id}/actions/resize`. Atlas takes these fields in any VM state. A customer server that sleeps answers its first request late.
+
+The server owner changes only `sleep_after_idle_seconds`, on the **Settings** tab of the server. Only internal teams, which have **Is Internal** set on their Billing Profile, get this section, until a sleeping server costs customers less. Both routes refuse other teams. `central.api.servers.get_idle_sleep` needs `server:view`. `central.api.servers.set_idle_sleep` needs `server:resize`, and refuses an open free trial. It takes zero, or 5 minutes to 24 hours. Zero also turns deep sleep and coma off. Deep sleep, coma, and CPU burst stay in Desk.
 
 | Field | Atlas field | Effect |
 | --- | --- | --- |
@@ -182,9 +184,9 @@ Atlas owns the sleep and CPU burst settings of a VM. Central stores no copy. **C
 | Baseline CPU (millicores) | `baseline_cpu_millicores` | CPU the VM can always use. Zero uses 20% of its CPU. |
 | Sliding Window (minutes) | `sliding_window_minutes` | How far back Atlas measures average CPU use. Zero uses 60. |
 
-Zero turns a setting off. Atlas refuses deep sleep and coma on a VM with more than 4 GiB of memory or 50 GiB of disk, and Desk shows its message. Atlas explains sleep in [Sleepy VMs](https://github.com/frappe/atlas/blob/develop/docs/compute/sleepy-vms.md).
+Zero turns a setting off. Atlas refuses deep sleep and coma on a VM with more than 4 GiB of memory or 50 GiB of disk. Desk makes these two fields read-only on a larger server. Atlas explains sleep in [Sleepy VMs](https://github.com/frappe/atlas/blob/develop/docs/compute/sleepy-vms.md).
 
-A resize turns all three sleep settings off. On a disk-only grow, Central turns sleep off before it grows the disk, because Atlas refuses a disk past the offload limit while deep sleep or coma is set.
+A resize keeps the sleep settings, because Atlas keeps every field that a resize leaves out. When the new size is past the offload limit, Central first turns deep sleep and coma off, because Atlas refuses that size while they are set. A resize off a trial plan turns all three sleep settings off.
 
 ## Termination protection
 
@@ -280,7 +282,7 @@ Show Open Pilot only for a Pilot-managed resource. A plain Ubuntu VM must not fa
 
 Do not expose privileged VM creation or system tenant zero to customers.
 
-Idle sleep is a trial policy. Ordinary Pilot servers and plain Ubuntu servers have no idle sleep unless their product requires it.
+Idle sleep is on for a trial server. Other servers sleep only when the owner turns sleep on.
 
 Record each operation separately from observed state and show a useful error on failure.
 

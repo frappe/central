@@ -5,7 +5,7 @@ import frappe
 from frappe.tests import UnitTestCase
 
 from central.errors import AtlasConnectionError, AtlasRejected
-from central.integrations.atlas import SLEEP_OFF_SETTINGS
+from central.integrations.atlas import OFFLOAD_OFF_SETTINGS, SLEEP_OFF_SETTINGS
 from central.integrations.servers import resize_server
 
 SHAPE = {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 50}
@@ -27,9 +27,11 @@ class TestServerResize(UnitTestCase):
 		disk_mib: int = 25600,
 		sleep_after_idle_seconds: int = 0,
 		deep_sleep_after_idle_seconds: int = 0,
+		desired_state: str | None = None,
 	):
 		return {
 			"current_state": state,
+			"desired_state": desired_state or ("stopped" if state == "stopped" else "running"),
 			"compute": {
 				"cpu_millicores": cpu_millicores,
 				"memory_mib": memory_mib,
@@ -88,34 +90,49 @@ class TestServerResize(UnitTestCase):
 		self.client.resize.assert_not_called()
 		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
 
-	def test_a_resize_ends_idle_sleep_without_stopping_the_server(self):
-		"""Clearing the idle timeout alone needs no stop: Atlas takes it in any state."""
-		self.client.get_vm.return_value = self.remote(
-			"running", 2000, 4096, 51200, sleep_after_idle_seconds=1800
-		)
-
-		resize_server(self.server, SHAPE)
-
-		self.client.vm_action.assert_not_called()
-		self.client.resize.assert_not_called()
-		self.client.set_compute_settings.assert_called_once_with("vm-00001", SLEEP_OFF_SETTINGS)
-
-	def test_disk_only_grow_on_a_sleeping_server_stays_online(self):
-		"""The disk grows online, and the idle change sends no resource values, so Atlas takes
-		it on a running server."""
+	def test_a_resize_keeps_idle_sleep(self):
+		"""Atlas keeps every sleep field a resize omits, so the owner's choice stays."""
 		self.client.get_vm.return_value = self.remote("running", 2000, 4096, sleep_after_idle_seconds=1800)
 
 		resize_server(self.server, SHAPE)
 
-		self.client.vm_action.assert_not_called()
+		self.client.set_compute_settings.assert_not_called()
 		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
-		self.client.resize.assert_not_called()
+
+	def test_a_server_leaving_its_trial_stops_sleeping(self):
+		self.client.get_vm.return_value = self.remote("running", 2000, 4096, sleep_after_idle_seconds=600)
+
+		resize_server(self.server, SHAPE, is_leaving_trial=True)
+
 		self.client.set_compute_settings.assert_called_once_with("vm-00001", SLEEP_OFF_SETTINGS)
 
-	def test_a_disk_grow_turns_deep_sleep_off_before_the_disk_grows(self):
-		"""Atlas refuses a disk past the offload limit while deep sleep is set, so sleep goes off first."""
+	def test_a_sleeping_server_wakes_before_its_disk_grows(self):
+		"""A sleeping VM reports stopped while Atlas still wants it running."""
+		self.client.get_vm.side_effect = [
+			self.remote("stopped", 2000, 4096, sleep_after_idle_seconds=1800, desired_state="running"),
+			self.remote("stopped", 2000, 4096, desired_state="running"),
+			self.remote("running", 2000, 4096),
+			self.remote("running", 2000, 4096),
+		]
+
+		resize_server(self.server, SHAPE)
+
+		self.client.vm_action.assert_called_once_with("vm-00001", "start")
+		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
+
+	def test_deep_sleep_stays_within_the_offload_limit(self):
 		self.client.get_vm.return_value = self.remote(
 			"running", 2000, 4096, deep_sleep_after_idle_seconds=3600
+		)
+
+		resize_server(self.server, SHAPE)
+
+		self.client.set_compute_settings.assert_not_called()
+
+	def test_a_grow_past_the_offload_limit_turns_deep_sleep_off_first(self):
+		"""Atlas refuses a size past the offload limit while deep sleep is set. Idle sleep stays."""
+		self.client.get_vm.return_value = self.remote(
+			"running", 2000, 4096, sleep_after_idle_seconds=1800, deep_sleep_after_idle_seconds=3600
 		)
 
 		resize_server(self.server, {**SHAPE, "disk_gigabytes": 100})
@@ -128,7 +145,7 @@ class TestServerResize(UnitTestCase):
 			],
 			["set_compute_settings", "update_disk"],
 		)
-		self.client.set_compute_settings.assert_called_once_with("vm-00001", SLEEP_OFF_SETTINGS)
+		self.client.set_compute_settings.assert_called_once_with("vm-00001", OFFLOAD_OFF_SETTINGS)
 
 	def test_stopped_server_is_resized_then_started(self):
 		self.client.get_vm.side_effect = [

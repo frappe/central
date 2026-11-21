@@ -387,7 +387,7 @@ class TestTrialLifecycle(TrialOnAMachine):
 		with patch("central.integrations.servers.resize_server") as resize_server:
 			process_resize(move)
 
-		resize_server.assert_called_once()
+		self.assertIs(resize_server.call_args.kwargs["is_leaving_trial"], True)
 		VirtualMachine.ensure_subscription_enabled.assert_called_once()
 		self.assertEqual(frappe.db.get_value("Virtual Machine", self.server.name, "plan"), large)
 		self.assertFalse(trial.is_billing_deferred(self.server.name))

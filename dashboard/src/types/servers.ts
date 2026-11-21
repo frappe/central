@@ -74,6 +74,11 @@ export interface ServerOverview {
 	}
 }
 
+export interface IdleSleepState {
+	/** Zero means the server never sleeps. */
+	sleep_after_idle_seconds: number
+}
+
 export interface RescueState {
 	is_rescue_mode_enabled: boolean | null
 	is_in_rescue_mode: boolean | null
