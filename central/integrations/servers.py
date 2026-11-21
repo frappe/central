@@ -181,11 +181,13 @@ def set_rescue_mode(server: VirtualMachine, enabled: bool) -> None:
 		)
 
 
-def resize_server(server: VirtualMachine, shape: dict, is_leaving_trial: bool = False) -> None:
+def resize_server(server: VirtualMachine, shape: dict) -> None:
 	"""Apply a new size on Atlas, then start the server. Safe to repeat: every call sets
 	absolute values. A CPU or memory change stops the server first; a disk-only grow does not.
 	Sleep stays as the owner set it, and ends when the server leaves its trial plan. Deep sleep
 	and coma go off when the new size is too large."""
+	from central.billing.catalog.trials import is_trial_plan
+
 	client = get_client(server)
 	remote = client.get_vm(server.atlas_vm_id)
 	compute, disk = remote.get("compute") or {}, remote.get("disk") or {}
@@ -207,10 +209,11 @@ def resize_server(server: VirtualMachine, shape: dict, is_leaving_trial: bool = 
 		)
 		raise error
 
-	# A server that leaves its trial plan stops sleeping. Otherwise sleep stays, but Atlas checks the
-	# deep sleep and coma size limit against the new size, so those go off first when it is too large.
+	# The server keeps its trial plan until billing confirms the resize, so a resize from a trial plan
+	# is the move off the trial, and the server stops sleeping. Otherwise sleep stays, but Atlas checks
+	# the deep sleep and coma size limit against the new size, so those go off first when it is too large.
 	is_offloading = any(compute.get(field) for field in OFFLOAD_OFF_SETTINGS)
-	if is_leaving_trial and is_sleepy:
+	if is_trial_plan(server.plan) and is_sleepy:
 		client.set_compute_settings(server.atlas_vm_id, SLEEP_OFF_SETTINGS)
 	elif is_offloading and not is_offload_allowed(memory_mib, disk_mib):
 		client.set_compute_settings(server.atlas_vm_id, OFFLOAD_OFF_SETTINGS)
