@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 import frappe
 from frappe.utils import add_days, getdate, now_datetime, nowdate
 
+from central.billing.catalog.trials import is_trial_plan
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
@@ -382,12 +383,18 @@ class TestTrialLifecycle(TrialOnAMachine):
 		self.assertEqual((configuration.plan, configuration.subscription), (large, None))
 
 		# A shape that already matches still runs the resize, which starts the server and ends idle sleep.
+		# The server keeps its trial plan until billing confirms the move, so the resize sees it as a trial.
 		self.server.db_set(configuration.shape.model_dump())
 		VirtualMachine.ensure_subscription_enabled.reset_mock()
-		with patch("central.integrations.servers.resize_server") as resize_server:
+		plans_at_resize = []
+		with patch(
+			"central.integrations.servers.resize_server",
+			side_effect=lambda server, _shape: plans_at_resize.append(server.plan),
+		):
 			process_resize(move)
 
-		self.assertIs(resize_server.call_args.kwargs["is_leaving_trial"], True)
+		self.assertEqual(len(plans_at_resize), 1)
+		self.assertTrue(is_trial_plan(plans_at_resize[0]))
 		VirtualMachine.ensure_subscription_enabled.assert_called_once()
 		self.assertEqual(frappe.db.get_value("Virtual Machine", self.server.name, "plan"), large)
 		self.assertFalse(trial.is_billing_deferred(self.server.name))

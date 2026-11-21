@@ -13,7 +13,10 @@ SHAPE = {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 50}
 
 class TestServerResize(UnitTestCase):
 	def setUp(self):
-		self.server = SimpleNamespace(atlas_vm_id="vm-00001")
+		self.server = SimpleNamespace(atlas_vm_id="vm-00001", plan="paid-plan")
+		self.is_trial_plan = self.enterContext(
+			patch("central.billing.catalog.trials.is_trial_plan", return_value=False)
+		)
 		self.client = MagicMock()
 		self.enterContext(patch("central.integrations.servers.get_client", return_value=self.client))
 		self.observe = self.enterContext(patch("central.integrations.servers.observe_server"))
@@ -102,7 +105,9 @@ class TestServerResize(UnitTestCase):
 	def test_a_server_leaving_its_trial_stops_sleeping(self):
 		self.client.get_vm.return_value = self.remote("running", 2000, 4096, sleep_after_idle_seconds=600)
 
-		resize_server(self.server, SHAPE, is_leaving_trial=True)
+		self.is_trial_plan.return_value = True
+
+		resize_server(self.server, SHAPE)
 
 		self.client.set_compute_settings.assert_called_once_with("vm-00001", SLEEP_OFF_SETTINGS)
 
