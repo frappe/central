@@ -21,7 +21,17 @@ MAXIMUM_LINES = 1_000
 TRACEBACK_TAIL_CHARACTERS = 1_024
 REQUEST_TIMEOUT_SECONDS = 30
 EXCEPTION_LINE = re.compile(r"^([A-Za-z_][\w.]*)(?::|$)")
-ERROR_LOG_FIELDS = ["name", "creation", "method", "error", "fingerprint", "trace_id", "metadata"]
+ERROR_LOG_FIELDS = [
+	"name",
+	"creation",
+	"method",
+	"error",
+	"fingerprint",
+	"trace_id",
+	"metadata",
+	"reference_doctype",
+	"reference_name",
+]
 
 
 class ErrorLogPublisher:
@@ -120,6 +130,8 @@ def to_log_line(row: frappe._dict) -> dict:
 		"kind": metadata.get("type") or "",
 		"path": metadata.get("path") or metadata.get("job_name") or "",
 		"traceback": traceback[-TRACEBACK_TAIL_CHARACTERS:],
+		"reference_doctype": row.reference_doctype or "",
+		"reference_name": row.reference_name or "",
 	}
 	return {
 		"ts": created.isoformat(),

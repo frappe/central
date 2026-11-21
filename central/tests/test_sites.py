@@ -1043,6 +1043,17 @@ class TestSiteNaming(SiteOnAMachine):
 		self.assertIn("Inspect the task in Pilot", site.rename_error)
 		self.assertIn("task_interrupted", site.rename_diagnostic)
 		self.assertIsNone(site.rename_completed_at)
+		self.assertTrue(
+			frappe.get_all(
+				"Error Log",
+				filters={
+					"method": "Pilot site rename failed",
+					"reference_doctype": "Site",
+					"reference_name": site.name,
+				},
+				limit=1,
+			)
+		)
 
 	def test_an_old_poll_cannot_complete_a_replacement_task(self):
 		site = self.site()
