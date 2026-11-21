@@ -75,6 +75,7 @@ def registry(team: str | None = None) -> dict:
 	pending = ResourceAction.pending_labels(team)
 	audiences = _pilot_audiences(team)
 	locked = get_locked_servers(team)
+	is_idle_sleep_available = VirtualMachine.is_idle_sleep_available(team)
 	plan_titles = _plan_titles({server["plan"] for server in servers if server["plan"]})
 	creators = ResourceAction.get_creators(team)
 	images = {
@@ -92,6 +93,7 @@ def registry(team: str | None = None) -> dict:
 		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
 		# A free trial gives the site, not the server: the console hides SSH, the console and Pilot.
 		server["is_access_locked"] = server["name"] in locked
+		server["is_idle_sleep_available"] = is_idle_sleep_available
 
 	# A creation has no server row until the region accepts it, so it cannot be overlaid
 	# like the pending actions above. It rides here as its own list: the console picks its
@@ -899,3 +901,25 @@ def set_rescue_mode(enabled: bool, team: str | None = None, resource_id: str | N
 	"""Select the next boot mode without starting or restarting the server."""
 	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
 	server.set_rescue_mode(enabled)
+
+
+@frappe.whitelist(methods=["GET"])
+@handle_resource_operation
+@require_capability("server:view", _lt("You cannot view this server."), server="resource_id")
+def get_idle_sleep(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Read how long this server stays idle before it sleeps. Zero means it never sleeps."""
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	return {"sleep_after_idle_seconds": server.get_idle_sleep_seconds()}
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability(
+	"server:resize",
+	_lt("You can't change when this server sleeps. Ask a team admin to review your access."),
+	server="resource_id",
+)
+def set_idle_sleep(seconds: int, team: str | None = None, resource_id: str | None = None) -> None:
+	"""Turn sleep when idle on or off. Gated on `server:resize`, the capability to change a server."""
+	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server.set_idle_sleep_seconds(seconds)
