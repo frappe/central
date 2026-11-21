@@ -141,9 +141,11 @@ Credit Ledger Entry ──team, ──currency                        (append-on
 Credit Wallet ──team                           (lock anchor / cached balance — one per (team,currency))
 Commitment ──team, ──currency              (spend floor)
 Usage Rollup ──team                            (metered aggregation)
+Usage Day ──team, ──subscription, ──invoice    (one subject's metered value for one UTC day, per dimension such as the AI model)
+Monthly Exchange Rate                          (the USD rate one month bills converted usage at: the rate API's rate for the 1st, kept from the 2nd or at the month's draft)
 ```
 
-Money records (Invoice, Payment Attempt, Refund, Credit Ledger Entry, Credit Wallet, Usage Rollup, Webhook Event, Billing Event, Top-up Order) are read-only in Desk and keep a change history. `platform.records` refuses an edit or delete that billing code did not make through `save_billing_record` or `delete_billing_record`, Administrator included. The `ignore_permissions` flag alone does not allow the change. A `db_set` or `frappe.db.set_value` write does not run validation, so it needs no mark. A person changes them through the action that owns the change: cancel, refund, retry.
+Money records (Invoice, Payment Attempt, Refund, Credit Ledger Entry, Credit Wallet, Usage Day, Usage Rollup, Webhook Event, Billing Event, Top-up Order) are read-only in Desk and keep a change history, except Usage Day, which billing writes in bulk. `platform.records` refuses an edit or delete that billing code did not make through `save_billing_record` or `delete_billing_record`, Administrator included. The `ignore_permissions` flag alone does not allow the change. A `db_set` or `frappe.db.set_value` write does not run validation, so it needs no mark. A person changes them through the action that owns the change: cancel, refund, retry.
 
 **Payment plumbing**
 ```
@@ -218,6 +220,7 @@ flowchart LR
         D1["daily"]
         H1["hourly"]
         M1["monthly"]
+        C1["cron 0 8 1 * * (08:00 IST on the 1st)"]
     end
     D1 --> RD["run_dunning"]
     D1 --> CP["cleanup_payment_logs"]
@@ -227,12 +230,19 @@ flowchart LR
     D1 --> BR["run_billing_details_reminder"]
     D1 --> CE["run_credit_expiry"]
     D1 --> IA["run_invariant_audit"]
+    D1 --> FMD["usage_ledger.fill_missing_days"]
+    D1 --> POD["usage_ledger.prune_old_days"]
     H1 --> RF["retry_failed_syncs (ERPNext)"]
     H1 --> RR["run_reconciliation"]
     H1 --> OA["run_operator_alerts"]
-    M1 --> DMI["draft_monthly_invoices → draft page jobs"]
+    H1 --> SE["expire_unfinished_setups"]
+    H1 --> SR["retry_unfinished_releases"]
+    C1 --> DMI["draft_monthly_invoices → draft page jobs"]
     M1 --> EX["expire_payment_methods"]
     H1 --> CDI["collect_due_invoices → settle page jobs"]
+    H1 --> RSU["storage_bridge.read_storage_usage → one job per page of 100 buckets"]
+    H1 --> RAI["grove_bridge.read_ai_usage → one job per page of 200 AI teams"]
+    H1 --> RCC["usage_recount.recount_changed → recount page jobs"]
 
     subgraph INSTALL["install/migrate/before_tests"]
         ECM["ensure_catalog_masters, ensure_constraints, ..."]
@@ -244,30 +254,52 @@ flowchart LR
 ```
 
 ### Scheduled (`central/hooks.py` → `scheduler_events`)
-Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, accounting-sync retries and the subscription backfill run each row through `platform.jobs.each_isolated`: a savepoint and a commit per row, and a row that fails is logged to the Error Log and skipped, so it does not stop the rows after it.
+Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, setup expiry, accounting-sync retries and the subscription backfill run each row through `platform.jobs.each_isolated`: a savepoint and a commit per row, and a row that fails is logged to the Error Log and skipped, so it does not stop the rows after it.
 
 | Cadence | Entry point | Purpose |
 |---|---|---|
-| daily | `revenue.dunning.run_dunning` | Day 1/3/7 retries → past_due → suspend (stops servers) → termination due (operator) |
+| daily | `revenue.dunning.run_dunning` | retries every `dunning_retry_interval_days` up to the due date → past_due → suspend on the suspension date (stops servers) → termination due (operator) |
 | daily | `payments.charges.cleanup_payment_logs` | prune Payment Attempt / Webhook Event |
 | daily | `projection.batch.prune` | prune old projection batches |
-| daily | `payments.emandate.run_emandate_cycle` | INR ≤₹15k pre-debit notice → debit after 24h |
+| daily | `payments.emandate.run_emandate_cycle` | backstop: INR ≤₹15k pre-debit notice → debit window opens 24 hours after the notice |
 | daily | `catalog.subscriptions.backfill_missing_subscriptions` | Subscription for any Running Virtual Machine missing one |
 | daily | `payments.settlement.run_billing_details_reminder` | ask credit-funded teams for the billing details their invoice will need |
 | daily | `revenue.credits.run_credit_expiry` | write off expired promotional credit |
+| cron `0 9 * * *` (system time, Asia/Kolkata) | `payments.top_up_reminders.run_top_up_reminders` | ask INR Prepaid / Auto Charge teams to top up 5 and 2 days before the payment date when the card or UPI would be asked for more than its limit on the payment date; page jobs on the `billing` queue |
 | daily | `platform.invariants.run_invariant_audit` | audit the cross-table money invariants |
 | daily | `payments.reconciliation.recheck_completed_refunds` | ask the gateway again about card refunds completed in the last 30 days; flag one that failed later |
 | hourly | `payments.webhooks.retry_failed_webhooks` | apply again failed and lost webhook events |
+| hourly | `payments.collection.collect_on_payment_date` | debit each pre-debit rail whose window has opened (e-mandate first debit), start the first charge on the payment date, run the single retry 24 hours after a failed first charge, and send the payment reminder the day before; a pre-debit rail is started no earlier than 24 hours before the payment date to send its notice |
 | hourly | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan and Pending refunds |
+| hourly | `payments.setup_expiry.expire_unfinished_setups` | settle card and UPI (not PayPal) setups left Pending Validation for `SETUP_EXPIRES_HOURS` (24), oldest first, at most `SETUPS_PER_RUN`: activate a Razorpay mandate the gateway proves, remove and expire a Stripe card saved but never confirmed, expire the rest, and release anything older than `SETUP_RELEASE_DAYS` (7) without a notice; one `payment_method_setup_expired` notice per team per run, at most one per team in `NOTICE_COOLDOWN_HOURS` (24) |
+| hourly | `payments.setup_expiry.retry_unfinished_releases` | queue `release_late_setup` again for released setups with no `setup_released_at` (a cancelled setup only once `CANCELLED_SETUP_RELEASE_DELAY_MINUTES` (30) old), oldest first, at most `SETUPS_PER_RUN`, for `RELEASE_RETRY_DAYS` (7); then leave one comment for an operator and stop |
 | hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
-| monthly | `revenue.invoicing.draft_monthly_invoices` | waive internal teams' unpaid invoices, then draft the just-closed month as page jobs on the `billing` queue |
-| hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run |
+| cron `0 8 1 * *` (08:00 IST on the 1st) | `revenue.invoicing.draft_monthly_invoices` | after the UTC month closes at 05:30 IST: waive internal teams' unpaid invoices, start the month's Billing Run, then draft the just-closed month as page jobs on the `billing` queue |
+| hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run once the draft tick has started it |
+| hourly | `revenue.storage_bridge.read_storage_usage` | until Cargo reports usage itself: read every billed bucket in pages of 100, one job per page, and keep each UTC day's peak as a Usage Day; a failed bucket never stops its page, and the last page of a region writes one Error Log that names how many of the region's buckets the run could not read |
+| hourly | `revenue.grove_bridge.read_ai_usage` | until Grove reports usage itself: subscribe AI teams that now have a billing currency, then read each AI team's cost per model that landed at Grove from the team's `usage_read_until` day through today (UTC), at most 7 days a run, as one Usage Day per model and landing day; a team read in full moves its `usage_read_until` to the last day read, so a missed hour, an outage or a late subscription is caught up; a team never read starts at the later of `Service.bill_from` and the day AI was turned on; a correction lands as a negative day; one Error Log per page names the teams it could not read, and their day does not move |
+| hourly | `revenue.usage_recount.recount_changed` | recount the usage months whose Usage Days changed since the last run, as page jobs |
+| daily | `revenue.usage_ledger.fill_missing_days` | give a Level subject with no reading for a UTC day that ended 48 hours ago its last reading, marked estimated |
+| daily | `revenue.usage_ledger.prune_old_days` | delete billed or written-off Usage Days older than 13 months |
 | hourly | `ingester.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
 
-**The scheduled run is paged.** On the 1st, `draft_monthly_invoices` drafts the closed month as page jobs. Every hour, `collect_due_invoices` collects whatever has drafted and updates the **Billing Run** row for the month (start, counts, failures, completion). A lost worker stops one page only; the next hourly sweep picks up the rest. `run_monthly_billing` does both phases inline in one job; use it only for a small site or a test.
+**Unfinished setups expire.** The hourly job takes Card and UPI Autopay Payment Methods that are Pending Validation 24 hours after they started, oldest first, at most `SETUPS_PER_RUN` (500). PayPal setups are left alone: the console does not offer them, and PayPal makes no payment token until the confirm, so there is nothing to remove. Card expiry also uses Expired, so `payment_method.is_expired_setup` (Expired with no `validated_at`) tells the two apart: the console list and the Pilot list hide an expired setup, the Payment Method Mix report counts it under Setup Expired, and a late confirm answers "This setup expired. Start again to add it." For each setup with a `setup_reference`, the job asks the gateway with the read-only `adapter.read_finished_setup` (Stripe: the SetupIntent or setup Checkout Session; Razorpay: a token-bearing authorised, captured or refunded payment on the setup order), and then:
 
-The readiness check B5 flags a month with billing but no Billing Run, and drafts that waited more than 3 hours to be collected. It feeds the hourly operator alerts.
+- **Razorpay proves the setup finished.** The job activates the mandate through `mandates.activate_proven_mandate`, the same activation and ₹1 refund the browser confirm uses. The payment must be on the setup order, be captured, carry a token, be 100 paise in INR, belong to the method's Razorpay customer, and name no other team in its notes. A payment that does not match is logged and the row stays pending. The `payment.captured` webhook for a setup order activates the mandate the same way, so a customer who closes the browser after paying still gets an Active mandate. `payment.authorized` is ignored, and the job does not activate on an authorised payment, because the setup order auto-captures and only the captured payment is refunded. The Webhook Event row is locked and applied once. If another Active or Pending Validation method on the gateway already holds the token (the customer retried with the same card and finished the second setup first), the row is not activated: it expires (the job sends the notice) and `release_late_setup` refunds the ₹1 and keeps the token. The newest UPI choice also wins: if the team has an Active UPI Autopay mandate on the same gateway that was validated at or after this row's `creation`, the row is not activated, because activating it would retire the newer mandate (`_retire_superseded_mandates`). It expires and `release_late_setup` refunds its ₹1 and cancels its token; the newer mandate stays Active. Cards coexist, so an Active card never stops an activation. This applies only to the webhook and the job; the browser confirm activates as before. A capture that reaches a mandate already Active on the same token (the browser confirm ran on the authorised payment) queues the ₹1 refund, keyed `mandate-authorisation-refund::{payment_id}`.
+- **Stripe saved the card but nobody confirmed it.** The job does not activate or charge it. It expires the row with the notice and queues `release_late_setup`, which detaches the card.
+- **The gateway has nothing.** The row expires with the notice. A setup the gateway no longer has (Stripe `resource_missing`, Razorpay "does not exist") counts as nothing.
+- **The gateway cannot be read** (`GatewayError`, timeout or unsupported). The row is skipped until the next run.
+- **The setup is `SETUP_RELEASE_DAYS` (7) old.** The job expires it without a notice and queues `release_late_setup`, whatever the gateway says, so no row stays pending for ever.
+
+The team gets one `payment_method_setup_expired` notice per run, in-app and by email, for setups that expired between 24 hours and `SETUP_RELEASE_DAYS` old, unless it added an Active method after the latest of them started, or was sent this notice in the last `NOTICE_COOLDOWN_HOURS` (24). `confirm_payment_method`, `confirm_mandate` and `activate_proven_mandate` lock the row (`for_update`) before they decide, so the job, the webhook and a confirm never both act on it. A confirm or a setup webhook that reaches an expired setup, or a cancelled one that was never validated, queues `release_late_setup`. The release reads the setup again and does its gateway work in its own job: it refunds a captured Razorpay authorisation (`mandates.refund_authorisation`, keyed `mandate-authorisation-{payment_id}`, so a repeat returns the first refund), then cancels the Razorpay token or detaches the Stripe card (`adapter.remove_saved_method`). It waits, without marking, while the payment is only authorised, and does not refund a payment that is already refunded. It keeps a token or card that another method on the gateway (not Cancelled) also holds, because Razorpay gives the same card and customer the same token, and leaves a comment instead. A token or card the gateway already cancelled, detached or no longer has counts as removed. When every step succeeded, or there was nothing to give back, the release sets `setup_released_at`. The method keeps its status. A release whose gateway read, refund or removal fails raises, so the job fails with an Error Log and `setup_released_at` stays empty. The hourly `retry_unfinished_releases` queues `release_late_setup` again for each released setup (Expired or Cancelled, no `validated_at`, a `setup_reference`) with no `setup_released_at`, oldest first, at most `SETUPS_PER_RUN`, each through `each_isolated`. It retries only rows whose `modified` (the time they expired or were cancelled; the release does not touch it) is within `RELEASE_RETRY_DAYS` (7). After that a row gets one comment ("This setup's release at the gateway did not finish in time…") and no more tries, so an operator refunds and removes it by hand; a filter on an empty `setup_released_at` lists them. The `mark_old_setups_released` patch set `setup_released_at` to `modified` on every released setup that existed before the field, so the deploy did not start a gateway call for each of them. A later confirm or setup webhook still queues the release for a marked row. An unfinished setup never blocks a new one: a new setup on the same gateway cancels the older Pending Validation setups that have no `gateway_method_id` yet. It does not queue their release: `retry_unfinished_releases` queues it once the cancelled row's `modified` is `CANCELLED_SETUP_RELEASE_DELAY_MINUTES` (30) old, so a retry with the same card can go Active first and the release keeps the shared token. A card or authorisation the gateway saved for a cancelled setup is still given back. A late confirm or setup webhook on a cancelled row queues the release at once, and it still keeps a token another live method holds. The other setups stay as they are.
+
+- If a sweep batch rolls back after an activation, the ₹1 refund still runs, and the setup is released after `SETUP_RELEASE_DAYS` (7).
+- A Stripe setup cancelled by a new setup and finished later in an old tab stays attached at Stripe. It is never charged, because only Active methods are charged.
+
+**The scheduled run is paged.** At 08:00 IST on the 1st, after the UTC month closes, `draft_monthly_invoices` starts the **Billing Run** row for the month and drafts the closed month as page jobs. Every hour, `collect_due_invoices` collects whatever has drafted and, once the run has started, updates its row (counts, failures, completion). A lost worker stops one page only; the next hourly sweep picks up the rest. `run_monthly_billing` starts the same Billing Run row and does both phases inline in one job; use it only for a small site or a test.
+
+The readiness check B5 flags a month with billing but no Billing Run after the draft tick has fired (its time is read from the cron in `hooks.py`), and drafts that waited more than 3 hours to be collected. It feeds the hourly operator alerts.
 
 **The fan-out is two orchestrators, and neither of them does the work.** Each keyset-pages its subjects and enqueues a **page job** per slice: `draft_team_page(after, until)` / `settle_draft_page(cutoff, after, until)`, deduplicated on the slice's upper bound. A page job re-derives its slice from the bounds and works it in order. It commits after **each team / each invoice**. The page is the unit of *scheduling* and the team is still the unit of *work*, so a job killed at team 300 of 500 keeps the 299 it finished.
 
@@ -347,14 +379,7 @@ Two things keep that lock short, and both are load-bearing:
   round once a *month* — a contained loser would go unbilled until someone noticed.
   Only after the budget is exhausted is it recorded as a `Billing Run Failure`.
 
-**A late run never costs the customer grace.** `due_date` and `dunning_starts_on` are
-both set from the day the invoice is actually *opened*, so a run three days behind
-bills three days later rather than three days overdue. Beyond that, any collection
-failure on our side — a 429, a dead worker, a contained run error — calls
-`dunning.defer_dunning`, which pushes `dunning_starts_on` (never `due_date`, which is
-an accounting fact AR aging depends on) forward to today + the standard window. It is
-monotonic and self-limiting: a successful ask stops pushing, so a broken gateway defers
-*escalation*, not collection.
+**A late run never costs the customer grace.** `payment_date`, `due_date`, `dunning_starts_on` and `suspends_on` are all set from the day the invoice is actually *opened*, so a run three days behind bills three days later rather than three days overdue. Beyond that, any collection failure on our side (a 429, a dead worker, a contained run error) calls `dunning.defer_dunning`. It moves `dunning_starts_on` forward to today, and moves `suspends_on` and the end of the retry window forward by the same number of days. It never moves `due_date`, which is an accounting fact AR aging depends on. It is monotonic and self-limiting: a successful ask stops pushing, so a broken gateway defers *escalation*, not collection.
 
 ### Invoice status
 
@@ -364,7 +389,7 @@ An invoice is `Outstanding` from creation. The due date marks that collection be
 
 **Billing Run Team** keeps the outcome of the run for each team and month: Invoiced, Nothing to Bill, Below Minimum or Failed, with the reason. The **Billing Run Coverage** report shows every team that existed by month end with one result and its reason: Invoiced, Waiting, Needs Action, Waived (Internal), Below Minimum, Nothing to Bill or No Subscription. The results add up to the team count. The top of the **Billing Day** dashboard shows the same counts. Its SQL query repeats the report's rules, so change both together. It also lists the settings that an operator must set by hand. The same list shows as a banner at the top of the **Billing** workspace, for a System Manager only, and only while a value is missing. A run cannot reach Complete while a team is Failed.
 
-A month whose total is below the **Minimum Invoice Amount** for its currency (Billing Settings) gets no invoice. The amount is written off, and a Below Minimum row and a Billing Event record it.
+A month whose total is below the **Minimum Invoice Amount** for its currency (Billing Settings) gets no invoice. The amount is written off, and a Below Minimum row and a Billing Event record it. The minimum is the smallest charge the payment gateways accept (`settings.GATEWAY_MINIMUM_CHARGES`: INR 1 and USD 1, from the Razorpay limit of 100 subunits). Billing Settings does not accept a higher minimum, because a month that a gateway can charge must be invoiced.
 
 ### Billing activity
 
@@ -373,6 +398,10 @@ Every billing step adds a **Billing Event**: profile, subscription, customer syn
 ### Accounting records
 
 A team gets a customer in the accounting system only when it has an enabled subscription, a live invoice or a paid top-up. A waived invoice is never sent, and its sync status is Not Required.
+
+**GST on documents.** `ingester/gst.treatment` gives the GST category, place of supply and tax template that the Sales Invoice and the top-up advance carry. It decides SEZ zero-rating with `tax.has_zero_rating`, the same rule `tax.resolve_tax` uses, so an SEZ team whose GSTIN lapsed is filed with the GST it was charged. An Indian profile with no state has no place of supply and gets the out-of-state template (IGST). The console asks a member with `billing:manage` for the state and shows the IGST rate charged meanwhile (`gst_state_missing` and `igst_rate` on `get_billing_profile`). A customer save of an Indian billing address (`payments/profile.create_or_update_billing_profile`, with any address field) must name the state. Other saves of an existing profile without a state still go through.
+
+**GST state on the invoice.** An issued invoice records the team's billing state in `Invoice.gst_state`, so a team that adds or changes its state later does not change how old invoices are filed or labelled. `gst_state_recorded` is set with it, so an invoice issued to a team with no state (blank `gst_state`, recorded) differs from one not recorded yet. `lifecycle._retax` records both at issue through `tax.gst_state_at_issue`, only when the invoice charges GST in India; SEZ and untaxed invoices are not recorded. `gst.treatment(team, invoice=...)` takes the place of supply and the template from the recorded state and the company's live state, so the two always agree; an invoice not recorded yet uses the team's current state. `erpnext_sync._build_sales_invoice` and the GST returned to the wallet by a refund (`corrections._advance_again`) use it. A top-up advance is a separate supply and uses the team's current state. `tax.TaxNames` names the split to show ("CGST 9% + SGST 9%" or "IGST 18%") from the same state and the cached company state. The daily long-queue `ingester.gst_state_backfill.record_missing_gst_states` job records the state on issued GST invoices from before: a synced invoice takes the place of supply on its Sales Invoice, an unsynced one the team's state at issue from the Billing Profile's Version history (issue time from the invoice's Billing Event), else the current state. It reads at most 1000 invoices a run in pages of 100. When sync is off or the accounting system cannot be read, it pages only unsynced invoices and the synced ones wait. A filed place of supply it cannot map is left unrecorded with a warning, not recorded as no state.
 
 ### Operator alerts
 
@@ -386,8 +415,9 @@ Configure it in **Billing Settings → Operator Alerts**:
 | Alert Email Addresses | One address per line. Required when the channel includes Email. Central never mails the System Manager role. |
 | Raven Site URL, Raven Channel ID | The Raven site and the channel that gets the alerts. |
 | Bot API Key, Bot API Secret | The API key of a bot user that is a member of the channel. The alert is posted as this user through `raven.api.raven_message.send_message`. |
+| Muted Alerts | Billing alerts the hourly digest does not send. Choose a **Category**: Payments, Invoicing, Dunning, Money checks or Readiness checks. Leave **Alert** empty to mute the whole category, or choose one alert or one check in it. **Until** is when the alert is sent again; leave it empty to mute until the row is removed. Enter the reason, for example the ticket of the known issue. `platform/kinds.py` owns the categories. |
 
-When a Raven post fails, or Raven is not configured, the alert goes to the email addresses once and the failure is written to the Error Log. Use **Send Test Alert** on the form to check the saved settings. The hourly digest keeps one Error Log row for each digest it sends, and it does not send the same digest again for `REPEAT_AFTER_HOURS`.
+When a Raven post fails, or Raven is not configured, the alert goes to the email addresses once and the failure is written to the Error Log. Use **Send Test Alert** on the form to check the saved settings. The hourly digest keeps one Error Log row for each digest it sends, and it does not send the same digest again for `REPEAT_AFTER_HOURS`. A muted alert is left out of the digest and counted as `muted` in the `billing.alerts` metric. Muting applies only to the hourly billing digest (`run_operator_alerts`). Signup alerts, the setup lockout alert and **Send Test Alert** are never muted. The message groups the alerts under a readable name, such as `B1 · Billing currency matches the country` or `Failed webhook`, and says what each group means: the first paragraph of the check's docstring, after `Expected:`, or of the alert source's docstring. Keep that first paragraph in plain words, because operators read it.
 
 ### Lifecycle / install hooks
 - `after_install` / `after_migrate` / `before_tests` → `catalog.taxonomy_setup.ensure_catalog_masters` (idempotent seed of catalog masters, ADR 0007), `settings.ensure_snapshot_settings`, `platform.constraints.ensure_constraints`, `gateways.setup.ensure_gateway_records`, `navigation.ensure_workspace_sidebars` (also imports the workspace's Custom HTML Block). `after_install` and `before_tests` also run `settings.ensure_welcome_credit_amounts`.
@@ -395,7 +425,7 @@ When a Raven post fails, or Raven is not configured, the alert goes to the email
 - `override_doctype_dashboards["Currency"]` → `api.dashboard_overrides.currency_dashboard`.
 
 ### Inbound webhooks (`payments/webhooks.py`)
-`@stripe` / `@razorpay` / `@paypal` (whitelisted, signature-first; PayPal is verified through its verify-webhook-signature API) → `process_webhook` → adapter `verify_webhook_signature`/`parse_webhook_event` → `handle_webhook_event`. Frappe Cloud v1 uses the same gateway accounts, so `is_central_event` first checks that the event names a record Central stored. Any other event gets a 200 and no row. A kept event is persisted to **Webhook Event** for dedupe/replay. The patch `remove_webhook_events_of_another_product` applies `is_central_event` to the stored body of each Ignored Webhook Event that is not linked to a Payment Attempt or a Payment Method. It deletes only the events that the rule rejects, together with their `Webhook Event Ignored` Billing Events. It keeps an event whose body is not a JSON object.
+`@stripe` / `@razorpay` / `@paypal` (whitelisted, signature-first; PayPal is verified through its verify-webhook-signature API) → `process_webhook` → adapter `verify_webhook_signature`/`parse_webhook_event` → `handle_webhook_event`. Frappe Cloud v1 uses the same gateway accounts, so `is_central_event` first checks that the event names a record Central stored. Any other event gets a 200 and no row. A kept event is persisted to **Webhook Event** for dedupe/replay, with when the gateway raised it (`occurred_at`), Razorpay's `X-Razorpay-Event-Id` header for tracing (`delivery_id`, never used for dedupe because it is outside the signature) and a count of `deliveries`: a repeat delivery adds one in a small background job, so the request never waits on the row lock of the event's own job, and enqueues no second processing job. The patch `remove_webhook_events_of_another_product` applies `is_central_event` to the stored body of each Ignored Webhook Event that is not linked to a Payment Attempt or a Payment Method. It deletes only the events that the rule rejects, together with their `Webhook Event Ignored` Billing Events. It keeps an event whose body is not a JSON object.
 
 `handle_webhook_event` sends each event to one handler. The handler links the Webhook Event to the Payment Attempt or Payment Method it is about, so the record's Connections show its event history.
 
@@ -460,14 +490,17 @@ central.api.servers.create_server | create_composed_server
 
 Resize: `central.api.servers.resize_server` → `catalog.subscriptions.begin_resize` (validates, persists a Resource Action) → `central.integrations.resource_actions` → `apply_resize_billing` → `resize_composed_subscription` → new Subscription Change (re-prices).
 
+Pause and resume: `catalog.subscriptions.pause_billing` writes a `Paused` change on the server's subscription and its public IPv4 subscription, which closes their segments. `resume_billing` checks the team and project headroom, then writes `Resumed` changes that carry the rate locked before the pause. A Start on a paused server reopens its billing through the same headroom checks, and does not need `billing:manage`. A `Running` report from the region never enables a paused subscription again.
+
 ### B. Bill a period (draft → open → collect)
 ```mermaid
 flowchart TD
-    TICK(["monthly · draft_monthly_invoices"]) --> GDI["generate_draft_invoices (pages teams)"]
+    TICK(["08:00 IST on the 1st · draft_monthly_invoices"]) --> GDI["generate_draft_invoices (pages teams)"]
     GDI --> DTI["draft_team_invoice<br/>(per team, isolated, committed)"]
     DTI --> GTI["generate_team_invoice<br/>(per team: one consolidated invoice)"]
     GTI --> RS["reconcile_subscription (fix drift)"]
     GTI --> LINES["lines.compute_line_items<br/>day-weighted from Sub Change segments"]
+    GTI --> URC["usage_recount.recount_team<br/>usage months from Usage Days; stamp_invoice marks what was billed"]
     GTI --> MET["+ metering.metered_line_items<br/>max(0, qty−allowance)×rate"]
     GTI --> TAG["_tag_projects: stamp each line's Project, if any"]
     GTI --> DISC["+ commitments discount"]
@@ -481,38 +514,76 @@ flowchart TD
     HOLD -->|no| HELD[["Invoice held, no due date<br/>notify Billing Details Required"]]
     HELD -->|Billing Profile complete| REL["release_held_drafts"]
     REL --> OAC
-    HOLD -->|yes| WF{"settlement waterfall"}
-    WF -->|credits| CR["settlement.py"]
-    WF -->|then card| CARD["charges.pay_invoice"]
-    CR & CARD --> OPEN[["Invoice: Outstanding, due date set"]]
-    OPEN -->|webhook Paid| PAID[["Invoice: Paid"]]
+    HOLD -->|yes| CR["wallet credits apply at open<br/>settlement.py"]
+    CR -->|credits cover the bill| PAID[["Invoice: Paid"]]
+    CR -->|remainder owed| OPEN[["Invoice: Outstanding,<br/>payment date and due date set"]]
+    OPEN -->|at open| CARD["collection.collect_invoice<br/>no rail debits before the payment date;<br/>a pre-debit rail: debit window opens 24 hours after its notice"]
+    PDATE(["hourly · collection.collect_on_payment_date"]) -->|payment date reached| CARD
+    CARD -->|webhook Paid| PAID
     PAID --> SYNC["erpnext_sync.enqueue_invoice_sync"]
 ```
 ```
-[monthly]  revenue.invoicing.draft_monthly_invoices   (settle_internal_teams, then page jobs)
+[cron 0 8 1 * *]  revenue.invoicing.draft_monthly_invoices   (settle_internal_teams, start the Billing Run, then page jobs)
   → generate_draft_invoices (pages teams)
   → draft_team_invoice (one team = one transaction = one commit)
     → generate_team_invoice (per team, aggregates every cluster it runs in)
       → reconcile_subscription (correct drift if stale)
       → lines.compute_line_items  (day-weighted, from Subscription Change rate-snapshot segments)
+      → usage_recount.recount_team (usage months from the unbilled Usage Days; a month whose draft
+        billed nothing is closed, and its late days go on the next month)
       → + metering.metered_line_items   (max(0, qty−allowance) × rate)
+      → usage_recount.stamp_invoice marks exactly the rollups and days it counted; only
+        reissue_invoice releases them, a cancel alone keeps them billed
       → _rate → _tag_projects stamps each line's Project (if its resource is tagged
         into one that's enabled, §2.1), then + commitments discount, + tax.resolve_tax
         (GST additive / SEZ zero / TDS withhold)
   → Invoice (Outstanding, no due date), one per team, same period, `period_key` keyed on (team, period)
 
-[hourly]   revenue.invoicing.collect_due_invoices   (snapshot the Billing Run, then page jobs)
+[hourly]   revenue.invoicing.collect_due_invoices   (snapshot a started Billing Run, then page jobs)
   → open_drafts (every Outstanding invoice with no due date and period_end ≤ the closed month)
   → settle_draft → open_and_collect (per invoice)
       → billing-details hold: a Billable invoice keeps no due date if the team has no billing
         details (lifecycle._hold_for_billing_details, notifies "Billing Details Required")
-      → settlement waterfall: credits (settlement.py) → card (charges.pay_invoice)
-      → Invoice gets its due date → (on webhook) Paid
-      → on Paid: erpnext_sync.enqueue_invoice_sync
+      → wallet credits apply at once (settlement.py); credits that cover the bill settle it (Paid)
+      → Invoice gets its payment_date and due_date
+      → collection.collect_invoice at open: no rail debits before the payment date; a
+        pre-debit rail sends its notice no earlier than 24 hours before the payment date, then waits 24 hours
+      → (on webhook) Paid → erpnext_sync.enqueue_invoice_sync
+
+[hourly]   payments.collection.collect_on_payment_date
+  → emandate.charge_due: debit each pre-debit rail whose window has opened
+  → every owed invoice with no payment attempt and payment_date ≤ tomorrow (no due date cut-off)
+  → collection.collect_invoice (no rail debits before the payment date; a pre-debit rail sends
+    its notice no earlier than 24 hours before it, and its debit window opens 24 hours after the notice)
+  → dunning.run_single_retries: the single retry, 24 hours after the first charge failed
+  → payment_notices.send_payment_reminders: invoices charged tomorrow, rails without a pre-debit notice
+  → (on webhook) Paid → erpnext_sync.enqueue_invoice_sync
 ```
 A held draft is released when the profile is complete. `Billing Profile.on_update` calls `release_held_invoices`, which enqueues `run.release_held_drafts` to settle the held drafts. When a draft waits longer than `Billing Settings.billing_details_grace_days`, the team stops being credit-funded for new spend (`settlement.details_overdue`), and `platform.alerts.held_invoices` pages operators.
 
 Both ticks use `draft_team_page` and `settle_draft_page` page jobs (see §3).
+
+**The card is charged on the payment day.** Each team has a payment day from the 1st to the 10th on its Billing Profile (default 1). When an invoice opens, wallet credits apply at once and the invoice gets a `payment_date`: the payment day of the month it opened in, or the opening date when the run is late. The due date is never before the payment date.
+
+No rail debits before the payment date (`collection.collect_invoice`). A rail that owes the RBI pre-debit notice sends it no earlier than 24 hours before the payment date (`emandate.schedule_predebit`). Its debit window opens 24 hours after the notice, which is never before the payment date. On the default payment day, the 1st, the invoice opens on the payment date, so an e-mandate is debited on the 2nd. The hourly `collection.collect_on_payment_date` does four things in order. First it makes the first debit on each pre-debit rail whose window has opened (`emandate.charge_due`), so the debit does not wait for the daily `run_emandate_cycle`. An invoice with an attempt made in its window is left to dunning. Then it starts collection on each invoice that has reached its payment date, or reaches it tomorrow, and has no payment attempt. An invoice that missed its payment date is still picked up. An invoice charged in the first step has an attempt, so the second step skips it. Then it runs the single retry of each invoice whose retry window has no interval retry, 24 hours after its first charge failed (`dunning.run_single_retries`). Last, it sends the payment reminder (`payment_notices.send_payment_reminders`) for each invoice that is charged tomorrow, has no attempt, and is on a rail that owes no pre-debit notice. `Invoice.payment_reminder_sent_at` makes the reminder go out once. After the first charge, dunning owns the retries.
+
+The customer changes the payment day at most twice in a billing cycle (`BillingProfile.change_payment_day`). The change applies to the next invoice. An open invoice keeps its date.
+
+**Payment emails.** `payments.payment_notices` sends these events through `platform.notifications.notify`. Each is a Billing event for members with `billing:view`, in-app and by email.
+
+| Event | When | Sent from |
+|---|---|---|
+| `payment_scheduled` | An invoice opens with an amount left after credit. It names the total, the credit applied, the amount to charge, the charge date and the payment method. The charge date is the pre-debit charge time on a rail that owes a pre-debit notice, else the payment date. With no method, it asks the team to add one. An INR bill above the team's off-session limit (or with no card or UPI saved) gets no `payment_scheduled`: the team gets `top_up_reminder` for that invoice instead, unless the first collection step already moved it to Action Required (that notice is the one notice), or it had a top-up notice that day. A Manual Checkout team keeps `payment_scheduled`. Otherwise, when the team has methods but none may take the amount off-session, it asks the team to pay by hand and names no method. | `lifecycle.open_and_collect`, after the first collection step, in the run that issues the invoice. A held invoice sends it when it is released and opens. |
+| `top_up_reminder` | An INR team on Prepaid or Auto Charge whose card or UPI would be asked for more than its off-session limit on the payment date (no saved card or UPI counts as a limit of 0). It runs the collector's own draw without writing (`wallet_draw.plan_draw`, which `lifecycle._draw_wallet` spends): top-up credit pays the net and its prepaid GST pays the GST; promotional credit pays the bill GST included. At issue the wallet pays what it can and the card the rest, so before issue the card share is what the draw leaves; after issue credit pays only when it covers the whole `expected_collection` (`_settle_with_credit`), so the card share is that whole amount until the wallet covers it. The wallet counts only credit still valid on the payment date. The ask is the whole shortfall: the purchased credit X that, drawn last, makes the wallet pay the whole bill (`wallet_draw.TopUpAsk`). With g the bill GST per net as the collector draws it (with TDS, GST/(total − TDS − GST), which can be above the top-up rate r), gross = owed + top-up credit drawn + top-up GST drawn, net = gross / (1 + g), and `credit_to_cover` gives X = max(net − top-up credit drawn, (gross − net − top-up GST drawn − spare top-up GST) / r) (the second term only when r > 0): all purchased credit must reach the net of what it pays, and all top-up GST its GST, since older top-ups use the new GST first. That X rounded up to ₹100 always pays (one more ₹100 when the 2-dp draw misses by ₹0.01). It can ask too much when the GST left is short and promotional credit drawn later would pay more, so the ask is the least ₹100 step at or below it that pays, found with the collector's own draw (`TopUpAsk.is_paid_with`, the `wallet_draw.is_paid_by` check `_settle_with_credit` uses). A draft's GST may still change when ERPNext issues it, so an ask made before issue can be off by that change. Y = X + `credits.top_up_gst(X)` is what the top-up dialog charges for it. The message names both and the GST as the invoice files it (`tax.get_tax_names(team)["tax_label"]`: "IGST 18%", "CGST 9% + SGST 9%", or "No GST (SEZ)"; IGST when the billing state is unknown; the company state is cached a day (`gst.cached_company_state_code`), the last known one is used when a read fails, and while it was never known the label is "GST 18%") ("Add ₹X of credit … (₹Y incl. IGST 18%)"); with no GST on top-ups it names X only. When purchased credit was bought without its GST (the GST balance is below the purchased lots × the top-up rate, `wallet_draw.has_credit_without_gst`) and the draw takes GST for it (`plan_draw.gst_unpaid` > 0), part of the new top-up's GST pays for that earlier credit and X is more than the gap; the due carries `includes_earlier_gst` and the email, in-app notice and banner add "This includes GST on earlier credit that had none." A TDS bill's higher GST rate alone does not set it. A bill not issued yet takes its GST from the draft, or for a forecast from the team's rate today. The next bill is the issued invoice not yet charged; else, up to this month's payment date, last month's unissued bill (its held draft's total, or its projection); else this month's forecast paid on next month's payment date. 5 and 2 days before the payment date, never on it. At most one a day: the Billing Profile row is locked and a locking read of the `Top-up Reminder` log of that day stops the send. A team in Action Required is asked to add the amount "to pay this bill", with no limit named. The action, "Open billing", opens `/billing?team=<team>&topup=<X>`: the console switches to that team, and for a member who can manage billing opens the top-up dialog prefilled with the credit, whose "You pay" is Y. The engine sends one action to every recipient, so a viewer gets the same link and only the page. The day-before `Payment Reminder` skips such a bill, so it gets no "We'll charge" notice. `get_collection_status.top_up_due` feeds the same ask to the billing page banner. That read never trips Action Required: an Auto Charge team over its limit after the wallet sees the top-up banner; only a persisted Action Required shows the Action Required banner. | The daily `top_up_reminders.run_top_up_reminders`, and `payment_notices.notify_payment_scheduled` for an over-limit bill. |
+| `payment_reminder` | 1 day before the payment date, when the invoice has no payment attempt. One notice per bill, decided in this order: a bill that gets the top-up notice gets no reminder; a bill no method may take off-session gets the reminder, which asks for a payment by hand and names no method; a rail that owes a pre-debit notice gets that notice instead; any other bill gets the reminder naming the method charged. Once per invoice: a conditional update sets `payment_reminder_sent_at` before the notice, and only the sweep that changes the row sends it. | The hourly `collection.collect_on_payment_date`. |
+| `payment_date_changed` | The payment day changes, on the dashboard or in Desk. It names the new day, the next payment date, and an issued invoice that keeps its payment date. | `BillingProfile.on_update`. |
+| `payment_retry` | A dunning retry fails. The message names the retry number and the reason. | `dunning.retry_payment`. |
+| `invoice_overdue` | Dunning marks the invoice Overdue. The message names the action that settles it in the team's collection mode. While a charge is in flight, the message says the payment is still processing, that wallet credit added now avoids suspension on the suspension date, and that the charge is refunded if it also goes through. | `dunning.process_invoice_dunning`. |
+| `payment_refunded` | A late capture Refund completes (see the already Paid case below). It names the paid invoice, the amount and the payment method. Once per Refund, when its status changes to Completed. | `Refund.on_update`. |
+
+**How tax is named.** `tax.TaxNames(team)` names the GST of a tax block, one source for every screen and notice. `label(block)` gives "IGST 18%", "CGST 9% + SGST 9%" or "No GST (SEZ)" (None when no GST applies; "GST 18%" while the company state was never known). `note(block)` gives what follows a tax-inclusive amount: "incl. IGST 18%", or "SEZ supply, no GST" for an SEZ amount. Each label and note is one whole translatable phrase. `reason(block)` words a zero-rating. The rate and the SEZ zero-rating come from the block, so an issued invoice keeps the tax it was issued with. An issued invoice is named IGST or CGST + SGST by the state recorded on it at issue (`gst_state`, `gst_state_recorded`). A forecast, and an invoice issued before states were recorded, follow the team's billing state today (no state is IGST; a team outside India with no recorded state is plain "GST"). `TaxNames` reads the team's profile and the company state once, so a list of invoices costs one profile read. `tax.get_tax_names(team)` names the team's tax today, for a limit: `tax_label`, `tax_note`, and `limit_tax_note` (the note for an off-session limit, None for a team not taxed). The APIs send the names: `get_forecast` (`tax_label`, `tax_note` from the projected bill's tax block, which carries its `zero_rating_reason`, so a forecast with no GST, or with no projected bill, names none; `limit_tax_note` from `tax.get_tax_names`), `list_invoices` (`tax_note`), `get_invoice` (`tax_label`, `tax_reason`), `credit_ledger` (`tax_label` on a top-up with GST, from its own stored `tax_amount` and the rate that gives, `TaxNames.paid_label`, never the SEZ label; a top-up does not record its state, so the IGST or CGST + SGST split follows the team's state today), `get_next_payment` (`tax_note` from the owed invoice, else the projected bill's block, None with neither) and `get_collection_status` (`tax_note`, and `limit_tax_note` for the off-session limit). Only a ledger row paid in through a gateway (`gateway_payment_id`) gets a `credit_ledger` label: returned credit carries back a share of GST whose ratio is not a rate. `get_forecast` also sends `expected_collection`, the amount after TDS that the shortfall and the wallet's cover are measured against. The notices carry `tax_note` in their context and add it after each tax-inclusive amount, for example "₹ 11,800.00 (incl. IGST 18%)": Payment Scheduled (the invoice email), Payment Reminder, Pre-debit Notice (which also names the amount, `fmt_money`) and Action Required (on the off-session limit, `limit`, with `limit_tax_note`: only for a taxed team, since an SEZ note says nothing about a limit). The Top-up Reminder and the billing page banner add the same note to the limit they quote (`limit_tax_note` from `tax.get_tax_names`). `templates/emails/invoice.html` is not sent by billing. While the company state was never known, a failed read is not retried for an hour (`gst.MISSED_COMPANY_STATE_KEY`), so a page view does not call ERPNext or log an error each time.
+
+**Forecast shortfall.** `get_forecast.shortfall` is what the card or UPI is left to pay after the wallet, drawn the way the collector draws it on next month's payment date (`wallet_draw.get_wallet_shortfall` over `plan_draw`; `wallet_draw.get_wallet_on` leaves out promotional credit that expires by then, the same read the top-up reminder uses): GST paid with top-ups pays the bill GST, and promotional credit pays the bill GST included. The overview's "Covers N% of this cycle" reads it. Spend-limit bars (Limits card, spend chart) compare spend before tax (`subtotal`, `measured`, `get_spend_history.months[].subtotal`) with the limit, which is set before tax.
 
 ### C. Collect / settle a charge
 ```mermaid
@@ -523,7 +594,7 @@ sequenceDiagram
     participant WH as payments.webhooks
     participant COL as collection
     CH->>GW: create_invoice_payment_order
-    alt INR > ₹15k (collection_mode.evaluate)
+    alt INR > ₹15k (collection_mode.trip_off_session_debit)
         GW-->>CH: Action Required (manual checkout / prepaid)
     else off-session
         GW->>EXT: charge
@@ -535,7 +606,7 @@ sequenceDiagram
 ```
 ```
 charges.pay_invoice → create_invoice_payment_order (via gateway adapter)
-  → gateway charges off-session OR returns Action Required (INR > ₹15k, collection_mode.evaluate)
+  → gateway charges off-session OR returns Action Required (INR > ₹15k, collection_mode.trip_off_session_debit)
   → webhook arrives → apply_webhook → Payment Attempt Paid → Invoice Paid
   → failure → collection.collect_invoice walks primary → backup methods (escalate, don't repeat)
 ```
@@ -548,10 +619,10 @@ charges.pay_invoice → create_invoice_payment_order (via gateway adapter)
 | A declined payment on a mandate authorisation order | The Pending Validation method keeps the failure, and a `Payment Method Setup Failed` Billing Event is added. |
 | Short or another currency | Nothing is settled. The invoice gets a comment and an Error Log entry. |
 | More than is due | The invoice is Paid and the surplus goes to the wallet. |
-| The invoice is already Paid, by credit or by another charge | `refunds.issue_refund` returns the whole payment to its source and the attempt becomes Refunded. The Refund is marked `late_capture`. No wallet credit or advance is booked, and the refund steps make no credit note and no payment out in the accounting system for it, also when its webhook, a retry or a later cancellation runs them. A later cancellation, a partial refund and the card payment sent to the accounting system leave the charge out, so only `retry_failed_refunds` gives it back when its refund fails. The invoice gets a comment and an Error Log entry. |
+| The invoice is already Paid, by credit or by another charge | `refunds.issue_refund` returns the whole payment to its source and the attempt becomes Refunded. The Refund is marked `late_capture`. No wallet credit or advance is booked, and the refund steps make no credit note and no payment out in the accounting system for it, also when its webhook, a retry or a later cancellation runs them. A later cancellation, a partial refund and the card payment sent to the accounting system leave the charge out, so only `retry_failed_refunds` gives it back when its refund fails. The invoice gets a comment and an Error Log entry. The team gets `payment_refunded` when the refund completes. This is the normal end of a charge that was in flight when wallet credit paid the invoice (`lifecycle.settle_with_new_credit`). |
 | The invoice is Cancelled or Waived | The payment goes to the wallet, once per payment id, and an operator is told. |
 
-Reconciliation asks the gateway about the stored order of an unanswered on-session attempt, and fails it only after `CHECKOUT_OPEN_HOURS`. It credits a Top-up Order that was paid but never confirmed, and expires one nobody paid after `TOP_UP_EXPIRES_HOURS`.
+Reconciliation asks the gateway about the stored order of an unanswered on-session attempt, and fails it only after `CHECKOUT_OPEN_HOURS`. It credits a Top-up Order that was paid but never confirmed, and expires one nobody paid after `TOP_UP_EXPIRES_HOURS`. A Top-up Order of the last `RECENT_TOP_UP_HOURS` is also checked every 5 minutes, so a lost callback and a late webhook delay the credit by minutes, not until the hourly run. That run leaves a gateway error for its next run without an Error Log; the hourly run logs it.
 
 **Pre-debit notice.** `collection.collect_invoice` is the one entry for an off-session debit (billing run, dunning retry, webhook fallback, e-mandate cycle). Before it charges a method whose (gateway, currency) row has `requires_predebit_notice`, it asks `emandate.await_predebit`. That function sends the notice through `emandate.schedule_predebit`, and the method waits until `Invoice.predebit_charge_after`. A team not on Auto Charge gets no notice and so no debit on such a rail; dunning escalates instead.
 
@@ -566,16 +637,12 @@ rotation, so a manual retry must land on the same card twice, not silently rotat
 ```mermaid
 stateDiagram-v2
     [*] --> Current
-    Current --> Day1: invoice unpaid
-    Day1 --> Day3: retry_payment fails
-    Day3 --> Day7: retry_payment fails
-    Day7 --> PastDue: still unpaid
-    PastDue --> Suspended: grace elapsed
+    Current --> Retrying: charge on the payment date fails
+    Retrying --> PastDue: last retry day, still unpaid
+    PastDue --> Suspended: suspension date
     Suspended --> Current: paid
     Suspended --> Terminated: an operator decides
-    Day1 --> Current: paid
-    Day3 --> Current: paid
-    Day7 --> Current: paid
+    Retrying --> Current: paid
     PastDue --> Current: paid
     note right of Suspended
         Central stops the team's running
@@ -584,7 +651,8 @@ stateDiagram-v2
 ```
 ```
 daily run_dunning → process_invoice_dunning(invoice)
-  → retry_payment on Day 1/3/7 → account_standing past_due → suspend → termination due
+  → get_ladder_dates(invoice) → dunning_schedule(dates, policy)
+  → retry_payment on each retry date → account_standing past_due → suspend → termination due
   → suspend: subscriptions.suspend_for_nonpayment moves every subscription of the team to
     Suspended, stops its running servers and flags them stopped_for_nonpayment
   → paid: Invoice.on_update → subscriptions.restore_after_payment (standing Current, start
@@ -592,6 +660,30 @@ daily run_dunning → process_invoice_dunning(invoice)
   → termination due: platform.alerts.termination_due pages an operator; nothing is deleted
   → while behind on payment a team cannot create, resize up or subscribe (PAYMENT_OVERDUE)
 ```
+`dunning.dunning_schedule` is the one owner of the ladder. Its inputs are the ladder dates of the invoice and the policy in Billing Settings. `get_ladder_dates` reads the dates of an issued invoice, and `get_ladder_dates_by_invoice` reads them for many invoices with a fixed number of queries. These dates include the time the first charge failed, the time the oldest charge still in flight was made, and whether the ladder waits for a charge (`payment_attempt.get_charge_outcomes`, one grouped query), so the runner, the dashboard, the projections and the alerts show the same single retry. An invoice with no charge waits only when its ladder has the single retry and dunning can charge it off-session. `collection.get_teams_with_retry_rail` reads that for all such teams in one batch. The hourly `run_single_retries` reads the charges first and reads the ladder dates only of the invoices whose first charge failed 24 hours ago or earlier. `get_opening_ladder_dates` gives the dates of an invoice that would open on a given date, for the projections and the dashboard.
+
+| Ladder date | Rule |
+|---|---|
+| Anchor | `dunning_starts_on`. The payment date when the invoice opens. `defer_dunning` moves it forward. |
+| Retries | Every `dunning_retry_interval_days` (default 2) after the anchor, while the retry date is on or before the end of the retry window. The window ends on the due date, moved forward by as many days as the anchor moved. When no retry fits, there is one retry 24 hours after the first charge failed, counted from the time the failure arrived. The hourly `collection.collect_on_payment_date` runs it through `dunning.run_single_retries`, so the daily dunning run does not run it early. While a charge is in flight, or while a team that dunning can charge has no charge yet, the ladder waits: it has no retry, and Overdue waits until the day before the suspension date. An invoice that dunning cannot charge off-session (Manual Checkout, Action Required, or no method) gets this retry 1 day after the anchor. A projected invoice shows it 1 day after the anchor. A retry after the day before the suspension date is dropped, because the invoice is Overdue then and dunning does not retry an Overdue invoice. |
+| Overdue | The last retry day, after that day's retry, and at the latest the day before the suspension date (`dunning.get_overdue_time`). A charge still in flight holds Overdue until it fails or until the day before the suspension date. On that day every unpaid invoice is Overdue and the team gets `invoice_overdue`, so it can add wallet credit before suspension. Wallet credit that covers the whole invoice pays it also while a charge is in flight (`lifecycle.settle_with_new_credit`). Only a capture whose settlement has not landed yet stops the credit. If the charge captures later, `charges._mark_invoice_paid` refunds it to its source. The team goes past_due and its servers keep running. |
+| Suspension | `Invoice.suspends_on`. It is the `suspension_day` (default 15) of the month the invoice opened in. When that day is not after the due date (an invoice that opened late), it is the due date plus `suspension_day - 1 - invoice_due_days` days. `dunning.get_suspension_date` computes it. A charge in flight does not hold the suspension. |
+| Termination due | `terminate_after_days` (default 10) after the suspension date. An operator decides. Nothing is deleted. |
+
+With the defaults, an invoice opens on the 1st and is due on the 8th, or on the payment date when that is later:
+
+| Payment day | Retries | Suspended | Termination due |
+|---|---|---|---|
+| 1st | 3rd, 5th, 7th | 15th | 25th |
+| 3rd | 5th, 7th | 15th | 25th |
+| 5th | 7th | 15th | 25th |
+| 6th | 8th | 15th | 25th |
+| 7th | 8th | 15th | 25th |
+| 8th | 9th | 15th | 25th |
+| 10th | 11th | 15th | 25th |
+
+`dunning.get_last_payment_day_with_retries` gives the last payment day that still gets an interval retry (the 6th with the defaults). The payment date form shows a warning for a later day.
+
 Billing stops and starts a server as the system (`resource_actions.submit_billing_command`), because a payment can arrive by webhook as Guest. `submit_command` refuses a customer `start` while the server's subscription is Suspended.
 
 ### E. Metering
@@ -599,6 +691,27 @@ Billing stops and starts a server as the system (`resource_actions.submit_billin
 platform.sync.record_meter_rollups  (Central writes the runtime it bills)
   → revenue.metering.ingest_rollup → Usage Rollup
   → metering.metered_line_items at invoice time → line items
+
+AI (ADR 0027): grove_bridge.read_ai_usage (hourly) → Usage Day per team, model, landing day (USD)
+  → usage_recount → one Usage Rollup per subscription, month and model, at
+    exchange_rates.fix_month_rate (1 for a USD team, the month's USD rate otherwise)
+  → the rate is the rate API's (exchange_rate_feed, Billing Settings.exchange_rate_url, default
+    Frankfurter) for the month's 1st; it is kept (Monthly Exchange Rate) and locked on the rollup
+    (rate_date) from the 2nd (UTC) or by the month's draft, whichever is first; on the 1st the
+    recount uses it unlocked (read at most once an hour) and re-rates later
+  → with no rate from the API, the recount uses the latest earlier kept month's rate unlocked;
+    the draft keeps it as the month's rate with its own date (source "fallback: <month>"); with
+    no rate ever kept an INR draft fails
+  → one invoice line per model: quantity in USD × rate, described with the model and, when
+    converted, the rate and its date (from the rollup)
+  → a model below zero for the month bills no line: its days stay unbilled, so the credit nets
+    into that model's next month (and on, while it stays below zero)
+  → a day before Service.bill_from is stored written off and never billed; backfill(since)
+    reads explicit days written off and does not move usage_read_until
+  → forecasts, re-rating and the draft add the team's blank-cluster AI rollups in one place
+    (metered_lines.rollups_in); other services' blank-cluster rollups are not billed
+  → readiness M2: a non-USD billing currency of an AI team with no kept rate for the month, none
+    from the rate API and no earlier kept rate
 ```
 
 ### F. Credits waterfall & wallet gating
@@ -607,6 +720,8 @@ revenue.credits.purchase → Credit Ledger Entry (append-only) + Credit Wallet (
 settlement.effective_spend_cap = min(trust-tier cap, wallet)   (credits-only mode)
 settlement.can_accept_spend gates money movement; 80% forecast warning
 ```
+`settlement.credit_funded_headroom` is the pre-tax run rate the wallet can fund, under the tier cap. It counts the wallet the way `lifecycle._draw_wallet` spends it: a top-up pays the pre-tax amount and top-up GST no bill has used yet (`credits.advance_gst_balance`) pays the tax, and other credit (promotional, a refund) pays the bill with its GST, so it funds `amount / (1 + GST rate)` (`settlement.credit_funded_spend`). Promotional credit past its expiry date counts for nothing.
+
 `open_and_collect`'s credits leg draws `credits.get_balance(team, currency)` — the
 team's one wallet, no scoping of any kind (Projects have no relationship to credits;
 see §2.1).
@@ -633,12 +748,28 @@ catalog.entitlements.recompute_trust_tier(team)
   → issue_token → catalog.signing (Ed25519) → Entitlement Token (offline cluster enforcement)
 get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 ```
+**Mandate ceiling.** A bill at the tier cap is debited with its GST. So `payments.mandate_ceiling` registers a new Stripe card (`payments.initiate_payment_method_setup`) or UPI Autopay mandate (`mandates.setup_mandate`) for `min(silent-debit ceiling, tier cap + tax.resolve_tax on it)`. A Razorpay recurring card (`mandates.setup_card`) registers `CARD_TOKEN_MAX`; its off-session charges are held to the rail's silent-debit ceiling (₹15,000) by `collection_mode.method_limit`. An SEZ team with a live GSTIN adds no GST. `mandates.reconcile_mandates_to_cap` compares each Active UPI mandate with this ceiling when the tier changes (and once, by the `flag_upi_mandates_below_the_gst_ceiling` patch). It flags a lower one for re-authorisation and sends the `Mandate Reauth` notice the first time it is flagged. A flagged mandate stays in the charge order (`collection.ordered_methods`): `collection_mode.method_limit` charges it up to its own `mandate_max_amount`, and a larger bill goes to the next method. **Gap: card mandates are not raised.** A Stripe card saved before the ceiling included GST keeps its registered amount. Nothing flags it or asks for a new one. A bill above that amount is paid by another method, or the customer removes and re-adds the card. `mandates.upi_eligibility` compares the cap with GST against the ₹1,00,000 UPI recurring limit.
 
 ---
 
 ## 5. API surface (by package)
 
 **Limits on the payment routes.** Top-up, invoice payment, checkout and their confirms allow 30 calls an hour; card setup, mandate setup, hosted card setup and the card and mandate confirms allow 20, to slow card testing. The two pilot polls, the checkout status poll and the hosted card setup poll, allow 300, because they run until the payer finishes the hosted page. Console routes count per user and pilot routes count per address. A pilot checkout returns the payer only to a site (or custom domain) on the credential's own server, over HTTPS. A pilot usage report cannot be negative, and an Authoritative total cannot go below the one already recorded. CSV exports prefix a cell that starts with `=`, `+`, `-`, `@`, tab or return with a quote. The `tests/e2e.py` endpoints answer only on a site whose own `site_config.json` sets `allow_tests`.
+
+**Wait after failed setups** (`payments/setup_lockout.py`). Card setup, mandate setup, hosted card setup and top-up creation call `setup_lockout.check(team, user)` before they reach the gateway. It raises `TooManyFailedSetups` with the exact wait, rounded up to the minute: "Too many failed attempts. Try again in 28 minutes.", "… in 1 hour 5 minutes." or "… in 6 hours." Each hour and minute form is its own translatable sentence. The message is shown in the dialog only; no email or notification goes to the customer for a failed attempt. The count is read from failure Billing Events: `Payment Method Setup Failed`, `Payment Method Failed` and `Top-up Order Declined`. Only a bank refusal counts (`decline.is_bank_refusal`, on the failure code or the decline code in the event payload). A closed bank window (`setup_intent_authentication_failure`, `authentication_abandoned`, `payment_cancelled`), a cancelled or expired setup, a timeout and our own refusals (`customer_mismatch`, mandate signature checks) do not count. A Stripe `card_declined` is decided on its decline code: `issuer_not_available`, `try_again_later`, `processing_error`, `reenter_transaction` and `approve_with_id` do not count, and a `card_declined` with no decline code does. Stripe `incorrect_zip` and `payment_method_provider_decline` count, and so do Razorpay's `authentication_failed` and generic `payment_failed` reasons (kept as the decline code). `payment_failed` as the failure code is our own fallback for a failure with no code, and does not count. The lock reads these three Billing Event types and their `payload`, so any retention job must keep them for at least 77 days (`LOOKBACK`: 10 failures, each within 7 days of the next), as the ADR 0016 exception records. A card check charge (`Payment Method Failed`) keeps no decline code, so it counts on its failure code alone.
+
+**Closing open gateway objects.** The wait is checked when a setup or top-up starts, but a dialog opened before then still holds its Stripe client secret. So when a counted failure makes the team or the user wait (`note_failure`), a job enqueued after commit (`setup_lockout_cancel.close_open`) closes the open objects at the gateway, each one under `platform.jobs.each_isolated`. It closes the open objects of the team where the failure happened while the team waits, and the user's own open objects in each team where that user waits. Another member's objects in another team are left alone, and so is a team where an operator cleared the lock. An open setup is a Pending Validation Payment Method with a `setup_reference` and no saved card; an open top-up is a Created Top-up Order with a `gateway_order_id`. Stripe cancels the SetupIntent or PaymentIntent (`cancel_setup` / `cancel_order`, `cancellation_reason=abandoned`), or expires the Checkout Session of a hosted setup or top-up. Then the method moves to Cancelled and the order to Expired, with the reason "setup cancelled after too many failed attempts". Stripe refuses to cancel an intent that succeeded or is processing; that refusal is a no-op and the record is left for its confirm or webhook. A later `setup_intent.canceled` webhook is ignored, and a `payment_intent.canceled` webhook on a top-up is not recorded as a decline, so a cancel never counts again. Razorpay has no API to cancel or expire an order (checked against the installed `razorpay` SDK: `order` has only create, fetch, edit of notes and payments), so the adapter raises `GatewayUnsupported` and the record stays as it is. An open Razorpay checkout sheet keeps its order and can still be retried; once the sheet is closed, a new attempt needs a new order from our server, which checks the wait. PayPal is the same. In the dashboard, when Stripe refuses to confirm a cancelled intent (`setup_intent_unexpected_state` / `payment_intent_unexpected_state`), the card and top-up dialogs ask the server again, so the customer sees the server's "Too many failed attempts. Try again in …" message and not Stripe's text.
+
+| Failures in the run | Wait from the latest failure |
+|---|---|
+| 1 to 4 | None |
+| 5 and 6 | 10 minutes |
+| 7 | 30 minutes |
+| 8 | 2 hours |
+| 9 | 6 hours |
+| 10 and more | 24 hours |
+
+The team and the signed-in user are counted apart, and either one can lock. A user is the owner of the Payment Method or Top-up Order that failed, in any team. A pilot call is counted for the team only. The run ends after 7 days with no failure, and at the latest of: a validated method, a paid top-up (its move to `Credited`), and the Billing Profile's `setup_lock_cleared_at`. For the team, any method or top-up of the team counts. For a user, only a method or top-up that user owns counts, in any team; so another member's paid top-up resets the team's count but not that user's. The 10th failure of a run sends one operator alert through `notify_operators`. The alert names the team, or the user and the team of the latest failure, the number of failed attempts (for a user, across all their teams), the wait and when it ends in the system timezone, and how to clear it. It is sent at most once in 24 hours for the same team, or the same user in that team: the job locks the Team row, reads the `Setup Lock Alerted` Billing Event with a locking read, writes a new one, and enqueues the send to run after its own commit (`send_alert`). A send that fails goes to the Error Log and is not sent again within the 24 hours. An operator clears the lock with **Clear Setup Lock** on the Billing Profile (`api/admin/teams.clear_setup_lock`). The button shows while the team or one of its members must wait. The clear also resets the count of every user, for that team only: a user whose count spans other teams must still wait in those teams. A user's count is read from the Payment Methods and Top-up Orders the user owns (indexed on `owner`), and the Billing Profile's button reads all members in a fixed number of queries.
 
 **`api/dashboard/`** (customer, team-scoped)
 - `account.py`: whoami, get/save_billing_profile, get_billing_geo, get/save_billing_settings, get_collection_status, set_collection_mode, get_team_overview, get_trust_tier.
@@ -654,7 +785,7 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 **`api/admin/`** (Billing-Admin)
 - `catalog.py`: get_catalog, create_configured_plan, update_plan_rate, get_cluster/plan_consumption, get_conversion, get_trial_detail/get_trial_costs_detail.
 - `revenue.py`: summary, revenue_trend, cluster/team_breakdown, payment_analytics, overdue_aging, free_trial_costs, list_all_invoices.
-- `teams.py`: team_billing, adjust_team_credits, retention, metrics, list_teams, payment_failures, delinquent_teams.
+- `teams.py`: team_billing, adjust_team_credits, clear_setup_lock, retention, metrics, list_teams, payment_failures, delinquent_teams.
 - `gateways.py`: get_gateways, effective_routing, set_default_gateway.
 - `projection.py`: team and cohort projections, scenarios, scenario library, drift and batch comparison.
 - `rerating.py`: preview_rerating, apply_rerating, correct_rollup_terms.
@@ -681,12 +812,13 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 | Invoice wrong amount | `lines.compute_line_items` (day-weighting), `metering.metered_line_items`, `commitments` discount, `tax.resolve_tax`; verify Subscription Change `locked_rate` segments |
 | Charge stuck Outstanding/unpaid | `payments/webhooks.py` (signature failed? Webhook Event row?), `charges.apply_webhook`, `collection.collect_invoice` fallback chain |
 | Webhook ignored | `webhooks.process_webhook` signature check; gateway `verify_webhook_signature`; dedupe against existing Webhook Event |
-| Money movement blocked | `settlement.can_accept_spend` / `effective_spend_cap`; Billing Profile complete? Credits can fund a create without a profile; otherwise a payment method is needed (`resource_actions.require_payment_method_or_credit`); currency set? `collection_mode.evaluate` (INR ₹15k gate) |
+| Money movement blocked | `settlement.can_accept_spend` / `effective_spend_cap`; Billing Profile complete? Credits can fund a create without a profile; otherwise a payment method is needed (`resource_actions.require_payment_method_or_credit`); currency set? `collection_mode.is_within_off_session_limit` (INR ₹15k gate; a bill trips Action Required in `charges`/`emandate`, a forecast never does) |
 | Wrong price | rate resolution: `catalog/pricing.py` (`resolve_rate`/`resolve_config_rate`), `rate_card`, Plan Configurator is the single pricing authority (ADR 0011) |
 | Tier/cap wrong | `catalog.entitlements` (`get_team_caps`, `evaluate_tier`, per-currency Trust Tier Threshold) |
 | Provisioning failed | `central.resource_actions.submit_request` / `validate_purchase` (`require_payment_method_or_credit`, `reserved_rate`, spending limit), the Resource Action record, `composition.validate_composition` bounds |
 | Invoice Outstanding with no due date | `lifecycle._hold_for_billing_details` / `held_drafts`: is the Billing Profile incomplete? `platform.alerts.held_invoices` lists drafts held past `billing_details_grace_days` |
-| Card declined repeatedly | `collection` (escalate don't repeat), `mandates.effective_cap`, dunning Day 1/3/7 |
+| "Too many failed attempts" on card setup or top-up | `payments/setup_lockout.py`: read the team's failure Billing Events and the Billing Profile's `setup_lock_cleared_at`. **Clear Setup Lock** on the Billing Profile ends the wait |
+| Card declined repeatedly | `collection` (escalate don't repeat), `collection_mode.off_session_limit`, the dunning retry dates (`dunning.dunning_schedule`) |
 | A line's Project breakdown is missing/wrong | `generate._tag_projects`/`_resource_project_map` — is the resource's Subscription tagged, is its Project `enabled`? A disabled Project's lines carry no tag by design (§2.1); check `Invoice Line Item.project`/`project_title` on a real invoice, or the same fields on a forecast line |
 | Tagging a subscription into a Project is refused | `Subscription.validate_project` — same-team? Project `enabled`? `catalog.subscriptions.enforce_project_headroom` — would the tag push the Project's committed run-rate (`project_run_rate`) past its `spending_limit`? (blocks new tagging only, §2.1) |
 | ERPNext out of sync | `erpnext_sync` (async, never rolls back the invoice; check retry backoff) |

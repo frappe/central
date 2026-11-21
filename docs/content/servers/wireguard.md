@@ -14,7 +14,7 @@ WireGuard VPN is available only in regions that have a WireGuard VPN gateway. If
 ## Add a device
 
 1. Click your name at the bottom of the sidebar, then **Settings**. In the settings, under **Access**, click **WireGuard VPN**. You can also press `Ctrl+,` or `⌘+,` to open the settings.
-2. Click **Add**. If the team has no devices yet, click **Add device**.
+2. On the **Devices** tab, click **Add**. If the team has no devices yet, click **Add device**.
 3. Type a **Name**, such as `Work laptop`.
 4. Select the **Region**.
 5. Click **Add device**.
@@ -90,7 +90,7 @@ Install the [WireGuard app](https://www.wireguard.com/install/) on the device. T
 
 When the tunnel is on:
 
-1. In the **WireGuard VPN** settings, go to **Servers**.
+1. In the **WireGuard VPN** settings, click the **Server access** tab.
 2. Click the SSH command of a server to copy it.
 3. Run the command:
 
@@ -98,13 +98,13 @@ When the tunnel is on:
    ssh root@2001:db8:4a:6::10
    ```
 
-   **Servers** shows the SSH command only for servers that have WireGuard VPN on. The private address is also in the **Addresses** section of the server's **Networking** tab.
+   **Server access** shows the SSH command only for servers that have WireGuard VPN on. The private address is also in the **Addresses** section of the server's **Networking** tab.
 
 ## Let a device reach a server
 
 A server accepts no WireGuard VPN traffic until you turn it on. Use one of these switches:
 
-- In the **WireGuard VPN** settings, under **Servers**, turn on the switch of the server.
+- In the **WireGuard VPN** settings, on the **Server access** tab, turn on the switch of the server. The tab shows how many servers have WireGuard VPN on, such as `2/3`.
 - Go to **Servers**. Click the server. Click **Access**. Turn on **WireGuard VPN**.
 
 When the switch is on, the server heading shows a **VPN** tag. Turn it off to block all devices from that server. The switch shows only in regions with a WireGuard VPN gateway.

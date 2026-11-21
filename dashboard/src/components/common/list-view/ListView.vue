@@ -1,5 +1,12 @@
 <script setup lang="ts" generic="TData extends object">
-import { Alert, Button, Select, Skeleton, TextInput } from 'frappe-ui'
+import {
+	Alert,
+	Button,
+	Combobox,
+	ScrollArea,
+	Skeleton,
+	TextInput,
+} from 'frappe-ui'
 import {
 	List,
 	ListCell,
@@ -10,6 +17,7 @@ import {
 	ListRows,
 } from 'frappe-ui/list'
 import { computed, getCurrentInstance, ref } from 'vue'
+import { __ } from '@/lib/translate'
 import ListViewPagination from './ListViewPagination.vue'
 import ListViewState from './ListViewState.vue'
 import {
@@ -49,12 +57,13 @@ const props = withDefaults(
 		 * @clear-filters to reset that control.
 		 */
 		externalFilterActive?: boolean
+		minWidth?: string
 	}>(),
 	{
 		loading: false,
 		error: null,
 		searchable: false,
-		searchPlaceholder: 'Search…',
+		searchPlaceholder: __('Search…'),
 		filters: () => [],
 		selectable: false,
 		paginated: true,
@@ -67,9 +76,10 @@ const props = withDefaults(
 		rowClass: 'min-h-10',
 		activeKey: null,
 		externalFilterActive: false,
+		minWidth: '720px',
 		emptyState: () => ({
-			title: 'No data',
-			description: 'There is nothing to show yet.',
+			title: __('No data'),
+			description: __('There is nothing to show yet.'),
 		}),
 	},
 )
@@ -160,7 +170,7 @@ const pageCount = computed(() =>
 )
 const countText = computed(() => {
 	const label =
-		resultCount.value === 1 ? props.itemLabel : `${props.itemLabel}s`
+		resultCount.value === 1 ? props.itemLabel : __('{0}s', [props.itemLabel])
 	return `${resultCount.value.toLocaleString()} ${label}`
 })
 
@@ -242,10 +252,13 @@ const clearFilters = (): void => {
 const showListControls = computed(
 	() => props.searchable || props.filters.length > 0,
 )
+
+const refreshListErrorTitle = __("Couldn't refresh the list")
+const loadListErrorTitle = __("Couldn't load this list")
 </script>
 
 <template>
-	<section class="min-w-0">
+	<section class="flex h-full min-h-0 min-w-0 flex-col">
 		<div
 			v-if="showListControls || $slots.toolbar || $slots['controls-start'] || hasSelection"
 			class="flex flex-wrap items-center justify-between gap-3 pb-3"
@@ -256,8 +269,7 @@ const showListControls = computed(
 				class="flex min-w-0 flex-1 items-center justify-between gap-3"
 			>
 				<p class="text-sm-medium text-ink-gray-8 tabular-nums">
-					{{ selectedRows.length }}
-					selected
+					{{ __('{0} selected', [selectedRows.length]) }}
 				</p>
 
 				<div class="flex items-center gap-2">
@@ -266,20 +278,24 @@ const showListControls = computed(
 						:rows="selectedRows"
 						:clear="clearSelection"
 					/>
-					<Button label="Clear" variant="ghost" @click="clearSelection" />
+					<Button
+						:label="__('Clear')"
+						variant="ghost"
+						@click="clearSelection"
+					/>
 				</div>
 			</div>
 
 			<div
 				v-else-if="showListControls || $slots['controls-start']"
-				class="flex min-w-0 flex-1 flex-wrap items-center gap-2"
+				class="flex min-w-0 flex-1 basis-full flex-wrap items-center gap-2 sm:basis-0"
 			>
 				<slot name="controls-start" />
 
 				<TextInput
 					v-if="searchable"
 					:model-value="query.search"
-					class="w-full sm:w-80"
+					class="w-full sm:w-64"
 					:placeholder="searchPlaceholder"
 					:debounce="250"
 					@update:model-value="setSearch"
@@ -289,14 +305,17 @@ const showListControls = computed(
 					</template>
 				</TextInput>
 
-				<Select
+				<Combobox
 					v-for="filter in filters"
 					:key="filter.key"
+					trigger="button"
+					side="bottom"
+					align="start"
 					:model-value="query.filters[filter.key] || ''"
-					class="w-40"
-					:placeholder="filter.allLabel || `All ${filter.label.toLowerCase()}`"
+					class="min-w-36 max-w-60"
+					:placeholder="__('Search…')"
 					:options="[
-						{ label: filter.allLabel || `All ${filter.label.toLowerCase()}`, value: '' },
+						{ label: filter.allLabel || __('All {0}', [filter.label.toLowerCase()]), value: '' },
 						...filter.options,
 					]"
 					@update:model-value="setFilter(filter.key, $event)"
@@ -316,20 +335,21 @@ const showListControls = computed(
 		<Alert
 			v-if="error && hasRows"
 			theme="red"
-			:title="error"
-			:primary-action="{ label: 'Retry', onClick: () => $emit('retry') }"
+			:title="refreshListErrorTitle"
+			:description="error"
+			:primary-action="{ label: __('Retry'), onClick: () => $emit('retry') }"
 			class="mb-2"
 		/>
 
-		<!-- flex-1 is inert unless the caller makes the root section a flex column
-		     to pin the pagination footer to the bottom. -->
-		<div
+		<ScrollArea
 			v-if="isSkeleton || pageRows.length"
-			class="min-w-0 flex-1 overflow-x-auto"
+			class="min-h-0 min-w-0 flex-1"
+			orientation="both"
 		>
 			<List
 				v-model:selection="selection"
-				class="min-w-[720px] list-gap-4 list-row-px-2"
+				class="list-gap-4 list-row-px-2"
+				:style="{ minWidth, contain: 'inline-size' }"
 				:columns="gridColumns"
 				:selectable="selectable"
 			>
@@ -387,7 +407,7 @@ const showListControls = computed(
 							v-if="interactive"
 							type="button"
 							class="absolute inset-0 rounded-5"
-							:aria-label="`Open ${readValue(item, columns[0])}`"
+							:aria-label="__('Open {0}', [readValue(item, columns[0])])"
 							@click="emit('rowClick', item)"
 						/>
 
@@ -412,20 +432,20 @@ const showListControls = computed(
 					</ListRow>
 				</ListRows>
 			</List>
-		</div>
+		</ScrollArea>
 
 		<ListViewState
 			v-else-if="stateKind === 'error'"
 			kind="error"
-			title="Couldn't load this list"
+			:title="loadListErrorTitle"
 			:description="error ?? undefined"
 			@retry="$emit('retry')"
 		/>
 		<ListViewState
 			v-else-if="stateKind === 'filtered'"
 			kind="filtered"
-			title="No matching results"
-			description="Change or clear the filters to see more results."
+			:title="__('No matching results')"
+			:description="__('Change or clear the filters to see more results.')"
 			@clear="clearFilters"
 		/>
 		<ListViewState

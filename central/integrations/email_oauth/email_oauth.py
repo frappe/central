@@ -65,18 +65,31 @@ def start_sign_in(
 
 def check_return_url(return_url: str, team: str, server: str | None) -> None:
 	url = urlsplit(return_url)
-	schemes = ("https", "http") if frappe.conf.developer_mode else ("https",)
+	schemes = ("https", "http")
 	if (
 		url.scheme in schemes
 		and "@" not in url.netloc
 		and "\\" not in return_url
 		and url.path == SITE_CALLBACK_PATH
-		and url.hostname in get_server_hostnames(team, server)
+		and url.hostname in get_return_hostnames(team, server)
 	):
 		return
 	frappe.throw(
 		_("Return URL must be the email callback on one of this server's sites"), frappe.PermissionError
 	)
+
+
+def get_return_hostnames(team: str, server: str | None) -> set[str]:
+	"""The server's hostnames, plus its zone routes that are not Active yet. The proxy can route one
+	before Central records it, or after a failed retry, and a zone route's name belongs to one server."""
+	if not server:
+		return set()
+	pending_routes = frappe.get_all(
+		"Site Domain",
+		filters={"team": team, "server": server, "route_type": "Site", "status": ["!=", "Active"]},
+		pluck="name",
+	)
+	return {*get_server_hostnames(team, server), *pending_routes}
 
 
 def get_sign_in(state: str | None) -> dict | None:
@@ -143,6 +156,6 @@ def get_provider(provider: str) -> "EmailOAuthProvider":
 	"""The enabled record for `provider`; an enabled one always has a client ID and secret."""
 	config = frappe.db.exists(PROVIDER, provider) and frappe.get_cached_doc(PROVIDER, provider)
 	if not (config and config.enabled):
-		# nosemgrep: frappe-missing-translate-function-python -- a code the site matches on, never shown
+		# nosemgrep: frappe-missing-translate-function-python, central-untranslated-message -- a code the site matches on, never shown
 		frappe.throw(PROVIDER_UNAVAILABLE)
 	return config

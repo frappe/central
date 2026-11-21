@@ -359,6 +359,10 @@ class Trial:
 			"days_left": max(date_diff(self.site.trial_ends_on, nowdate()), 0),
 			"deletes_on": self.site.trial_deletes_on,
 			"plan": self.get_plan(),
+			# The site exists to try this app, so the in-app panel keeps it installed.
+			"app": frappe.db.get_value("Product", self.site.product, "signup_app")
+			if self.site.product
+			else None,
 		}
 
 	def get_plan(self) -> dict | None:

@@ -56,10 +56,17 @@ def refuse_destruction(action: str) -> None:
 		)
 
 
+# In these modes a model or nobody approves the tool calls, not a person.
+UNATTENDED_APPROVAL_MODES = ("Auto", "Auto-approve")
+
+
 def _refuse_auto_approve(ctx: ToolContext) -> None:
-	# An auto-approved session makes changes without a person, so it stays read-only.
-	if frappe.db.get_value("Flow Session", ctx.session_id, "auto_approve"):
-		frappe.throw(_("A session that approves its own tool calls stays read-only."), frappe.PermissionError)
+	# A change needs a person to approve it, so an unattended session stays read-only.
+	if frappe.db.get_value("Flow Session", ctx.session_id, "approval_mode") in UNATTENDED_APPROVAL_MODES:
+		frappe.throw(
+			_("A session that approves its own tool calls stays read-only. Set its approval mode to Ask."),
+			frappe.PermissionError,
+		)
 
 
 def read_write_key(ctx: ToolContext) -> str:

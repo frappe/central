@@ -11,6 +11,12 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+# A rated change opens a billing segment at its locked rate; a closing change ends it.
+RATED_CHANGE_TYPES = ("Created", "Plan Changed", "Resumed")
+OPENING_CHANGE_TYPES = ("Created", "Resumed")
+CLOSING_CHANGE_TYPES = ("Paused", "Cancelled")
+SEGMENT_CHANGE_TYPES = RATED_CHANGE_TYPES + CLOSING_CHANGE_TYPES
+
 
 class SubscriptionChange(Document):
 	# begin: auto-generated types

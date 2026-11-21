@@ -12,16 +12,18 @@ A billing cycle is one calendar month, from the 1st to the last day. Charges add
 
 Each invoice is paid in this order:
 
-1. Prepaid credits in your wallet.
-2. Your payment methods, in the order shown under **Methods** on **Billing > Payments**. When one fails, the next one is tried.
+1. Prepaid credits in your wallet, on the invoice date.
+2. When you pay automatically, your payment methods, on the payment date, in the order shown under **Methods** on **Billing > Payments**. When one fails, the next one is tried. When you pay each invoice yourself (INR billing only), Frappe Cloud emails you the invoice and you pay the rest by hand. See [How you pay](/billing/payment-methods#how-you-pay).
 
-You do not need to pay a normal invoice by hand. See [Invoices](/billing/invoices) for an invoice that stays open.
+The payment date is a day from the 1st to the 10th of the month. The default is the 1st. When you pay automatically and the invoice is issued after that day, the payment method is charged on the invoice date. To pay an issued invoice before its payment date, open it and click **Pay *amount* now**. Only a user with the Owner, Admin, or Billing role sees this button. When you pay automatically with UPI Autopay or another Indian mandate, Frappe Cloud sends a pre-debit notice no earlier than one day before the payment date, and charges 24 hours after the notice. When the payment date is the 1st, the notice goes out on the 1st and the charge is on the 2nd.
+
+When you pay automatically, you do not need to pay a normal invoice by hand. See [Invoices](/billing/invoices) for an invoice that stays open.
 
 ## What you pay for
 
 | Charge | How it is billed |
 | --- | --- |
-| Servers | A monthly rate set by the server's plan. The invoice shows each server, its plan, and the dates it was billed. |
+| Servers | A monthly rate set by the server's plan. On the day a server is created, resized, or stopped, each plan is billed for the hours it ran on that day. The invoice shows each server, its plan, and the dates it was billed. A paused server and its public IPv4 address are not billed until you resume it. When you resume it, it is billed at the same rate as before the pause. |
 | Metered services | Usage, such as AI tokens. The amount is final when the month ends. |
 | Add-ons | Subscriptions such as storage buckets and paid snapshots. |
 | Tax | Added on each invoice for the tax region in your billing details. |
@@ -30,20 +32,40 @@ You do not need to pay a normal invoice by hand. See [Invoices](/billing/invoice
 
 The panel at the top of **Billing > Overview** shows the current cycle.
 
-<Screenshot name="billing/summary" alt="The billing summary: October cycle, 650.58 dollars so far, bills in 7 days, a spend limit of 12,048.19 dollars on the t3 tier, and the next payment, wallet, payment method, and next invoice date" />
+<Screenshot name="billing/summary" alt="The billing summary: October cycle, 650.58 dollars so far, bills in 7 days, what the servers running cost a month before tax against a spending limit of 12,048.19 dollars on the t3 tier, and the next payment, wallet, payment method, and next invoice date" />
 
 | Item | Meaning |
 | --- | --- |
-| Cycle and amount | The charges so far in this cycle, and the days until it is billed. Click **Breakdown** to see each line and the **Projected total**. |
-| Spend limit | The most your team can spend in one cycle on its current tier. Click the tier to see all tiers. See [Credits and spend limits](/billing/limits). |
-| Next payment | The amount Frappe Cloud expects to collect next. It shows **Due now** when an invoice is unpaid. Click **Schedule** to see the payment schedule. |
-| Wallet | Your prepaid credit balance. Click the history icon to see its history. Click **Add credit** to top up. |
+| Cycle and amount | The projected total for this cycle with tax, and the days until it is billed. Below it are the amount before tax and the tax. Click **See breakdown** to see each line. |
+| Running now and spending limit | What everything your team runs now costs a month before tax, against your spending limit. This line is separate from the cycle amount above it, which includes tax. Taxes are added on top of the limit. Click the tier to see all tiers. See [Credits and spend limits](/billing/limits). |
+| Due now | The amount of your unpaid invoices. This row shows only when an invoice is unpaid. |
+| Payment in progress | The date Frappe Cloud started a charge that your bank has not confirmed yet. This row shows from the day of the charge until the bank confirms or refuses the payment, or until the suspension date. |
+| Next retry | The date Frappe Cloud tries the payment again. This row shows only after a payment date passes and the invoice is not paid. |
+| Suspends on | The date your servers stop if the invoice stays unpaid. This row shows when no retry is left. It also shows below **Payment in progress** when the invoice is overdue. To avoid suspension, add credit to your wallet. See [When a payment is still in progress near the suspension date](/billing/invoices#when-a-payment-is-still-in-progress-near-the-suspension-date). When your team is already suspended, the row shows **Suspended since** and the suspension date. |
+| Wallet | Your prepaid credit balance. Click the history icon to see its history. Click **Add credit** to top up. Hover over the balance to see how much of this cycle it pays. GST you paid with top-ups pays the GST of the bill. |
 | Payment method | The payment method that is charged first. |
 | Next invoice | The date of the next invoice. |
+| Next payment date | The next scheduled payment date. When an unpaid invoice passes its payment date, this row shows the payment date of the next invoice. |
+
+To change the payment date, click the calendar icon (**Change payment date**) next to **Next payment date**. The **Payment schedule** panel opens. It also shows the amount due, the date of the next charge or retry, the payment method that is charged, and the dates of each step if the invoice stays unpaid. Select a day from the 1st to the 10th of the month and click **Save payment date**. You can change it at most twice in a billing cycle. You need the Owner, Admin, or Billing role. Wallet credit still applies on the invoice date. A change does not move the payment date of an invoice that is already issued.
+
+A payment date from the 1st to the 6th gets a retry every 2 days until the invoice due date. A later payment date gets one retry, 24 hours after the failed charge. When you select a later day, the form shows a warning. In both cases, your servers stop on the 15th of the month if the invoice stays unpaid. See [When a payment fails](/billing/invoices#when-a-payment-fails).
+
+Frappe Cloud sends these payment emails to team members who can see billing:
+
+| Email | When |
+| --- | --- |
+| Invoice is ready | An invoice is issued with an amount to pay after wallet credit. It shows the total, the credit used, the amount to charge, the payment date, and the payment method. If the team has no payment method, it asks you to add one. |
+| Payment due tomorrow | One day before the payment date. Frappe Cloud does not send it for an Indian mandate, which gets a pre-debit notice instead. |
+| Add credit before your payment date | INR bills only, on Prepaid or automatic payments. On the payment date, your card or UPI would be asked for more than it can pay automatically (at most ₹15,000), or no card or UPI is saved. Before the invoice is issued, your wallet pays what it can first. After it is issued, credit pays it only when the credit covers the whole amount due. Frappe Cloud sends it 5 days and 2 days before the payment date, at most once a day. It asks for enough credit for your wallet to pay the whole bill, rounded up to the next ₹100, and what that credit costs with GST. Click **Add credit** to open the top-up with that credit filled in. When an invoice like this is issued, you get this email instead of **Invoice is ready**. |
+| Payment date changed | You change the payment date. It shows the new day and the date of the next charge. An invoice that is already issued keeps its payment date. |
+| Upcoming auto-payment | An Indian mandate, 24 hours before the debit. It shows the amount and the date of the debit. |
+
+Each amount in these emails that includes tax names the tax, for example `₹11,800.00 (incl. IGST 18%)`. See [How the tax is named](/billing/invoices#how-the-tax-is-named).
 
 ### Budget alerts
 
-Click the bell icon on the summary panel to set a budget alert. Type an amount and click **Set alert**. The team gets a notification when the projected spend for the cycle goes above that amount. Set `0` to turn the alert off.
+Click the bell icon on the summary panel to set a budget alert. Type an amount and click **Set alert**. The amount excludes tax. The team gets a notification when the projected spend for the cycle, before tax, goes above that amount. Set `0` to turn the alert off.
 
 ## The spend chart
 
@@ -52,7 +74,8 @@ The **Spend** card shows what your team was invoiced in the last 3, 6, or 12 mon
 <Screenshot name="billing/spend" alt="The Spend card with 12 months of invoiced amounts, the totals for invoiced, monthly average, paid by credits, and tax, and the spend by product" />
 
 - The top row shows the total invoiced, the monthly average, the amount paid by credits, and the tax.
-- The dark bars are invoiced months. The light bar is the current cycle.
+- The dark bars are invoiced months. The light bar is the current cycle. The bars are before tax. Taxes are added on top.
+- The chart shows spend history only. To compare what you run with your spending limit, see the summary panel or the **Limits** card.
 - **By product** splits the total, such as servers and AI tokens.
 - Click the download icon to export the data as a CSV file.
 
@@ -60,7 +83,7 @@ The **Spend** card shows what your team was invoiced in the last 3, 6, or 12 mon
 
 | Card | Use it to |
 | --- | --- |
-| **Limits** | See your tier, your spend this cycle against the limit, and your resource count. |
+| **Limits** | See your tier, what everything your team runs costs a month before tax against your spending limit, and your resource count. |
 | **Subscriptions** | See each server and service you pay for and its cost this cycle. |
 | **Breakdown** | See what the team was invoiced by product and by region for the chosen period. |
 

@@ -13,10 +13,22 @@ fixtures = [
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
 	# Warpgate signs in through the Central OpenID Connect provider and checks the Atlas roles.
 	# Product Operators create and edit products; only System Managers delete them.
+	# Staff Viewers read Team, Site and Virtual Machine in Desk, and manage Product and
+	# Email OAuth Provider.
 	{
 		"dt": "Role",
 		"filters": [
-			["name", "in", ["Central User", "Atlas Host Access", "Atlas Warpgate Admin", "Product Operator"]]
+			[
+				"name",
+				"in",
+				[
+					"Central User",
+					"Atlas Host Access",
+					"Atlas Warpgate Admin",
+					"Product Operator",
+					"Staff Viewer",
+				],
+			]
 		],
 	},
 	"Notification Event Type",
@@ -38,16 +50,14 @@ website_user_home_page = "dashboard"
 
 # required_apps = []
 
-# Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "central",
-# 		"logo": "/assets/central/logo.png",
-# 		"title": "Central",
-# 		"route": "/central",
-# 		"has_permission": "central.api.permission.has_app_permission"
-# 	}
-# ]
+add_to_apps_screen = [
+	{
+		"name": "central",
+		"logo": "/assets/central/logo.svg",
+		"title": "Central",
+		"route": "/desk/central",
+	}
+]
 
 # Includes in <head>
 # ------------------
@@ -125,6 +135,7 @@ after_install = [
 	"central.infrastructure.doctype.blocked_domain.blocked_domain.seed_regional_domains",
 	"central.infrastructure.doctype.image_offering.image_offering.ensure_default_offerings",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.services.doctype.service.service.ensure_services",
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
@@ -185,6 +196,9 @@ after_install = [
 # Hook on document methods and events
 
 doc_events = {
+	"Notification Log": {
+		"after_insert": "central.notification.failed_email.email_admins_when_owner_email_fails",
+	},
 	"User": {
 		"validate": "central.users.validate_user_image",
 		"after_insert": "central.users.grant_central_user_role",
@@ -210,6 +224,7 @@ doc_events = {
 			"Refund",
 			"Credit Ledger Entry",
 			"Credit Wallet",
+			"Usage Day",
 			"Usage Rollup",
 			"Webhook Event",
 			"Billing Event",
@@ -261,14 +276,21 @@ scheduler_events = {
 		"* * * * *": [
 			"central.infrastructure.doctype.warpgate_access.warpgate_access.revoke_ended_access",
 			"central.integrations.datum.publish_error_logs",
+			"central.integrations.metrics.publish_metrics",
 		],
 		"*/10 * * * *": [
 			# Repair observed state through scoped regional reads.
 			"central.integrations.servers.reconcile",
 			"central.infrastructure.doctype.region.cargo_connection.register_pending_cargo",
 		],
-		# Retry proxy routes that failed or never ran, up to the attempt limit.
+		# 09:00 system time (Asia/Kolkata): remind INR teams to top up before the payment date.
+		"0 9 * * *": ["central.billing.payments.top_up_reminders.run_top_up_reminders"],
+		# 08:00 IST on the 1st: usage days are UTC, and the UTC month closes at 05:30 IST.
+		"0 8 1 * *": ["central.billing.revenue.invoicing.draft_monthly_invoices"],
 		"*/5 * * * *": [
+			# Credit a recent top-up whose callback and webhook are late.
+			"central.billing.payments.reconciliation.reconcile_recent_top_up_orders",
+			# Retry proxy routes that failed or never ran, up to the attempt limit.
 			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",
 			"central.infrastructure.doctype.site.site.record_ready_sites",
 			"central.infrastructure.doctype.site.site.poll_site_renames",
@@ -284,6 +306,7 @@ scheduler_events = {
 	],
 	"daily_long": [
 		"central.infrastructure.doctype.vm_snapshot.vm_snapshot.take_automatic_snapshots",
+		"central.billing.ingester.gst_state_backfill.record_missing_gst_states",
 	],
 	"daily": [
 		"central.identity.doctype.team_invitation.team_invitation.expire_pending_invitations",
@@ -298,21 +321,27 @@ scheduler_events = {
 		"central.billing.revenue.gst_status.run_gst_status_refresh",
 		"central.billing.ingester.customer.sync_pending_profiles",
 		"central.billing.ingester.advance.sync_pending_advances",
-		"central.billing.revenue.storage_usage.record_storage_usage",
+		"central.billing.revenue.usage_ledger.fill_missing_days",
+		"central.billing.revenue.usage_ledger.prune_old_days",
 		"central.billing.platform.invariants.run_invariant_audit",
 		"central.billing.payments.reconciliation.recheck_completed_refunds",
 	],
 	"hourly": [
 		"central.billing.revenue.invoicing.collect_due_invoices",
+		"central.billing.revenue.storage_bridge.read_storage_usage",
+		"central.billing.revenue.grove_bridge.read_ai_usage",
+		"central.billing.revenue.usage_recount.recount_changed",
+		"central.billing.payments.collection.collect_on_payment_date",
 		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
 		"central.billing.payments.reconciliation.run_reconciliation",
 		"central.billing.payments.webhooks.retry_failed_webhooks",
+		"central.billing.payments.setup_expiry.expire_unfinished_setups",
+		"central.billing.payments.setup_expiry.retry_unfinished_releases",
 		"central.billing.platform.alerts.run_operator_alerts",
 		"central.signups.alerts.alert_failed_signups",
 		"central.notification.digest.send_due_digests",
 	],
 	"monthly": [
-		"central.billing.revenue.invoicing.draft_monthly_invoices",
 		"central.billing.payments.payments.expire_payment_methods",
 	],
 }
@@ -320,6 +349,7 @@ scheduler_events = {
 after_migrate = [
 	"central.infrastructure.doctype.blocked_domain.blocked_domain.seed_regional_domains",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.services.doctype.service.service.ensure_services",
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.gateways.setup.ensure_gateway_records",
@@ -328,6 +358,7 @@ after_migrate = [
 	# The Webhook that carries a team's tier to Grove, so an edit to its spec rolls out.
 	"central.services.doctype.ai_settings.ai_settings.sync_webhook",
 	"central.investigator.knowledge.load_knowledge_bases_after_migrate",
+	"central.users.ensure_staff_role_profile",
 ]
 
 # Testing
@@ -337,12 +368,14 @@ after_migrate = [
 # fixtures depend on — and apply the money constraints — before the suite runs.
 before_tests = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.services.doctype.service.service.ensure_services",
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
 	"central.integrations.email_oauth.setup.ensure_email_oauth_providers",
 	"central.billing.navigation.ensure_workspace_sidebars",
+	"central.users.ensure_staff_role_profile",
 ]
 
 # Extend DocType Class
@@ -386,7 +419,7 @@ ignore_links_on_delete = ["Activity Event"]
 # Request Events
 # ----------------
 before_request = ["central.oidc.take_client_credentials"]
-# after_request = ["central.utils.after_request"]
+after_request = ["central.integrations.metrics.count_request"]
 
 # The OpenID Connect discovery document of the Central issuer.
 page_renderer = ["central.oidc.DiscoveryPage"]
@@ -450,6 +483,7 @@ _BILLING_TEAM_RECORDS = (
 permission_query_conditions = {
 	"Team SSH Key": "central.permissions.team_ssh_key_query_conditions",
 	"WireGuard Device": "central.permissions.wireguard_device_query_conditions",
+	"Firewall Ruleset": "central.permissions.firewall_ruleset_query_conditions",
 	"Virtual Machine": "central.permissions.server_query_conditions",
 	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
@@ -470,6 +504,7 @@ permission_query_conditions = {
 has_permission = {
 	"Team SSH Key": "central.permissions.team_ssh_key_has_permission",
 	"WireGuard Device": "central.permissions.wireguard_device_has_permission",
+	"Firewall Ruleset": "central.permissions.firewall_ruleset_has_permission",
 	"Virtual Machine": "central.permissions.server_has_permission",
 	"Pilot Credential": "central.permissions.pilot_credential_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",
@@ -499,8 +534,11 @@ export_python_type_annotations = True
 # Require all whitelisted methods to have type annotations
 require_type_annotated_api_methods = True
 
-# Log Settings clears each listed DocType daily. An operator changes the days there.
-default_log_clearing_doctypes = {"Activity Event": 365}
+# Days Log Settings keeps a record before its daily clean-up drops it.
+default_log_clearing_doctypes = {
+	"Activity Event": 365,
+	"AI Trial Key": 30,
+}
 
 # Translation
 # ------------

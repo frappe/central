@@ -15,6 +15,7 @@ from central.sso import mint_datum_token
 
 CURSOR_KEY = "central:telemetry:error_log_cursor"
 RESOURCE_ID = "central"
+DATUM_WRITE_HOST = "telemetry-svc"
 # Datum takes 1,000 lines a request. One request a minute stays under its rate limit.
 MAXIMUM_LINES = 1_000
 TRACEBACK_TAIL_CHARACTERS = 1_024
@@ -34,34 +35,25 @@ ERROR_LOG_FIELDS = [
 
 
 class ErrorLogPublisher:
-	"""Sends new Error Logs to the Datum of the region in the `telemetry_region` site config, so Beacon sees what fails in Central."""
+	"""Sends new Error Logs to the Datum of the Central telemetry region, so Beacon sees what fails in Central."""
 
 	def __init__(self, region: str):
 		self.region = region
 
 	def publish(self) -> None:
-		url = get_telemetry_base_url(self.region)
 		rows = self.get_new_error_logs()
-		if not url or not rows:
-			return
-
-		token = mint_datum_token(region_id_of(self.region), RESOURCE_ID)
-		try:
-			response = requests.post(
-				f"{url.rstrip('/')}/v1/logs/ingest",
-				headers={"Authorization": f"Bearer {token}"},
-				json={"lines": [to_log_line(row) for row in rows]},
-				timeout=REQUEST_TIMEOUT_SECONDS,
-			)
-			response.raise_for_status()
-		except requests.RequestException as error:
-			frappe.logger("central.telemetry").warning(f"Datum error log push failed: {error}")
-			return
-		frappe.cache.set_value(CURSOR_KEY, str(rows[-1].creation))
+		if rows and send_to_datum(
+			self.region, "/v1/logs/ingest", {"lines": [to_log_line(row) for row in rows]}
+		):
+			frappe.cache.set_value(CURSOR_KEY, str(rows[-1].creation))
 
 	def get_new_error_logs(self) -> list[frappe._dict]:
-		"""Read after the cursor. The log store compares creation as text, so the cursor uses the same form."""
-		cursor = frappe.cache.get_value(CURSOR_KEY) or str(now_datetime() - timedelta(minutes=5))
+		"""Read after the cursor. The log store compares creation as text, so the cursor uses the same form.
+		The first lower bound is stored before the first push, so a failed push does not move it forward."""
+		cursor = frappe.cache.get_value(CURSOR_KEY)
+		if not cursor:
+			cursor = str(now_datetime() - timedelta(minutes=5))
+			frappe.cache.set_value(CURSOR_KEY, cursor)
 		return frappe.get_all(
 			"Error Log",
 			filters={"creation": [">", cursor]},
@@ -71,9 +63,46 @@ class ErrorLogPublisher:
 		)
 
 
+def get_central_telemetry_region() -> str | None:
+	"""The region whose Datum takes the Central telemetry: the one with Central Telemetry Region set."""
+	return frappe.db.get_value("Region", {"is_central_telemetry_region": 1}, "name")
+
+
+def get_central_datum_url(region: str) -> str | None:
+	"""The public address of the Datum of a region. The reported endpoint is on the WireGuard mesh,
+	which Central is not on. Central sends nothing while that Datum does not report itself Available."""
+	if not get_telemetry_base_url(region):
+		return None
+
+	proxy_domain = frappe.db.get_value("Region", region, "proxy_domain")
+	return f"https://{DATUM_WRITE_HOST}.{proxy_domain}" if proxy_domain else None
+
+
+def send_to_datum(region: str, path: str, payload: dict) -> bool:
+	"""Post one payload to the Datum of a region as Central. A failure is a warning, not an Error Log,
+	so an unreachable Datum does not make a Central error each minute. Returns whether Datum took it."""
+	url = get_central_datum_url(region)
+	if not url:
+		return False
+
+	token = mint_datum_token(region_id_of(region), RESOURCE_ID)
+	try:
+		response = requests.post(
+			f"{url.rstrip('/')}{path}",
+			headers={"Authorization": f"Bearer {token}"},
+			json=payload,
+			timeout=REQUEST_TIMEOUT_SECONDS,
+		)
+		response.raise_for_status()
+	except requests.RequestException as error:
+		frappe.logger("central.telemetry").warning(f"Datum push to {path} failed: {error}")
+		return False
+	return True
+
+
 def publish_error_logs() -> None:
-	"""Scheduled every minute. Does nothing until the site config names a telemetry region."""
-	region = frappe.conf.get("telemetry_region")
+	"""Scheduled every minute. Does nothing until a region has Central Telemetry Region set."""
+	region = get_central_telemetry_region()
 	if not region:
 		return
 

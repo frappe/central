@@ -43,6 +43,7 @@ class AISettings(Document):
 		base_url: DF.Data | None
 		control_api_key: DF.Data | None
 		control_api_secret: DF.Password | None
+		grove_token_hash: DF.Data | None
 		pause_key_assignment: DF.Check
 		pause_pool_refill: DF.Check
 		trial_key_cap: DF.Currency

@@ -1,12 +1,15 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+from collections import defaultdict
 from urllib.parse import urlsplit
 
 import frappe
 from frappe import _
+from frappe.translate import get_user_lang, print_language
 from frappe.utils import escape_html
 
+from central.errors import build_envelope
 from central.sso import central_url
 
 
@@ -79,8 +82,11 @@ def dispatch(
 			"email_failed": 0,
 		}
 
-	title = _render_template(event.in_app_title, ctx)
-	body = _render_template(event.in_app_body, ctx)
+	reader_ctx = _get_reader_context(ctx)
+	title = _render_template(event.in_app_title, reader_ctx)
+	body = _render_template(event.in_app_body, reader_ctx)
+
+	flapping = is_flapping(team, event, reference_name, server)
 
 	doc = None
 	if event.create_in_app:
@@ -100,23 +106,30 @@ def dispatch(
 			server=server,
 			action_label=event.action_label,
 			action_route=_render_template(event.action_route, ctx) if event.action_route else None,
+			template_context=ctx,
 			publish=True,
 		)
 
-	email_result = _fan_out_emails(
-		team,
-		event,
-		ctx,
-		message=message,
-		reference_doctype=reference_doctype,
-		reference_name=reference_name,
-		server=server,
-		affected_user=affected_user,
+	notification = doc.name if doc else None
+	email_result = (
+		{"queued": 0, "attempted": 0, "failed": 0}
+		if flapping
+		else _fan_out_emails(
+			team,
+			event,
+			ctx,
+			message=message,
+			reference_doctype=reference_doctype,
+			reference_name=reference_name,
+			server=server,
+			affected_user=affected_user,
+			notification=notification,
+		)
 	)
 
 	return {
 		"created": bool(doc),
-		"notification": doc.name if doc else None,
+		"notification": notification,
 		"title": title,
 		"body": body,
 		"emails_queued": email_result["queued"],
@@ -125,9 +138,13 @@ def dispatch(
 	}
 
 
+# The copy a reader sees. `extractor.extract` adds it from the fixture to the translation catalog.
+TRANSLATED_FIELDS = ("in_app_title", "in_app_body", "action_label")
+
+
 def get_event_type(event_type: str):
-	"""Fetch the Event Type registry row."""
-	return frappe.db.get_value(
+	"""Fetch the Event Type registry row, with its copy in the current language."""
+	event = frappe.db.get_value(
 		"Notification Event Type",
 		event_type,
 		[
@@ -146,6 +163,63 @@ def get_event_type(event_type: str):
 		],
 		as_dict=True,
 	)
+	if not event:
+		return None
+
+	# Translate the Jinja source, so a translation keeps its {{ placeholders }}.
+	for field in TRANSLATED_FIELDS:
+		if event[field]:
+			event[field] = _(event[field])
+
+	return event
+
+
+def render_for_reader(rows: list[frappe._dict]) -> None:
+	"""Fill each feed row's title, message and action label again in the current language,
+	from the context the row was created with. A row without a context keeps its stored copy."""
+	events = {}
+	failed_events = set()
+	for row in rows:
+		ctx = row.pop("template_context", None)
+		if not (ctx and row.event_type) or row.event_type in failed_events:
+			continue
+
+		if row.event_type not in events:
+			events[row.event_type] = get_event_type(row.event_type)
+		event = events[row.event_type]
+		if not event:
+			continue
+
+		try:
+			ctx = _get_reader_context(frappe.parse_json(ctx))
+			title = _render_template(event.in_app_title, ctx)
+			message = _render_template(event.in_app_body, ctx)
+		except Exception:
+			# A broken translation of one template must not break the whole feed.
+			frappe.log_error(title=f"Notification render failed: {row.event_type} ({frappe.local.lang})")
+			failed_events.add(row.event_type)
+			continue
+
+		row.title = title or row.title
+		row.message = message
+		row.action_label = event.action_label
+
+
+def _get_reader_context(ctx: dict) -> dict:
+	"""The template context with a Resource Action's error code turned into its catalog
+	sentence and its action into a word, both in the current language."""
+	context = ctx.get("context") or {}
+	if not context.get("error_code"):
+		return ctx
+
+	envelope = build_envelope(
+		context["error_code"], action=context.get("action"), resource_id=context.get("resource_id")
+	)
+	return {
+		**ctx,
+		"message": ctx.get("message") or envelope["message"],
+		"context": {**context, "action": _(context["action"]) if context.get("action") else ""},
+	}
 
 
 def _resolve_context(team, event_type, context, reference_name, reference_doctype=None):
@@ -207,11 +281,12 @@ def _render_template(template_str: str | None, ctx: dict) -> str | None:
 	"""Render a Jinja template string with *ctx*. Returns None if template is empty."""
 	if not template_str:
 		return None
-	# nosemgrep: frappe-ssti -- templates come from the System Manager-only Notification Event Type doctype (repo fixtures), never from users.
+	# nosemgrep: frappe-ssti -- templates come from the System Manager-only Notification Event Type doctype (repo fixtures) or its Translation records, never from customers; render_template is sandboxed.
 	return frappe.render_template(template_str, ctx)
 
 
 DEDUP_WINDOW_MINUTES = 60
+FLAP_EMAIL_LIMIT = 4
 
 
 def _is_duplicate(team, event_type, reference_name, server=None) -> bool:
@@ -243,6 +318,17 @@ def _is_duplicate(team, event_type, reference_name, server=None) -> bool:
 	return not state_changed
 
 
+def is_flapping(team: str, event, reference_name: str | None, server: str | None = None) -> bool:
+	if event.reportable_by != "Pilot" or not reference_name:
+		return False
+
+	cutoff = frappe.utils.add_to_date(None, minutes=-DEDUP_WINDOW_MINUTES)
+	subject = {"team": team, "reference_name": reference_name, "creation": (">=", cutoff)}
+	if server:
+		subject["server"] = server
+	return frappe.db.count("Team Notification", subject) >= FLAP_EMAIL_LIMIT
+
+
 def _fan_out_emails(
 	team,
 	event,
@@ -253,6 +339,7 @@ def _fan_out_emails(
 	reference_name=None,
 	server=None,
 	affected_user=None,
+	notification=None,
 ) -> dict:
 	"""Queue the email to each recipient, sent after the caller's transaction commits.
 
@@ -270,6 +357,7 @@ def _fan_out_emails(
 			event_type=event.name,
 			ctx=ctx,
 			message=message,
+			notification=notification,
 		)
 	return {"queued": len(recipients), "attempted": len(recipients), "failed": 0}
 
@@ -293,19 +381,40 @@ def _email_recipients(team, event, *, server=None, affected_user=None) -> list[s
 			if not event.required_cap or can(user, team, event.required_cap, server=server)
 		]
 	preferences = UserNotificationPreference.load_for_users(team, users)
-	return [user for user in users if _is_emailed_instantly(preferences.get((user, event.category)), event)]
+	owner = frappe.db.get_value("Team", team, "owner_user")
+	return [
+		user
+		for user in users
+		if _is_emailed_instantly(preferences.get((user, event.category)), event, is_owner=user == owner)
+	]
 
 
-def send_notification_emails(recipients: list[str], event_type: str, ctx: dict, message=None) -> None:
-	"""Background job: render the event's email once and send it to each recipient."""
-	event = get_event_type(event_type)
-	subject, body = _notification_email(event, ctx, message)
+def send_notification_emails(
+	recipients: list[str], event_type: str, ctx: dict, message=None, notification: str | None = None
+) -> None:
+	"""Background job: render the event's email once per language and send each recipient theirs."""
+	recipients_by_language = defaultdict(list)
 	for user in recipients:
-		try:
-			frappe.sendmail(recipients=[user], subject=subject, message=body)
-		except Exception:
-			# Delivery is best effort, but a failure must leave an error log.
-			frappe.log_error(title=f"Notification email send failed: {event.name} -> {user}")
+		recipients_by_language[get_user_lang(user)].append(user)
+
+	for language, users in recipients_by_language.items():
+		with print_language(language):
+			event = get_event_type(event_type)
+			subject, body, reply_to = _notification_email(event, ctx, message)
+
+		for user in users:
+			try:
+				frappe.sendmail(
+					recipients=[user],
+					subject=subject,
+					message=body,
+					reply_to=reply_to,
+					reference_doctype="Team Notification" if notification else None,
+					reference_name=notification,
+				)
+			except Exception:
+				# Delivery is best effort, but a failure must leave an error log.
+				frappe.log_error(title=f"Notification email send failed: {event.name} -> {user}")
 
 
 def _get_active_members(team: str) -> list[str]:
@@ -331,12 +440,14 @@ def publish_team_nudge(team: str) -> None:
 		)
 
 
-def _is_emailed_instantly(preference: dict | None, event: frappe._dict) -> bool:
+def _is_emailed_instantly(preference: dict | None, event: frappe._dict, is_owner: bool = False) -> bool:
 	"""No preference means yes. A digest event waits for the digest, which reads it from the feed.
 
 	The feed row is team-wide, so an Affected User event cannot wait for the digest."""
-	if preference is None or event.is_critical:
+	if preference is None:
 		return True
+	if event.is_critical:
+		return is_owner or bool(preference["email_enabled"])
 	if not preference["email_enabled"]:
 		return False
 	if not preference["events"].get(event.name, True):
@@ -348,12 +459,13 @@ def _is_emailed_instantly(preference: dict | None, event: frappe._dict) -> bool:
 	)
 
 
-def _notification_email(event, ctx, message=None) -> tuple[str, str]:
-	"""Subject and HTML body, with the branding and notes of the Site's product."""
+def _notification_email(event, ctx, message=None) -> tuple[str, str, str | None]:
+	"""Subject, HTML body and reply-to address, with the branding, notes and reply-to of the
+	Site's product."""
 	from central.signups.doctype.product.product import GETTING_STARTED_EMAILS, get_email_product
 
 	# The email uses the same sentence as the in-app notification.
-	ctx = {**ctx, "message": message or ctx.get("message") or ""}
+	ctx = _get_reader_context({**ctx, "message": message or ctx.get("message") or ""})
 	site = _get_email_site(ctx["team"], ctx["reference_doctype"], ctx["reference_name"])
 	product = get_email_product(site.product) if site else None
 	extras = product.get_email_extras(event.name) if product else {}
@@ -361,7 +473,8 @@ def _notification_email(event, ctx, message=None) -> tuple[str, str]:
 		landing_route = product.landing_route if product else None
 		extras["site_url"] = site.routed_url + (landing_route or "")
 
-	return render_notification_email(event, ctx, extras)
+	subject, body = render_notification_email(event, ctx, extras)
+	return subject, body, product.reply_to if product else None
 
 
 def render_notification_email(event, ctx: dict, extras: dict) -> tuple[str, str]:
@@ -378,6 +491,7 @@ def render_notification_email(event, ctx: dict, extras: dict) -> tuple[str, str]
 			"title": escape_html(subject),
 			"paragraphs": [escape_html(part.strip()) for part in text.split("\n\n") if part.strip()],
 			"notes": extras.get("notes") or [],
+			"note_html": extras.get("note_html"),
 			"brand": extras.get("brand"),
 			"action_label": event.action_label,
 			"action_url": escape_html(action_url) if action_url else None,

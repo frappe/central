@@ -241,7 +241,6 @@ class TestDeduplication(EngineTestBase):
 		# timestamp outside the window.
 		cutoff = frappe.utils.add_to_date(None, minutes=-(DEDUP_WINDOW_MINUTES + 1))
 		frappe.db.set_value("Team Notification", result["notification"], "creation", cutoff)
-		frappe.db.commit()
 
 		third = dispatch(
 			TEAM, "backup_failure", message="third", reference_doctype="Site", reference_name="my-site"
@@ -488,6 +487,132 @@ class TestEmailFanout(EngineTestBase):
 		self.assertNotIn(self.user_b, all_recipients)
 
 
+class TestPilotFlapEmailLimit(EngineTestBase):
+	"""A Pilot reports every failed probe, so the feed is busy but the inbox stops at four."""
+
+	def setUp(self):
+		super().setUp()
+		self.user_a = make_user("flap-a@example.com")
+		self.user_b = make_user("flap-b@example.com")
+		team = frappe.get_doc("Team", TEAM)
+		for user in (self.user_a, self.user_b):
+			team.append("members", {"user": user, "role": "Billing", "status": "Active"})
+		team.save(ignore_permissions=True)
+		self.enqueue = self.enterContext(patch("central.notification.engine.frappe.enqueue"))
+
+	def _ensure_pilot_events(self):
+		self._ensure_event_type("site_unavailable", required_cap="billing:view")
+		self._ensure_event_type("site_recovered", required_cap="billing:view")
+
+	def _dispatch(self, event, message="down", reference_name="acme.frappe.cloud", team=TEAM):
+		from central.notification.engine import dispatch
+
+		return dispatch(
+			team,
+			event,
+			message=message,
+			reference_doctype="Site",
+			reference_name=reference_name,
+		)
+
+	def _flap(self, reference_name="acme.frappe.cloud", team=TEAM):
+		return [
+			self._dispatch("site_unavailable", message="down", reference_name=reference_name, team=team),
+			self._dispatch("site_recovered", message="up", reference_name=reference_name, team=team),
+			self._dispatch("site_unavailable", message="down", reference_name=reference_name, team=team),
+			self._dispatch("site_recovered", message="up", reference_name=reference_name, team=team),
+		]
+
+	def test_the_fifth_alert_for_a_reference_sends_no_email(self):
+		self._ensure_pilot_events()
+
+		for result in self._flap():
+			self.assertTrue(result["created"])
+			self.assertGreater(result["emails_queued"], 0)
+
+		fifth = self._dispatch("site_unavailable", message="down again")
+
+		self.assertTrue(fifth["created"])
+		self.assertEqual(fifth["emails_queued"], 0)
+		self.assertEqual(fifth["email_attempted"], 0)
+		self.assertEqual(frappe.db.count("Team Notification", {"team": TEAM}), 5)
+
+	def test_email_resumes_after_the_window(self):
+		from central.notification.engine import DEDUP_WINDOW_MINUTES
+
+		self._ensure_pilot_events()
+		self._flap()
+
+		cutoff = frappe.utils.add_to_date(None, minutes=-(DEDUP_WINDOW_MINUTES + 1))
+		for name in frappe.get_all("Team Notification", {"team": TEAM}, pluck="name"):
+			frappe.db.set_value("Team Notification", name, "creation", cutoff)
+
+		again = self._dispatch("site_unavailable", message="down again")
+
+		self.assertTrue(again["created"])
+		self.assertGreater(again["emails_queued"], 0)
+
+	def test_another_reference_on_the_same_team_still_emails(self):
+		self._ensure_pilot_events()
+		self._flap()
+
+		other = self._dispatch("site_unavailable", reference_name="other.frappe.cloud")
+
+		self.assertGreater(other["emails_queued"], 0)
+
+	def test_the_same_reference_on_another_server_still_emails(self):
+		from central.notification.engine import get_event_type, is_flapping
+
+		self._ensure_pilot_events()
+		for _ in range(4):
+			row = frappe.get_doc(
+				{
+					"doctype": "Team Notification",
+					"team": TEAM,
+					"title": "down",
+					"event_type": "site_unavailable",
+					"reference_name": "main",
+					"server": "vm-a",
+				}
+			)
+			row.flags.ignore_links = True
+			row.insert(ignore_permissions=True)
+
+		event = get_event_type("site_unavailable")
+		self.assertTrue(is_flapping(TEAM, event, "main", "vm-a"))
+		self.assertFalse(is_flapping(TEAM, event, "main", "vm-b"))
+
+	def test_the_same_reference_on_another_team_still_emails(self):
+		other_team = ensure_team("team-engine-other")
+		team = frappe.get_doc("Team", other_team)
+		if self.user_a not in [member.user for member in team.members]:
+			team.append("members", {"user": self.user_a, "role": "Billing", "status": "Active"})
+			team.save(ignore_permissions=True)
+
+		self._ensure_pilot_events()
+		self._flap()
+
+		other = self._dispatch("site_unavailable", team=other_team)
+
+		self.assertGreater(other["emails_queued"], 0)
+
+	def test_a_non_pilot_event_with_four_prior_alerts_still_emails(self):
+		self._ensure_pilot_events()
+		self._ensure_event_type("backup_failure", required_cap="billing:view", reportable_by=None)
+		self._flap()
+
+		backup = self._dispatch("backup_failure", message="backup failed")
+
+		self.assertGreater(backup["emails_queued"], 0)
+
+	def test_on_doctype_update_adds_the_flap_index(self):
+		from central.notification.doctype.team_notification.team_notification import on_doctype_update
+
+		on_doctype_update()
+
+		self.assertTrue(frappe.db.has_index("tabTeam Notification", "team_reference_name_creation_index"))
+
+
 class TestSaveUserPreferences(EngineTestBase):
 	def setUp(self):
 		super().setUp()
@@ -564,13 +689,16 @@ class TestSaveUserPreferences(EngineTestBase):
 		self.assertEqual(billing["frequency"], "Weekly")
 		self.assertEqual(out["digest_hour"], 9)
 		self.assertEqual(billing["events"], [{"event_type": "payment_success", "email_enabled": 0}])
-		catalog = next(group for group in out["catalog"] if group["category"] == "Billing")
-		events = {event["event_type"]: event for event in catalog["events"]}
-		self.assertFalse(events["payment_success"]["can_receive"])
-		self.assertTrue(events["payment_failure"]["is_critical"])
-		server_catalog = next(group for group in out["catalog"] if group["category"] == "Server")
-		server_events = {event["event_type"]: event for event in server_catalog["events"]}
-		self.assertTrue(server_events["backup_failure"]["can_receive"])
+		catalog = {
+			group["category"]: [event["event_type"] for event in group["events"]] for group in out["catalog"]
+		}
+		self.assertNotIn("Billing", catalog)
+		self.assertIn("backup_failure", catalog["Server"])
+		self.assertIn("role_change", catalog["Team"])
+		self.assertNotIn("member_joined", catalog["Team"])
+		server = next(group for group in out["catalog"] if group["category"] == "Server")
+		titles = {event["event_type"]: event["title"] for event in server["events"]}
+		self.assertEqual(titles["backup_failure"], "Backup failure")
 
 	def test_rejects_event_from_another_category(self):
 		from central.notification.api import save_user_preferences
@@ -607,14 +735,16 @@ class TestSaveUserPreferences(EngineTestBase):
 				],
 			)
 
-	def test_critical_event_is_emailed_when_category_email_is_off(self):
+	def test_critical_event_with_category_email_off_reaches_only_the_owner(self):
 		from central.notification.engine import _is_emailed_instantly
 
 		event = frappe._dict(name="server_failed", is_critical=1, create_in_app=1, direct_recipients="None")
-		preference = {"email_enabled": False, "frequency": "Instant", "events": {}}
+		preference = {"email_enabled": False, "frequency": "Daily", "events": {"server_failed": False}}
 
-		self.assertTrue(_is_emailed_instantly(preference, event))
-		self.assertFalse(_is_emailed_instantly(preference, frappe._dict(event, is_critical=0)))
+		self.assertTrue(_is_emailed_instantly(preference, event, is_owner=True))
+		self.assertFalse(_is_emailed_instantly(preference, event))
+		self.assertFalse(_is_emailed_instantly(preference, frappe._dict(event, is_critical=0), is_owner=True))
+		self.assertTrue(_is_emailed_instantly({**preference, "email_enabled": True}, event))
 
 	def test_pilot_patch_marks_server_events_once_and_leaves_other_categories(self):
 		from central.patches.v0_0.mark_pilot_reportable_events import execute
@@ -1012,9 +1142,43 @@ class TestReportPilotEvent(EngineTestBase):
 			{"team": TEAM, "event_type": "resource_limit_breached"},
 			["title", "message", "action_label", "action_route"],
 		)[0]
-		self.assertEqual(row.title, "Resource limit breached: my-bench")
+		self.assertEqual(row.title, "Resource limit reached: my-bench")
 		self.assertEqual(row.message, "my-bench: cpu_usage_limit at 95.0%")
 		self.assertEqual((row.action_label, row.action_route), ("View server", "/servers/"))
+
+	def test_pilot_certificate_alerts_are_accepted_with_the_shipped_fixture(self):
+		"""Pilot sends certificate_expiry and certificate_failed with the domains of the certificate."""
+		fixture_path = frappe.get_app_path("central", "fixtures", "notification_event_type.json")
+		fixtures = {record["name"]: record for record in frappe.parse_json(frappe.read_file(fixture_path))}
+
+		class FakeCredential:
+			team = TEAM
+			server = None
+
+		for event_type, title in (
+			("certificate_expiry", "Certificate not renewing: a.example.com, b.example.com"),
+			("certificate_failed", "Certificate failed: a.example.com, b.example.com"),
+		):
+			with self.subTest(event_type):
+				self._ensure_event_type(
+					event_type, **{field: fixtures[event_type][field] for field in _FIXTURE_FIELDS}
+				)
+				with (
+					patch("central.api.pilot.PilotCredential.verify", return_value=FakeCredential()),
+					patch("frappe.get_request_header", return_value="fake-token"),
+				):
+					from central.notification.api import report_pilot_event
+
+					out = report_pilot_event(
+						event_type=event_type,
+						message="The certificate for a.example.com, b.example.com expired and has not renewed.",
+						context={"bench": "my-bench", "domains": ["a.example.com", "b.example.com"]},
+					)
+				self.assertTrue(out["created"])
+				row = frappe.get_all(
+					"Team Notification", {"team": TEAM, "event_type": event_type}, ["title", "action_route"]
+				)[0]
+				self.assertEqual((row.title, row.action_route), (title, "/servers/"))
 
 
 class TestTemplateContext(EngineTestBase):
@@ -1093,6 +1257,35 @@ class TestInAppEnabledFilter(EngineTestBase):
 		out = feed.list_notifications(TEAM, user=self.user_b)
 		event_types = [i.event_type for i in out["items"]]
 		self.assertIn("backup_failure", event_types)
+
+	def test_only_the_owner_sees_critical_events_with_in_app_off(self):
+		from central import notification as feed
+		from central.notification.engine import dispatch
+
+		self._ensure_event_type(
+			"server_failed", category="Server", required_cap="server:view", is_critical=True
+		)
+		self._ensure_event_type("backup_failure", category="Server", required_cap="server:view")
+		frappe.db.set_value("Team", TEAM, "owner_user", self.user_a)
+		for user in (self.user_a, self.user_b):
+			frappe.get_doc(
+				{
+					"doctype": "User Notification Preference",
+					"user": user,
+					"team": TEAM,
+					"category": "Server",
+					"email_enabled": 1,
+					"in_app_enabled": 0,
+				}
+			).insert()
+
+		dispatch(TEAM, "server_failed", message="Server failed", reference_name="srv-1")
+		dispatch(TEAM, "backup_failure", message="Backup failed", reference_name="srv-1")
+
+		owner_events = [i.event_type for i in feed.list_notifications(TEAM, user=self.user_a)["items"]]
+		member_events = [i.event_type for i in feed.list_notifications(TEAM, user=self.user_b)["items"]]
+		self.assertEqual(owner_events, ["server_failed"])
+		self.assertEqual(member_events, [])
 
 
 class TestMemberInvitedSuppression(EngineTestBase):
@@ -1275,3 +1468,145 @@ class TestFeedPagination(EngineTestBase):
 		page = feed.list_notifications(TEAM, user=self.user)
 		self.assertEqual(len(page["items"]), 3)
 		self.assertFalse(page["has_next_page"])
+
+
+class TestReaderLanguage(EngineTestBase):
+	"""One feed row serves the whole team, so each reader gets it in their own language."""
+
+	GERMAN: ClassVar[dict] = {
+		"Backup failed for {{ reference_name }}": "Sicherung fehlgeschlagen für {{ reference_name }}",
+		"View site": "Website ansehen",
+		"Your server reported a failure while trying to {action}, and it's now in a failed state.": (
+			"Ihr Server meldete einen Fehler beim Versuch: {action}."
+		),
+		"resize": "Größe ändern",
+	}
+
+	def setUp(self):
+		super().setUp()
+		self._ensure_event_type(
+			"backup_failure",
+			in_app_title="Backup failed for {{ reference_name }}",
+			in_app_body="{{ message }}",
+			action_label="View site",
+		)
+		self.german = dict(self.GERMAN)
+		self.translations = self.enterContext(
+			patch(
+				"frappe.translate.get_all_translations",
+				side_effect=lambda language: self.german if language == "de" else {},
+			)
+		)
+
+	def read_feed_in(self, language: str) -> dict:
+		from central.notification import list_notifications
+
+		previous = frappe.local.lang
+		frappe.local.lang = language
+		try:
+			return list_notifications(TEAM, user="Administrator")["items"][0]
+		finally:
+			frappe.local.lang = previous
+
+	def test_the_feed_fills_the_templates_in_the_readers_language(self):
+		from central.notification.engine import dispatch
+
+		dispatch(TEAM, "backup_failure", message="pg_dump error", reference_name="my-site")
+
+		german = self.read_feed_in("de")
+		english = self.read_feed_in("en")
+
+		self.assertEqual(german.title, "Sicherung fehlgeschlagen für my-site")
+		self.assertEqual(german.action_label, "Website ansehen")
+		self.assertEqual(english.title, "Backup failed for my-site")
+		self.assertNotIn("template_context", german)
+
+	def test_a_row_without_a_context_keeps_its_stored_copy(self):
+		from central.notification import create_notification
+
+		create_notification(TEAM, "Stored title", event_type="backup_failure", publish=False)
+
+		self.assertEqual(self.read_feed_in("de").title, "Stored title")
+
+	@patch("central.notification.engine.frappe.sendmail")
+	def test_each_recipient_gets_the_email_in_their_language(self, sendmail):
+		from central.notification.engine import send_notification_emails
+
+		languages = {"de@example.test": "de", "en@example.test": "en"}
+		ctx = {"team": TEAM, "reference_name": "my-site", "reference_doctype": "", "message": ""}
+		with patch("central.notification.engine.get_user_lang", side_effect=languages.get):
+			send_notification_emails(list(languages), "backup_failure", ctx)
+
+		subjects = {call.kwargs["recipients"][0]: call.kwargs["subject"] for call in sendmail.call_args_list}
+		self.assertEqual(subjects["de@example.test"], "Sicherung fehlgeschlagen für my-site")
+		self.assertEqual(subjects["en@example.test"], "Backup failed for my-site")
+
+	def test_an_error_code_is_read_as_its_catalog_sentence(self):
+		from central.notification.engine import dispatch
+
+		context = {"error_code": "ACTION_FAILED", "action": "resize", "resource_id": "vm-1"}
+		dispatch(TEAM, "backup_failure", context=context, reference_name="my-site")
+
+		self.assertEqual(
+			self.read_feed_in("de").message, "Ihr Server meldete einen Fehler beim Versuch: Größe ändern."
+		)
+		self.assertIn("trying to resize", self.read_feed_in("en").message)
+
+	def test_a_broken_translation_keeps_the_stored_copy(self):
+		from central.notification.engine import dispatch
+
+		dispatch(TEAM, "backup_failure", message="pg_dump error", reference_name="my-site")
+		self.german["Backup failed for {{ reference_name }}"] = "Sicherung {% if"
+
+		self.assertEqual(self.read_feed_in("de").title, "Backup failed for my-site")
+
+
+class TestOwnerEmailFailure(EngineTestBase):
+	def setUp(self):
+		super().setUp()
+		self.admin = make_user("failover-admin@example.com")
+		self.member = make_user("failover-member@example.com")
+		team = frappe.get_doc("Team", TEAM)
+		team.append("members", {"user": self.admin, "role": "Admin", "status": "Active"})
+		team.append("members", {"user": self.member, "role": "Viewer", "status": "Active"})
+		team.save()
+		self._ensure_event_type("server_failed", category="Server", is_critical=True)
+
+	def fail_email_to(self, recipient: str) -> list:
+		"""Run Frappe's final-failure path for a critical email to *recipient*; return the Admin sends."""
+		from central.notification.engine import dispatch
+
+		with patch("central.notification.engine.frappe.enqueue"):
+			notification = dispatch(TEAM, "server_failed", message="Server failed", reference_name="srv-9")[
+				"notification"
+			]
+		queue = frappe.get_doc(
+			{
+				"doctype": "Email Queue",
+				"status": "Error",
+				"message": "Subject: Server failed\n\nbody",
+				"reference_doctype": "Team Notification",
+				"reference_name": notification,
+				"recipients": [{"recipient": recipient}],
+			}
+		).insert()
+		with patch("central.notification.failed_email.frappe.enqueue") as enqueue:
+			frappe.get_doc(
+				{
+					"doctype": "Notification Log",
+					"for_user": "Administrator",
+					"type": "Alert",
+					"document_type": "Email Queue",
+					"document_name": queue.name,
+					"subject": "Failed to send email",
+				}
+			).insert()
+		return [call.kwargs["recipients"] for call in enqueue.call_args_list]
+
+	def test_failed_owner_email_goes_to_admins(self):
+		owner = frappe.db.get_value("Team", TEAM, "owner_user")
+
+		self.assertEqual(self.fail_email_to(owner), [[self.admin]])
+
+	def test_failed_member_email_is_not_forwarded(self):
+		self.assertEqual(self.fail_email_to(self.member), [])

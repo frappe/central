@@ -6,6 +6,9 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils.translations import N_
 
+from central.server_models import ServerShape
+from central.utils.units import mebibytes_to_gigabytes
+
 NO_FIELDS = MappingProxyType({})
 
 
@@ -38,6 +41,7 @@ class Tracked(NamedTuple):
 	row_subjects: Mapping[str, str] = NO_FIELDS
 	# A guest session acts for the person this returns, such as the owner signing up.
 	guest_actor: Callable[[Document], str | None] | None = None
+	initiator_field: str | None = None
 	label_field: str | None = None
 	lifecycle: bool = True
 
@@ -58,16 +62,16 @@ TRACKED: dict[str, Tracked] = {
 		"configuration",
 		"server:view",
 		fields={
-			"title": "Server name",
-			"plan": "Plan",
-			"is_firewall_enabled": "Firewall",
-			"firewall_rules": "Firewall rules",
-			"has_ipv4_internet": "IPv4 internet access",
-			"public_ipv4": "Public IPv4",
-			"public_ipv6": "Public IPv6",
-			"is_termination_protected": "Termination protection",
-			"skip_automatic_snapshot": "Automatic snapshots",
-			"ssh_keys": "SSH keys",
+			"title": N_("Server name"),
+			"plan": N_("Plan"),
+			"is_firewall_enabled": N_("Firewall"),
+			"firewall_rules": N_("Firewall rules"),
+			"has_ipv4_internet": N_("IPv4 internet access"),
+			"public_ipv4": N_("Public IPv4"),
+			"public_ipv6": N_("Public IPv6"),
+			"is_termination_protected": N_("Termination protection"),
+			"skip_automatic_snapshot": N_("Automatic snapshots"),
+			"ssh_keys": N_("SSH keys"),
 		},
 		field_events={
 			"title": EventKind("renamed", "configuration", "server:view"),
@@ -83,12 +87,13 @@ TRACKED: dict[str, Tracked] = {
 		"snapshot",
 		"server:view",
 		statuses=("Available", "Failed", "Deleted"),
+		initiator_field="requested_by",
 	),
 	"Site": Tracked(
 		"site",
 		"site",
 		"server:view",
-		fields={"claimed_at": "Claimed"},
+		fields={"claimed_at": N_("Claimed")},
 		field_events={"claimed_at": EventKind("claimed", "site", "server:view")},
 		guest_actor=get_team_owner,
 	),
@@ -97,7 +102,12 @@ TRACKED: dict[str, Tracked] = {
 		"team",
 		"team",
 		"team:edit",
-		fields={"team_name": "Team name", "team_logo": "Logo", "owner_user": "Owner", "members": "Access"},
+		fields={
+			"team_name": N_("Team name"),
+			"team_logo": N_("Logo"),
+			"owner_user": N_("Owner"),
+			"members": N_("Access"),
+		},
 		field_events={
 			"team_name": EventKind("renamed", "team", "team:edit"),
 			"team_logo": EventKind("logo_changed", "team", "team:edit"),
@@ -113,14 +123,14 @@ TRACKED: dict[str, Tracked] = {
 		"role",
 		"member",
 		TEAM_MEMBERS,
-		fields={"role_name": "Role name", "capabilities": "Capabilities"},
+		fields={"role_name": N_("Role name"), "capabilities": N_("Capabilities")},
 		row_fields={"capabilities": ("capability",)},
 	),
 	"Team Invitation": Tracked(
 		"invitation",
 		"member",
 		TEAM_MEMBERS,
-		fields={"expires_on": "Expires on"},
+		fields={"expires_on": N_("Expires on")},
 		field_events={"expires_on": EventKind("resent", "member", TEAM_MEMBERS)},
 		statuses=("Accepted", "Declined", "Revoked", "Expired"),
 		label_field="email",
@@ -130,7 +140,7 @@ TRACKED: dict[str, Tracked] = {
 		"ssh_key",
 		"access",
 		"server:ssh-key",
-		fields={"title": "Name", "public_key": "Public key"},
+		fields={"title": N_("Name"), "public_key": N_("Public key")},
 		field_events={
 			"title": EventKind("renamed", "access", "server:ssh-key"),
 			"public_key": EventKind("rotated", "access", "server:ssh-key"),
@@ -147,6 +157,14 @@ ACTION_EVENTS = {
 	"resize": ("server.resized", "server.resize_failed"),
 	"terminate": ("server.terminated", "server.terminate_failed"),
 }
+
+SHAPE_DETAILS: tuple[tuple[str, Callable[[ServerShape], str]], ...] = (
+	(N_("vCPU"), lambda shape: f"{shape.vcpus:g}"),
+	(N_("Memory"), lambda shape: f"{mebibytes_to_gigabytes(shape.memory_megabytes):g} GB"),
+	(N_("Disk"), lambda shape: f"{shape.disk_gigabytes} GB"),
+)
+
+CONSOLE = EventKind("console_opened", "access", "server:console")
 
 
 class Sentence(NamedTuple):
@@ -185,6 +203,13 @@ SENTENCES = {
 	"server.ssh_keys_changed": Sentence(
 		N_("{actor} changed the SSH keys that can sign in to {resource}"),
 		N_("The SSH keys that can sign in to {resource} changed"),
+	),
+	"server.ssh_console_opened": Sentence(
+		N_("{actor} opened the SSH console of {resource}"), N_("The SSH console of {resource} was opened")
+	),
+	"server.tty_console_opened": Sentence(
+		N_("{actor} opened the serial console (TTY) of {resource}"),
+		N_("The serial console (TTY) of {resource} was opened"),
 	),
 	"snapshot.created": Sentence(
 		N_("{actor} started snapshot {resource}"), N_("Automatic snapshot {resource} started")

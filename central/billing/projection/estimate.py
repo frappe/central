@@ -26,7 +26,7 @@ from central.billing.revenue.metering import metered_line_items_for_clusters
 TRAILING_MONTHS = 3
 
 # Identity of a metered line across periods — what we merge trailing history on.
-_KEY = ("subscription_resource", "resource_type", "cluster", "unit")
+_KEY = ("subscription_resource", "resource_type", "dimension", "cluster", "unit")
 
 
 def metered_lines(team: str, clusters, period_start, period_end, today=None) -> list[dict]:

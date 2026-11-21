@@ -179,9 +179,29 @@ const ROUTE_TRANSITIONS: Record<string, string> = {
 	'VerifyEmail>Login': 'auth-step-back',
 }
 
+// The list layout of Servers has no map card to morph, so New server slides in as a
+// page instead. Its names must not start with "server-create", or the map rules match.
+const LIST_LAYOUT_TRANSITIONS: Record<string, string> = {
+	'server-create': 'server-list-create',
+	'server-create-back': 'server-list-create-back',
+}
+
+// Set when leaving Servers, so Cancel on New server reverses the way it came.
+let isFleetMapLayout = true
+
+function getRouteTransition(key: string): string | undefined {
+	if (key === 'Servers>NewServer')
+		isFleetMapLayout = Boolean(document.querySelector('.vt-server-map'))
+
+	const transition = ROUTE_TRANSITIONS[key]
+	if (!transition || isFleetMapLayout) return transition
+	return LIST_LAYOUT_TRANSITIONS[transition] ?? transition
+}
+
 router.beforeResolve((to, from) => {
-	const transition =
-		ROUTE_TRANSITIONS[`${String(from.name)}>${String(to.name)}`]
+	const transition = getRouteTransition(
+		`${String(from.name)}>${String(to.name)}`,
+	)
 	if (!document.startViewTransition || !transition) return
 
 	const root = document.documentElement

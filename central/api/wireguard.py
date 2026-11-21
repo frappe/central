@@ -61,7 +61,7 @@ def list_wireguard_devices(team: str) -> dict:
 			"is_firewall_enabled",
 			"firewall_rules",
 		],
-		order_by="title asc",
+		order_by="has_wireguard_access desc, title asc",
 		limit_page_length=0,
 	)
 

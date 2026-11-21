@@ -13,6 +13,7 @@ import type {
 	Project,
 	SubscriptionRow,
 	TeamOverview,
+	TrustTier,
 } from '@/types/billing'
 
 // Shared, team-scoped reads behind the consolidated Billing Overview (#69). A
@@ -83,6 +84,13 @@ const cycleCostsCall = useCall<CycleCosts, { team: string }>({
 	immediate: false,
 	refetch: true,
 })
+// The spending limit and what runs now; lives here so reloadMoney can refresh it.
+const tierCall = useCall<TrustTier, { team: string }>({
+	url: method(API.trustTier),
+	params,
+	immediate: false,
+	refetch: true,
+})
 
 whenTeamReady(() => {
 	overviewCall.reload()
@@ -95,6 +103,7 @@ whenTeamReady(() => {
 	projectsCall.reload()
 	nextPaymentCall.reload()
 	cycleCostsCall.reload()
+	tierCall.reload()
 })
 
 export function useBillingOverview() {
@@ -109,6 +118,7 @@ export function useBillingOverview() {
 		projects: projectsCall,
 		nextPayment: nextPaymentCall,
 		cycleCosts: cycleCostsCall,
+		tier: tierCall,
 		// The team's billing currency. The Billing Profile is the source of truth
 		// (it's what the setup dialog writes), so read it FIRST: after a profile is
 		// saved, reloadProfile() re-pulls it and every consumer (top-up, add-method)
@@ -124,12 +134,14 @@ export function useBillingOverview() {
 		),
 		// A top-up moves wallet + projection, and can clear a blocker on the next
 		// debit (a shortfall covered, a bill brought under the ceiling) — so the
-		// outlook is refreshed with them.
+		// outlook is refreshed with them. A resize changes what runs, so the limit
+		// figures come with it.
 		reloadMoney(): void {
 			creditCall.reload()
 			ledgerCall.reload()
 			forecastCall.reload()
 			nextPaymentCall.reload()
+			tierCall.reload()
 		},
 		// Adding or reordering a method changes who gets charged first, and whether
 		// anything can be charged at all.

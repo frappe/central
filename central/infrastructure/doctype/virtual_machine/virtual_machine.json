@@ -25,6 +25,8 @@
   "capacity_column",
   "image_offering",
   "has_site",
+  "application",
+  "documentation_url",
   "skip_automatic_snapshot",
   "is_termination_protected",
   "access_tab",
@@ -36,6 +38,7 @@
   "gateway_url",
   "has_public_ipv6",
   "is_firewall_enabled",
+  "firewall_rulesets",
   "firewall_rules",
   "has_ipv4_internet",
   "has_wireguard_access",
@@ -180,6 +183,21 @@
    "read_only": 1
   },
   {
+   "description": "The one-click app the server was created from, such as redis.",
+   "fieldname": "application",
+   "fieldtype": "Data",
+   "label": "App",
+   "read_only": 1
+  },
+  {
+   "description": "The app's user guide. The server page links to it as Getting started.",
+   "fieldname": "documentation_url",
+   "fieldtype": "Data",
+   "label": "App Guide",
+   "options": "URL",
+   "read_only": 1
+  },
+  {
    "default": "0",
    "description": "The customer turned off the daily free snapshot for this server.",
    "fieldname": "skip_automatic_snapshot",
@@ -269,10 +287,19 @@
    "read_only": 1
   },
   {
+   "description": "The team rulesets this server uses. Their rules together are the firewall. Empty when the server has its own rules.",
+   "fieldname": "firewall_rulesets",
+   "fieldtype": "Table",
+   "label": "Firewall Rulesets",
+   "options": "Server Firewall Ruleset",
+   "read_only": 1
+  },
+  {
    "description": "The customer's firewall rules, as Atlas last reported, without the rules Central adds.",
    "fieldname": "firewall_rules",
    "fieldtype": "JSON",
    "label": "Firewall Rules",
+   "permlevel": 2,
    "read_only": 1
   },
   {
@@ -286,6 +313,7 @@
    "fieldtype": "Table",
    "label": "SSH Keys",
    "options": "Server SSH Key",
+   "permlevel": 2,
    "read_only": 1
   },
   {
@@ -394,7 +422,7 @@
    "link_fieldname": "server"
   }
  ],
- "modified": "2026-10-26 10:42:17.318256",
+ "modified": "2026-11-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",
@@ -423,6 +451,21 @@
    "permlevel": 1,
    "read": 1,
    "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "role": "Staff Viewer"
+  },
+  {
+   "permlevel": 2,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "permlevel": 2,
+   "read": 1,
+   "role": "Central User"
   }
  ],
  "row_format": "Dynamic",

@@ -40,6 +40,31 @@ yarn dev
 
 Use the development URL printed by Vite. To build assets, run `pilot build --apps central` from the bench directory.
 
+Each push to `develop` publishes pre-built assets to the `assets-develop` GitHub release. Pilot downloads them instead of building the dashboard.
+
+## Releases
+
+Central uses [semantic versioning](https://semver.org) and two branches.
+
+| Branch | Purpose | How changes arrive |
+|---|---|---|
+| `develop` | Staging. All work merges here. | Pull requests from feature branches |
+| `main` | Stable releases | Only Mergify backports of merged `develop` pull requests |
+
+To ship a change to `main`, add the `backport-main` label to its pull request on `develop`. Mergify opens a backport pull request and merges it when the checks pass. Mergify closes any other pull request to `main`. [`.mergify.yml`](.mergify.yml) holds these rules.
+
+To release, run the [Weekly Release](.github/workflows/weekly-release.yml) workflow from `main`. It reads the commit subjects since the last `vX.Y.Z` tag, picks the next version, checks that CI passed on that commit, and creates the GitHub release with generated notes.
+
+| Commit subject | Version change |
+|---|---|
+| `fix(scope): ...` | Patch |
+| `feat(scope): ...` | Minor |
+| `feat(scope)!: ...` or a `BREAKING CHANGE:` footer | Major, or minor before 1.0.0 |
+
+In an emergency, a repository admin can merge a fix to `main` directly. Add the `emergency` label to the pull request and reopen it if Mergify closed it. Then merge the same fix to `develop`.
+
+Report a vulnerability as described in [SECURITY.md](SECURITY.md).
+
 ## Documentation
 
 - [User guide](https://frappe.github.io/central/): customer instructions for the console and Pilot.

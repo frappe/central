@@ -135,15 +135,17 @@ class TestDigestDelivery(EngineTestBase):
 		for event_type in ("team_impersonated", "team_suspended"):
 			self.assertTrue(frappe.db.get_value("Notification Event Type", event_type, "is_critical"))
 
-	def test_critical_event_is_sent_at_once_when_category_email_is_off(self):
+	def test_critical_event_with_category_email_off_reaches_only_the_owner(self):
 		self._ensure_event_type("server_failed", is_critical=True)
-		preference = self._daily_preference()
-		frappe.db.set_value("User Notification Preference", preference.name, "email_enabled", 0)
+		owner = frappe.db.get_value("Team", TEAM, "owner_user")
+		for user in (self.user, owner):
+			preference = self._daily_preference(user=user)
+			frappe.db.set_value("User Notification Preference", preference.name, "email_enabled", 0)
 
 		with patch("central.notification.engine.frappe.sendmail") as mock_sendmail:
 			dispatch(TEAM, "server_failed", message="Server failed")
 
-		self.assertIn([self.user], self._digest_recipients(mock_sendmail))
+		self.assertEqual(self._digest_recipients(mock_sendmail), [[owner]])
 
 	def test_digest_holds_new_entries_only(self):
 		self._ensure_event_type("backup_failure", in_app_title="Backup failed")
@@ -168,6 +170,27 @@ class TestDigestDelivery(EngineTestBase):
 		with patch("central.notification.digest.frappe.sendmail") as mock_sendmail:
 			send_digest(self.user, TEAM, {"Server": now_datetime()}, "Daily")
 		mock_sendmail.assert_not_called()
+
+	def test_digest_is_written_in_the_readers_language(self):
+		self._ensure_event_type("backup_failure", in_app_title="Backup failed")
+		self._daily_preference()
+		frappe.db.set_value("User", self.user, "language", "de")
+		since = add_to_date(now_datetime(), seconds=-1)
+		dispatch(TEAM, "backup_failure", message="x")
+
+		german = {"Backup failed": "Sicherung fehlgeschlagen", "Server": "Server (de)"}
+		with (
+			patch(
+				"frappe.translate.get_all_translations",
+				side_effect=lambda lang: german if lang == "de" else {},
+			),
+			patch("central.notification.digest.frappe.sendmail") as mock_sendmail,
+		):
+			send_digest(self.user, TEAM, {"Server": since}, "Daily")
+
+		body = mock_sendmail.call_args.kwargs["message"]
+		self.assertIn("Sicherung fehlgeschlagen", body)
+		self.assertIn("Server (de)", body)
 
 	def test_digest_includes_entries_without_event_type(self):
 		self._daily_preference()

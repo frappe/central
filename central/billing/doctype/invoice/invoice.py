@@ -20,8 +20,9 @@ from frappe.model.naming import make_autoname
 
 CANCELLED = "Cancelled"
 OUTSTANDING = "Outstanding"
+OVERDUE = "Overdue"
 # What a team still owes; leaving one of these is when dunning can let go.
-UNSETTLED = (OUTSTANDING, "Overdue")
+UNSETTLED = (OUTSTANDING, OVERDUE)
 
 
 # An invoice is issued when collection starts and sets its due date. Before that it is

@@ -63,7 +63,12 @@ export const test = base.extend({
       return creds
     }
 
-    await use({ seed, login, signIn })
+    const reopenOnboarding = async ({ team }) => {
+      const res = await page.request.post(method('central.billing.tests.e2e.reopen_onboarding'), { form: { team } })
+      expect(res.ok(), `reopen_onboarding failed: ${res.status()} ${await res.text()}`).toBeTruthy()
+    }
+
+    await use({ seed, login, signIn, reopenOnboarding })
 
     for (const creds of seeded) {
       await request

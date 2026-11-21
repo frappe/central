@@ -309,9 +309,10 @@ def normalize_pilot_path(path: str) -> str:
 
 
 def _confirm_infra_message(arguments: dict) -> str:
-	return _("Post this message to the infra {0} Raven channel?\n\n{1}").format(
-		str(arguments.get("kind")).lower(), arguments.get("markdown_message")
+	question = _("Post this message to the infra {0} Raven channel?").format(
+		str(arguments.get("kind")).lower()
 	)
+	return "{0}\n\n{1}".format(question, arguments.get("markdown_message"))
 
 
 @tool(requires_confirmation=True, confirm_prompt=_confirm_infra_message)

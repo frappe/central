@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 import frappe
 
 from central.integrations.grove import GroveClient
@@ -31,22 +29,10 @@ def enable(team: str) -> str:
 
 
 def stop_team_keys(team: str) -> None:
-	"""Stop every live key of a team that is closing. Each cap goes to 0 first, which Grove allows at
-	any time, so no key spends again. Then the keys old enough to revoke are revoked."""
-	if not get_ai_service(team):
-		return
-
-	client = GroveClient.from_settings()
-	live = [key for key in client.get_figures(team)["keys"] if key["status"] == "active"]
-	if not live:
-		return
-
-	client.update_caps(team, {key["name"]: 0 for key in live})
-	# Grove sends UTC timestamps such as "2026-10-06T10:30:00Z".
-	now = datetime.now(UTC)
-	for key in live:
-		if datetime.fromisoformat(key["revocable_at"].replace("Z", "+00:00")) <= now:
-			client.revoke_key(team, key["name"])
+	"""Tell Grove that a team is closing. Grove revokes every live key; what else closing takes is
+	Grove's to decide."""
+	if get_ai_service(team):
+		GroveClient.from_settings().archive_team(team)
 
 
 def set_team_suspended(team: str, suspended: bool) -> None:
@@ -100,7 +86,27 @@ def get_overview(team: str) -> dict:
 		"spend": figures["spend"],
 		"usage": get_month_usage(team, figures["usage"]),
 		"geographies": client.list_geographies(),
+		"billing_rate": get_billing_rate(team),
 	}
+
+
+def get_billing_rate(team: str) -> dict | None:
+	"""The rate this month's AI cost is billed at in the team's currency. None unless that is not USD."""
+	from central.billing.revenue.exchange_rates import month_rate
+	from central.billing.revenue.usage_ledger import utc_today
+
+	# The same currency the team is subscribed and billed in; a team with none is not billed.
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	if not currency or currency == "USD":
+		return None
+	month = utc_today().replace(day=1)
+	try:
+		found = month_rate("USD", currency, month)
+	except Exception as error:
+		# The page still shows the usage in USD. Not an Error Log: every page view would add one.
+		frappe.logger("billing").warning(f"No USD to {currency} rate for {month}: {error!r}")
+		return None
+	return {"currency": currency, "rate": found.rate, "rate_date": str(found.rate_date), "month": str(month)}
 
 
 def get_month_usage(team: str, usage: dict) -> dict:
@@ -141,7 +147,9 @@ def shape_models(rows: list[dict]) -> list[dict]:
 		{
 			"name": row["name"],
 			"provider": row.get("provider"),
+			"provider_display_name": row.get("provider_display_name"),
 			"model_id": row.get("model_id"),
+			"display_name": row.get("display_name"),
 			"zero_data_retention": bool(row.get("zero_data_retention")),
 			"input_modalities": row.get("input_modalities", []),
 			"output_modalities": row.get("output_modalities", []),

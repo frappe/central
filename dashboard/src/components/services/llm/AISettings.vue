@@ -44,7 +44,9 @@ const setLogging = async (enabled: boolean): Promise<void> => {
 		<SettingsRow title="Log prompts and outputs" :description="description">
 			<Switch
 				:model-value="logging"
-				:disabled="!canManage || requested !== null"
+				:disabled="
+					!canManage || !!ai?.spend?.suspended || requested !== null
+				"
 				@update:model-value="setLogging"
 			/>
 		</SettingsRow>

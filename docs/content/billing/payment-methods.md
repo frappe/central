@@ -1,6 +1,6 @@
 # Payment methods
 
-Add a card so that Frappe Cloud can collect each invoice automatically. You can add more than one payment method and set the order in which they are charged.
+Add a card so that Frappe Cloud can collect each invoice automatically. You can add more than one payment method and set the order in which they are charged. When you pay each invoice yourself, your payment methods are not charged automatically. See [How you pay](#how-you-pay).
 
 ::: info
 You need the Owner, Admin, or Billing role to add, order, or remove payment methods.
@@ -8,7 +8,7 @@ You need the Owner, Admin, or Billing role to add, order, or remove payment meth
 
 ## Before you begin
 
-Add your billing details first. Frappe Cloud needs your currency, legal name, and address before you can add a payment method or credit. When they are missing, **Billing > Payments** shows **Add your billing details**. Click **Add billing details**, complete the form, and click **Save**. The **Add payment method** dialog then opens, so you can add a card at once.
+Add your billing details first. Frappe Cloud needs your currency, legal name, and address before you can add a payment method or credit. A billing address in India also needs its state, because the GST on your bills depends on it. Until you add the state, GST is charged as IGST, and **Billing > Overview** shows **Your bills carry IGST 18% until you add your state.** with your GST rate. Click **Add state** to add it. When they are missing, **Billing > Payments** shows **Add your billing details**. Click **Add billing details**, complete the form, and click **Save**. The **Add payment method** dialog then opens, so you can add a card at once.
 
 ## How payment methods are used
 
@@ -17,10 +17,21 @@ The **Payment methods** card on **Billing > Payments** lists your prepaid credit
 <Screenshot name="billing/payment-methods" alt="The Payment methods card with prepaid credits, a Visa card marked Primary, and Add another card" />
 
 - An invoice uses your prepaid credits first.
-- Then Frappe Cloud charges the payment method marked **Primary**.
+- When you pay automatically, Frappe Cloud then charges the payment method marked **Primary**. See [How you pay](#how-you-pay).
 - When a charge fails, the next method, marked **Fallback 1**, **Fallback 2**, and so on, is charged.
 
 While your wallet has a balance, the wallet is the primary and every card is a fallback.
+
+## How you pay
+
+The **How you pay** card on **Billing > Payments** shows how your invoices are paid. Your wallet always pays first. Then:
+
+- **You pay automatically**: when your wallet is short, Frappe Cloud charges your **Primary** payment method. In INR, your card or UPI pays only amounts up to its limit, at most ₹15,000. With no active payment method, add one, or add credit, to pay the rest. Until then, the rest stays open on the invoice.
+- **You pay each invoice yourself**: INR billing only. Frappe Cloud emails you each invoice, and you pay what your wallet does not cover. Your payment methods are not charged automatically, even for a debit you were notified of before you switched.
+
+Teams billed in INR can switch between the two. Other teams pay automatically; a team that is paused can switch back to it. Click **Change**, select **Pay automatically** or **Pay each invoice yourself**, and click **Confirm**. The change applies to every unpaid invoice, from its next payment. Only the Owner, Admin, or Billing role sees **Change**. Making a payment method **Primary**, or adding one, does not change how you pay.
+
+When **Automatic payments are paused** shows, an INR bill was more than your card or UPI can pay automatically, or your mandate stopped working. Click **Choose how to pay**. Your services keep running.
 
 ## Add a card
 
@@ -36,7 +47,31 @@ Frappe Cloud validates the card with a small temporary charge, and refunds it at
 
 The dialog can ask for a phone number. A phone number is required to set up automatic card payments, and it is saved to your billing profile.
 
-The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. To authorise automatic payments, Razorpay charges ₹1. Frappe Cloud refunds it after the authorisation succeeds. Amex and Diners cards cannot be charged automatically. Add credit instead.
+The options in the dialog depend on your billing currency. Teams billed in INR can also see RuPay Card and UPI Autopay, which you authorise on your bank's page. A card you add through Stripe and a UPI Autopay mandate are authorised for a maximum amount per debit: your spend limit plus GST, but not more than ₹15,000. A RuPay or other card you add through Razorpay is authorised for a higher amount, but Frappe Cloud charges it automatically only up to ₹15,000 at a time. UPI Autopay is not available when your spend limit plus GST is ₹1,00,000 or more. When your spend limit goes up, a UPI Autopay mandate below the new amount shows **Re-auth needed**, and you get a notice to authorise it again. Frappe Cloud also checked each UPI Autopay mandate once when GST was added to the maximum. A mandate below your spend limit plus GST shows **Re-auth needed** even if your spend limit did not change. Until you do, it is still charged, up to its old maximum. A card you saved earlier keeps the maximum it was authorised for. A bill above that maximum is charged to your next payment method. If no payment method can take the bill, your account shows **Action Required** and you pay the bill by hand. To raise the maximum, remove the card and add it again. To authorise automatic payments, Razorpay charges ₹1. Frappe Cloud refunds it after the authorisation succeeds. Amex and Diners cards cannot be charged automatically. Add credit instead.
+
+### When you see "Too many failed attempts"
+
+After 5 failed attempts in a row, you must wait before you try again. The message tells you how long, for example "Too many failed attempts. Try again in 28 minutes." The wait gets longer with each failure, to 24 hours after the 10th. Only a card or account that your bank declines, or a bank verification that fails, counts as a failed attempt. If you close the bank's window or cancel, you can try again at once. Failed top-ups count too. A bank that is down or asks you to try again later does not count.
+
+When the wait starts, a card setup or card top-up that is still open in another window is closed. If you try a card in it, the dialog shows the wait. A UPI or netbanking window that is already open is not closed, but you cannot open a new one until the wait ends.
+
+Your failed attempts in all your teams count together. The count goes back to zero when you add a payment method, when a top-up you make is paid, or after 7 days with no failed attempt. To try again sooner, contact support. When support clears the wait for a team, you can try again in that team only. In your other teams, you must still wait.
+
+## If you do not finish adding a method
+
+You can close the bank's page or the dialog at any time. Start again at once: an unfinished setup does not block a new one. When you start again, Frappe Cloud cancels the unfinished setup. About 30 minutes to 1.5 hours later, it refunds any ₹1 authorisation charge the setup took and removes any card or UPI authorisation it saved at the gateway. If you used the same card or UPI account again, it keeps that authorisation for your new payment method.
+
+A card or UPI setup that is not finished in 24 hours is not saved. Frappe Cloud sends an email and an in-app notice: "Your card or UPI setup was not finished, so it was not saved. Add it again from Billing." If you add a payment method after you start that setup, you do not get the notice. You get at most one such notice a day.
+
+If you authorised RuPay or UPI Autopay on the bank's page but closed the window before Frappe Cloud showed it, Frappe Cloud still saves it when Razorpay confirms the payment. The method shows in Billing, and the ₹1 authorisation charge is refunded. If you then added the same card again and that setup finished first, the earlier setup is not saved a second time. Its ₹1 authorisation charge is refunded. If you set up a new UPI Autopay mandate after you started the earlier one, the newer mandate stays: the earlier one is not saved, and its ₹1 authorisation charge is refunded.
+
+If you added a card on the card page but closed the window before Frappe Cloud showed it, the card is not saved. After 24 hours Frappe Cloud removes the card from the payment gateway and sends the notice. The card is not charged. Add it again from Billing.
+
+A setup that is still not finished after 7 days is not saved, whatever its state at the gateway. Frappe Cloud refunds any ₹1 authorisation charge and removes any card or UPI authorisation at the gateway. It does not send the notice for a setup this old.
+
+If you finish a setup after it expired, Frappe Cloud does not save it. It refunds the ₹1 authorisation charge and removes the card or UPI authorisation at the gateway.
+
+If the payment gateway cannot be reached when Frappe Cloud gives back the ₹1 or removes the card or UPI authorisation, Frappe Cloud tries again every hour for 7 days. After that, the support team completes it by hand.
 
 ## Change the order
 
@@ -57,9 +92,9 @@ Invoices then use your other methods, if any. With no payment method and no cred
 
 | Label | Meaning |
 | --- | --- |
-| **Primary** | Charged first after credits. |
-| **Fallback 1**, **Fallback 2** | Charged in this order when the methods above fail. |
-| **Re-auth needed** | The method must be authorised again before it can be charged. |
+| **Primary** | Charged first after credits, when you pay automatically. |
+| **Fallback 1**, **Fallback 2** | Charged in this order when the methods above fail, when you pay automatically. |
+| **Re-auth needed** | The mandate's maximum is below your spend limit plus GST. It is still charged, up to that maximum. Authorise it again to cover larger bills. |
 | Any other status | The method is not active and is not charged. |
 
 ## See also

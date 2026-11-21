@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Button, DateTimePicker, dayjs, Select, Skeleton } from 'frappe-ui'
+import { Button, DateTimePicker, Select, Skeleton } from 'frappe-ui'
 import { computed } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import UsageCard from '@/components/common/UsageCard.vue'
+import { useMetricsRange } from '@/composables/useMetricsRange'
 import { usePlans } from '@/composables/usePlans'
 import { formatBytes, usagePercent } from '@/lib/bytes'
 import { timeAgo } from '@/lib/datetime'
@@ -12,6 +13,7 @@ import {
 	getMetricCharts,
 	METRIC_PERIODS,
 } from '@/lib/serverMetrics'
+import { __ } from '@/lib/translate'
 import { formatVcpu } from '@/lib/units'
 import type {
 	MetricsRange,
@@ -23,7 +25,9 @@ import ServerMetricChart from './ServerMetricChart.vue'
 interface Props {
 	overview: ServerOverview
 	metrics: ServerMonitoring | null
+	metricsLoading?: boolean
 	metricsError: string
+	rangeError?: string
 }
 
 const props = defineProps<Props>()
@@ -38,7 +42,8 @@ const monitoring = computed(
 )
 const points = computed(() => monitoring.value.points ?? [])
 
-const isCustom = computed(() => range.value.period === 'custom')
+const { isCustom, setRange, choosePeriod, zoomTo, visibleWindow } =
+	useMetricsRange(range, () => monitoring.value.sample_interval_seconds)
 const period = computed(() =>
 	METRIC_PERIODS.find((option) => option.value === range.value.period),
 )
@@ -49,10 +54,6 @@ const averageLabel = computed(() =>
 		: `Average over ${period.value?.label.toLowerCase() ?? 'the selected duration'}`,
 )
 
-const setRange = (change: Partial<MetricsRange>): void => {
-	range.value = { ...range.value, ...change }
-}
-
 const freshness = computed(() => {
 	const interval = monitoring.value.sample_interval_seconds
 	const last = points.value[points.value.length - 1]
@@ -60,25 +61,6 @@ const freshness = computed(() => {
 
 	return `Every ${formatSampleInterval(interval)} · Updated ${timeAgo(Math.min(last.time, Date.now() / 1000))}`
 })
-
-const SITE_CLOCK = 'YYYY-MM-DD HH:mm:ss'
-
-const choosePeriod = (value: string): void => {
-	if (value !== 'custom') {
-		setRange({ period: value })
-		return
-	}
-
-	const now = window.system_timezone
-		? dayjs().tz(window.system_timezone)
-		: dayjs()
-
-	setRange({
-		period: value,
-		start: now.startOf('day').format(SITE_CLOCK),
-		end: now.format(SITE_CLOCK),
-	})
-}
 
 const timeGrain = computed(() => getChartTimeGrain(points.value))
 
@@ -177,7 +159,14 @@ const usage = computed(() => {
 
 <template>
 	<EmptyState
-		v-if="metricsError"
+		v-if="rangeError && !metrics"
+		icon="lucide-calendar-x"
+		:title="__('Check the date range')"
+		:description="rangeError"
+	/>
+
+	<EmptyState
+		v-else-if="metricsError"
 		icon="lucide-cloud-off"
 		title="Usage couldn't load"
 		:description="metricsError"
@@ -226,7 +215,19 @@ const usage = computed(() => {
 		</div>
 
 		<div class="flex shrink-0 flex-wrap items-center gap-2">
-			<h2 class="mr-auto text-lg-semibold text-ink-gray-8">Usage</h2>
+			<h2
+				class="mr-auto flex items-center gap-1.5 text-lg-semibold text-ink-gray-8"
+			>
+				Usage
+				<Button
+					variant="ghost"
+					size="sm"
+					icon="lucide-zoom-in"
+					class="!size-6 !p-1"
+					:aria-label="__('How to zoom the charts')"
+					:tooltip="__('Drag across a chart, or pinch or Ctrl-scroll on it, to zoom into that window.')"
+				/>
+			</h2>
 
 			<template v-if="isCustom">
 				<DateTimePicker
@@ -264,9 +265,15 @@ const usage = computed(() => {
 			/>
 		</div>
 
+		<p v-if="rangeError" class="text-p-sm text-ink-amber-6">
+			{{ rangeError }}
+		</p>
+
 		<div
 			v-if="charts.length"
-			class="grid gap-3 md:grid-cols-2 lg:max-h-128 lg:min-h-0 lg:flex-1 lg:grid-rows-2"
+			class="grid gap-3 transition-opacity motion-reduce:duration-0 md:grid-cols-2 lg:max-h-128 lg:min-h-0 lg:flex-1 lg:grid-rows-2"
+			:class="{ 'opacity-60 delay-300': metricsLoading }"
+			:aria-busy="metricsLoading"
 		>
 			<ServerMetricChart
 				v-for="chart in charts"
@@ -274,6 +281,8 @@ const usage = computed(() => {
 				:chart="chart"
 				:time-grain="timeGrain"
 				:average-label="averageLabel"
+				:visible-window="visibleWindow"
+				@zoom="zoomTo"
 			/>
 		</div>
 
@@ -288,8 +297,10 @@ const usage = computed(() => {
 	<EmptyState
 		v-else
 		icon="lucide-chart-area"
-		title="No usage yet"
-		description="Charts appear while the server runs. The region samples it every 5 minutes."
+		:title="__('No usage yet')"
+		:description="
+			__('Charts appear while the server runs. The region samples it every 5 minutes.')
+		"
 	/>
 </template>
 

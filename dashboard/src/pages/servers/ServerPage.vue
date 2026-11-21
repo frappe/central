@@ -98,10 +98,12 @@ const metricsRange = computed<MetricsRange>({
 const {
 	overview,
 	metrics,
+	metricsLoading,
 	metricsError,
 	error: overviewError,
 	reload: reloadOverview,
 	reloadMetrics,
+	rangeError,
 } = useServerOverview(resourceId, metricsRange)
 
 const details = computed(() =>
@@ -252,7 +254,7 @@ watch(
 		style="scrollbar-gutter: stable"
 	>
 		<div
-			class="mx-auto w-full max-w-5xl p-3 md:p-4 xl:pt-8"
+			class="mx-auto w-full max-w-5xl p-3 md:p-4 lg:pt-8"
 			:class="{ 'lg:flex lg:h-full lg:min-h-0 lg:flex-col': activeTab === 'overview' }"
 		>
 			<div v-if="!loaded && !fleetError" class="space-y-6" aria-busy="true">
@@ -303,7 +305,7 @@ watch(
 					@protect="protect"
 				/>
 
-				<Tabs v-model="activeTab" class="mt-4 shrink-0 md:mt-8">
+				<Tabs v-model="activeTab" class="mt-4 shrink-0 overflow-x-auto md:mt-8">
 					<TabList variant="browser-tab" size="md">
 						<TabTrigger
 							v-for="tab in TABS"
@@ -359,7 +361,9 @@ watch(
 					v-model:range="metricsRange"
 					:overview="details"
 					:metrics="metrics"
+					:metrics-loading="metricsLoading"
 					:metrics-error="metricsError"
+					:range-error="rangeError"
 					@refresh="reloadMetrics"
 					class="mt-3 lg:min-h-0 lg:flex-1"
 				/>
@@ -369,13 +373,6 @@ watch(
 					:server="server"
 					:overview="details"
 					:can-manage-network="!!actions.network"
-					:servers="
-						servers.filter(
-							(row) =>
-								row.resource_id !== server?.resource_id &&
-								row.status !== 'Terminated',
-						)
-					"
 					class="mt-6"
 					@changed="reloadOverview"
 				/>

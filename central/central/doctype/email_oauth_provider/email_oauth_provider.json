@@ -93,7 +93,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-10-21 00:44:49.250559",
+ "modified": "2026-11-04 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Email OAuth Provider",
@@ -110,6 +110,13 @@
    "report": 1,
    "role": "System Manager",
    "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "Staff Viewer",
    "write": 1
   }
  ],

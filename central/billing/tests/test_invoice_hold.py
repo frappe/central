@@ -100,6 +100,7 @@ class TestIssued(InvoiceHoldTestCase):
 	def test_tax_is_recomputed_from_the_checked_gstin(self):
 		# Drafted untaxed; by the time it opens the team is SEZ and its GSTIN lapsed.
 		self._profile(**SYNCED, gstin=GSTIN, gst_status=None)
+		frappe.db.delete("Tax Profile", {"team": TEAM})
 		frappe.get_doc(
 			{
 				"doctype": "Tax Profile",

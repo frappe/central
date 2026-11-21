@@ -95,7 +95,9 @@ currency** (rates live in standalone **Catalog Rate**, not on the Plan).
   spend caps a team climbs through. Caps resolve live (`catalog/entitlements.get_team_caps`);
   there is no per-team tier doctype.
 - **Tax Profile** per team drives GST (additive) / SEZ (zero-with-reason) / TDS (withholding)
-  — `revenue/tax.resolve_tax`. India GST codes live in `india_gst.py`.
+  — `revenue/tax.resolve_tax`. India GST codes live in `india_gst.py`. GST is mandatory for
+  an Indian team: its profile must be GST or zero-rated with a reason, and a team with no
+  profile is billed at the default GST rate. A team outside India needs no profile and pays no tax.
 
 ### Step 4 · Customer Team + Billing Profile
 Charging a card needs a **complete Billing Profile**. Its `currency` is the source of truth (gateway-backed, locks after first activity). Credit can fund server creation without a complete profile. The team's invoices then stay Outstanding with no due date (held) until the billing details arrive. A daily job reminds the team, and operators get an alert after `billing_details_grace_days`.
@@ -149,8 +151,7 @@ e2e suite delivers it via `tests/e2e.py:deliver_webhook` from a real captured tx
 manual demo, the seed path already shows Paid invoices.
 
 ### Step 9 · Dunning (unpaid path)
-Leave an invoice unpaid and run the daily job to walk the Day 1/3/7 retries → past_due →
-suspend:
+Leave an invoice unpaid and run the daily job to walk the retries after the payment date → past_due → suspend on the suspension date:
 ```bash
 pilot frappe --site central.localhost execute central.billing.revenue.dunning.run_dunning
 ```

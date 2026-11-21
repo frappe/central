@@ -5,7 +5,8 @@ import { computed, ref } from 'vue'
 import { useAI } from '@/composables/useAI'
 import { formatDateTime, timeAgo } from '@/lib/datetime'
 import { reportError, successToast } from '@/lib/feedback'
-import { compactNumber, usd } from '@/lib/format'
+import { compactNumber, money, usd } from '@/lib/format'
+import { __ } from '@/lib/translate'
 
 interface Props {
 	canManage: boolean
@@ -19,6 +20,29 @@ const { ai, apiKeys, refreshing, refreshUsage } = useAI()
 
 const usage = computed(() => ai.value?.usage)
 const spend = computed(() => ai.value?.spend)
+const billingRate = computed(() => ai.value?.billing_rate ?? null)
+
+// Usage in the team's billing currency at the month's rate, which its invoice uses too.
+const billed = (cost: number | null | undefined): string => {
+	const rate = billingRate.value
+	return rate ? money((cost ?? 0) * rate.rate, rate.currency) : usd(cost)
+}
+
+const rateLabel = computed(() => {
+	const rate = billingRate.value
+	if (!rate) return ''
+	const label = __('Rate for {0}: {1} per US$1', [
+		dayjs(rate.month).format('MMMM'),
+		money(rate.rate, rate.currency),
+	])
+	// The accounting system had no rate on the 1st, so the latest earlier one is used.
+	return dayjs(rate.rate_date).isBefore(rate.month)
+		? __('{0}, the rate of {1}', [
+				label,
+				dayjs(rate.rate_date).format('D MMMM'),
+			])
+		: label
+})
 
 const hasTraffic = computed(() => (usage.value?.requests ?? 0) > 0)
 const activeKeyCount = computed(
@@ -191,7 +215,7 @@ const refresh = async (): Promise<void> => {
 			>
 				<div class="min-w-0">
 					<p class="text-8xl-semibold tabular-nums text-ink-gray-9">
-						{{ usd(usage?.cost) }}
+						{{ billed(usage?.cost) }}
 					</p>
 					<p class="mt-2 text-p-base text-ink-gray-5">
 						Spent this month on
@@ -208,6 +232,9 @@ const refresh = async (): Promise<void> => {
 						</Tooltip>
 						tokens.
 					</p>
+					<p v-if="rateLabel" class="mt-1 text-p-sm text-ink-gray-5">
+						{{ rateLabel }}
+					</p>
 				</div>
 				<figure
 					class="pace-chart flex w-full shrink-0 flex-col gap-2 rounded-5 bg-surface-gray-1 px-3 py-2.5 sm:w-fit"
@@ -215,7 +242,7 @@ const refresh = async (): Promise<void> => {
 					<div
 						class="h-16"
 						role="img"
-						:aria-label="`Spend this month so far, on pace for ${usd(projected)} by ${monthEnd}`"
+						:aria-label="`Spend this month so far, on pace for ${billed(projected)} by ${monthEnd}`"
 					>
 						<AreaChart
 							:data="paceDays"
@@ -223,7 +250,7 @@ const refresh = async (): Promise<void> => {
 							:x-axis="{ type: 'category' }"
 							:y="['spent', 'pace']"
 							:series-config="paceSeries"
-							:y-axis="{ min: 0, format: usd }"
+							:y-axis="{ min: 0, format: billed }"
 							:echart-options="bareChart"
 						/>
 					</div>
@@ -231,7 +258,7 @@ const refresh = async (): Promise<void> => {
 						<span>
 							On pace for
 							<span class="tabular-nums text-ink-gray-8"
-								>{{ usd(projected) }}</span
+								>{{ billed(projected) }}</span
 							>
 							by {{ monthEnd }}
 						</span>
@@ -277,6 +304,7 @@ const refresh = async (): Promise<void> => {
 						v-if="!activeKeyCount && canManage"
 						variant="solid"
 						label="Create key"
+						:disabled="ai?.key_handover_pending"
 						@click="$emit('create')"
 					/>
 				</li>

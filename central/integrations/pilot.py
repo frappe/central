@@ -9,14 +9,14 @@ import requests
 from frappe import _
 
 from central.api.jwks import jwks_document
-from central.api.pilot import get_telemetry_base_url, region_id_of
+from central.api.pilot import get_telemetry_base_url
 from central.billing.catalog.trials import is_trial_plan
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.services.doctype.team_service.team_service import get_bucket_name, get_storage_endpoint_url
-from central.sso import central_url, jwks_url, mint_bench_login, mint_datum_token, mint_site_login
+from central.sso import central_url, jwks_url, mint_bench_api_token, mint_site_login
 
 PILOT_TASK_TIMEOUT_SECONDS = 35
 # Metal caps each guest metadata value at 1 KiB. Not checked before a creation: unconfirmed
@@ -169,14 +169,13 @@ def delete_bundled_bucket(action: str) -> None:
 
 
 def get_telemetry_configuration(action) -> dict:
-	"""The region's Datum and the token the new server writes to it with."""
+	"""The region's Datum. The token names the Atlas VM, which does not exist yet, so Pilot
+	fetches it from `datum_token` once Atlas binds the VM."""
 	endpoint = get_telemetry_base_url(action.region)
 	if not endpoint:
 		frappe.throw(frappe._("Region {0} has no telemetry host yet.").format(action.region))
 
-	token = mint_datum_token(region_id_of(action.region), action.server_id)
-
-	return {"endpoint": endpoint, "token": token}
+	return {"endpoint": endpoint}
 
 
 class PilotLoginPending(Exception):
@@ -244,6 +243,19 @@ def is_site_reachable(url: str) -> bool:
 		return False
 
 	return response.ok and "pong" in response.text
+
+
+def is_pilot_reachable(gateway_url: str) -> bool:
+	"""Whether a server's Pilot answers its health check. A server reports Running when it boots,
+	some time before Pilot starts, and the proxy returns 502 until then."""
+	try:
+		response = requests.get(
+			f"{gateway_url}/api/v1/health", timeout=SITE_PING_TIMEOUT_SECONDS, allow_redirects=False
+		)
+	except requests.RequestException:
+		return False
+
+	return response.ok
 
 
 def rename_admin_domain(server: str, base_url: str | None = None, tls: bool = True) -> dict:
@@ -396,7 +408,7 @@ def _request_pilot(
 	response = requests.request(
 		method,
 		f"{_gateway_url(base_url)}{path}",
-		headers={"Authorization": f"Bearer {mint_bench_login(audience_id)}"},
+		headers={"Authorization": f"Bearer {mint_bench_api_token(audience_id)}"},
 		json=payload,
 		params=params,
 		timeout=PILOT_TASK_TIMEOUT_SECONDS,

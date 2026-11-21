@@ -102,7 +102,8 @@ PAYMENT_METHOD = StateMachine(
 	"Payment Method",
 	"status",
 	{
-		"Pending Validation": {"Active", "Failed", "Cancelled"},
+		# Expired: a setup the customer did not finish within a day.
+		"Pending Validation": {"Active", "Failed", "Cancelled", "Expired"},
 		"Active": {"Paused", "Cancelled", "Expired", "Failed"},
 		"Paused": {"Active", "Cancelled", "Expired"},
 		"Failed": set(),  # terminal — a fresh attempt is a new method
@@ -205,6 +206,7 @@ def transition(
 	correlation: str | None = None,
 	amount=None,
 	event_type: str | None = None,
+	payload: dict | None = None,
 ) -> None:
 	"""Move `doc` to `to_state` through its machine, and append a Billing Event.
 
@@ -232,11 +234,32 @@ def transition(
 		)
 	doc.set(machine.field, to_state)
 	outcome = billing_event.FAILED if to_state == "Failed" else None
-	_append_event(doc, from_state, to_state, reason, actor, correlation, amount, event_type, outcome=outcome)
+	_append_event(
+		doc,
+		from_state,
+		to_state,
+		reason,
+		actor,
+		correlation,
+		amount,
+		event_type,
+		outcome=outcome,
+		payload=payload,
+	)
 
 
 def _append_event(
-	doc, from_state, to_state, reason, actor, correlation, amount, event_type, category=None, outcome=None
+	doc,
+	from_state,
+	to_state,
+	reason,
+	actor,
+	correlation,
+	amount,
+	event_type,
+	category=None,
+	outcome=None,
+	payload=None,
 ) -> None:
 	event = frappe.get_doc(
 		{
@@ -255,6 +278,7 @@ def _append_event(
 			"actor": actor or _default_actor(),
 			"reason": reason,
 			"correlation": correlation or doc.name,
+			"payload": frappe.as_json(payload) if payload else None,
 		}
 	)
 	# The audit trail is written for whoever moved the document, and its links are copied from it.
@@ -271,9 +295,12 @@ def record_event(
 	correlation=None,
 	category=None,
 	outcome: str | None = None,
+	payload: dict | None = None,
 ) -> None:
 	"""Log a billing change that is not a status move, such as a tier change."""
-	_append_event(doc, from_state, to_state, reason, None, correlation, amount, event_type, category, outcome)
+	_append_event(
+		doc, from_state, to_state, reason, None, correlation, amount, event_type, category, outcome, payload
+	)
 
 
 def record_team_event(

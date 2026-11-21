@@ -8,6 +8,7 @@ from frappe import _
 from frappe.email.email_body import inline_style_in_html
 from frappe.model.document import Document
 from frappe.utils import add_days, escape_html, formatdate, get_url, nowdate
+from frappe.utils.html_utils import sanitize_html
 
 PRODUCT_KEY_PATTERN = re.compile(r"[a-z][a-z0-9-]*")
 # A Frappe app's module name, which Cargo writes as the image's app tag.
@@ -41,6 +42,7 @@ class Product(Document):
 		from central.signups.doctype.product_email_note.product_email_note import ProductEmailNote
 		from central.signups.doctype.product_plan_note.product_plan_note import ProductPlanNote
 
+		ai_credit_note: DF.SmallText | None
 		email_notes: DF.Table[ProductEmailNote]
 		enabled: DF.Check
 		frappe_version: DF.Data
@@ -49,6 +51,7 @@ class Product(Document):
 		landing_route: DF.Data | None
 		logo: DF.AttachImage | None
 		plan_notes: DF.Table[ProductPlanNote]
+		reply_to: DF.Data | None
 		product_key: DF.Data
 		setup_messages: DF.SmallText | None
 		signup_app: DF.Data
@@ -86,7 +89,8 @@ class Product(Document):
 			frappe.throw(_("Add at most one note for each plan."))
 
 	def validate_emails(self) -> None:
-		"""An email client loads the logo without a session, so it must be a public file."""
+		"""An email client loads the logo without a session, so it must be a public file. An HTML
+		note is sanitized here, so the saved HTML and the preview are what the customer gets."""
 		if self.use_own_email_branding and not (self.logo or "").startswith("/files/"):
 			frappe.throw(_("Upload a public logo to use the product's branding in emails."))
 
@@ -96,6 +100,35 @@ class Product(Document):
 		events = [row.event_type for row in self.email_notes]
 		if len(events) != len(set(events)):
 			frappe.throw(_("Add at most one note for each email."))
+
+		for row in self.email_notes:
+			self.validate_email_note(row)
+
+	def validate_email_note(self, row) -> None:
+		"""Keep only the field of the note's format. The form asks for it, but the server must too."""
+		if row.note_format == "HTML":
+			row.note = None
+			# sanitize_html keeps a document frame and form controls, which a note must not hold.
+			frame_and_form = [
+				"html",
+				"head",
+				"meta",
+				"link",
+				"body",
+				"form",
+				"input",
+				"button",
+				"select",
+				"textarea",
+			]
+			row.note_html = sanitize_html(
+				row.note_html or "", always_sanitize=True, disallowed_tags=frame_and_form
+			)
+		else:
+			row.note_html = None
+
+		if not (row.note_html or row.note or "").strip():
+			frappe.throw(_("Write the note for the {0} email.").format(row.event_type))
 
 	def get_email_brand(self) -> dict | None:
 		"""The logo and title for an email header, or None to keep Frappe Cloud's. Both are
@@ -107,13 +140,15 @@ class Product(Document):
 
 	def get_email_extras(self, event_type: str) -> dict:
 		"""What an email about a site of this product adds: the branding, the note as escaped
-		paragraphs, and the getting started link on a welcome email."""
-		note = next((row.note for row in self.email_notes if row.event_type == event_type), "")
+		paragraphs or as its sanitized HTML, and the getting started link on a welcome email."""
+		row = next((row for row in self.email_notes if row.event_type == event_type), None)
+		note = (row.note if row else None) or ""
 		url = self.getting_started_url if event_type in GETTING_STARTED_EMAILS else None
 
 		return {
 			"brand": self.get_email_brand(),
 			"notes": [escape_html(part.strip()) for part in note.split("\n\n") if part.strip()],
+			"note_html": row.note_html if row else None,
 			"getting_started_url": escape_html(url) if url else None,
 		}
 
@@ -124,13 +159,15 @@ class Product(Document):
 	@frappe.whitelist(methods=["POST"])
 	def preview_email(self, event_type: str) -> dict:
 		"""Operator action: the email as a customer sees it, with sample values and the form's
-		unsaved changes. Needs write access to the product."""
+		unsaved changes. Needs write access to the product. It renders a copy, because Frappe
+		sends this document back to the form, and validation would rewrite the unsaved notes."""
 		self.check_permission("write")
-		self.validate_emails()
+		product = frappe.get_doc(self.as_dict())
+		product.validate_emails()
 		if event_type == "signup_code":
-			subject, html = self.render_code_email()
+			subject, html = product.render_code_email()
 		else:
-			subject, html = self.render_lifecycle_email(event_type)
+			subject, html = product.render_lifecycle_email(event_type)
 
 		return {"subject": subject, "html": inline_style_in_html(html)}
 
@@ -167,6 +204,7 @@ class Product(Document):
 			recipients=[frappe.session.user],
 			subject=_("[Test] {0}").format(email["subject"]),
 			message=email["html"],
+			reply_to=self.reply_to,
 			now=True,
 		)
 
@@ -191,11 +229,13 @@ class Product(Document):
 
 	@frappe.whitelist(methods=["POST"])
 	def preview_images(self, region: str, offset: int = 0) -> dict:
-		"""1. Require a System Manager, because the preview reads the region as the system tenant."""
+		"""1. Require a System Manager or a Staff Viewer, because the preview reads the region as
+		the system tenant. A Product Operator may not."""
+		from central.iam import OPERATOR_BYPASS_ROLE, STAFF_VIEWER_ROLE
 		from central.integrations.images import preview_images
 		from central.site_provisioning import product_image_tags, signup_offering
 
-		frappe.only_for("System Manager")
+		frappe.only_for([OPERATOR_BYPASS_ROLE, STAFF_VIEWER_ROLE])
 
 		return preview_images(signup_offering(), region, offset, extra_tags=product_image_tags(self))
 

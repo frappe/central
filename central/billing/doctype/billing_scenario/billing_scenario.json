@@ -9,7 +9,7 @@
  "engine": "InnoDB",
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-25 13:00:00.000000",
+ "modified": "2026-11-05 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Scenario",
@@ -83,10 +83,9 @@
    "description": "Blank means use what is configured. Nothing here changes Billing Settings."
   },
   {
-   "fieldname": "dunning_retry_days",
-   "fieldtype": "Data",
-   "label": "Retry Days",
-   "description": "e.g. 2, 5, 10"
+   "fieldname": "dunning_retry_interval_days",
+   "fieldtype": "Int",
+   "label": "Retry Every (Days)"
   },
   {
    "fieldname": "invoice_due_days",
@@ -98,9 +97,10 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "suspend_after_days",
+   "fieldname": "suspension_day",
    "fieldtype": "Int",
-   "label": "Suspend After Days"
+   "label": "Suspension Day",
+   "description": "Day of the month on which a team with an unpaid invoice is suspended."
   },
   {
    "fieldname": "terminate_after_days",
@@ -164,10 +164,10 @@
   "outcome_mode",
   "assume",
   "section_break_overrides",
-  "dunning_retry_days",
+  "dunning_retry_interval_days",
   "invoice_due_days",
   "column_break_ladder",
-  "suspend_after_days",
+  "suspension_day",
   "terminate_after_days",
   "promotional_credit_validity_days",
   "section_break_events",

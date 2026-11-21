@@ -55,7 +55,16 @@ export interface Forecast {
 	subtotal: number
 	tax_amount: number
 	tax_type: string | null
+	/** The GST named as invoices name it, e.g. "IGST 18%"; null when no GST applies. */
+	tax_label: string | null
+	/** What follows the tax-inclusive total, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
+	tax_note: string | null
+	/** The note for the off-session limit, from the team's tax today; null when not taxed. */
+	limit_tax_note: string | null
 	credit_balance: number
+	/** What is collected after TDS; the shortfall is part of it. */
+	expected_collection: number
+	/** What the card or UPI pays after the wallet, drawn as the bill draws it. */
 	shortfall: number
 	days_remaining: number
 	currency: Currency
@@ -91,6 +100,8 @@ export interface ChargingMethod {
 export interface NextPayment {
 	currency: Currency
 	amount: number
+	/** The tax the amount includes, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
+	tax_note: string | null
 	charge_on: string | null
 	invoice: string | null
 	period_end: string | null
@@ -98,7 +109,17 @@ export interface NextPayment {
 	method: ChargingMethod | null
 	/** Empty blockers is not a promise of success — only that nothing decides otherwise. */
 	will_auto_charge: boolean
+	/** The team pays by hand or is asked to choose: nothing is charged automatically. */
+	debit_held: boolean
 	blockers: PaymentBlocker[]
+	/**
+	 * Set once the open invoice is charged or its payment date has passed. At most one is set,
+	 * except that an overdue invoice with a payment in progress also has `suspends_on`.
+	 */
+	payment_in_progress_since: string | null
+	next_retry_on: string | null
+	suspends_on: string | null
+	suspended_since: string | null
 }
 
 export interface PredebitNotice {
@@ -161,6 +182,10 @@ export interface TrustTier {
 	current: TierLevel | null
 	next: TierLevel | null
 	is_top_tier: boolean
+	/** The limit the server-create check uses, with any manual override. */
+	spending_limit: number
+	/** Monthly cost before tax of everything running now. */
+	running_monthly: number
 	progress: {
 		resources_used: number
 		paid_invoices: number
@@ -193,6 +218,8 @@ export interface CreditLedgerEntry {
 	amount: number
 	/** GST paid on top of a top-up; it later pays invoice GST. */
 	tax_amount: number
+	/** That GST named, e.g. "IGST 18%"; null when the entry has none. */
+	tax_label: string | null
 	/** A top-up booked in the accounting system, so its receipt can be downloaded. */
 	has_receipt: boolean
 	running_balance: number
@@ -225,6 +252,8 @@ export interface InvoiceSummary {
 	due_date: string | null
 	/** Issued in the accounting system, so its PDF can be downloaded. */
 	has_pdf: boolean
+	/** The tax the total includes, e.g. "incl. IGST 18%" or "SEZ supply, no GST". */
+	tax_note: string | null
 }
 
 /** One event in an invoice's lifecycle timeline (issued → credits → payment → settled). */
@@ -252,6 +281,10 @@ export interface InvoiceDetail {
 	output_tax_rate: number | null
 	output_tax_amount: number
 	zero_rating_reason: string | null
+	/** The invoice's GST, e.g. "IGST 18%" or "No GST (SEZ)"; null when none applies. */
+	tax_label: string | null
+	/** Why a zero-rated invoice carries no tax, in words. */
+	tax_reason: string | null
 	total: number
 	credit_applied: number
 	/** GST paid with the top-ups the credit came from, so not charged again. */
@@ -405,6 +438,10 @@ export interface BillingProfile {
 	supported_currencies: Currency[]
 	/** GSTIN on file but not Active: invoices go out as unregistered. */
 	gst_lapsed?: boolean
+	/** An Indian profile with no state: GST is charged as IGST until one is set. */
+	gst_state_missing?: boolean
+	/** The GST rate charged as IGST while the state is missing. */
+	igst_rate?: number | null
 	/** A new server needs a payment method first: no credit covers it. */
 	payment_method_required?: boolean
 	/** What the team's first payment method adds, while the owner has not had it. */
@@ -447,6 +484,18 @@ export interface BillingSettings {
 	team: string
 	min_balance: number
 	spend_alert_threshold: number
+	/** Day of the month, 1 to 10, the card is charged on for the closed month. */
+	payment_day: number
+	/** Changes to the payment day the team can still make this billing cycle. */
+	payment_day_changes_left: number
+	/** The latest day of the month a team can pick as its payment day. */
+	last_payment_day: number
+	/** Changes to the payment day a team can make in one billing cycle. */
+	payment_day_changes_per_cycle: number
+	/** Day of the month on which a team with an unpaid invoice is suspended. */
+	suspension_day: number
+	/** The last payment day that still gets interval retries. A later day gets one retry. */
+	last_payment_day_with_retries: number
 }
 
 /** get_collection_status — collection mode + the "Action Required" banner feed (ADR 0005). */
@@ -456,12 +505,51 @@ export interface CollectionStatus {
 	/** Networks no rail will auto-charge — shown before the customer picks how to pay. */
 	mandate_gap_note?: string | null
 	action_required: boolean
+	/** "Automatic" (Prepaid or Auto Charge) or "Manual"; null while Action Required. */
+	choice: 'Automatic' | 'Manual' | null
+	/** The method charged first when the wallet is short; null when none is saved. */
+	charged_method: string | null
+	/** Whether the team may pick "Pay each invoice yourself" (INR only). */
+	manual_offered: boolean
 	reason: string | null
+	/** Most the team's card or UPI may be charged automatically; null when nothing caps it. */
 	threshold: number | null
 	projected_total: number
+	/** The tax the projected total includes, e.g. "incl. IGST 18%". */
+	tax_note: string | null
+	/** The tax the amounts the limit caps include, e.g. "incl. IGST 18%"; null for a team not taxed. */
+	limit_tax_note: string | null
 	wallet_balance: number
 	shortfall: number
 	currency: Currency
+	/** What to add to the wallet before the next payment date; null when the card or UPI can pay. */
+	top_up_due: TopUpDue | null
+}
+
+/** A top-up the card or UPI limit makes necessary before the payment date (INR only). */
+export interface TopUpDue {
+	/** Credit that lets the wallet pay the whole bill, rounded up to ₹100. */
+	amount: number
+	/** What that credit costs with GST on top; equal to `amount` when no GST applies. */
+	amount_with_gst: number
+	/** ISO payment date. */
+	date: string
+	/** Most the card or UPI may pay automatically; 0 when none is saved. */
+	limit: number
+	has_method: boolean
+	/** Part of the credit's GST pays for earlier purchased credit that had none, so it is more than the gap. */
+	includes_earlier_gst: boolean
+	/** As the reminder email shows them; `amount_with_gst` and `tax_label` are null with no GST, `limit` with no method. */
+	labels: {
+		amount: string
+		amount_with_gst: string | null
+		/** The GST it includes, e.g. "IGST 18%" or "CGST 9% + SGST 9%". */
+		tax_label: string | null
+		payment_date: string
+		limit: string | null
+		/** The tax the amounts the limit caps include; null with no limit or no GST. */
+		limit_tax_note: string | null
+	}
 }
 
 export type NotificationCategory = 'Billing' | 'Server' | 'Team' | 'Trial'
@@ -506,13 +594,13 @@ export interface NotificationCatalogEvent {
 	title: string
 	severity: NotificationSeverity
 	is_critical: 0 | 1
-	can_receive: 0 | 1
 }
 
 /** get_user_preferences: saved rows plus the events each category holds. */
 export interface UserNotificationPreferences {
 	time_zone: string
 	digest_hour: number
+	is_team_owner: boolean
 	preferences: NotificationPreference[]
 	catalog: {
 		category: NotificationCategory
@@ -526,6 +614,8 @@ export interface SpendMonth {
 	month: string
 	label: string
 	total: number
+	/** Spend before tax, which the spend limit is compared with. */
+	subtotal: number
 	paid: number
 	currency: Currency
 }

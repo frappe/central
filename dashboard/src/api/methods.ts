@@ -70,6 +70,12 @@ export const API = {
 	setRescueMode: 'central.api.servers.set_rescue_mode',
 	setTerminationProtection: 'central.api.servers.set_termination_protection',
 	updateServerFirewall: 'central.api.servers.update_server_firewall',
+	listFirewallRulesets: 'central.api.firewall_rulesets.list_firewall_rulesets',
+	saveFirewallRuleset: 'central.api.firewall_rulesets.save_firewall_ruleset',
+	deleteFirewallRuleset:
+		'central.api.firewall_rulesets.delete_firewall_ruleset',
+	setServerFirewallRulesets:
+		'central.api.firewall_rulesets.set_server_firewall_rulesets',
 	setServerPublicIp: 'central.api.servers.set_server_public_ip',
 	setServerIpv4Internet: 'central.api.servers.set_server_ipv4_internet',
 	setServerWireguardAccess: 'central.api.servers.set_server_wireguard_access',
@@ -121,6 +127,10 @@ export const API = {
 	createBucket: 'central.services.api.storage.create_bucket',
 	rotateBucketCredentials: 'central.services.api.storage.rotate_credentials',
 	setBucketQuota: 'central.services.api.storage.set_bucket_quota',
+	bucketAllowedOrigins:
+		'central.services.api.storage.get_bucket_allowed_origins',
+	setBucketAllowedOrigins:
+		'central.services.api.storage.set_bucket_allowed_origins',
 	deleteBucket: 'central.services.api.storage.delete_bucket',
 	listBucketObjects: 'central.services.api.storage.list_objects',
 	bucketObjectUrl: 'central.services.api.storage.get_object_url',
@@ -144,6 +154,11 @@ export const API = {
 	trialAppInstall: 'central.api.sites.get_trial_app_install',
 
 	getBenchLink: 'central.api.sso.get_bench_link',
+
+	createSupportTicket: 'central.api.support.create_ticket',
+	getTicketOptions: 'central.api.support.get_ticket_options',
+	findRelated: 'central.api.support.find_related',
+	listSupportTickets: 'central.api.support.list_tickets',
 
 	eligiblePlans: 'central.billing.api.dashboard.catalog.get_eligible_plans',
 	composedConfig: 'central.billing.api.dashboard.catalog.get_composed_config',
@@ -187,6 +202,7 @@ export const API = {
 	topupOptions: 'central.billing.api.dashboard.get_topup_options',
 	createTopupOrder: 'central.billing.api.dashboard.create_topup_order',
 	confirmTopup: 'central.billing.api.dashboard.confirm_topup',
+	setupWait: 'central.billing.api.dashboard.get_setup_wait',
 	initiateCardSetup: 'central.billing.api.dashboard.initiate_card_setup',
 	confirmCard: 'central.billing.api.dashboard.confirm_card',
 	setupPaymentMethodOrder:

@@ -11,8 +11,10 @@
   "team",
   "add_on_service",
   "region",
+  "external_id",
   "status",
   "subscription",
+  "usage_read_until",
   "endpoint_url",
   "storage_section",
   "bucket_name",
@@ -47,6 +49,13 @@
    "fieldtype": "Link",
    "label": "Subscription",
    "options": "Subscription"
+  },
+  {
+   "description": "The last UTC day the service's usage was read for. The next reading starts on this day, since it may still have been in progress.",
+   "fieldname": "usage_read_until",
+   "fieldtype": "Date",
+   "label": "Usage Read Until",
+   "read_only": 1
   },
   {
    "description": "What the service is called at: the gateway a team's AI keys call, or a bucket's S3 endpoint.",
@@ -106,12 +115,20 @@
    "fieldtype": "Password",
    "label": "Secret Access Key",
    "read_only": 1
+  },
+  {
+   "description": "The subject as the service names it in its usage reports: the bucket for storage, the team for AI.",
+   "fieldname": "external_id",
+   "fieldtype": "Data",
+   "label": "External ID",
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-10 10:11:10.484991",
+ "modified": "2026-11-19 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Team Service",

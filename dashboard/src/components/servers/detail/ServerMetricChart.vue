@@ -2,17 +2,28 @@
 import { Button, Tooltip } from 'frappe-ui'
 import { AreaChart, ChartCard, useChartTokens } from 'frappe-ui/charts'
 import { computed, ref } from 'vue'
+import { useChartZoom } from '@/composables/useChartZoom'
 import { getChartSeriesSummaries, type MetricChart } from '@/lib/serverMetrics'
 
 interface ServerMetricChartProps {
 	chart: MetricChart
 	timeGrain: 'minute' | 'hour' | 'day'
 	averageLabel?: string
+	visibleWindow?: { start: number; end: number }
 }
 
 const props = withDefaults(defineProps<ServerMetricChartProps>(), {
 	averageLabel: 'Average over the selected duration',
 })
+
+const emit = defineEmits<{ zoom: [{ start: number; end: number }] }>()
+
+const { band, bandSpan, wheelZoom, startZoom, moveZoom, finishZoom } =
+	useChartZoom(
+		() => props.chart.rows,
+		(window) => emit('zoom', window),
+	)
+
 const hiddenSeries = ref<string[]>([])
 // Reads leave the disk; writes enter it.
 const seriesIcons: Record<string, string> = {
@@ -120,35 +131,69 @@ const grid = {
 			</dl>
 		</header>
 		<div class="h-44 min-w-0 lg:h-auto lg:min-h-0 lg:flex-1">
-			<AreaChart
-				v-model:hidden-series="hiddenSeries"
-				:echart-options="{ animation: false }"
-				:data="chart.rows"
-				x="time"
-				:y="chart.series"
-				:series-config="seriesConfig"
-				:x-axis="{
-					type: 'time',
-					timeGrain,
-					echartOptions: { splitLine: { show: false } },
-				}"
-				:y-axis="{
-					min: 0,
-					max: chart.max,
-					format: chart.formatValue ?? chart.format,
-					echartOptions: {
-						interval: chart.interval ?? (chart.max ? chart.max / 4 : undefined),
-						splitNumber: 4,
-						splitLine: grid,
-						axisLabel: { formatter: chart.format, hideOverlap: true },
-					},
-				}"
-			/>
+			<div
+				ref="plotBox"
+				class="server-metric-plot relative h-full"
+				@wheel="wheelZoom"
+				@pointerdown="startZoom"
+				@pointermove="moveZoom"
+				@pointerup="finishZoom"
+				@pointercancel="finishZoom"
+			>
+				<AreaChart
+					ref="plot"
+					v-model:hidden-series="hiddenSeries"
+					:echart-options="{ animation: false }"
+					:data="chart.rows"
+					x="time"
+					:y="chart.series"
+					:series-config="seriesConfig"
+					:x-axis="{
+						type: 'time',
+						timeGrain,
+						echartOptions: {
+							splitLine: { show: false },
+							min: visibleWindow?.start,
+							max: visibleWindow?.end,
+						},
+					}"
+					:y-axis="{
+						min: 0,
+						max: chart.max,
+						format: chart.formatValue ?? chart.format,
+						echartOptions: {
+							interval: chart.interval ?? (chart.max ? chart.max / 4 : undefined),
+							splitNumber: 4,
+							splitLine: grid,
+							axisLabel: { formatter: chart.format, hideOverlap: true },
+						},
+					}"
+				/>
+				<span
+					v-if="band"
+					class="pointer-events-none absolute inset-y-0 border-x border-outline-gray-3 bg-surface-gray-3/50"
+					:style="{ left: `${band.left}px`, width: `${band.width}px` }"
+					aria-hidden="true"
+				>
+					<span
+						v-if="band.width > 56 && bandSpan"
+						class="absolute top-2 left-1/2 -translate-x-1/2 rounded-3 border border-outline-gray-1 bg-surface-elevation-2 px-1.5 py-0.5 text-xs whitespace-nowrap text-ink-gray-7 tabular-nums shadow-sm"
+					>
+						{{ bandSpan }}
+					</span>
+				</span>
+			</div>
 		</div>
 	</ChartCard>
 </template>
 
 <style scoped>
+.server-metric-plot {
+	/* A vertical swipe still scrolls the page; a horizontal drag draws the zoom band. */
+	touch-action: pan-y;
+	cursor: crosshair;
+}
+
 .server-metric-chart :deep(.server-series-toggle) {
 	color: color-mix(in srgb, var(--series-color) 70%, var(--ink-gray-9));
 }

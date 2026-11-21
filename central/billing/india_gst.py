@@ -11,6 +11,9 @@ saved GSTIN's state code matches the chosen state.
 
 INDIA = "India"
 
+IGST = "IGST"
+CGST_SGST = "CGST + SGST"
+
 # State / UT name -> 2-digit GST state code (per the GST state code list).
 GST_STATE_CODES = {
 	"Jammu and Kashmir": "01",
@@ -61,3 +64,14 @@ def india_state_options() -> list[str]:
 def state_code(state: str | None) -> str | None:
 	"""The 2-digit GST code for an Indian state, or None if unrecognised."""
 	return GST_STATE_CODES.get((state or "").strip())
+
+
+def state_for_place_of_supply(place_of_supply: str | None) -> str | None:
+	"""The state in a place of supply such as "27-Maharashtra", or None if unrecognised.
+
+	The code decides when the name is spelt differently; a name of another state is a conflict."""
+	code, _sep, name = (place_of_supply or "").partition("-")
+	named_code = state_code(name)
+	if named_code:
+		return name.strip() if named_code == code.strip() else None
+	return next((state for state, known_code in GST_STATE_CODES.items() if known_code == code.strip()), None)

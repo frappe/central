@@ -207,11 +207,20 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 					:class="row.invite ? 'opacity-60' : ''"
 				/>
 				<div class="min-w-0">
-					<div class="flex items-center gap-2">
-						<p class="truncate text-sm-medium text-ink-gray-9">
+					<div class="flex min-w-0 items-center gap-2">
+						<span
+							class="min-w-0 truncate text-sm-medium text-ink-gray-9"
+							:title="row.name"
+						>
 							{{ row.name }}
-						</p>
-						<Badge v-if="row.invite" theme="amber" label="Invited" />
+						</span>
+
+						<Badge
+							v-if="row.invite"
+							theme="amber"
+							label="Invited"
+							class="shrink-0"
+						/>
 						<Badge
 							v-else-if="row.member?.status === 'Suspended'"
 							theme="red"

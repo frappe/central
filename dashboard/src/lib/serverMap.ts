@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'vue'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { displayStatus } from '@/lib/status'
-import { formatMemory } from '@/lib/units'
+import { formatMemory, gigabytesToMegabytes } from '@/lib/units'
 import type { Region } from '@/types/Region'
 
 // Display mapping for the servers map: one place that turns a Virtual Machine's mirror
@@ -145,7 +145,10 @@ export function specLine(server: VirtualMachineRow): string {
 	if (server.vcpus) parts.push(`${server.vcpus} vCPU`)
 	if (server.memory_megabytes)
 		parts.push(`${formatMemory(server.memory_megabytes)} RAM`)
-	if (server.disk_gigabytes) parts.push(`${server.disk_gigabytes} GB Disk`)
+	if (server.disk_gigabytes)
+		parts.push(
+			`${formatMemory(gigabytesToMegabytes(server.disk_gigabytes))} Disk`,
+		)
 	return parts.join(', ')
 }
 
@@ -506,4 +509,26 @@ export function siteVisual(
 	if (pendingAction) return pendingVisual(pendingAction)
 	// A site mirrors its machine's status, so the two share one vocabulary.
 	return STATUS_VISUAL[status] ?? VISUALS.settingUp
+}
+
+export const CROWDED_REGION_SIZE = 10
+
+export const hasCrowdedRegion = (rows: { cluster: string }[]): boolean => {
+	const counts = new Map<string, number>()
+
+	for (const row of rows)
+		counts.set(row.cluster, (counts.get(row.cluster) ?? 0) + 1)
+
+	return [...counts.values()].some((count) => count > CROWDED_REGION_SIZE)
+}
+
+/** The image a server runs, with the Frappe release its build tracks, such as "Pilot · Version 16". */
+export function imageLabel(server?: VirtualMachineRow): string {
+	const branch = server?.frappe_version
+	if (!branch) return server?.image_title ?? ''
+	const release =
+		branch === 'develop'
+			? 'Nightly'
+			: `Version ${branch.match(/^version-(\d+)/)?.[1] ?? branch}`
+	return [server?.image_title, release].filter(Boolean).join(' · ')
 }

@@ -6,8 +6,8 @@ test('A new team has no billing details', async ({ page, users }) => {
 
 	await page.goto('/dashboard/billing/payments')
 
-	await expect(page.getByRole('heading', { name: 'Billing details' })).toBeVisible()
-	await expect(page.getByText('Not set').first()).toBeVisible()
+	await expect(page.getByText('Add your billing details')).toBeVisible()
+	await expect(page.getByRole('button', { name: 'Add billing details' })).toBeVisible()
 })
 
 test('Edit the billing details', async ({ page, users }) => {

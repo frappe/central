@@ -29,6 +29,7 @@ from central.billing.doctype.billing_run_team.billing_run_team import (
 	has_same_outcome,
 	record_outcome,
 )
+from central.billing.revenue import usage_recount
 from central.billing.revenue.invoicing.lines import compute_line_items, team_line_items
 from central.billing.states import record_team_event
 
@@ -315,6 +316,8 @@ def _generate_team_invoice(team: str, period_start, period_end):
 		record_outcome(team, period_end, INVOICED, invoice=existing)
 		return existing
 
+	# Usage months are recomputed from the days first; the invoice then marks exactly what it billed.
+	counted = usage_recount.recount_team(team, period_end)
 	rated = rate_team_period(team, period_start, period_end)
 	if not rated:
 		record_outcome(team, period_end, NOTHING_TO_BILL, reason="Nothing billable in this month.")
@@ -324,6 +327,7 @@ def _generate_team_invoice(team: str, period_start, period_end):
 		return None
 
 	name = _insert_invoice(rated.payload)
+	usage_recount.stamp_invoice(counted, name)
 	commitments.mark_breached(rated.commitment)
 	record_outcome(team, period_end, INVOICED, invoice=name)
 	record_team_event(team, "Invoice Generated", "Invoice", reason=name, amount=rated.payload["total"])
@@ -336,9 +340,11 @@ def is_below_minimum(payload: dict) -> bool:
 
 
 def _forgive(team: str, period_end, payload: dict) -> None:
-	"""Write off a month below the minimum. No invoice is made, and the amount stays on record."""
+	"""Skip the invoice of a month below the minimum. The amount stays on record."""
+	# Only fixed charges are lost: the month's usage days stay unbilled and carry to the next invoice.
 	reason = (
-		f"{payload['currency']} {payload['total']} is below the minimum invoice amount and was written off."
+		f"{payload['currency']} {payload['total']} is below the minimum invoice amount. "
+		"Its fixed charges were written off; its usage carries to the next invoice."
 	)
 	if has_same_outcome(team, period_end, BELOW_MINIMUM, reason):
 		return

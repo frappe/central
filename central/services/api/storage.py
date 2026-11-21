@@ -161,6 +161,29 @@ def set_bucket_quota(
 	return {"name": name, "size_gib": size_gib, "max_objects": max_objects}
 
 
+@frappe.whitelist(methods=["GET"])
+@require_capability("service:view", VIEW_DENIED)
+def get_bucket_allowed_origins(team: str | None = None, name: str | None = None) -> dict:
+	"""The websites, such as `https://files.example.com`, that may call one bucket from a
+	browser with a presigned URL. The dashboard always may and is not listed."""
+	return {"name": name, "allowed_origins": _team_bucket(team, name).get_allowed_origins()}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_capability("service:manage", MANAGE_DENIED)
+def set_bucket_allowed_origins(
+	team: str | None = None, name: str | None = None, origins: list[str] | None = None
+) -> dict:
+	"""Replace the websites that may call one bucket from a browser. An origin is
+	`scheme://host` or `scheme://host:port`, without a path or a wildcard; Cargo checks each one.
+	An empty list leaves only the dashboard."""
+	if origins is None:
+		frappe.throw(_("List the websites that may call this bucket, or an empty list for none."))
+
+	allowed = _team_bucket(team, name, for_update=True).set_allowed_origins(origins)
+	return {"name": name, "allowed_origins": allowed}
+
+
 def get_storage_regions() -> list[dict]:
 	"""Regions where Cargo reports object storage as available, with what the map needs."""
 	detail = DocType("Service Detail")

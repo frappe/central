@@ -11,16 +11,17 @@ The classic collections worklist: chase the 60+/90+ columns first.
 import frappe
 from frappe import _
 from frappe.utils import date_diff, flt, getdate, nowdate
+from frappe.utils.translations import N_
 
 from central.billing.doctype.invoice.invoice import owed_filters
 from central.billing.report._currency import split_currency_columns
 
 BUCKETS = [
-	("current", _("Current"), 0),
-	("b1_30", _("1-30"), 30),
-	("b31_60", _("31-60"), 60),
-	("b61_90", _("61-90"), 90),
-	("b90_plus", _("90+"), None),
+	("current", N_("Current"), 0),
+	("b1_30", N_("1-30"), 30),
+	("b31_60", N_("31-60"), 60),
+	("b61_90", N_("61-90"), 90),
+	("b90_plus", N_("90+"), None),
 ]
 
 
@@ -52,7 +53,7 @@ def get_columns() -> list[dict]:
 	for fieldname, label, _days in BUCKETS:
 		cols.append(
 			{
-				"label": label,
+				"label": _(label),
 				"fieldname": fieldname,
 				"fieldtype": "Currency",
 				"options": "currency",

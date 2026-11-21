@@ -66,7 +66,7 @@ To go back to the console from Pilot, click the Pilot menu at the top of the sid
 The **Owner**, **Admin**, and **Developer** roles can open Pilot. The **Viewer** and **Billing** roles cannot. During a free trial, **Open server** and **Open Pilot** are not available. Read [Roles and permissions](/team/roles).
 :::
 
-The server must be **Running** to open Pilot. If the server is still setting up, wait until setup finishes.
+The server must be **Running** to open Pilot. If the server is still setting up, wait until setup finishes. After you create, restart, or resize a server, Pilot starts a few minutes after the server shows **Running**. If you open Pilot during this time, the new tab waits and opens Pilot when it is ready.
 
 ## Pilot pages
 

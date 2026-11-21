@@ -21,7 +21,7 @@ Frappe Cloud now gives you a server directly. There is one thing to create and o
 | Who else runs on it | Other teams' benches on the same server | No other team. The server is yours alone. |
 | What you choose | Bench group, then a shared or dedicated server | A region, an image, and a plan |
 | Shell access | Limited to your bench | Root access over SSH |
-| What runs inside | Frappe benches only | Frappe with Pilot, or plain Ubuntu |
+| What runs inside | Frappe benches only | Frappe with Pilot, an app such as Redis, or plain Ubuntu |
 
 ## The four systems
 
@@ -52,7 +52,7 @@ Atlas also carries traffic to your server:
 
 ### Cargo
 
-Cargo builds the **Frappe** images. It installs Ubuntu, Pilot, and a bench on a build machine, then saves it as an image that Atlas can boot. This is why a new Frappe server is ready in minutes. Cargo also runs the object storage in each region. Read [Images](/servers/images) for each step of a build.
+Cargo builds the **Frappe** and **Apps** images. It installs Ubuntu, Pilot, and a bench on a build machine, then saves it as an image that Atlas can boot. This is why a new Frappe server is ready in minutes. Cargo also runs the object storage in each region. Read [Images](/servers/images) for each step of a build.
 
 ### Pilot
 
@@ -71,7 +71,8 @@ You choose an image when you [create a server](/servers/create).
 | Image | Starts with | Use it for |
 | --- | --- | --- |
 | **Frappe** | Ubuntu 24.04 with [Pilot](/pilot/), a bench, and optionally a site | Frappe apps such as ERPNext, Helpdesk, and Raven |
-| **Ubuntu** | A clean Ubuntu installation | Any other workload, such as a database, a CI runner, or your own service |
+| **Apps** | Ubuntu 24.04 with one service, such as Redis, MariaDB, or Prometheus and Grafana | A database, a cache, or monitoring. See [Apps](/apps/). |
+| **Ubuntu** | A clean Ubuntu installation | Any other workload, such as a CI runner or your own service |
 
 You can create many sites inside one Frappe server. When you need more room, or want to keep a workload apart, add another server. Read [Images](/servers/images) to see how each image is built.
 

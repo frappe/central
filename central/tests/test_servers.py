@@ -7,6 +7,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api import servers
+from central.billing.tests.utils import make_plan
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
@@ -64,6 +65,23 @@ class TestRegistry(IntegrationTestCase):
 		name = self.make_site("zz-registry-terminated", "Terminated")
 
 		self.assertNotIn(name, {row["name"] for row in servers.registry(self.team)["sites"]})
+
+	def test_a_server_lists_with_its_plan_title(self):
+		plan = make_plan("zz-registry-plan", title="Growth")
+		frappe.get_doc(
+			{
+				"doctype": "Virtual Machine",
+				"resource_id": "server-zz-registry-plan",
+				"team": self.team,
+				"region": self.cluster,
+				"status": "Running",
+				"plan": plan,
+			}
+		).insert()
+
+		rows = {row["resource_id"]: row for row in servers.registry(self.team)["servers"]}
+
+		self.assertEqual(rows["server-zz-registry-plan"]["plan_title"], "Growth")
 
 
 class TestServerHostnames(IntegrationTestCase):

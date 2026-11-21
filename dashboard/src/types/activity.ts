@@ -37,6 +37,8 @@ export interface ActivityEvent {
 	actor: ActivityActor
 	/** Translated; `{actor}` and `{resource}` mark the names to emphasise. */
 	sentence: string
+	/** Who initiated an event that has no actor, such as a snapshot reported ready. */
+	initiator: ActivityActor | null
 	resource: ActivityResource
 	status: string | null
 	details: ActivityDetail[]

@@ -20,7 +20,7 @@ withDefaults(
 		<div
 			class="flex size-10 items-center justify-center rounded-6 bg-surface-gray-2 text-ink-gray-5"
 		>
-			<span :class="[icon, 'size-4']" aria-hidden="true" />
+			<span :class="[icon, 'size-5']" aria-hidden="true" />
 		</div>
 		<p class="mt-4 text-base-medium text-ink-gray-8">{{ title }}</p>
 		<p v-if="description" class="mt-1 max-w-sm text-p-sm text-ink-gray-6">

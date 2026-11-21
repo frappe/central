@@ -8,7 +8,7 @@ The Signups module holds Product, so it can move into its own app later.
 
 ## Configuration
 
-System Managers and Product Operators create and edit products in Desk. Only a System Manager deletes one. See [Access](#access).
+System Managers, Staff Viewers, and Product Operators create and edit products in Desk. Only a System Manager or a Staff Viewer deletes one. See [Access](#access).
 
 | Field | Rule |
 |---|---|
@@ -24,9 +24,11 @@ System Managers and Product Operators create and edit products in Desk. Only a S
 | Trial Days | Days a trial site of this product runs from when Central records its site. 0 uses Central Settings, Trial Days. See [Trials](../../SPEC.md#trials). |
 | Trial Deletion Days | Days a stopped trial site is kept before its server is terminated. 0 uses Central Settings, Trial Deletion Days. |
 | Use Product Branding in Emails | Off uses Frappe Cloud's logo and name in emails. On uses the product's Logo and Title. See [Emails](#emails). |
-| Email Notes | One extra paragraph for each lifecycle email about a site of this product. See [Emails](#emails). |
+| Email Notes | Extra plain text or HTML for each lifecycle email about a site of this product. See [Emails](#emails). |
+| Reply-To Address | The address that gets replies to emails about a site of this product, such as an inbox that the sales CRM reads. Empty keeps the sender address. See [Emails](#emails). |
 | Hide Plan Specs | Hides the vCPU, memory and disk line under each plan on a site of this product. See [Plans](#plans). |
 | Plan Notes | A short tag for each plan, which the site's plan list shows on a site of this product. See [Plans](#plans). |
+| AI Credit Note | Optional. One sentence that the in-app billing shows under the AI credit bar on a site of this product, such as `Used for AI replies and ticket summaries.` See [Plans](#plans). |
 
 Example: Product Key `raven`, Title `Raven`, Signup App `raven`, Frappe Version `version-16`. The signup link is `/dashboard/signup?product=raven`.
 
@@ -76,12 +78,13 @@ A System Manager gives a Frappe team member the **Product Operator** role. The r
 |---|---|---|
 | System Manager | Create, read, edit, delete every product | Everything |
 | Product Operator | Create, read and edit every product, and use Open Signup Page, Preview Email and Send Test Email | Files, to upload the logo. The Signups workspace shows them Product only. |
+| Staff Viewer | Create, read, edit and delete every product, and use Open Signup Page, Preview Email, Send Test Email and Preview Trial Images | See [Staff Desk Access](../../../../spec/IAM.md#staff-desk-access). |
 
 A Product Operator does not get Region, Image Offering, Site, Team or billing records, the Trial Sites report, or Preview Trial Images. Each of them reaches across every team, and only a System Manager may do that. To check an image, a Product Operator asks a System Manager. Those records belong to customer teams, and only a System Manager reads them across teams.
 
 ## Emails
 
-Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#operation). A product changes them in three ways.
+Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#operation). A product changes them in four ways.
 
 **Branding.** With **Use Product Branding in Emails** on, the email header shows the product's Logo and Title instead of Frappe Cloud's. The code email also names the product, such as "123456 is your Raven signup code". The lifecycle emails of the product's sites use the same header. The logo must be a public file, because an email client loads it without a session. The footer still says that the person is a member of a Frappe Cloud team.
 
@@ -96,7 +99,9 @@ Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#ope
 | `trial_converted` | Frappe Cloud's billing page. |
 | `trial_deleted` | No action link. |
 
-**Email Notes.** Each row adds text under the standard text of one email, only for sites of this product. Separate paragraphs with a blank line. Use it for product advice, such as what to do first. Central keeps the standard text, the dates and the button, so a note cannot change the trial terms.
+**Email Notes.** Each row adds content under the standard text of one email, only for sites of this product. Use it for product advice, such as what to do first. Central keeps the standard text, the dates and the button, so a note cannot change the trial terms.
+
+**Replies.** With a **Reply-To Address**, every email about a site of this product sets that address as Reply-To. A customer who replies to a trial email then reaches the product team, for example an inbox that the CRM reads to create a lead. The sender stays notifications@frappecloud.com. **Send Test Email** uses the same Reply-To.
 
 | Email | Example note for Raven |
 |---|---|
@@ -107,7 +112,14 @@ Central sends the signup code and the [trial lifecycle emails](../../SPEC.md#ope
 | `trial_deletion_soon` | Export a channel from its menu before the site is deleted. |
 | `trial_ended` | Add a payment method to start your Raven site again. |
 
-A note is plain text. Central escapes it, so HTML shows as text. Add at most one note for each email. Central also escapes the product title and every other value in an email, because a Product Operator or a Pilot writes them.
+Each note has a **Format**:
+
+| Format | Field | What Central sends |
+|---|---|---|
+| Standard (default) | Note | Plain text in Frappe Cloud's paragraph style. Separate paragraphs with a blank line. Central escapes it, so HTML shows as text. |
+| HTML | Note (HTML) | Your own markup, for example `<p>Create a channel.</p><ul><li>Invite your team.</li></ul>`. When you save, Central sanitizes it with `sanitize_html`: it removes scripts, styles, forms, event handlers and unsafe links, and keeps paragraphs, lists, links, images and inline styles. The email stylesheet styles `p`, `ul`, `ol`, `li` and `a` like the standard text. |
+
+On save, Central keeps only the field of the chosen format and refuses a note with no content in that field. **Preview Email** shows either format with the form's unsaved changes, sanitized as it would be saved. It does not change the form. Add at most one note for each email. Central escapes the product title and every other value in an email, because a Product Operator or a Pilot writes them.
 
 ## Plans
 
@@ -123,6 +135,8 @@ Each row names a Plan and a few words of plain text. Add at most one note for ea
 A plan without a note still shows in the list, with its title and specs.
 
 With **Hide Plan Specs** on, `get_plan_options` and `get_billing_summary` return an empty `subtitle` on a site of this product, so the site's plan list and billing card show the title, the note and the price only. `get_billing_summary` still returns `specs`, because the usage meters read them. The Cloud dashboard and invoices still show the specs. Add a note to each plan that the product shows, because the title and price then tell the plans apart.
+
+**AI Credit Note** tells the users of the product what its AI credit pays for. `get_billing_summary` returns it as `ai_credits.note` when the server has an AI credit, or `null` when the server has no product or the product has no note. The in-app billing shows a general line in place of `null`.
 
 ## Signup funnel
 

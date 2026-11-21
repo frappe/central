@@ -132,7 +132,8 @@ class TestReadiness(IntegrationTestCase):
 		frappe.db.set_value("Virtual Machine", server, "status", "Running")
 		self.assertEqual(_found("S2"), [])
 
-		frappe.db.set_value("Subscription", self.subscription, "enabled", 0)
+		# An enabled subscription whose segment is paused bills nothing.
+		add_segment(self.subscription, "Paused", None, "2026-06-11 00:00:00")
 		self.assertEqual(len(_found("S2")), 1)
 
 	def test_terminated_server_still_billed_is_found(self):
@@ -140,7 +141,11 @@ class TestReadiness(IntegrationTestCase):
 		frappe.db.set_value("Virtual Machine", server, "status", "Terminated")
 		self.assertEqual(len(_found("S3")), 1)
 
+		# A disabled subscription still bills while its segment is open.
 		frappe.db.set_value("Subscription", self.subscription, "enabled", 0)
+		self.assertEqual(len(_found("S3")), 1)
+
+		add_segment(self.subscription, "Paused", None, "2026-06-11 00:00:00")
 		self.assertEqual(_found("S3"), [])
 
 	def test_promotional_credit_with_no_expiry_is_found(self):
@@ -175,6 +180,24 @@ class TestReadiness(IntegrationTestCase):
 		found = _found_run("B5")
 		self.assertEqual(len(found), 1)
 		self.assertIn("has not started", found[0].detail)
+
+	def test_a_run_is_not_missing_before_the_draft_tick_on_the_first(self):
+		from central.billing.revenue.invoicing.run import billing_period
+
+		frappe.db.delete("Billing Run", {"period_end": billing_period("2026-07-01")[1]})
+		frappe.db.set_value("Subscription", self.subscription, "start_date", "2020-01-01")
+		with (
+			patch("frappe.utils.nowdate", return_value="2026-07-01"),
+			patch("frappe.utils.now_datetime", return_value=frappe.utils.get_datetime("2026-07-01 07:00")),
+		):
+			self.assertFalse(_found_run("B5"))
+
+	def test_the_draft_tick_follows_its_schedule_in_hooks(self):
+		from central.billing.revenue.invoicing.run import has_draft_tick_passed
+
+		self.assertFalse(has_draft_tick_passed("2026-07-01 07:59"))
+		self.assertTrue(has_draft_tick_passed("2026-07-01 08:01"))
+		self.assertTrue(has_draft_tick_passed("2026-07-02 00:00"))
 
 	def test_a_run_that_drafted_nothing_for_hours_is_found(self):
 		from central.billing.revenue.invoicing.run import billing_period

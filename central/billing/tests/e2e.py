@@ -87,6 +87,18 @@ def seed(scenario: str = "profile_pending", currency: str = "INR") -> dict:
 	}
 
 
+@frappe.whitelist(methods=["POST"])
+def reopen_onboarding(team: str) -> None:
+	"""Put the signed-in owner's onboarding steps back to pending."""
+	if frappe.db.get_value("Team", team, "owner_user") != frappe.session.user:
+		frappe.throw(_("Only the team owner can reopen its onboarding."), frappe.PermissionError)
+	_enter_test_mode()
+	seeded_team = frappe.get_doc("Team", team)
+	for row in seeded_team.onboarding_steps:
+		row.status = "Pending"
+	seeded_team.save()
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def teardown(team: str | None = None, email: str | None = None) -> dict:
 	"""Delete everything `seed()` created for one spec. Best-effort and idempotent:

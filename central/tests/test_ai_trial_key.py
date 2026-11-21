@@ -2,13 +2,18 @@ from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils import add_to_date, now_datetime
 
-from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey, refill_trial_keys
+from central.services.doctype.ai_trial_key.ai_trial_key import (
+	AITrialKey,
+	refill_trial_keys,
+	revoke_available_keys,
+)
 
 TRIAL_KEYS = "central.services.doctype.ai_trial_key.ai_trial_key"
 
 
-class TestAITrialKeyPause(IntegrationTestCase):
+class TestAITrialKey(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
 		self.addCleanup(frappe.db.rollback)
@@ -50,3 +55,46 @@ class TestAITrialKeyPause(IntegrationTestCase):
 
 		self.assertIsNone(AITrialKey.assign(action))
 		self.assertEqual(frappe.db.get_value("AI Trial Key", key.name, "status"), "Available")
+
+	def test_a_revoked_record_is_dropped_with_its_secret_once_its_days_have_passed(self):
+		aged = add_to_date(now_datetime(), days=-31)
+		gone = self.key("Revoked", modified=aged)
+		failed = self.key("Conversion Failed", revoked=1, modified=aged)
+		fresh = self.key("Revoked")
+		pending = self.key("Conversion Failed", modified=aged)
+		live = self.key("Assigned", modified=aged)
+
+		AITrialKey.clear_old_logs(days=30)
+
+		self.assertEqual(
+			sorted(frappe.get_all("AI Trial Key", pluck="name")),
+			sorted([fresh.name, pending.name, live.name]),
+		)
+		for key in (gone, failed):
+			with self.assertRaisesRegex(frappe.ValidationError, "not found"):
+				key.get_password("api_key")
+		self.assertEqual(fresh.get_password("api_key"), "secret")
+
+	def test_revoke_available_keys_leaves_the_assigned_ones(self):
+		ready, taken, gone = self.key("Available"), self.key("Assigned"), self.key("Revoked")
+
+		with patch(f"{TRIAL_KEYS}.frappe.enqueue") as enqueue:
+			self.assertEqual(revoke_available_keys(), 1)
+
+		self.assertEqual(
+			[frappe.db.get_value("AI Trial Key", k.name, "status") for k in (ready, taken, gone)],
+			["Revoking", "Assigned", "Revoked"],
+		)
+		self.assertEqual(enqueue.call_args.kwargs["name"], ready.name)
+
+	def key(self, status: str, **values) -> AITrialKey:
+		key = frappe.get_doc(
+			{
+				"doctype": "AI Trial Key",
+				"grove_key": frappe.generate_hash(length=8),
+				"product": "raven",
+				"api_key": "secret",
+			}
+		).insert()
+		key.db_set({"status": status, **values}, update_modified=False)
+		return key

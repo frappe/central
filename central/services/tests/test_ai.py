@@ -9,6 +9,7 @@ import frappe
 import requests
 from frappe.tests import IntegrationTestCase
 
+from central.billing.catalog.plan_setup import AI_PLAN
 from central.billing.tests.utils import complete_billing_profile, ensure_trust_tier_level
 from central.integrations.grove import GroveClient, GroveUnavailable
 from central.services import ai
@@ -30,7 +31,6 @@ LISTED = {
 	"title": "app",
 	"status": "active",
 	"creation": "2026-10-06 10:00:00",
-	"revocable_at": "2026-10-06T10:30:00Z",
 	"key_hash": "abc123",
 	"masked": "gr_test…",
 	"geography": "eu",
@@ -42,7 +42,9 @@ MODELS = [
 	{
 		"name": "acme/m",
 		"provider": "acme",
+		"provider_display_name": "Acme",
 		"model_id": "m",
+		"display_name": "M",
 		"zero_data_retention": True,
 		"dialects": ["openai"],
 	}
@@ -130,6 +132,10 @@ class TestGroveClientCalls(IntegrationTestCase):
 		with grove_replies("Revoked.") as post:
 			self.client.revoke_key("TEAM-1", "k1")
 		self.assertEqual(sent(post), ("grove.api.keys.revoke_key", {"team": "TEAM-1", "key": "k1"}))
+
+		with grove_replies(["k1"]) as post:
+			self.client.archive_team("TEAM-1")
+		self.assertEqual(sent(post), ("grove.api.teams.archive_team", {"team": "TEAM-1"}))
 
 	def test_models_geographies_spend_and_usage_name_the_team(self):
 		calls = [
@@ -276,12 +282,13 @@ class TestAI(IntegrationTestCase):
 		# The tier's name goes with it, so the first key has room for a cap.
 		update_team.assert_called_once_with(**ai.get_team_limits(self.team))
 		service = frappe.get_doc("Team Service", name)
-		# Postpaid, and each key calls its own geography: no subscription, no region, no
+		# Billed in arrears on the AI plan, and each key calls its own geography: no region and no
 		# endpoint on the row.
 		self.assertEqual(
-			(service.status, service.subscription, service.region, service.endpoint_url),
-			("Active", None, None, None),
+			(service.status, service.region, service.endpoint_url),
+			("Active", None, None),
 		)
+		self.assertEqual(frappe.db.get_value("Subscription", service.subscription, "plan"), AI_PLAN)
 
 	def test_a_grove_refusal_leaves_ai_off(self):
 		with patch.object(GroveClient, "provision_team", side_effect=frappe.ValidationError):
@@ -366,7 +373,7 @@ class TestAI(IntegrationTestCase):
 			patch.object(GroveClient, "provision_key", return_value=MINTED),
 			patch.object(GroveClient, "list_models", side_effect=GroveUnavailable),
 		):
-			created = api.create_api_key(self.team, "app", "eu", "5")
+			created = api.create_api_key("app", "eu", "5", self.team)
 		self.assertEqual((created["api_key"], created["models"]), (MINTED["api_key"], []))
 		self.assertNotIn("Grove", str(frappe.local.message_log), "the swallowed refusal leaves no message")
 
@@ -376,10 +383,20 @@ class TestAI(IntegrationTestCase):
 			patch.object(GroveClient, "provision_key", return_value=MINTED) as provision_key,
 			patch.object(GroveClient, "list_models", return_value=MODELS) as list_models,
 		):
-			created = api.create_api_key(self.team, " app ", "eu", "5")
-			# A cap is whole dollars: refused here, before Grove.
-			with self.assertRaises(frappe.ValidationError):
-				api.create_api_key(self.team, "app", "eu", "2.5")
+			created = api.create_api_key(" app ", "eu", "5", self.team)
+			# A cap is whole dollars, and label, geography and cap are all asked: refused here, before Grove.
+			for label, geography, cap in [
+				("app", "eu", "2.5"),
+				("", "eu", "5"),
+				("app", "", "5"),
+				("app", "eu", None),
+				("app", "eu", "0"),
+			]:
+				with (
+					self.subTest(label=label, geography=geography, cap=cap),
+					self.assertRaises(frappe.ValidationError),
+				):
+					api.create_api_key(label, geography, cap, self.team)
 		provision_key.assert_called_once_with(self.team, "app", "eu", 5)
 		list_models.assert_called_once_with(team=self.team, geography="eu")
 		self.assertEqual(
@@ -395,18 +412,40 @@ class TestAI(IntegrationTestCase):
 			(listed["masked"], listed["geography"], listed["cap"], listed["limits"]),
 			(LISTED["masked"], "eu", 5.0, LIMITS),
 		)
-		# So the console can hold Revoke back instead of asking Grove and being refused.
-		self.assertEqual(listed["revocable_at"], LISTED["revocable_at"])
 
 		with patch.object(GroveClient, "update_caps", return_value=[{**LISTED, "cap": 8}]) as update_caps:
 			self.assertEqual(api.set_api_key_caps(self.team, {"k1": "8"})[0]["cap"], 8)
-			with self.assertRaises(frappe.ValidationError):
-				api.set_api_key_caps(self.team, {"k1": "7.5"})
+			for cap in ("7.5", "0"):
+				with self.subTest(cap=cap), self.assertRaises(frappe.ValidationError):
+					api.set_api_key_caps(self.team, {"k1": cap})
 		update_caps.assert_called_once_with(self.team, {"k1": 8})
 
 		with patch.object(GroveClient, "revoke_key") as revoke_key:
 			api.revoke_api_key(self.team, "k1")
 		revoke_key.assert_called_once_with(self.team, "k1")
+
+	def test_no_key_is_minted_while_a_trials_key_is_on_its_way_to_the_team(self):
+		self.enabled()
+		moving = frappe.get_doc(
+			{"doctype": "AI Trial Key", "grove_key": "k-moving", "team": self.team, "status": "Converting"}
+		).insert(ignore_permissions=True)
+		self.addCleanup(frappe.db.delete, "AI Trial Key", {"name": moving.name})
+		figures = {"spend": {}, "keys": [], "usage": EMPTY_USAGE}
+		with (
+			patch.object(GroveClient, "provision_key", return_value=MINTED) as provision_key,
+			patch.object(GroveClient, "list_models", return_value=MODELS),
+			patch.object(GroveClient, "get_figures", return_value=figures),
+			patch.object(GroveClient, "list_geographies", return_value=GEOGRAPHIES),
+		):
+			self.assertTrue(api.get_ai(self.team)["key_handover_pending"])
+			with self.assertRaisesRegex(frappe.ValidationError, "being moved to this team"):
+				api.create_api_key("app", "eu", "5", self.team)
+			provision_key.assert_not_called()
+
+			moving.db_set("status", "Converted")
+			self.assertFalse(api.get_ai(self.team)["key_handover_pending"])
+			api.create_api_key("app", "eu", "5", self.team)
+		provision_key.assert_called_once()
 
 	def test_prompt_logging_is_set_at_grove_by_a_service_manager_only(self):
 		self.enabled()
@@ -435,8 +474,15 @@ class TestAI(IntegrationTestCase):
 			[{"team": self.team, "geography": "eu"}, {"team": self.team, "geography": None}],
 		)
 		self.assertEqual(
-			(model["name"], model["provider"], model["model_id"], model["zero_data_retention"]),
-			("acme/m", "acme", "m", True),
+			(
+				model["name"],
+				model["provider"],
+				model["provider_display_name"],
+				model["model_id"],
+				model["display_name"],
+				model["zero_data_retention"],
+			),
+			("acme/m", "acme", "Acme", "m", "M", True),
 		)
 
 	def test_usage_of_one_key_sends_its_hash_and_an_unknown_key_is_refused(self):

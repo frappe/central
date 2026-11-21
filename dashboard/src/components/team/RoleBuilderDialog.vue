@@ -5,6 +5,7 @@ import {
 	Checkbox,
 	Dialog,
 	LoadingText,
+	ScrollArea,
 	TextInput,
 } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
@@ -14,6 +15,7 @@ import {
 	groupCapabilitiesByCategory,
 } from '@/lib/capabilities'
 import { getErrorMessage } from '@/lib/feedback'
+import { __ } from '@/lib/translate'
 
 interface RoleBuilderDialogProps {
 	open: boolean
@@ -64,11 +66,11 @@ const canSubmit = computed(
 )
 
 const dialogOptions = computed(() => ({
-	title: 'New custom role',
+	title: __('New custom role'),
 	size: 'xl' as const,
 	actions: [
 		{
-			label: 'Create role',
+			label: __('Create role'),
 			variant: 'solid' as const,
 			disabled: !canSubmit.value || creating.value,
 			loading: creating.value,
@@ -87,6 +89,9 @@ async function submit() {
 		formError.value = getErrorMessage(e, "The role couldn't be created.")
 	}
 }
+
+const createRoleErrorTitle = __("Couldn't create the role")
+const loadPermissionsErrorTitle = __("Couldn't load the permissions")
 </script>
 
 <template>
@@ -100,29 +105,36 @@ async function submit() {
 	>
 		<template #default>
 			<div class="space-y-5">
-				<Alert v-if="formError" theme="red" :title="formError" />
+				<Alert
+					v-if="formError"
+					theme="red"
+					:title="createRoleErrorTitle"
+					:description="formError"
+				/>
 				<TextInput
 					v-model="roleName"
 					autofocus
-					label="Role name"
-					placeholder="e.g. Release Manager"
+					:label="__('Role name')"
+					:placeholder="__('e.g. Release Manager')"
 					:disabled="creating"
 				/>
 
 				<div>
-					<p class="mb-1 text-base-medium text-ink-gray-7">Permissions</p>
+					<p class="mb-1 text-base-medium text-ink-gray-7">
+						{{ __('Permissions') }}
+					</p>
 					<p class="mb-3 text-p-sm text-ink-gray-5">
-						Choose what members with this role can do. Required view permissions
-						are included.
+						{{ __('Choose what members with this role can do. Required view permissions are included.') }}
 					</p>
 					<Alert
 						v-if="capabilitiesError"
 						theme="red"
-						:title="capabilitiesError"
+						:title="loadPermissionsErrorTitle"
+						:description="capabilitiesError"
 					/>
 					<Button
 						v-if="capabilitiesError"
-						label="Retry"
+						:label="__('Retry')"
 						@click="reloadCapabilities"
 						class="mt-2"
 					/>
@@ -131,28 +143,31 @@ async function submit() {
 						:lines="3"
 					/>
 					<p v-else-if="!groups.length" class="text-p-sm text-ink-gray-6">
-						No permissions are available. Contact your administrator.
+						{{ __('No permissions are available. Contact your administrator.') }}
 					</p>
-					<div
+					<ScrollArea
 						v-else
-						class="-mr-4 max-h-[50vh] space-y-4 overflow-y-auto pr-4 sm:-mr-6 sm:pr-6"
+						class="-mr-4 sm:-mr-6"
+						viewport-class="max-h-[50vh] pr-4 sm:pr-6"
 					>
-						<section v-for="group in groups" :key="group.label">
-							<h4 class="mb-2 text-xs-medium uppercase text-ink-gray-4">
-								{{ group.label }}
-							</h4>
-							<ul class="space-y-2.5">
-								<li v-for="cap in group.caps" :key="cap.name">
-									<Checkbox
-										:label="capabilityLabel(cap)"
-										:disabled="creating"
-										:model-value="picked.includes(cap.name)"
-										@update:model-value="toggle(cap.name, Boolean($event))"
-									/>
-								</li>
-							</ul>
-						</section>
-					</div>
+						<div class="space-y-4">
+							<section v-for="group in groups" :key="group.label">
+								<h4 class="mb-2 text-xs-medium uppercase text-ink-gray-4">
+									{{ group.label }}
+								</h4>
+								<ul class="space-y-2.5">
+									<li v-for="cap in group.caps" :key="cap.name">
+										<Checkbox
+											:label="capabilityLabel(cap)"
+											:disabled="creating"
+											:model-value="picked.includes(cap.name)"
+											@update:model-value="toggle(cap.name, Boolean($event))"
+										/>
+									</li>
+								</ul>
+							</section>
+						</div>
+					</ScrollArea>
 				</div>
 			</div>
 		</template>

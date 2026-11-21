@@ -10,7 +10,14 @@
 			else _("{0} open alerts as of this sweep.").format(count)
 		) }}
 
-		{{ ui.table([_("Kind"), _("Reference"), _("Detail")], rows) }}
+		{% for group in groups %}
+		{{ ui.paragraph("<strong>" ~ group.heading ~ "</strong> (" ~ group.rows|length ~ ")<br>" ~ group.meaning) }}
+		{{ ui.table([_("Reference"), _("Detail")], group.rows) }}
+		{% endfor %}
+
+		{% if hidden %}
+		{{ ui.paragraph(_("{0} more alerts are in the Error Log.").format(hidden)) }}
+		{% endif %}
 	</td>
 </tr>
 {% endblock %}

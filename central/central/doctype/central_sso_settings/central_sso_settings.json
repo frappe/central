@@ -7,6 +7,8 @@
  "field_order": [
   "issuer_section",
   "issuer_url",
+  "bench_session_section",
+  "bench_session_minutes",
   "atlas_signing_section",
   "atlas_key_id",
   "atlas_public_key",
@@ -31,6 +33,20 @@
    "fieldname": "issuer_url",
    "fieldtype": "Data",
    "label": "Central Public URL"
+  },
+  {
+   "fieldname": "bench_session_section",
+   "fieldtype": "Section Break",
+   "label": "Server Dashboard Sign-in"
+  },
+  {
+   "default": "60",
+   "description": "How long a server dashboard sign-in link from Central stays valid, from 1 to 1440 minutes. Pilot ends the session when the link expires, so this is also the session length. Applies to links opened after you save.",
+   "fieldname": "bench_session_minutes",
+   "fieldtype": "Int",
+   "label": "Session Length (minutes)",
+   "non_negative": 1,
+   "reqd": 1
   },
   {
    "collapsible": 1,
@@ -130,7 +146,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-10 10:27:25.616292",
+ "modified": "2026-11-05 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central SSO Settings",

@@ -78,3 +78,43 @@ class TestRollupTermsOverride(BillingTestCase):
 
 		self.assertEqual(frappe.db.get_value("Usage Rollup", new, "quantity"), 4321)
 		self.assertEqual(frappe.db.get_value("Usage Rollup", self.rollup.name, "quantity"), 1000)
+
+
+class TestConvertedRollupTerms(BillingTestCase):
+	def setUp(self):
+		self.team = ensure_team("team-rollup-terms")
+		self.key = f"rollup-{frappe.generate_hash(length=8)}"
+
+	def report(self, rate: float, rate_date: str | None):
+		terms = frappe._dict(
+			team=self.team,
+			cluster=None,
+			currency="INR",
+			allowance=0,
+			rate=rate,
+			rate_date=rate_date,
+			is_converted=True,
+		)
+		metering.ingest_rollup(
+			{
+				"idempotency_key": self.key,
+				"resource_id": "subject-1",
+				"quantity": 2,
+				"resource_type": "AI Usage",
+				"locked_terms": terms,
+			}
+		)
+		return frappe.db.get_value(
+			"Usage Rollup", {"idempotency_key": self.key}, ["locked_rate", "rate_date"], as_dict=True
+		)
+
+	def test_a_converted_rollup_is_re_rated_until_its_rate_date_is_set(self):
+		self.assertEqual(self.report(83.5, None), {"locked_rate": 83.5, "rate_date": None})
+		locked = self.report(84.1, "2026-06-01")
+		self.assertEqual((locked.locked_rate, str(locked.rate_date)), (84.1, "2026-06-01"))
+		self.assertEqual(self.report(90, "2026-06-01").locked_rate, 84.1)
+
+	def test_the_first_report_stamps_the_rate_and_its_date_together(self):
+		locked = self.report(84.1, "2026-06-01")
+		self.assertEqual((locked.locked_rate, str(locked.rate_date)), (84.1, "2026-06-01"))
+		self.assertEqual(self.report(90, "2026-07-01").locked_rate, 84.1)

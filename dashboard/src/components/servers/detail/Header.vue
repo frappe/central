@@ -204,7 +204,11 @@ const menu = computed(() => {
 						>
 							<Badge label="VPN" theme="blue">
 								<template #prefix>
-									<span class="lucide-shield-check size-3" aria-hidden="true" />
+									<!-- A 10px shield looks light beside the caps, and the badge text renders 0.5px above center. -->
+									<span
+										class="lucide-shield-check -m-px size-3 -translate-y-[0.5px]"
+										aria-hidden="true"
+									/>
 								</template>
 							</Badge>
 						</RouterLink>
@@ -235,6 +239,13 @@ const menu = computed(() => {
 				:tooltip="protectionLabel"
 				:loading="isSavingProtection"
 				@click="emit('protect', !isProtected)"
+			/>
+
+			<Button
+				v-if="details?.documentation_url"
+				:label="__('Getting started')"
+				icon-right="lucide-external-link"
+				:href="details.documentation_url"
 			/>
 
 			<Dropdown :options="menu" align="end">

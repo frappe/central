@@ -1,11 +1,14 @@
+import json
 from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
 import frappe
+import requests
 from botocore.exceptions import ClientError, EndpointConnectionError
 from frappe.tests import IntegrationTestCase
 
 from central.integrations.object_storage import (
+	ObjectStorageClient,
 	ObjectStorageConnectionError,
 	ObjectStorageDeleteTooLarge,
 	ObjectStorageNotFound,
@@ -39,8 +42,8 @@ class ObjectStorageTestCase(IntegrationTestCase):
 		self.cargo.create_bucket.side_effect = receipt
 		self.cargo.rotate_credentials.side_effect = lambda name, access_key: receipt(name, "rotated")
 		self.cargo.get_usage.return_value = {"usage": {"used_bytes": 2048, "object_count": 3}}
-		client = self.enterContext(patch(f"{CONTROLLER}.ObjectStorageClient"))
-		client.from_region.return_value = self.cargo
+		self.client = self.enterContext(patch(f"{CONTROLLER}.ObjectStorageClient"))
+		self.client.from_region.return_value = self.cargo
 		self.subscribe = self.enterContext(
 			patch(f"{CONTROLLER}.provision_service_subscription", return_value={"subscription": "sub-1"})
 		)
@@ -211,6 +214,7 @@ class TestObjectStorageApi(ObjectStorageTestCase):
 			lambda: api.rotate_credentials(self.team, bucket["name"]),
 			lambda: api.delete_bucket(self.team, bucket["name"]),
 			lambda: api.set_bucket_quota(self.team, bucket["name"], 10, 0),
+			lambda: api.set_bucket_allowed_origins(self.team, bucket["name"], ["https://shop.example.test"]),
 		):
 			with self.assertRaises(frappe.PermissionError):
 				call()
@@ -238,6 +242,95 @@ class TestObjectStorageApi(ObjectStorageTestCase):
 		api.set_bucket_quota(self.team, bucket["name"], 50, 1000)
 
 		self.cargo.set_quota.assert_called_once_with(bucket["bucket_name"], 50, 1000)
+
+
+class TestBucketAllowedOrigins(ObjectStorageTestCase):
+	"""These calls go through the real Cargo client, so only the HTTP request is faked."""
+
+	def setUp(self):
+		super().setUp()
+		# Buckets are made through the mocked client; only the origin calls reach the real one.
+		self.other = self._create(self.other_team, "other-media")
+		self.bucket = self._create()
+		region = Mock()
+		region.name = self.region
+		region.get_cargo_url.return_value = "https://cargo.example.test"
+		region.get_atlas_region_id.return_value = 7
+		self.client.from_region.return_value = ObjectStorageClient(region)
+		self.enterContext(patch("central.integrations.object_storage.mint_cargo_token", return_value="token"))
+		self.post = self.enterContext(patch("central.integrations.object_storage.requests.post"))
+
+	def cargo_answers(self, status: int, body: dict) -> None:
+		response = requests.Response()
+		response.status_code = status
+		response._content = json.dumps(body).encode()
+		self.post.return_value = response
+
+	def test_the_teams_list_reaches_cargo_for_its_bucket_and_region(self):
+		stored = ["https://shop.example.test", "http://localhost:8000"]
+		self.cargo_answers(
+			200,
+			{
+				"message": {
+					"name": self.bucket["bucket_name"],
+					"region": self.region,
+					"allowed_origins": stored,
+				}
+			},
+		)
+
+		answer = api.set_bucket_allowed_origins(
+			self.team, self.bucket["name"], ["https://Shop.example.test/", "http://localhost:8000"]
+		)
+
+		self.assertEqual(answer, {"name": self.bucket["name"], "allowed_origins": stored})
+		self.client.from_region.assert_called_with(self.region)
+		url, body = self.post.call_args.args[0], self.post.call_args.kwargs["json"]
+		self.assertTrue(url.endswith("cargo.object_storage.api.bucket.set_allowed_origins"))
+		self.assertEqual(
+			body,
+			{
+				"name": self.bucket["bucket_name"],
+				"region": self.region,
+				"origins": ["https://Shop.example.test/", "http://localhost:8000"],
+			},
+		)
+
+	def test_a_viewer_reads_the_origins_cargo_holds(self):
+		self.cargo_answers(
+			200,
+			{
+				"message": {
+					"name": self.bucket["bucket_name"],
+					"region": self.region,
+					"allowed_origins": ["https://shop.example.test"],
+				}
+			},
+		)
+		frappe.set_user(self.viewer)
+
+		answer = api.get_bucket_allowed_origins(self.team, self.bucket["name"])
+
+		self.assertEqual(answer["allowed_origins"], ["https://shop.example.test"])
+		self.assertTrue(self.post.call_args.args[0].endswith("bucket.get_allowed_origins"))
+
+	def test_cannot_set_origins_on_another_teams_bucket(self):
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.set_bucket_allowed_origins(self.team, self.other["name"], ["https://shop.example.test"])
+
+		self.post.assert_not_called()
+
+	def test_cargos_refusal_reaches_the_caller_with_its_message(self):
+		refusal = "This cluster runs Garage v2.1.0. Browser access to buckets needs Garage v2.3.0 or later."
+		messages = json.dumps([json.dumps({"message": refusal})])
+		self.cargo_answers(417, {"_server_messages": messages})
+
+		frappe.clear_messages()
+		with self.assertRaises(ObjectStorageRejected):
+			api.set_bucket_allowed_origins(self.team, self.bucket["name"], ["https://shop.example.test"])
+
+		# Frappe sends a caller the message log, not the exception's text.
+		self.assertIn(refusal, [message.get("message") for message in frappe.message_log])
 
 
 class BucketObjectsTestCase(ObjectStorageTestCase):

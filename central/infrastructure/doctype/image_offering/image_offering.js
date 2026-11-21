@@ -31,7 +31,7 @@ async function show_images(frm, region, offset) {
 		freeze: true,
 	});
 	const rows = message.items.map((image) =>
-		`<li>${frappe.utils.escape_html(image.title)} (${frappe.utils.escape_html(image.architecture)})</li>`,
+		`<li>${frappe.utils.escape_html(image.title)} (${frappe.utils.escape_html(image.architecture)}${image.hidden ? `, ${__("hidden")}` : ""})</li>`,
 	).join("");
 
 	const options = {

@@ -6,7 +6,9 @@ Two things a DRI reads off one page:
 
 1. **The instrument mix** — one row per configured method type (Card / UPI Autopay /
    Prepaid Credits) with a status breakdown, so you can read how many methods are
-   Active vs Paused/Expired/Failed and how many need re-auth. The summary cards
+   Active vs Paused/Expired/Failed and how many need re-auth. Expired counts cards
+   that lapsed after use; a setup that expired before it was ever validated counts
+   under Setup Expired. The summary cards
    headline mandate coverage — the share of teams (with any payment method) that
    hold an Active recurring mandate — the key signal for whether off-session
    collection will work.
@@ -28,7 +30,7 @@ per currency (a wallet holds one currency per team); never summed across currenc
 import frappe
 from frappe import _
 
-from central.billing.doctype.payment_method.payment_method import held_method_filters
+from central.billing.doctype.payment_method.payment_method import held_method_filters, is_expired_setup
 from central.billing.report._currency import split_currency_columns
 
 STATUS_FIELDS = [
@@ -36,9 +38,11 @@ STATUS_FIELDS = [
 	("paused", "Paused"),
 	("pending", "Pending Validation"),
 	("expired", "Expired"),
+	("setup_expired", "Setup Expired"),
 	("cancelled", "Cancelled"),
 	("failed", "Failed"),
 ]
+STATUS_TO_FIELD = {label: fieldname for fieldname, label in STATUS_FIELDS}
 MANDATE_TYPES = {"UPI Autopay", "Card"}  # method types that can carry a recurring mandate
 
 WELCOME_REFS = {"Promotion"}
@@ -111,24 +115,14 @@ def _method_mix(filters: dict):
 		"Payment Method",
 		filters=conditions,
 		or_filters=held_method_filters(),
-		fields=["team", "method_type", "status", "is_default", "reauth_required"],
+		fields=["team", "method_type", "status", "validated_at", "is_default", "reauth_required"],
 	)
 
-	status_to_field = {label: fieldname for fieldname, label in STATUS_FIELDS}
 	agg: dict[str, dict] = {}
 	teams_with_method = set()
 	teams_with_mandate = set()
 	for m in methods:
-		mt = m.method_type or _("(unset)")
-		g = agg.setdefault(mt, {fieldname: 0 for fieldname, _l in STATUS_FIELDS})
-		g["total"] = g.get("total", 0) + 1
-		field = status_to_field.get(m.status)
-		if field:
-			g[field] += 1
-		if m.is_default:
-			g["is_default"] = g.get("is_default", 0) + 1
-		if m.reauth_required:
-			g["reauth_required"] = g.get("reauth_required", 0) + 1
+		_tally(agg, m)
 		teams_with_method.add(m.team)
 		if m.status == "Active" and m.method_type in MANDATE_TYPES:
 			teams_with_mandate.add(m.team)
@@ -165,6 +159,26 @@ def _method_mix(filters: dict):
 		},
 	]
 	return rows, summary
+
+
+def _tally(agg: dict, method) -> None:
+	"""Count the method in its type's row: total, status, default and re-auth."""
+	group = agg.setdefault(
+		method.method_type or _("(unset)"), {fieldname: 0 for fieldname, _l in STATUS_FIELDS}
+	)
+	group["total"] = group.get("total", 0) + 1
+	field = _status_field(method)
+	if field:
+		group[field] += 1
+	group["is_default"] = group.get("is_default", 0) + bool(method.is_default)
+	group["reauth_required"] = group.get("reauth_required", 0) + bool(method.reauth_required)
+
+
+def _status_field(method) -> str | None:
+	"""The status column the method counts under."""
+	if is_expired_setup(method):
+		return "setup_expired"
+	return STATUS_TO_FIELD.get(method.status)
 
 
 def _credit_settlement(filters: dict):

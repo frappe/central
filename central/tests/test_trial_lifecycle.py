@@ -552,6 +552,7 @@ class TestTrialLifecycle(TrialOnAMachine):
 				"days_left",
 				"deletes_on",
 				"plan",
+				"app",
 			},
 		)
 		# The reserved rate is older than the catalog; the subscription charges the catalog rate.
@@ -564,6 +565,16 @@ class TestTrialLifecycle(TrialOnAMachine):
 				"currency": "USD",
 			},
 		)
+
+	def test_the_in_app_trial_status_names_the_app_the_trial_is_for(self):
+		product = frappe.get_doc(
+			{"doctype": "Product", "product_key": "crm-trial", "title": "CRM", "signup_app": "crm"}
+		).insert()
+
+		self.assertIsNone(trial.get_trial_status(self.server.name)["app"])
+
+		self.site().db_set("product", product.name)
+		self.assertEqual(trial.get_trial_status(self.server.name)["app"], "crm")
 
 	def test_resize_options_say_the_trial_blocks_a_resize(self):
 		from central.billing.api.dashboard.catalog import get_composed_config

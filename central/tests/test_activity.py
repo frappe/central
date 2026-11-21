@@ -5,9 +5,17 @@ from frappe.tests import IntegrationTestCase
 
 from central.api.activity import server_activity, team_activity
 from central.api.snapshots import set_automatic_snapshots
-from central.central.doctype.activity_event.activity_event import get_actor, get_retention_days
+from central.central.doctype.activity_event.activity_event import (
+	ACTION,
+	ActivityEvent,
+	get_action_details,
+	get_actor,
+	get_event,
+	get_retention_days,
+)
 from central.central.doctype.activity_event.backfill import backfill
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.patches.v0_0.fill_resize_activity_details import execute as fill_resize_activity_details
 from central.resource_actions import submit_command
 from central.tests.test_iam import ensure_user
 from central.tests.test_server_overview import make_public_key
@@ -106,6 +114,40 @@ class TestActivity(IntegrationTestCase):
 		event = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"][0]
 		self.assertEqual((event["actor"]["label"], event["sentence"]), ("", "{resource} was renamed"))
 
+	def test_a_region_report_names_who_initiated_it(self):
+		snapshot = frappe.get_doc(
+			{
+				"doctype": "VM Snapshot",
+				"title": "Before upgrade",
+				"team": self.team.name,
+				"server": self.server.name,
+				"snapshot_type": "Manual",
+				"requested_by": self.admin,
+			}
+		).insert()
+		snapshot.status = "Available"
+		snapshot.save(ignore_version=False)
+
+		frappe.set_user(self.viewer)
+		event = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"][0]
+		self.assertEqual(event["event"], "snapshot.available")
+		self.assertEqual(event["initiator"]["label"], "activity.admin")
+
+	def test_an_operator_reads_as_frappe_cloud_to_customers_only(self):
+		operator = ensure_user("activity.operator@example.test")
+		frappe.get_doc("User", operator).add_roles("System Manager")
+		frappe.set_user(operator)
+		self._rename_server("Renamed by support")
+
+		frappe.set_user(self.admin)
+		event = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"][0]
+		self.assertEqual(event["actor"]["label"], "Frappe Cloud")
+		self.assertIsNone(event["initiator"])
+
+		frappe.set_user(operator)
+		event = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"][0]
+		self.assertEqual(event["actor"]["label"], "activity.operator")
+
 	def test_a_guest_session_names_the_person_on_the_record(self):
 		# An older sign-up created the team before its owner had a session.
 		team = frappe.get_doc({"doctype": "Team", "name": "TEAM-GUEST", "owner_user": self.admin})
@@ -176,6 +218,50 @@ class TestActivity(IntegrationTestCase):
 			(event["event"], event["sentence"]),
 			("server.restart_failed", "{actor} tried to restart {resource}"),
 		)
+
+	def test_a_resize_lists_each_size_that_changed(self):
+		def get_changes(from_shape: dict | None, shape: dict) -> list[tuple]:
+			action = frappe.get_doc(
+				{
+					"doctype": "Resource Action",
+					"action": "resize",
+					"status": "Succeeded",
+					"request_payload": frappe.as_json({"shape": shape, "from_shape": from_shape}),
+				}
+			)
+			return [(detail["label"], detail["from"], detail["to"]) for detail in get_action_details(action)]
+
+		small = {"vcpus": 2.0, "memory_megabytes": 4096, "disk_gigabytes": 50}
+		self.assertEqual(get_changes(small, {**small, "disk_gigabytes": 100}), [("Disk", "50 GB", "100 GB")])
+		self.assertEqual(
+			get_changes(small, {**small, "vcpus": 0.5, "memory_megabytes": 8192}),
+			[("vCPU", "2", "0.5"), ("Memory", "4 GB", "8 GB")],
+		)
+		self.assertEqual(
+			get_changes(None, small),
+			[("vCPU", None, "2"), ("Memory", None, "4 GB"), ("Disk", None, "50 GB")],
+		)
+
+	@patch("frappe.enqueue")
+	def test_past_resize_events_get_their_size_once_and_again(self, enqueue):
+		frappe.set_user(self.admin)
+		submit_command("restart", self.team.name, self.server.name)
+		frappe.set_user("Administrator")
+
+		action = frappe.get_last_doc("Resource Action", filters={"server": self.server.name})
+		shape = {"vcpus": 2.0, "memory_megabytes": 4096, "disk_gigabytes": 50}
+		payload = {"shape": {**shape, "disk_gigabytes": 100}, "from_shape": shape}
+		action.db_set({"action": "resize", "status": "Succeeded", "request_payload": frappe.as_json(payload)})
+		ActivityEvent.insert_events(
+			[get_event(self.server, "server.resized", ACTION, reference=("Resource Action", action.name))]
+		)
+		event = frappe.get_last_doc("Activity Event", filters={"event": "server.resized"})
+		self.assertIsNone(event.details)
+
+		for _run in range(2):
+			fill_resize_activity_details()
+			details = frappe.parse_json(frappe.db.get_value("Activity Event", event.name, "details"))
+			self.assertEqual(details, [{"label": "Disk", "from": "50 GB", "to": "100 GB"}])
 
 	def test_pages_follow_the_cursor_without_gaps(self):
 		for title in ("One", "Two", "Three"):

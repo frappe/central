@@ -7,7 +7,11 @@ export interface AIModel {
 	// The key a caller sends: `provider/model_id`.
 	name: string
 	provider: string
+	// What the provider is called; Grove sends the slug when no name is set.
+	provider_display_name: string
 	model_id: string
+	// What the model is called; Grove sends the id when no name is set.
+	display_name: string
 	// Whether the provider keeps nothing of a request once it is answered.
 	zero_data_retention: boolean
 	// What the model takes and what it gives: text, image, embeddings, ...
@@ -65,9 +69,22 @@ export interface AIState {
 	enabled: boolean
 	// Grove is down or in maintenance: nothing else is filled in.
 	unavailable?: boolean
+	// A converted trial's key is on its way to the team: no key is created until it lands.
+	key_handover_pending?: boolean
 	spend?: AISpend
 	usage?: AIMonthUsage
 	geographies?: AIGeography[]
+	// The rate this month's usage is billed at in the team's currency; null for a USD team.
+	billing_rate?: AIBillingRate | null
+}
+
+export interface AIBillingRate {
+	currency: string
+	// One US dollar in `currency`, fixed for the month.
+	rate: number
+	// The accounting system's date for the rate; before the 1st when it had none that day.
+	rate_date: string
+	month: string
 }
 
 export interface AIUsageModel {
@@ -110,8 +127,6 @@ export interface AIApiKey {
 	title: string
 	status: 'active' | 'revoked'
 	creation: string
-	// UTC; Grove refuses to revoke a key before this, so the console does not ask.
-	revocable_at: string
 	masked: string
 	geography: string
 	// The base URL for both API surfaces, of the key's own geography.
@@ -126,7 +141,7 @@ export interface AIApiKey {
 export interface NewKey {
 	label: string
 	geography: string
-	cap?: number
+	cap: number
 }
 
 // A key just minted: the only answer that carries its secret, with what it may call.

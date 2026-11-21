@@ -11,7 +11,7 @@ from frappe.tests import IntegrationTestCase
 from central.api.jwks import jwks_document
 from central.billing.tests.utils import make_plan
 from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
-from central.errors import AtlasConnectionError, AtlasRequestUncertain
+from central.errors import AtlasConnectionError, AtlasRequestUncertain, RequestKeyReusedError
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.object_storage import ObjectStorageRejected
@@ -209,6 +209,12 @@ class TestResourceActions(IntegrationTestCase):
 		self.assertEqual(self.submit(request_key="lost-reply-key-000001")["action"], first["action"])
 		self.assertEqual(frappe.db.count("Resource Action", {"team": self.team.name}), 1)
 
+	def test_a_request_key_reused_for_other_settings_is_refused_by_its_own_error(self):
+		self.submit()
+
+		with self.assertRaises(RequestKeyReusedError):
+			self.submit(title="Second server")
+
 	def test_a_different_server_is_its_own_request_while_one_is_pending(self):
 		first = self.submit()
 		second = self.submit(request_key="second-request-key-001", title="Second server")
@@ -303,7 +309,7 @@ class TestResourceActions(IntegrationTestCase):
 		diagnostic = action.diagnostic
 		self.assertIn("Traceback", diagnostic)
 		self.assertIn("AtlasConnectionError: region refused", diagnostic)
-		self.assertNotIn("region refused", action.error_message)
+		self.assertNotIn("region refused", action.customer_status()["error"]["message"])
 
 	def bundle_bucket(self):
 		"""Make the selected plan bundle storage and return its Cargo client."""

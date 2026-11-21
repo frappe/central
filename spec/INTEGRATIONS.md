@@ -109,11 +109,11 @@ The Networking tab of a server shows its firewall. A member with `server:network
 | --- | --- | --- |
 | Turn the firewall on or off | `enabled`, plus default rules when enabling an empty firewall | When it opens every port, or blocks SSH or all outbound traffic |
 | Apply changes | `inbound` and `outbound` only | When the saved rules block SSH or all outbound traffic on an enabled firewall |
-| Copy to other servers | `enabled`, `inbound`, and `outbound` | None. The dialog names the servers. |
+| Apply rulesets | `enabled: true` with the merged rules of the selected rulesets | When the merged rules block the private network, SSH, or all outbound traffic |
 
-Rule edits stay in the browser until the customer selects Apply changes. Each direction is a table with the columns Service, Port and Allowed from or Allowed to. Removing a rule takes it out of the table at once. Undo, or Cmd+Z on macOS and Ctrl+Z elsewhere, restores the draft one step at a time. Quick edits to one rule count as one step. In a text field and in a dialog, the shortcut keeps its normal text behavior. A footer below the rules always shows the number of unsaved changes or the reason Apply changes is blocked, with Undo, Discard and Apply changes. Discard restores the saved lists. An unchanged background observation does not replace a pending draft. If the saved rules change, Apply changes is blocked until the customer discards the draft to load the latest saved rules. The presets Web server, SSH only, and Private only fill the rule lists for review before applying. Enabling a firewall with no saved rules allows SSH, HTTP, HTTPS and all outgoing connections.
+Rule edits stay in the browser until the customer selects Apply changes. Each direction is a table with the columns Service, Port and Allowed from or Allowed to. Removing a rule takes it out of the table at once. Undo, or Cmd+Z on macOS and Ctrl+Z elsewhere, restores the draft one step at a time. Quick edits to one rule count as one step. In a text field and in a dialog, the shortcut keeps its normal text behavior. A footer below the rules always shows the number of unsaved changes or the reason Apply changes is blocked, with Undo, Discard and Apply changes. Discard restores the saved lists. An unchanged background observation does not replace a pending draft. If the saved rules change, Apply changes is blocked until the customer discards the draft to load the latest saved rules. The built-in rule sets Web server, SSH only, and Private only are in the Apply ruleset dialog and fill the rule lists for review before applying. Enabling a firewall with no saved rules allows SSH, HTTP, HTTPS and all outgoing connections.
 
-Each row selects a service and either Anyone on the internet or Specific addresses. Anyone permits both IPv4 and IPv6. Specific addresses shows each address of the rule as a removable chip, and an input for another IP address or canonical CIDR range. Enter or Add adds it to the rule. The input suggests addresses that other rules in the same direction use. A single IP becomes a one-address range. Incomplete rules show guidance and cannot be applied. Invalid entries show a field error. An empty TCP or UDP port means all ports for that protocol. Custom ports stay editable when their value matches a preset service port. Central validates the complete change before sending it to Atlas.
+Each row selects a service and has one field for its addresses. The field shows each address as a removable chip and has a list of named sources: Any IPv4, Any IPv6, Frappe Cloud network (`fdaa::/16`), Your VPN devices (`fdac::/16`), each WireGuard VPN device, and the addresses that other rules in the same direction use. A name shows its range on hover. A typed IP address or canonical CIDR range is added with Enter, or when the field loses focus. A single IP becomes a one-address range. Incomplete rules show guidance and cannot be applied. Invalid entries show a field error. An empty TCP or UDP port means all ports for that protocol. Custom ports stay editable when their value matches a preset service port. Central validates the complete change before sending it to Atlas.
 
 `update_server_firewall` takes a list of servers and returns an error or `null` for each one. Central validates the change first: protocol `any`, `tcp`, `udp`, or `icmp`; ports only for TCP and UDP, as one port or one ascending range; address ranges in canonical CIDR form; and each rule only once.
 
@@ -121,13 +121,28 @@ Central sends the change through `PATCH /virtual-machines/{id}/network`. Atlas r
 
 | Rule | Why |
 | --- | --- |
-| All traffic from `fdaa::/16` | The console and the regional gateway reach a machine over the mesh, and an enabled firewall filters mesh traffic too. |
+| All traffic from `fdaa::/16` | The regional proxy and the team's other servers reach a machine over the mesh, and an enabled firewall filters mesh traffic too. The web console does not need it, because Atlas opens the console inside the machine's network namespace. |
 | ICMP from anywhere | IPv6 neighbour discovery and path MTU need it. |
 | TCP 22, 80, and 443 from anywhere | SSH, HTTP, and HTTPS. |
 
 A WireGuard VPN device reaches a server only through a rule that allows its address in `fdac::/16`. Central used to add all traffic from `fdac::/16` to every server and hide it. The patch `remove_wireguard_device_firewall_rule` queues a background job that reads each live server from Atlas and removes the `fdac::/16` rule when the server has it. The job is safe to run again: `central.integrations.servers.remove_legacy_device_rules`.
 
 Atlas checks at most 50 address ranges across all rules. The PATCH reply does not hold the firewall, so Central reads the VM again. Every read stores `is_firewall_enabled` and the customer's rules in `firewall_rules`. A server that Central has not read since this field was added shows its firewall after the next reconcile, which runs every 10 minutes.
+
+### Firewall rulesets
+
+A `Firewall Ruleset` holds named inbound and outbound rules for one Team. Members manage rulesets in Settings > Firewall rulesets. A member needs team-wide `server:network` to create, change, or delete a ruleset, because a ruleset changes every server that uses it.
+
+A server can use more than one ruleset. `Virtual Machine.firewall_rulesets` lists them. Central merges their rules, keeps each rule once, and sends the result as the firewall of the server. Central refuses a selection that holds more than 50 address ranges together.
+
+| Operation | Behavior |
+| --- | --- |
+| `set_server_firewall_rulesets(team, resource_id, rulesets)` | Sends the merged rules with `enabled: true`, then saves the list on the server. An empty list removes every ruleset and the server keeps the rules as its own. |
+| Change the rules of a ruleset | A background job sends the merged rules again to each server that uses the ruleset. A server that fails is named in `last_sync_error`, and Desk has a Sync Servers button to send again. |
+| `update_server_firewall` with rule lists | Refused while the server uses a ruleset. The firewall state can still change. |
+| Delete a ruleset | Refused while a server uses it. |
+
+The Apply ruleset dialog shows the merged rules before it applies them, with the ruleset each rule comes from. It names a rule that a wider rule already covers, a sensitive service that is open to anyone, and a ruleset that adds no rule.
 
 ## Public addresses
 
@@ -154,9 +169,26 @@ A region with **WireGuard Gateway** on serves customer devices at `https://wireg
 | Restore a region | `GET /v1/peers`, then `PUT /v1/peers` | Operator action on Region. Never retried by itself. |
 | Server access | `PATCH /virtual-machines/{id}/network` with `wireguard_gateway_access` | Needs `server:network`. Off by default. |
 
+## Compute settings
+
+Atlas owns the sleep and CPU burst settings of a VM. Central stores no copy. **Compute Settings** on the Virtual Machine form reads them from `GET /virtual-machines/{id}` and sends only the changed fields to `POST /virtual-machines/{id}/actions/resize`. Atlas takes these fields in any VM state. Use it for internal servers. A customer server that sleeps answers its first request late.
+
+| Field | Atlas field | Effect |
+| --- | --- | --- |
+| Sleep After Idle (seconds) | `sleep_after_idle_seconds` | Saves memory and stops the VM after this idle time. The next request wakes it. |
+| Deep Sleep After Idle (seconds) | `deep_sleep_after_idle_seconds` | Moves the saved memory to object storage. |
+| Coma After Idle (seconds) | `coma_after_idle_seconds` | Also moves the disk to object storage. It must be longer than deep sleep. |
+| Burstable | `is_burstable` | Lets the VM use CPU above its baseline. Off clears the baseline and the window. |
+| Baseline CPU (millicores) | `baseline_cpu_millicores` | CPU the VM can always use. Zero uses 20% of its CPU. |
+| Sliding Window (minutes) | `sliding_window_minutes` | How far back Atlas measures average CPU use. Zero uses 60. |
+
+Zero turns a setting off. Atlas refuses deep sleep and coma on a VM with more than 4 GiB of memory or 50 GiB of disk, and Desk shows its message. Atlas explains sleep in [Sleepy VMs](https://github.com/frappe/atlas/blob/develop/docs/compute/sleepy-vms.md).
+
+A resize turns all three sleep settings off. On a disk-only grow, Central turns sleep off before it grows the disk, because Atlas refuses a disk past the offload limit while deep sleep or coma is set.
+
 ## Termination protection
 
-A member with `server:terminate` can turn termination protection on or off with the lock button in the server header. Central sends `PATCH /virtual-machines/{id}/termination-protection` and stores the `is_termination_protected` value that Atlas returns on the Virtual Machine. Atlas does not report this value in a VM read, so the stored value changes only through this request. Central refuses a terminate request for a protected server before it queues a Resource Action, and Atlas also refuses to delete a protected VM.
+A member with `server:terminate` can turn termination protection on or off with the lock button in the server header, or in Desk with **Server > Turn On Termination Protection** on the Virtual Machine form. Central sends `PATCH /virtual-machines/{id}/termination-protection` and stores the `is_termination_protected` value that Atlas returns on the Virtual Machine. Atlas does not report this value in a VM read, so the stored value changes only through this request. Central refuses a terminate request for a protected server before it queues a Resource Action, and Atlas also refuses to delete a protected VM.
 
 ## Server operation contract
 
@@ -170,7 +202,7 @@ When the region has a **Max Storage Bundle Size** above 0, Central creates a Car
 
 Pilot creation includes the requesting user's email as `letsencrypt.email` in `pilot-common-config`. Pilot saves it in `common_config.toml` for certificate requests. Central reads the user from `Resource Action.requested_by`, not from the dispatch worker session. This setting is sent even when telemetry is unavailable. A request with no user email leaves the setting unset. This applies to new VMs; existing VMs keep their current setting.
 
-A free-trial creation also gets a Grove key when AI Settings keeps a pool of them for its product (a **Trial Products** row with a pool size above 0). Central mints each product's pool ahead, every 5 minutes, under the fixed Grove Team `Central Trial`, which an operator makes at Grove first, in the geography AI Settings names and, when the product's row names one, in that Model Group on top of the team's catalog; each key is capped for its life at **Trial Key Cap** and carries no expiry at Grove: Central revokes it **Revokes Automatically After** days after its assignment, or sooner when its server is terminated. Each key is an **AI Trial Key** record that holds the secret; the record's id is the key's title at Grove. The creation takes the oldest ready key of its product, records the creation on it, and adds it to `pilot-common-site-config` as `ai_keys`: the key's gateway URL and secret, the entry Pilot writes for a team's own keys. A paid creation gets no key. An empty pool does not fail the creation: the trial starts without AI. Central revokes the key at Grove when the creation fails, when the server is terminated and when AI Settings' **Revokes Automatically After** days have passed since the key was assigned, and tries a refused revoke again every hour. When the trial converts, Central hands the key to the team at Grove in the background: the same secret, now the team's, titled by the site, out of the product's group and without the trial's expiry, so the server's config keeps working and the team finds the key in its dashboard (AI is turned on for the team first; every conversion path has a payment method). The record goes Converting, then Converted. A hand-over Grove refuses or cannot hear is tried again every hour and given up after three attempts as Conversion Failed, said on the record and the Site with Grove's last answer (the record's **Last Error**, kept from any failed hand-over or revoke until one lands); the key is then revoked like any trial key's (the record's **Revoked** box ticks once Grove has it; its status keeps the failure) and the team creates its own key. A trial's end stops its server and leaves its key, so an operator's **Extend Trial** of an ended trial starts it with the key it still holds. The gateway closes the key's books at the push that moves it, so what the trial spent stays Central Trial's and what follows is the team's.
+A free-trial creation also gets a Grove key when AI Settings keeps a pool of them for its product (a **Trial Products** row with a pool size above 0). Central mints each product's pool ahead, every 5 minutes, under the fixed Grove Team `Central Trial`, which an operator makes at Grove first, in the geography AI Settings names and, when the product's row names one, in that Model Group on top of the team's catalog; each key is capped for its life at **Trial Key Cap** and carries no expiry at Grove: Central revokes it **Revokes Automatically After** days after its assignment, or sooner when its server is terminated. Each key is an **AI Trial Key** record that holds the secret; the record's id is the key's title at Grove. The creation takes the oldest ready key of its product, records the creation on it, and adds it to `pilot-common-site-config` as `ai_keys`: the key's gateway URL and secret, the entry Pilot writes for a team's own keys. A paid creation gets no key. An empty pool does not fail the creation: the trial starts without AI. Central revokes the key at Grove when the creation fails, when the server is terminated and when AI Settings' **Revokes Automatically After** days have passed since the key was assigned, and tries a refused revoke again every hour. When the trial converts, Central hands the key to the team at Grove in the background: the same secret, now the team's, titled by the site, out of the product's group and without the trial's expiry, so the server's config keeps working and the team finds the key in its dashboard (AI is turned on for the team first; every conversion path has a payment method). The record goes Converting, then Converted. While it is Converting the team creates no key (`create_api_key` refuses and the dashboard says why), so none takes the key count, the spend-limit room or the title the hand-over needs. A hand-over Grove refuses or cannot hear is tried again every hour and given up after three attempts as Conversion Failed, said on the record and the Site with Grove's last answer (the record's **Last Error**, kept from any failed hand-over or revoke until one lands); the key is then revoked like any trial key's (the record's **Revoked** box ticks once Grove has it; its status keeps the failure) and the team creates its own key, told once by the `ai_key_handover_failed` notification that the old one will stop working. A trial's end stops its server and leaves its key, so an operator's **Extend Trial** of an ended trial starts it with the key it still holds. The gateway closes the key's books at the push that moves it, so what the trial spent stays Central Trial's and what follows is the team's.
 
 See [Resource Action](../central/infrastructure/doctype/resource_action/SPEC.md) for states, authorization, recovery, accepted quotes, and customer responses.
 
@@ -258,7 +290,7 @@ A restart completes when the region accepts it and Central then reads the server
 
 Opening Pilot uses a short-lived audience-bound token and the automatic admin name. Deny another Team's access.
 
-A System Manager has four more actions on the Virtual Machine form in Desk. Central records the first two as a Comment on the server.
+A System Manager has five more actions on the Virtual Machine form in Desk. Central records **Open Bench as Administrator**, **Revoke Pilot Access** and a changed **Compute Settings** as a Comment on the server.
 
 | Action | Effect |
 | --- | --- |
@@ -266,6 +298,7 @@ A System Manager has four more actions on the Virtual Machine form in Desk. Cent
 | **Revoke Pilot Access** | Revokes every Pilot Credential of the server, so its Pilot can no longer reach Central. |
 | **Retry Admin Domain** | Asks Pilot again for the admin hostname, when the server shows an admin domain error. |
 | **Web Console** | Opens an SSH session or the serial console (TTY) of a Running server, through `open_console`. |
+| **Compute Settings** | Reads and changes the sleep and CPU burst settings of a live server. See [compute settings](#compute-settings). |
 
 Pilot links back to its server in the console with `/dashboard/servers?pilot=<jwks_audience_id>&action=<action>`. The action is `overview` or `resize`; any other value opens the overview. A resize link opens the dialog only when the server can take a change and the user may resize it. The server list returns each server's active audience as `pilot_audience`, and the console matches the link against it. When the active Team does not hold that server, the console shows the server list and a message. On a fresh page, the link waits for the first server list load before it looks for the server.
 
@@ -279,8 +312,10 @@ An app is a fixed service, such as Redis or MariaDB, that a region's Cargo build
 
 1. The console lists the region's apps with `central.api.images.list_apps`, and reads the inputs and minimum size of the selected one with `central.api.images.get_app_requirements`. Central gets both from Cargo.
 2. `eligible_plans` shows only the plans with enough CPU, memory and disk for the app.
-3. The customer sends the answers as `app_inputs`. Central refuses a plan below the app's minimum size, refuses customer user data, and asks Cargo for the user data. Cargo checks each answer. A blank input that the app marks `generate` is left out, and the server makes the value itself.
+3. The customer sends the answers as `app_inputs`. Central refuses a plan below the app's minimum size, refuses customer user data, checks each answer against the app's inputs, and writes the answers as cloud-init user data to `/etc/one-click/inputs.env`. A blank answer is left out, and the server makes the value itself.
 4. The server boots from the image. Its first-boot script sets up the service and keeps the settings, including generated passwords, in `/etc/one-click/app.env` on the server.
+
+Cargo also returns the app's `documentation` link, from the `documentation` field of its template. Central keeps it only when it is an `https://` address. The console links to it in the app picker, and Central saves it with the app name on the `Virtual Machine` as `documentation_url` and `application`, so the server page shows **Getting started**. A server restored from a snapshot has neither.
 
 An app server is a normal server after creation. Central does not route a name to it and does not open its ports. Without a public address, the service is reachable only on the region's private network. A server restored from a snapshot of an app server has no app requirements.
 
@@ -354,6 +389,33 @@ Central registers each region's Cargo after a health check. `cargo_connection.re
 
 Cargo reports `service`, `status`, and `service_endpoint`. Central records availability in Service Detail. Do not label a service healthy from a provisioning event.
 
+## How do Central errors reach Beacon?
+
+Each minute, Central sends its new Error Logs to the Datum of one region: the Region with **Central Telemetry Region** set. Only one Region can have it. Without it, Central sends nothing. Set it on the region where Central runs, so the telemetry does not cross regions. Central signs each request with a Datum token for resource `central` and keeps its place in the cache key `central:telemetry:error_log_cursor`. The telemetry host reports an `internal-` address on the WireGuard mesh, which Pilots use. Central is not on the mesh, so it sends to `https://telemetry-svc.<proxy_domain>` of that region, and only while the telemetry Service Detail is Available. Beacon reads the rule `beacon/rules/central-errors.sql` from this repository and alerts when one error repeats. Change the rule in the same pull request as the data that it reads.
+
+## What does Central report to Datum?
+
+Each minute, `central.integrations.metrics.publish_metrics` sends gauges to the same Datum. Each gauge is a count or an age, never a label for each record. All gauges of one collection share one timestamp, and the rules read only the newest collection, so a gauge that Central stops sending clears its alert.
+
+| Gauge | Meaning |
+| --- | --- |
+| `central_requests{group,status_class}` | API requests since the last accepted push, by `central.api` module and status class. The `after_request` hook `count_request` counts them in Redis. The minute job reads and resets the counts, and puts them back when the push fails. |
+| `central_resource_action_oldest_open_seconds{region,resource_type,action}`, `central_resource_actions_finished_last_hour{...,status}` | Open and finished Resource Actions. |
+| `central_payment_attempts_last_hour{gateway,status}`, `central_payment_last_capture_seconds{gateway}` | Payment Attempts and the newest capture. |
+| `central_gateway_webhooks_unprocessed{gateway}`, `central_gateway_webhook_oldest_unprocessed_seconds{gateway}`, `central_gateway_webhooks_failed_last_hour{gateway}` | Webhook Events that wait or failed. |
+| `central_billing_run_oldest_open_seconds`, `central_invoices_sync_failed` | Billing Runs that did not complete, and invoices that failed to sync to accounting. |
+| `central_site_domains_failed_last_hour{route_type}`, `central_site_domain_oldest_pending_seconds{route_type}` | Proxy routes. |
+| `central_vm_snapshots_failed_last_day{snapshot_type}`, `central_vm_snapshot_oldest_pending_seconds` | VM Snapshots. |
+| `central_emails_failed_last_hour`, `central_email_oldest_unsent_seconds` | The Email Queue. An email with a later `send_after` waits from that time. |
+| `central_job_queue_length{queue}`, `central_scheduled_job_late_seconds{job}` | Queues, and how late each scheduled Central job is. Failed jobs write Error Logs, so `central-errors` covers them. |
+| `frappe_webhook_requests_last_day{webhook,status}` | Webhook Request Logs of the last day. `Exhausted` means Frappe gave up after its retries. |
+
+The rules in `beacon/rules/` read these gauges, and the runbooks in `beacon/runbooks/` tell the responder what to do.
+
+Two SLOs in `beacon/services/` read the same data. `dashboard-api` counts the requests that did not fail with 5xx. `server-actions` counts the finished create, start, stop, restart and resize actions that succeeded. Both are global, so in Beacon set their Query Region to the Central Telemetry Region. `billing` is a declared service with no query: a published incident in Beacon sets its status.
+
+Three checks in `beacon/rules/` call Central from outside: `central-dashboard-unreachable.http`, `central-api-unreachable.http` and `central-certificate.tls`. They use `{central_url}` from Beacon Settings and have no region, so Beacon adds them turned off. In Beacon, set their Regions to the Central Telemetry Region and turn them on.
+
 ## How do rename, routes, and TLS work?
 
 Central calls the Pilot Admin API for renames.
@@ -395,7 +457,7 @@ A session starts read-only. A change needs these, in order:
 1. The agent asks the user to switch the session to read-write, and the user approves the `switch_to_read_write` call. The switch lasts one hour.
 2. The user approves each change call.
 
-A session that approves its own tool calls, such as a Trigger session, cannot switch. `central/investigator/access.py` refuses any change that terminates or destroys a resource, or that returns a login, a console, or a secret. The operator does these in Desk.
+A session whose approval mode is not Ask cannot switch: in Auto a model approves its tool calls, and in Auto-approve, as in a Trigger session, nobody does. `central/investigator/access.py` refuses any change that terminates or destroys a resource, or that returns a login, a console, or a secret. The operator does these in Desk.
 
 The agent can read any Pilot `GET` path except those in `PILOT_DENIED_READ_PATHS`, which return a credential, a login, or a backup file. Performance data (database, monitor, metrics, system, storage, and site monitoring) comes back exact, because a scrub changes numbers and query text. Other results are scrubbed. `run_database_query` runs one `SELECT`, `WITH`, `EXPLAIN`, `SHOW`, or `DESCRIBE` statement in a read-only transaction. A `SELECT` stops after 10 seconds. A read-only transaction does not stop DDL, so the tool refuses any other statement. `PILOT_DENIED_WRITE_PATHS` refuses code, credentials, setup, and SQL changes.
 
@@ -404,6 +466,39 @@ The `Central` and `Pilot` knowledge bases hold the Central documents and the Pil
 ```sh
 pilot --site <site> execute central.investigator.knowledge.load_knowledge_bases
 ```
+
+## How does Central create and list support tickets?
+
+Central calls a Frappe Helpdesk site through `central/integrations/helpdesk.py`. Ticket policy lives in `central/support.py`. Central uses one service user on that site with the `Agent` role. An operator sets the Helpdesk URL, the API key and the API secret in Central Settings under General > Helpdesk. Central stores the secret in a Password field.
+
+A request to Helpdesk carries `Authorization: token <key>:<secret>`. Frappe reads the key, finds the service user and runs the request as that user. No customer session and no Central token reaches Helpdesk. The service user is the actor that Helpdesk records as `owner` and `modified_by`.
+
+Central sends stock `HD Ticket` fields only. It does not change the Helpdesk schema or its forms.
+
+| Field | Value |
+| --- | --- |
+| `subject` | `[<Category> · <Topic>] <customer subject>` |
+| `description` | The customer's escaped text, then a Context block with Team, User, Category, Topic, the Server and Site that the caller can view, and links to the Team and records in Central |
+| `raised_by` | The caller's email |
+| `via_customer_portal` | `1` |
+
+A critical issue is `Unreachable or down`, `Site setup or provisioning failed`, or `Payment method or failed charge`. A ticket for one of these is `Urgent`. Every other ticket gets the Helpdesk default priority. The client cannot set a priority.
+
+Each Context block ends with an `Open in Central` line. It links the Team, and the Server or Site when the ticket names one, to the Desk record. An agent opens the record from the ticket.
+
+A ticket's team is the `Team:` line in the Context block. The whole marker is `<hr><p><strong>Context</strong><br>Team: <team><br>`. Helpdesk has no team field, so this line links a ticket to a Central Team. Central escapes the customer's text before it writes the block, so a description cannot fake the line.
+
+A list request asks for tickets where `status_category` is not `Resolved`, the description holds the team marker, and the owner is Central's service user. Anyone can email Helpdesk a description that copies the marker, so only a ticket that Central opened counts. Central asks Helpdesk for the service user once with `frappe.auth.get_logged_user` and caches it for a day. A ticket that waits on the customer is `Paused`, not `Resolved`, and stays in the list.
+
+Before a customer opens a ticket, the console asks Helpdesk for up to 5 matching articles and up to 5 of the team's tickets. An operator turns on Show Help Articles in Central Settings under Helpdesk after the desk publishes articles. While it is off, the dialog opens on the contact form and does not search. Central first lists every ticket whose description holds the team marker, then sends those ticket names in a POST body to Helpdesk's full-text search, so a match in the subject or in the thread counts. Central keeps only ticket and email rows. It drops agent comments, because Helpdesk returns them to an agent and Central reads Helpdesk as an agent. The ticket search accepts any status, because a resolved ticket can still answer the question. Central drops a search row that points to a ticket outside the team list. A failed search returns no tickets and never blocks ticket creation.
+
+Central waits up to 3 seconds to connect and 5 seconds for a search or list answer, because a late answer is no use while the customer types. It waits up to 30 seconds for a new ticket. A user can open 10 tickets an hour and run 60 searches a minute.
+
+Central logs each failed Helpdesk call once in the Error Log, with the status and the body. When Helpdesk cannot be reached, or answers 502, 503, or 504, the customer reads that support is unavailable. Any other refusal, or a reply that is not Frappe JSON, shows a generic message. An operator also sees the status and the start of the body.
+
+A ticket row opens `<Helpdesk URL>/help/my-tickets/<ticket name>`. This is the Helpdesk customer portal, so the customer needs a Helpdesk account there. The portal opens a ticket only for the person who raised it, so a teammate's ticket shows who raised it and has no link. An operator keeps every link.
+
+A member of a suspended team can create and list tickets. That member needs support to learn why the team was suspended. When Helpdesk is not configured, the console keeps the external Support Ticket URL and shows no in-app form.
 
 ## Validation
 
