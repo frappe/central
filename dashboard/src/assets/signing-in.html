@@ -83,6 +83,152 @@
 				<div class="title">Signing you in</div>
 				<div class="subtitle">{{ message }}</div>
 			</div>
+<<<<<<< HEAD
 		</div>
+=======
+			<div class="heading" role="status" aria-live="polite">
+				<h1 id="title">{{ title }}</h1>
+				<p id="message">{{ message }}</p>
+			</div>
+			<button id="back" type="button">{{ back }}</button>
+		</main>
+		<script>
+			const TAXI_SPEED = 34
+			const HOLD_FRACTION = 0.3
+			const TAKEOFF_ACCELERATION = 520
+			const ROTATION_SPEED = 120
+			const MAXIMUM_SPEED = 420
+			const LIGHT_SPACING = 14
+			// Height in pixels where the plane is clearly airborne and the next page starts to load.
+			const DEPARTURE_HEIGHT = 12
+			// A hidden tab pauses animation frames, so the tab still leaves after this time.
+			const LONGEST_TAKEOFF_MILLISECONDS = 1000
+
+			const scene = document.getElementById('scene')
+			const plane = document.getElementById('plane')
+			const trail = document.getElementById('trail')
+			const isMotionReduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+			const lights = Array.from({ length: Math.floor(scene.clientWidth / LIGHT_SPACING) }, (_, index) => {
+				const light = document.createElement('span')
+				light.className = 'light'
+				light.style.left = `${index * LIGHT_SPACING + 6}px`
+				return document.getElementById('lights').appendChild(light)
+			})
+
+			/** Plane state in scene pixels: y is height above the runway, pitch is nose-up degrees. */
+			const flight = { phase: 'taxi', x: 40, y: 0, speed: 0, pitch: 0, climb: 0, firstAhead: -1, isAirborne: false, trail: [], destination: '' }
+			let frame = 0
+			let lastTime = 0
+
+			/** Ease from rest to the hold line and stop there. */
+			function taxi(seconds) {
+				const remaining = Math.max(0, scene.clientWidth * HOLD_FRACTION - flight.x)
+				const targetSpeed = Math.min(TAXI_SPEED, remaining * 0.9)
+				flight.speed += (targetSpeed - flight.speed) * Math.min(1, seconds * 2.5)
+				return remaining > 0.5 || flight.speed > 0.5
+			}
+
+			/** Constant thrust, nose up past rotation speed, then a climb that follows the pitch. */
+			function takeoff(seconds) {
+				const thrust = flight.speed > MAXIMUM_SPEED ? 0 : flight.isAirborne ? 0.5 : 1
+				flight.speed += TAKEOFF_ACCELERATION * thrust * seconds
+				if (flight.speed > ROTATION_SPEED) flight.pitch += (18 - flight.pitch) * Math.min(1, seconds * 9)
+				if (flight.pitch > 5) {
+					flight.climb += (flight.pitch - flight.climb) * Math.min(1, seconds * 10)
+					if (!flight.isAirborne) setTimeout(() => plane.classList.add('gear-up'), 120)
+					flight.isAirborne = true
+				}
+				flight.y += Math.tan((flight.climb * Math.PI) / 180) * flight.speed * seconds
+				if (flight.isAirborne) drawTrail()
+				// The browser keeps this page on screen until the next one responds, so the climb plays during that wait.
+				if (flight.y > DEPARTURE_HEIGHT) leave()
+				// The scene mask fades the plane out past this point.
+				return flight.x < scene.clientWidth * 0.86 && flight.y < 70
+			}
+
+			/** Go to the destination once, when the plane is airborne or the time limit ends. */
+			function leave() {
+				if (!flight.destination) return
+				location.replace(flight.destination)
+				flight.destination = ''
+			}
+
+			/** Firm deceleration with a small nose dip that settles once stopped. */
+			function brake(seconds) {
+				flight.speed = Math.max(0, flight.speed - 160 * seconds)
+				const isRolling = flight.speed > 0
+				flight.pitch += ((isRolling ? -1.6 : 0) - flight.pitch) * Math.min(1, seconds * (isRolling ? 18 : 6))
+				return isRolling || Math.abs(flight.pitch) > 0.05
+			}
+
+			const PHASES = { taxi, takeoff, brake }
+
+			function tick(now) {
+				const seconds = Math.min(0.05, (now - lastTime) / 1000)
+				lastTime = now
+				const isMoving = PHASES[flight.phase](seconds)
+				flight.x += flight.speed * seconds
+				render()
+				frame = isMoving ? requestAnimationFrame(tick) : 0
+			}
+
+			function animate() {
+				if (frame || isMotionReduced) return
+				lastTime = performance.now()
+				frame = requestAnimationFrame(tick)
+			}
+
+			function render() {
+				plane.style.transform = `translate3d(${flight.x}px, ${-flight.y}px, 0) rotate(${-flight.pitch}deg)`
+				plane.style.opacity = Math.max(0, 1 - flight.y / 90)
+				const firstAhead = Math.ceil((flight.x + 44) / LIGHT_SPACING)
+				if (firstAhead === flight.firstAhead) return
+				flight.firstAhead = firstAhead
+				lights.forEach((light, index) => {
+					const isAhead = index >= firstAhead
+					light.classList.toggle('ahead', isAhead)
+					light.style.animationDelay = isAhead ? `${(index - firstAhead) * 0.07}s` : ''
+				})
+			}
+
+			function drawTrail() {
+				flight.trail.push(`${(flight.x + 6).toFixed(1)} ${(scene.clientHeight - 29 - flight.y).toFixed(1)}`)
+				trail.setAttribute('d', `M${flight.trail.join(' L')}`)
+			}
+
+			function setText(title, message) {
+				document.getElementById('title').textContent = title
+				document.getElementById('message').textContent = message
+			}
+
+			/** The dashboard that opened this tab drives it through these calls. */
+			window.loadingTab = {
+				hold(message) {
+					scene.classList.add('holding')
+					document.getElementById('message').textContent = message
+				},
+				takeoff(url, title, message) {
+					setText(title, message)
+					scene.classList.remove('holding')
+					flight.phase = 'takeoff'
+					flight.destination = url
+					animate()
+					setTimeout(leave, isMotionReduced ? 0 : LONGEST_TAKEOFF_MILLISECONDS)
+				},
+				fail(title, message) {
+					setText(title, message)
+					document.title = title
+					scene.classList.add('closed')
+					document.getElementById('main').classList.add('failed')
+					flight.phase = 'brake'
+					animate()
+				},
+			}
+
+			document.getElementById('back').addEventListener('click', () => window.close())
+			render()
+			animate()
+		</script>
+>>>>>>> 5acb6a3 (feat(servers): open pilot once the plane is airborne)
 	</body>
 </html>
