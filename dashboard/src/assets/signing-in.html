@@ -159,12 +159,15 @@
 		</main>
 		<script>
 			const TAXI_SPEED = 34
-			const HOLD_FRACTION = 0.42
-			const TAKEOFF_ACCELERATION = 170
-			const ROTATION_SPEED = 115
-			const MAXIMUM_SPEED = 200
+			const HOLD_FRACTION = 0.3
+			const TAKEOFF_ACCELERATION = 520
+			const ROTATION_SPEED = 120
+			const MAXIMUM_SPEED = 420
 			const LIGHT_SPACING = 14
-			const NAVIGATION_DELAY_MILLISECONDS = 300
+			// Height in pixels where the plane is clearly airborne and the next page starts to load.
+			const DEPARTURE_HEIGHT = 12
+			// A hidden tab pauses animation frames, so the tab still leaves after this time.
+			const LONGEST_TAKEOFF_MILLISECONDS = 1000
 
 			const scene = document.getElementById('scene')
 			const plane = document.getElementById('plane')
@@ -178,7 +181,7 @@
 			})
 
 			/** Plane state in scene pixels: y is height above the runway, pitch is nose-up degrees. */
-			const flight = { phase: 'taxi', x: 40, y: 0, speed: 0, pitch: 0, climb: 0, firstAhead: -1, isAirborne: false, trail: [] }
+			const flight = { phase: 'taxi', x: 40, y: 0, speed: 0, pitch: 0, climb: 0, firstAhead: -1, isAirborne: false, trail: [], destination: '' }
 			let frame = 0
 			let lastTime = 0
 
@@ -194,15 +197,25 @@
 			function takeoff(seconds) {
 				const thrust = flight.speed > MAXIMUM_SPEED ? 0 : flight.isAirborne ? 0.5 : 1
 				flight.speed += TAKEOFF_ACCELERATION * thrust * seconds
-				if (flight.speed > ROTATION_SPEED) flight.pitch += (17 - flight.pitch) * Math.min(1, seconds * 4.5)
+				if (flight.speed > ROTATION_SPEED) flight.pitch += (18 - flight.pitch) * Math.min(1, seconds * 9)
 				if (flight.pitch > 5) {
-					flight.climb += (flight.pitch - flight.climb) * Math.min(1, seconds * 6)
-					if (!flight.isAirborne) setTimeout(() => plane.classList.add('gear-up'), 220)
+					flight.climb += (flight.pitch - flight.climb) * Math.min(1, seconds * 10)
+					if (!flight.isAirborne) setTimeout(() => plane.classList.add('gear-up'), 120)
 					flight.isAirborne = true
 				}
 				flight.y += Math.tan((flight.climb * Math.PI) / 180) * flight.speed * seconds
 				if (flight.isAirborne) drawTrail()
-				return flight.x < scene.clientWidth + 40 && flight.y < scene.clientHeight
+				// The browser keeps this page on screen until the next one responds, so the climb plays during that wait.
+				if (flight.y > DEPARTURE_HEIGHT) leave()
+				// The scene mask fades the plane out past this point.
+				return flight.x < scene.clientWidth * 0.86 && flight.y < 70
+			}
+
+			/** Go to the destination once, when the plane is airborne or the time limit ends. */
+			function leave() {
+				if (!flight.destination) return
+				location.replace(flight.destination)
+				flight.destination = ''
 			}
 
 			/** Firm deceleration with a small nose dip that settles once stopped. */
@@ -263,8 +276,9 @@
 					setText(title, message)
 					scene.classList.remove('holding')
 					flight.phase = 'takeoff'
+					flight.destination = url
 					animate()
-					setTimeout(() => location.replace(url), isMotionReduced ? 0 : NAVIGATION_DELAY_MILLISECONDS)
+					setTimeout(leave, isMotionReduced ? 0 : LONGEST_TAKEOFF_MILLISECONDS)
 				},
 				fail(title, message) {
 					setText(title, message)
