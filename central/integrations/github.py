@@ -26,19 +26,35 @@ class GitHubError(frappe.ValidationError):
 class GitHubApp:
 	"""Calls to GitHub as the App or as a signed-in GitHub user. The App secrets never leave Central."""
 
+	settings_prefix = "github_"
+	callback_method = "central.api.integrations.github.oauth_callback"
+
 	def __init__(self) -> None:
 		if not self.is_configured():
 			frappe.throw(_("The GitHub App is not configured in Central Settings."), GitHubError)
 
 		self.settings = frappe.get_cached_doc("Central Settings")
-		self.app_id = self.settings.github_app_id
-		self.client_id = self.settings.github_client_id
-		self.slug = self.settings.github_app_slug
+		self.app_id = self.get_setting("app_id")
+		self.client_id = self.get_setting("client_id")
+		self.slug = self.get_setting("app_slug")
 
-	@staticmethod
-	def is_configured() -> bool:
+	@classmethod
+	def is_configured(cls) -> bool:
 		settings = frappe.get_cached_doc("Central Settings")
-		return bool(settings.github_app_id and settings.github_client_id and settings.github_app_slug)
+		return all(
+			getattr(settings, f"{cls.settings_prefix}{field}")
+			for field in ("app_id", "client_id", "app_slug")
+		)
+
+	@classmethod
+	def callback_url(cls) -> str:
+		return f"{central_url()}/api/method/{cls.callback_method}"
+
+	def get_setting(self, field: str) -> str | None:
+		return getattr(self.settings, f"{self.settings_prefix}{field}")
+
+	def get_secret(self, field: str, raise_exception: bool = True) -> str | None:
+		return self.settings.get_password(f"{self.settings_prefix}{field}", raise_exception=raise_exception)
 
 	def get_authorize_url(self, state: str, code_challenge: str) -> str:
 		query = {
@@ -46,22 +62,23 @@ class GitHubApp:
 			"state": state,
 			"code_challenge": code_challenge,
 			"code_challenge_method": "S256",
-			"redirect_uri": callback_url(),
+			"redirect_uri": self.callback_url(),
 		}
 		return f"{WEB_URL}/login/oauth/authorize?{urllib.parse.urlencode(query)}"
 
 	def get_install_url(self, state: str) -> str:
 		return f"{WEB_URL}/apps/{self.slug}/installations/new?{urllib.parse.urlencode({'state': state})}"
 
-	def exchange_code(self, code: str, code_verifier: str) -> str:
-		"""The user access token for an OAuth code."""
+	def exchange_code(self, code: str, code_verifier: str | None = None) -> str:
+		"""The user access token for an OAuth code. A code from an install has no PKCE verifier."""
 		payload = {
 			"client_id": self.client_id,
-			"client_secret": self.settings.get_password("github_client_secret"),
+			"client_secret": self.get_secret("client_secret"),
 			"code": code,
-			"code_verifier": code_verifier,
-			"redirect_uri": callback_url(),
+			"redirect_uri": self.callback_url(),
 		}
+		if code_verifier:
+			payload["code_verifier"] = code_verifier
 		body = self._request("POST", f"{WEB_URL}/login/oauth/access_token", json=payload)
 		if not body.get("access_token"):
 			frappe.throw(
@@ -95,6 +112,25 @@ class GitHubApp:
 		url = f"{API_URL}/installation/repositories"
 		return [repository_summary(repository) for repository in self._paginate(url, token, "repositories")]
 
+	def has_branch(self, installation_id: str, repository_id: str, full_name: str, branch: str) -> bool:
+		token = self.create_installation_token(installation_id, repository_id)["token"]
+		url = f"{API_URL}/repos/{full_name}/branches/{urllib.parse.quote(branch, safe='')}"
+		try:
+			response = requests.get(
+				url, headers={**API_HEADERS, "Authorization": f"Bearer {token}"}, timeout=TIMEOUT
+			)
+		except requests.RequestException as error:
+			frappe.throw(_("GitHub could not be reached: {0}").format(str(error)), GitHubError)
+
+		if response.status_code == 404:
+			return False
+		if not response.ok:
+			frappe.throw(
+				_("GitHub returned HTTP {0}: {1}").format(response.status_code, response.text[:200]),
+				GitHubError,
+			)
+		return True
+
 	def create_installation_token(self, installation_id: str, repository_id: str | None = None) -> dict:
 		"""An installation token, limited to one repository and `contents: read` when one is given."""
 		payload = {}
@@ -110,7 +146,7 @@ class GitHubApp:
 		return {"token": body["token"], "expires_at": body["expires_at"]}
 
 	def is_valid_webhook_signature(self, body: bytes, signature: str) -> bool:
-		secret = self.settings.get_password("github_webhook_secret", raise_exception=False)
+		secret = self.get_secret("webhook_secret", raise_exception=False)
 		if not secret:
 			return False
 
@@ -125,7 +161,7 @@ class GitHubApp:
 
 	@property
 	def private_key(self) -> str:
-		key = self.settings.get_password("github_private_key")
+		key = self.get_secret("private_key")
 		# A Password input drops line breaks when a key is pasted by hand.
 		if "\n" not in key.strip():
 			header, _, rest = key.partition("KEY-----")
@@ -163,10 +199,6 @@ class GitHubApp:
 			)
 
 		return response.json()
-
-
-def callback_url() -> str:
-	return f"{central_url()}/api/method/central.api.integrations.github.oauth_callback"
 
 
 def repository_summary(repository: dict) -> dict:
