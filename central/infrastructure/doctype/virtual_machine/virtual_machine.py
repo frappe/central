@@ -17,7 +17,7 @@ from central.infrastructure.doctype.user_mail_account.user_mail_account import U
 from central.integrations.images import APP_PURPOSE
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.sso import mint_bench_login
-from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
+from central.utils.units import gigabytes_to_mebibytes, mebibytes_to_gigabytes, millicores_to_vcpus
 
 if TYPE_CHECKING:
 	from central.server_models import FirewallChange
@@ -231,12 +231,18 @@ class VirtualMachine(Document):
 
 	@frappe.whitelist()
 	def get_compute_settings(self) -> dict:
-		"""Operator action: read the sleep and CPU burst settings from the region."""
-		from central.integrations.servers import get_compute_settings
+		"""Operator action: read the sleep and CPU burst settings from the region, and whether
+		the server is small enough for deep sleep and coma."""
+		from central.integrations.servers import get_compute_settings, is_offload_allowed
 
 		frappe.only_for("System Manager")
 		self.require_live()
-		return get_compute_settings(self).model_dump()
+		return {
+			**get_compute_settings(self).model_dump(),
+			"is_offload_allowed": is_offload_allowed(
+				self.memory_megabytes, gigabytes_to_mebibytes(self.disk_gigabytes)
+			),
+		}
 
 	@frappe.whitelist(methods=["POST"])
 	def set_compute_settings(self, settings: dict) -> None:
@@ -256,6 +262,50 @@ class VirtualMachine(Document):
 			self.add_comment(
 				"Info", _("{0} changed compute settings: {1}").format(frappe.session.user, summary)
 			)
+
+	@staticmethod
+	def is_idle_sleep_available(team: str) -> bool:
+		"""Sleep when idle is for internal teams only, until a sleeping server costs customers less."""
+		from central.billing.revenue.tax import is_internal_team
+
+		return is_internal_team(team)
+
+	def require_idle_sleep(self) -> None:
+		if not self.is_idle_sleep_available(self.team):
+			frappe.throw(_("Sleep when idle is not available for this team."), frappe.PermissionError)
+
+	def get_idle_sleep_seconds(self) -> int:
+		"""Read how long the server stays idle before it sleeps. Zero means it never sleeps."""
+		from central.integrations.servers import get_compute_settings
+
+		self.require_idle_sleep()
+		self.require_live()
+		return get_compute_settings(self).sleep_after_idle_seconds
+
+	@requires_server_access
+	def set_idle_sleep_seconds(self, seconds: int) -> None:
+		"""Turn sleep when idle on or off. Off also turns deep sleep and coma off. Safe to repeat."""
+		from central.integrations.atlas import SLEEP_OFF_SETTINGS
+		from central.integrations.servers import get_compute_settings, set_compute_settings
+
+		self.require_idle_sleep()
+		self.require_live()
+
+		is_in_range = seconds == 0 or 5 * 60 <= seconds <= 24 * 60 * 60
+		if type(seconds) is not int or not is_in_range:
+			frappe.throw(_("Choose an idle time from 5 minutes to 24 hours, or turn sleep off."))
+
+		update = {"sleep_after_idle_seconds": seconds} if seconds else SLEEP_OFF_SETTINGS
+		if not set_compute_settings(self, get_compute_settings(self).model_copy(update=update)):
+			return
+
+		if seconds:
+			message = _("{0} set the server to sleep after {1} minutes idle.").format(
+				frappe.session.user, seconds // 60
+			)
+		else:
+			message = _("{0} turned sleep when idle off.").format(frappe.session.user)
+		self.add_comment("Info", message)
 
 	def enqueue_route_removal(self) -> None:
 		"""A terminated server serves nothing, so its site and custom-domain routes go too."""
