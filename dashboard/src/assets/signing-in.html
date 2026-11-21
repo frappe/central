@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="{{ theme }}">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -16,18 +16,19 @@
 				--ink-gray-5: 124 124 124;
 				--ink-gray-7: 56 56 56;
 				--ink-gray-9: 23 23 23;
+				color-scheme: light;
 			}
-			@media (prefers-color-scheme: dark) {
-				:root {
-					--surface: 23 23 23;
-					--surface-gray-2: 38 38 38;
-					--surface-gray-3: 52 52 52;
-					--outline-gray-2: 52 52 52;
-					--outline-gray-3: 74 74 74;
-					--ink-gray-4: 102 102 102;
-					--ink-gray-7: 199 199 199;
-					--ink-gray-9: 248 248 248;
-				}
+			/* The dashboard passes its own theme, which can differ from the system setting. */
+			:root[data-theme='dark'] {
+				--surface: 23 23 23;
+				--surface-gray-2: 38 38 38;
+				--surface-gray-3: 52 52 52;
+				--outline-gray-2: 52 52 52;
+				--outline-gray-3: 74 74 74;
+				--ink-gray-4: 102 102 102;
+				--ink-gray-7: 199 199 199;
+				--ink-gray-9: 248 248 248;
+				color-scheme: dark;
 			}
 			* { box-sizing: border-box; }
 			html, body { height: 100%; margin: 0; }
