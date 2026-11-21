@@ -7,6 +7,7 @@ import { useServerRescue } from '@/composables/useServerRescue'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import type { ServerActions } from '@/lib/capabilities'
 import { canStart, isSettingUp } from '@/lib/status'
+import IdleSleepSection from './IdleSleepSection.vue'
 
 interface Props {
 	server: VirtualMachineRow
@@ -72,6 +73,14 @@ const isLocked = computed(
 
 <template>
 	<div class="divide-y divide-outline-gray-1">
+		<IdleSleepSection
+			v-if="server.is_idle_sleep_available"
+			:resource-id="server.resource_id"
+			:can-change="actions.resize"
+			:is-trial="!!actions.isAccessLocked"
+			:is-locked="isLocked"
+		/>
+
 		<SettingsSection
 			title="Resize server"
 			description="Change CPU, memory, or disk size. CPU and memory changes restart the server. Disk size can only increase."

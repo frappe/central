@@ -58,6 +58,8 @@ export type VirtualMachineRow = Pick<
 		created_by_name?: string | null
 		/** The server's Pilot audience, which a link from that Pilot names it by. */
 		pilot_audience?: string | null
+		/** Sleep when idle is internal-only until it lowers the customer's price. */
+		is_idle_sleep_available?: boolean
 	}
 
 const { activeTeam } = useSession()
