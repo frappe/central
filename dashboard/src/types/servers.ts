@@ -33,6 +33,28 @@ export interface ServerSSHKey {
 	fingerprint: string
 }
 
+/** One step of a resize, in the order the resize runs them. */
+export interface ResizeProgressStep {
+	key: 'sent' | 'stopped' | 'applied' | 'started'
+	label: string
+	state: 'done' | 'current' | 'pending'
+}
+
+/** A resize in flight or failed, derived by Central from its action and the server's
+ *  observed status history. Absent once the resize succeeds. */
+export interface ResizeProgress {
+	steps: ResizeProgressStep[]
+	target: {
+		vcpus: number
+		memory_megabytes: number
+		disk_gigabytes: number
+	}
+	/** When the resize was sent, or when it was asked for while it waits to be sent. */
+	started_at: string
+	/** The message to show a person, set only when the resize failed. */
+	error: string | null
+}
+
 export interface ServerOverview {
 	server: VirtualMachineRow & {
 		creation: string
@@ -59,6 +81,8 @@ export interface ServerOverview {
 		firewall_rules: FirewallRules | null
 		/** The team rulesets the server uses. Empty when it has its own rules. */
 		firewall_rulesets: string[]
+		/** The resize in flight or failed, or null when there is none to show. */
+		resize_progress: ResizeProgress | null
 		/** Set only for a System Manager. */
 		operator_links: {
 			desk_url: string

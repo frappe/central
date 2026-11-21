@@ -73,6 +73,9 @@ def registry(team: str | None = None) -> dict:
 	# start/stop/terminate (or a still-provisioning create) reads as "…ing" until the
 	# mirror catches up — instead of looking like nothing happened.
 	pending = ResourceAction.pending_labels(team)
+	resize_steps = ResourceAction.pending_resize_steps(
+		team, {server["name"]: server["status"] for server in servers}
+	)
 	audiences = _pilot_audiences(team)
 	locked = get_locked_servers(team)
 	plan_titles = _plan_titles({server["plan"] for server in servers if server["plan"]})
@@ -88,6 +91,7 @@ def registry(team: str | None = None) -> dict:
 		server["image_description"] = image.get("description")
 		server.update(creators.get(server["name"], {"created_by": None, "created_by_name": None}))
 		server["pending_action"] = pending.get(server["resource_id"])
+		server["resize_step"] = resize_steps.get(server["name"])
 		server["pilot_audience"] = audiences.get(server["name"])
 		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
 		# A free trial gives the site, not the server: the console hides SSH, the console and Pilot.
@@ -212,6 +216,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 		"server": {
 			**server,
 			**_overview_plan(server, team),
+			"resize_progress": ResourceAction.get_latest_resize_progress(row.resource_id, team),
 			"team_name": row.team_name or team,
 			"operator_links": _operator_links(row),
 			"region_details": {

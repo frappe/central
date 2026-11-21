@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, DateTimePicker, Select, Skeleton } from 'frappe-ui'
+import { Button, DateTimePicker, Select, Skeleton, Tooltip } from 'frappe-ui'
 import { computed } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import UsageCard from '@/components/common/UsageCard.vue'
@@ -42,7 +42,7 @@ const monitoring = computed(
 )
 const points = computed(() => monitoring.value.points ?? [])
 
-const { isCustom, setRange, choosePeriod, zoomTo, visibleWindow } =
+const { isCustom, setRange, choosePeriod, zoomTo, previewZoom, visibleWindow } =
 	useMetricsRange(range, () => monitoring.value.sample_interval_seconds)
 const period = computed(() =>
 	METRIC_PERIODS.find((option) => option.value === range.value.period),
@@ -166,7 +166,7 @@ const usage = computed(() => {
 	/>
 
 	<EmptyState
-		v-else-if="metricsError"
+		v-else-if="metricsError && !metrics"
 		icon="lucide-cloud-off"
 		title="Usage couldn't load"
 		:description="metricsError"
@@ -215,19 +215,20 @@ const usage = computed(() => {
 		</div>
 
 		<div class="flex shrink-0 flex-wrap items-center gap-2">
-			<h2
-				class="mr-auto flex items-center gap-1.5 text-lg-semibold text-ink-gray-8"
-			>
-				Usage
-				<Button
-					variant="ghost"
-					size="sm"
-					icon="lucide-zoom-in"
-					class="!size-6 !p-1"
-					:aria-label="__('How to zoom the charts')"
-					:tooltip="__('Drag across a chart, or pinch or Ctrl-scroll on it, to zoom into that window.')"
-				/>
-			</h2>
+			<div class="mr-auto flex items-center gap-1.5">
+				<h2 class="text-lg-semibold text-ink-gray-8">Usage</h2>
+				<Tooltip
+					:text="__('Drag across a chart, or pinch or Ctrl-scroll on it, to zoom into that window.')"
+				>
+					<button
+						type="button"
+						:aria-label="__('Drag across a chart, or pinch or Ctrl-scroll on it, to zoom into that window.')"
+						class="grid size-5 place-items-center rounded-4 text-ink-gray-5 hover:text-ink-gray-7"
+					>
+						<span class="lucide-info size-4" />
+					</button>
+				</Tooltip>
+			</div>
 
 			<template v-if="isCustom">
 				<DateTimePicker
@@ -268,6 +269,9 @@ const usage = computed(() => {
 		<p v-if="rangeError" class="text-p-sm text-ink-amber-6">
 			{{ rangeError }}
 		</p>
+		<p v-else-if="metricsError" class="text-p-sm text-ink-red-6">
+			{{ metricsError }}
+		</p>
 
 		<div
 			v-if="charts.length"
@@ -283,6 +287,7 @@ const usage = computed(() => {
 				:average-label="averageLabel"
 				:visible-window="visibleWindow"
 				@zoom="zoomTo"
+				@preview="previewZoom"
 			/>
 		</div>
 

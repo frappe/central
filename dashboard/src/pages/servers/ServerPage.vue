@@ -9,6 +9,7 @@ import ActivityTab from '@/components/servers/detail/ActivityTab.vue'
 import Header from '@/components/servers/detail/Header.vue'
 import NetworkingTab from '@/components/servers/detail/NetworkingTab.vue'
 import OverviewTab from '@/components/servers/detail/OverviewTab.vue'
+import ResizeProgress from '@/components/servers/detail/ResizeProgress.vue'
 import SettingsTab from '@/components/servers/detail/SettingsTab.vue'
 import RenameServerDialog from '@/components/servers/RenameServerDialog.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
@@ -159,10 +160,12 @@ watch(
 	{ immediate: true },
 )
 
+// A resize keeps the status at Resizing, so its step also triggers a reread.
 watch(
-	() => `${server.value?.status}:${server.value?.pending_action}`,
+	() =>
+		`${server.value?.status}:${server.value?.pending_action}:${server.value?.resize_step}`,
 	(_, previous) => {
-		if (previous !== 'undefined:undefined') reloadOverview()
+		if (!previous.startsWith('undefined:')) reloadOverview()
 	},
 )
 
@@ -303,6 +306,12 @@ watch(
 					@resize="resizing = true"
 					@terminate="pendingTerminate = server"
 					@protect="protect"
+				/>
+
+				<ResizeProgress
+					v-if="details?.server.resize_progress"
+					class="mt-6 shrink-0"
+					:progress="details.server.resize_progress"
 				/>
 
 				<Tabs v-model="activeTab" class="mt-4 shrink-0 overflow-x-auto md:mt-8">
