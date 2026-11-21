@@ -1,26 +1,16 @@
 import { useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
-import signingInHtml from '@/assets/signing-in.html?raw'
 import { useBusyRunner } from '@/composables/useBusyRunner'
 import { useSession } from '@/composables/useSession'
 import { frappeErrorType } from '@/lib/auth'
 import type { ServerAccess } from '@/lib/capabilities'
-import { infoToast, reportError } from '@/lib/feedback'
+import { getErrorMessage, infoToast, reportError } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
+import { LoadingTab } from '@/lib/loadingTab'
 import { __ } from '@/lib/translate'
 import type { RefreshResponse } from '@/types/api'
 import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
-
-const LOADING_MESSAGES = [
-	'Filing the flight plan…',
-	'Running preflight checks…',
-	'Warming up the engines…',
-	'Taxiing to the runway…',
-	'Waiting for clearance…',
-	'Getting ready for takeoff…',
-	'Brewing your coffee…',
-]
 
 type BenchLinkResponse = { url: string }
 type SiteLinkResponse = { url: string | null; login_url: string | null }
@@ -160,26 +150,21 @@ async function refreshServers(): Promise<boolean> {
 	}
 }
 
-// Open the window inside the click, before any await, or the browser blocks it.
-function openLoadingTab(
-	target = '_blank',
-	features = '',
-): { tab: Window | null; loadingUrl: string } {
-	const message =
-		LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]
-	const loadingUrl = URL.createObjectURL(
-		new Blob([signingInHtml.replace('{{ message }}', message)], {
-			type: 'text/html',
-		}),
-	)
-	return { tab: window.open(loadingUrl, target, features), loadingUrl }
+/** Show the failure in the loading tab and in the dashboard, since the person may look at either. */
+function reportOpenFailure(
+	tab: LoadingTab | null,
+	error: unknown,
+	options: { title: string; fallback?: string },
+): void {
+	tab?.fail(options.title, getErrorMessage(error, options.fallback))
+	reportError(error, options)
 }
 
 /** The bench's login link. Central refuses one while Pilot is still starting after a create,
  *  boot, or resize, so this asks again until Pilot answers, for up to 5 minutes. */
 async function getBenchLink(
 	server: VirtualMachineRow,
-	tab: Window | null,
+	tab: LoadingTab | null,
 ): Promise<string | undefined> {
 	const deadline = Date.now() + 5 * 60 * 1000
 	let hasToldWaiting = false
@@ -191,8 +176,9 @@ async function getBenchLink(
 			const isStarting = frappeErrorType(error) === 'PilotStarting'
 			if (!isStarting || Date.now() > deadline) throw error
 			// The person closed the waiting tab, so they no longer want the bench.
-			if (tab?.closed) return undefined
+			if (tab?.isClosed) return undefined
 
+			tab?.hold()
 			// Without a waiting tab, the page itself must say why nothing opens yet.
 			if (!tab && !hasToldWaiting) {
 				infoToast(__("Pilot is starting. It opens here when it's ready."))
@@ -210,20 +196,16 @@ async function openBench(
 ): Promise<void> {
 	if (opening.value) return
 	opening.value = server.resource_id
-	const { tab, loadingUrl } = inPlace
-		? { tab: null, loadingUrl: '' }
-		: openLoadingTab()
+	const name = server.title || server.resource_id
+	const tab = inPlace ? null : LoadingTab.open(name)
 	try {
 		const url = await getBenchLink(server, tab)
-		if (tab?.closed) return
+		if (tab?.isClosed) return
 		openResolvedUrl(url, tab, 'server')
 	} catch (error) {
-		tab?.close()
-		reportError(error, {
-			title: `Couldn't open ${server.title || server.resource_id}`,
-		})
+		reportOpenFailure(tab, error, { title: `Couldn't open ${name}` })
 	} finally {
-		URL.revokeObjectURL(loadingUrl)
+		tab?.dispose()
 		opening.value = ''
 	}
 }
@@ -238,7 +220,8 @@ async function openConsole(
 	const team = activeTeam.value
 	if (!team || opening.value) return
 	opening.value = server.resource_id
-	const { tab, loadingUrl } = openLoadingTab(
+	const tab = LoadingTab.open(
+		__('the console'),
 		`console-${server.resource_id}`,
 		'popup,width=960,height=640',
 	)
@@ -250,10 +233,9 @@ async function openConsole(
 		})
 		openResolvedUrl(consoleCall.data?.url, tab, 'console')
 	} catch (error) {
-		tab?.close()
-		reportError(error, { title: "Couldn't open the console" })
+		reportOpenFailure(tab, error, { title: "Couldn't open the console" })
 	} finally {
-		URL.revokeObjectURL(loadingUrl)
+		tab?.dispose()
 		opening.value = ''
 	}
 }
@@ -261,27 +243,26 @@ async function openConsole(
 async function openSite(name: string): Promise<void> {
 	if (opening.value) return
 	opening.value = name
-	const { tab, loadingUrl } = openLoadingTab()
+	const tab = LoadingTab.open(name)
 	try {
 		await submitOrThrow(siteLinkCall, { name })
 		const url = siteLinkCall.data?.login_url || siteLinkCall.data?.url
 		openResolvedUrl(url, tab, 'site')
 	} catch (error) {
-		tab?.close()
-		reportError(error, { title: "Couldn't open this site" })
+		reportOpenFailure(tab, error, { title: "Couldn't open this site" })
 	} finally {
-		URL.revokeObjectURL(loadingUrl)
+		tab?.dispose()
 		opening.value = ''
 	}
 }
 
 function openResolvedUrl(
 	url: string | null | undefined,
-	tab: Window | null,
+	tab: LoadingTab | null,
 	target: 'server' | 'site' | 'console',
 ) {
 	if (url && tab) {
-		tab.location.href = url
+		tab.takeoff(url)
 		return
 	}
 	if (url) {
@@ -289,8 +270,7 @@ function openResolvedUrl(
 		return
 	}
 
-	tab?.close()
-	reportError(undefined, {
+	reportOpenFailure(tab, undefined, {
 		title: `Couldn't open this ${target}`,
 		fallback: 'It may not be ready yet. Try again in a moment.',
 	})

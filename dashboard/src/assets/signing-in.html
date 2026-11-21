@@ -3,86 +3,281 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>Signing you in…</title>
+		<title>{{ title }}…</title>
 		<style>
-			/* Espresso (frappe-ui) design tokens — the subset this page uses, resolved to
-			   their RGB triplets so the page is self-contained in the opened tab. */
+			/* Espresso (frappe-ui) grey tokens as RGB triplets, so the page is self-contained. */
 			:root {
-				--surface-base: 255 255 255;
-				--text-ink-gray-9: 23 23 23;
-				--text-ink-gray-6: 82 82 82;
+				--surface: 255 255 255;
+				--surface-gray-2: 243 243 243;
+				--surface-gray-3: 237 237 237;
 				--outline-gray-2: 226 226 226;
+				--outline-gray-3: 199 199 199;
+				--ink-gray-4: 153 153 153;
+				--ink-gray-5: 124 124 124;
+				--ink-gray-7: 56 56 56;
+				--ink-gray-9: 23 23 23;
 			}
 			@media (prefers-color-scheme: dark) {
 				:root {
-					--surface-base: 23 23 23;
-					--text-ink-gray-9: 248 248 248;
-					--text-ink-gray-6: 153 153 153;
+					--surface: 23 23 23;
+					--surface-gray-2: 38 38 38;
+					--surface-gray-3: 52 52 52;
 					--outline-gray-2: 52 52 52;
+					--outline-gray-3: 74 74 74;
+					--ink-gray-4: 102 102 102;
+					--ink-gray-7: 199 199 199;
+					--ink-gray-9: 248 248 248;
 				}
 			}
-			* {
-				box-sizing: border-box;
-			}
-			html,
-			body {
-				height: 100%;
-				margin: 0;
-			}
+			* { box-sizing: border-box; }
+			html, body { height: 100%; margin: 0; }
 			body {
 				display: grid;
 				place-items: center;
-				background: rgb(var(--surface-base));
-				color: rgb(var(--text-ink-gray-9));
+				background: rgb(var(--surface));
+				color: rgb(var(--ink-gray-9));
 				font-family: InterVar, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 				-webkit-font-smoothing: antialiased;
 			}
-			.stack {
+			body::before {
+				content: '';
+				position: fixed;
+				inset: 0;
+				background-image: radial-gradient(rgb(var(--outline-gray-2)) 1px, transparent 1px);
+				background-size: 20px 20px;
+				mask-image: radial-gradient(ellipse 50% 45% at 50% 48%, #000, transparent);
+				opacity: 0.8;
+				pointer-events: none;
+			}
+			main {
+				position: relative;
+				width: 360px;
+				max-width: calc(100vw - 32px);
 				display: grid;
 				justify-items: center;
-				gap: 16px;
+				gap: 24px;
 			}
-			.spinner {
-				width: 28px;
-				height: 28px;
-				border: 2.5px solid rgb(var(--outline-gray-2));
-				border-top-color: rgb(var(--text-ink-gray-6));
+			.sky { width: 320px; max-width: 100%; mask-image: linear-gradient(0deg, #000 55%, transparent); }
+			.scene {
+				position: relative;
+				height: 128px;
+				mask-image: linear-gradient(90deg, transparent, #000 14%, #000 84%, transparent);
+			}
+			.runway {
+				position: absolute;
+				inset: auto 0 22px;
+				height: 2px;
+				border-radius: 2px;
+				background: rgb(var(--outline-gray-2));
+			}
+			.lights { position: absolute; inset: auto 0 21px; height: 4px; }
+			.light {
+				position: absolute;
+				width: 4px;
+				height: 4px;
 				border-radius: 9999px;
-				animation: spin 0.7s linear infinite;
+				background: rgb(var(--ink-gray-7));
+				opacity: 0.12;
+				transition: opacity 400ms;
 			}
-			@media (prefers-reduced-motion: reduce) {
-				.spinner {
-					animation-duration: 1.6s;
-				}
+			.light.ahead { animation: chase 1.8s ease-out infinite; }
+			.holding .light.ahead { animation-duration: 3.6s; }
+			.closed .light { animation: none; opacity: 0.05; }
+			@keyframes chase {
+				6% { opacity: 0.85; }
+				22%, 100% { opacity: 0.12; }
 			}
-			.text {
-				display: grid;
-				gap: 4px;
-				text-align: center;
+			.plane {
+				position: absolute;
+				left: 0;
+				bottom: 22px;
+				color: rgb(var(--ink-gray-9));
+				will-change: transform;
+				/* Pivot on the main gear, so the nose lifts first. */
+				transform-origin: 16.5px 100%;
 			}
-			.title {
-				font-size: 14px;
+			.plane svg { display: block; overflow: visible; }
+			.gear { transform-box: fill-box; transform-origin: 50% 62%; transition: opacity 260ms, transform 320ms; }
+			.gear-up .gear { opacity: 0; transform: scaleY(0.1); }
+			.trail { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+			.trail path {
+				fill: none;
+				stroke: rgb(var(--ink-gray-4));
+				stroke-width: 1.25;
+				stroke-linecap: round;
+				opacity: 0.6;
+			}
+			.heading { display: grid; gap: 4px; text-align: center; }
+			h1 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; }
+			p { margin: 0; min-height: 18px; font-size: 13px; color: rgb(var(--ink-gray-5)); }
+			button {
+				display: none;
+				height: 32px;
+				padding: 0 12px;
+				border: none;
+				border-radius: 8px;
+				font: inherit;
+				font-size: 13px;
 				font-weight: 500;
-				line-height: 1.4;
+				background: rgb(var(--surface-gray-2));
+				color: rgb(var(--ink-gray-9));
+				cursor: pointer;
 			}
-			.subtitle {
-				font-size: 12px;
-				color: rgb(var(--text-ink-gray-6));
-			}
-			@keyframes spin {
-				to {
-					transform: rotate(360deg);
-				}
-			}
+			button:hover { background: rgb(var(--surface-gray-3)); }
+			button:focus-visible { outline: 2px solid rgb(var(--outline-gray-3)); outline-offset: 2px; }
+			.failed button { display: block; }
 		</style>
 	</head>
 	<body>
-		<div class="stack">
-			<div class="spinner" role="status" aria-label="Signing you in"></div>
-			<div class="text">
-				<div class="title">Signing you in</div>
-				<div class="subtitle">{{ message }}</div>
+		<main id="main">
+			<div class="sky" aria-hidden="true">
+				<div class="scene" id="scene">
+					<div class="runway"></div>
+					<div class="lights" id="lights"></div>
+					<svg class="trail"><path id="trail" /></svg>
+					<div class="plane" id="plane">
+						<svg width="44" height="18" viewBox="0 0 40 16" fill="currentColor">
+							<path d="M4.2 6.6 2.6 1.4h2.6l4.6 5.2z" />
+							<path d="M3 8.6C3 7.2 4 6.2 6 6.2h25c3.4 0 5.9 1 6.5 2.4-.6 1.1-2.6 1.9-5.5 1.9H6c-2 0-3-.7-3-1.9z" />
+							<path d="M33 7.3h2.1l1.1.9h-3.2z" fill="rgb(var(--surface))" />
+							<path d="M14.6 9.2h6.2l-4.4 4.6h-2.4z" opacity="0.55" />
+							<g class="gear">
+								<path d="M15 10.4v2.6M31 10.3v2.8" stroke="currentColor" stroke-width="0.8" />
+								<circle cx="15" cy="14.4" r="1.2" />
+								<circle cx="31" cy="14.4" r="1.1" />
+							</g>
+						</svg>
+					</div>
+				</div>
 			</div>
-		</div>
+			<div class="heading" role="status" aria-live="polite">
+				<h1 id="title">{{ title }}</h1>
+				<p id="message">{{ message }}</p>
+			</div>
+			<button id="back" type="button">{{ back }}</button>
+		</main>
+		<script>
+			const TAXI_SPEED = 34
+			const HOLD_FRACTION = 0.42
+			const TAKEOFF_ACCELERATION = 170
+			const ROTATION_SPEED = 115
+			const MAXIMUM_SPEED = 200
+			const LIGHT_SPACING = 14
+			const NAVIGATION_DELAY_MILLISECONDS = 300
+
+			const scene = document.getElementById('scene')
+			const plane = document.getElementById('plane')
+			const trail = document.getElementById('trail')
+			const isMotionReduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+			const lights = Array.from({ length: Math.floor(scene.clientWidth / LIGHT_SPACING) }, (_, index) => {
+				const light = document.createElement('span')
+				light.className = 'light'
+				light.style.left = `${index * LIGHT_SPACING + 6}px`
+				return document.getElementById('lights').appendChild(light)
+			})
+
+			/** Plane state in scene pixels: y is height above the runway, pitch is nose-up degrees. */
+			const flight = { phase: 'taxi', x: 40, y: 0, speed: 0, pitch: 0, climb: 0, firstAhead: -1, isAirborne: false, trail: [] }
+			let frame = 0
+			let lastTime = 0
+
+			/** Ease from rest to the hold line and stop there. */
+			function taxi(seconds) {
+				const remaining = Math.max(0, scene.clientWidth * HOLD_FRACTION - flight.x)
+				const targetSpeed = Math.min(TAXI_SPEED, remaining * 0.9)
+				flight.speed += (targetSpeed - flight.speed) * Math.min(1, seconds * 2.5)
+				return remaining > 0.5 || flight.speed > 0.5
+			}
+
+			/** Constant thrust, nose up past rotation speed, then a climb that follows the pitch. */
+			function takeoff(seconds) {
+				const thrust = flight.speed > MAXIMUM_SPEED ? 0 : flight.isAirborne ? 0.5 : 1
+				flight.speed += TAKEOFF_ACCELERATION * thrust * seconds
+				if (flight.speed > ROTATION_SPEED) flight.pitch += (17 - flight.pitch) * Math.min(1, seconds * 4.5)
+				if (flight.pitch > 5) {
+					flight.climb += (flight.pitch - flight.climb) * Math.min(1, seconds * 6)
+					if (!flight.isAirborne) setTimeout(() => plane.classList.add('gear-up'), 220)
+					flight.isAirborne = true
+				}
+				flight.y += Math.tan((flight.climb * Math.PI) / 180) * flight.speed * seconds
+				if (flight.isAirborne) drawTrail()
+				return flight.x < scene.clientWidth + 40 && flight.y < scene.clientHeight
+			}
+
+			/** Firm deceleration with a small nose dip that settles once stopped. */
+			function brake(seconds) {
+				flight.speed = Math.max(0, flight.speed - 160 * seconds)
+				const isRolling = flight.speed > 0
+				flight.pitch += ((isRolling ? -1.6 : 0) - flight.pitch) * Math.min(1, seconds * (isRolling ? 18 : 6))
+				return isRolling || Math.abs(flight.pitch) > 0.05
+			}
+
+			const PHASES = { taxi, takeoff, brake }
+
+			function tick(now) {
+				const seconds = Math.min(0.05, (now - lastTime) / 1000)
+				lastTime = now
+				const isMoving = PHASES[flight.phase](seconds)
+				flight.x += flight.speed * seconds
+				render()
+				frame = isMoving ? requestAnimationFrame(tick) : 0
+			}
+
+			function animate() {
+				if (frame || isMotionReduced) return
+				lastTime = performance.now()
+				frame = requestAnimationFrame(tick)
+			}
+
+			function render() {
+				plane.style.transform = `translate3d(${flight.x}px, ${-flight.y}px, 0) rotate(${-flight.pitch}deg)`
+				plane.style.opacity = Math.max(0, 1 - flight.y / 90)
+				const firstAhead = Math.ceil((flight.x + 44) / LIGHT_SPACING)
+				if (firstAhead === flight.firstAhead) return
+				flight.firstAhead = firstAhead
+				lights.forEach((light, index) => {
+					const isAhead = index >= firstAhead
+					light.classList.toggle('ahead', isAhead)
+					light.style.animationDelay = isAhead ? `${(index - firstAhead) * 0.07}s` : ''
+				})
+			}
+
+			function drawTrail() {
+				flight.trail.push(`${(flight.x + 6).toFixed(1)} ${(scene.clientHeight - 29 - flight.y).toFixed(1)}`)
+				trail.setAttribute('d', `M${flight.trail.join(' L')}`)
+			}
+
+			function setText(title, message) {
+				document.getElementById('title').textContent = title
+				document.getElementById('message').textContent = message
+			}
+
+			/** The dashboard that opened this tab drives it through these calls. */
+			window.loadingTab = {
+				hold(message) {
+					scene.classList.add('holding')
+					document.getElementById('message').textContent = message
+				},
+				takeoff(url, title, message) {
+					setText(title, message)
+					scene.classList.remove('holding')
+					flight.phase = 'takeoff'
+					animate()
+					setTimeout(() => location.replace(url), isMotionReduced ? 0 : NAVIGATION_DELAY_MILLISECONDS)
+				},
+				fail(title, message) {
+					setText(title, message)
+					document.title = title
+					scene.classList.add('closed')
+					document.getElementById('main').classList.add('failed')
+					flight.phase = 'brake'
+					animate()
+				},
+			}
+
+			document.getElementById('back').addEventListener('click', () => window.close())
+			render()
+			animate()
+		</script>
 	</body>
 </html>
