@@ -11,8 +11,11 @@ from frappe.tests import IntegrationTestCase
 from central.api.jwks import jwks_document
 from central.billing.tests.utils import make_plan
 from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
-from central.errors import AtlasConnectionError, AtlasRequestUncertain, RequestKeyReusedError
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
+from central.errors import AtlasConnectionError, AtlasRequestUncertain, RequestKeyReusedError, build_envelope
+from central.infrastructure.doctype.resource_action.resource_action import (
+	get_open_creations,
+	get_pending_labels,
+)
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.object_storage import ObjectStorageRejected
 from central.integrations.pilot import delete_bundled_bucket
@@ -240,16 +243,55 @@ class TestResourceActions(IntegrationTestCase):
 
 	def test_open_creations_carry_a_request_that_has_no_server_yet(self):
 		name = self.submit()["action"]
-		[creation] = ResourceAction.open_creations(self.team.name)
+		[creation] = get_open_creations(self.team.name)
 		self.assertEqual(creation["action"], name)
 		self.assertIsNone(creation["resource_id"])
 		self.assertEqual(creation["requested_by"], "Administrator")
-		self.assertEqual(ResourceAction.pending_labels(self.team.name), {})
+		self.assertEqual(get_pending_labels(self.team.name), {})
 
 	def test_open_creations_drop_a_request_that_finished(self):
 		name = self.submit()["action"]
 		_process_locked(name)
-		self.assertEqual(ResourceAction.open_creations(self.team.name), [])
+		self.assertEqual(get_open_creations(self.team.name), [])
+
+	def test_each_status_change_is_versioned_for_the_timeline(self):
+		action = frappe.get_doc("Resource Action", self.submit()["action"])
+
+		# Frappe skips Versions under tests unless a save asks for them.
+		with patch.object(frappe, "in_test", False):
+			action.set_status("Dispatching")
+			action.set_status("Failed", envelope=build_envelope("UNEXPECTED"))
+
+		statuses = [
+			json.loads(version.data)["changed"]
+			for version in frappe.get_all(
+				"Version",
+				filters={"ref_doctype": "Resource Action", "docname": action.name},
+				fields=["data"],
+				order_by="creation asc",
+			)
+		]
+		self.assertEqual(
+			[next(row[1:] for row in changed if row[0] == "status") for changed in statuses],
+			[["Queued", "Dispatching"], ["Dispatching", "Failed"]],
+		)
+		self.assertTrue(action.dispatched_at)
+		self.assertTrue(action.completed_at)
+
+	def test_a_status_write_does_not_depend_on_links_that_were_removed(self):
+		action = frappe.get_doc("Resource Action", self.submit()["action"])
+		action.db_set("region", "region-that-was-deleted")
+
+		action.set_status("Failed", envelope=build_envelope("UNEXPECTED"))
+
+		self.assertEqual(frappe.db.get_value("Resource Action", action.name, "status"), "Failed")
+
+	def test_a_finished_action_cannot_change_its_status(self):
+		action = frappe.get_doc("Resource Action", self.submit()["action"])
+		action.set_status("Succeeded")
+
+		with self.assertRaises(frappe.ValidationError):
+			action.set_status("In Progress")
 
 	def test_retry_redrives_the_same_record_without_a_second_create(self):
 		name = self.submit()["action"]

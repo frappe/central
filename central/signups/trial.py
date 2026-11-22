@@ -17,7 +17,7 @@ from frappe.utils import (
 
 from central.billing.catalog.trials import is_trial_plan
 from central.iam import can
-from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, ResourceAction
+from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
 from central.infrastructure.doctype.site.site import Site
 from central.notification.engine import queue_event
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
@@ -455,15 +455,8 @@ class Trial:
 				"from_shape": get_server_shape(server),
 			}
 		)
-		ResourceAction.queue(
-			"resize",
-			server.team,
-			server.region,
-			server.title or server.name,
-			server=server.name,
-			remote_vm_id=server.atlas_vm_id,
-			requested_by="Administrator",
-			request_payload=configuration.model_dump(),
+		server.queue_action(
+			"resize", requested_by="Administrator", request_payload=configuration.model_dump()
 		)
 
 	def get_summary(self) -> dict:
@@ -528,18 +521,7 @@ class Trial:
 	def queue_server_action(self, action: str) -> None:
 		"""Run a start or terminate on the trial's server through the normal action, as the system."""
 		server = frappe.get_doc("Virtual Machine", self.site.server)
-		if ResourceAction.get_pending(server.name, action):
-			return
-
-		ResourceAction.queue(
-			action,
-			server.team,
-			server.region,
-			server.title or server.name,
-			server=server.name,
-			remote_vm_id=server.atlas_vm_id,
-			requested_by="Administrator",
-		)
+		server.queue_action(action, requested_by="Administrator")
 
 	def enqueue_job(self, job, prefix: str) -> None:
 		frappe.enqueue(
