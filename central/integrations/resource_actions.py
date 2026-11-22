@@ -301,8 +301,9 @@ def _finalize(request) -> None:
 	request.settle(status)
 
 
-def process_resize(action) -> None:
-	"""Apply one durable resize, then re-lock billing after the shape is confirmed."""
+def get_allowed_server(action) -> VirtualMachine | None:
+	"""The action's server under its row lock, or None once the action is failed. The server must
+	still be the one the action was accepted for, and a first dispatch needs the requester's access."""
 	server = frappe.get_doc("Virtual Machine", action.server, for_update=True)
 	if (
 		server.team != action.team
@@ -312,13 +313,23 @@ def process_resize(action) -> None:
 		action.set_status(
 			"Failed", envelope=build_envelope("SERVER_NOT_FOUND", resource_id=action.resource_id)
 		)
+		return None
+
+	if action.status == "Queued" and not action.is_allowed():
+		action.set_status("Failed", envelope=build_envelope("PERMISSION_DENIED", action=action.action))
+		return None
+
+	return server
+
+
+def process_resize(action) -> None:
+	"""Apply one durable resize, then re-lock billing after the shape is confirmed."""
+	server = get_allowed_server(action)
+	if not server:
 		return
 
 	first_dispatch = action.status == "Queued"
 	if first_dispatch:
-		if not action.is_allowed():
-			action.set_status("Failed", envelope=build_envelope("PERMISSION_DENIED", action="resize"))
-			return
 		action.set_status("Dispatching")
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- record the dispatch before calling Atlas
 
@@ -380,22 +391,11 @@ def _matches_shape(server: VirtualMachine, shape: dict) -> bool:
 
 
 def process_command(action) -> None:
-	server = frappe.get_doc("Virtual Machine", action.server, for_update=True)
-	if (
-		server.team != action.team
-		or server.region != action.region
-		or server.atlas_vm_id != action.remote_vm_id
-	):
-		action.set_status(
-			"Failed", envelope=build_envelope("SERVER_NOT_FOUND", resource_id=action.resource_id)
-		)
+	server = get_allowed_server(action)
+	if not server:
 		return
 
 	if action.status == "Queued":
-		if not action.is_allowed():
-			action.set_status("Failed", envelope=build_envelope("PERMISSION_DENIED", action=action.action))
-			return
-
 		client = servers.get_client(server)
 		if action.take_snapshot and not is_final_snapshot_ready(action, server, client):
 			return
