@@ -89,8 +89,9 @@ class TestServerObservation(IntegrationTestCase):
 		self.assertEqual(self.server.public_ipv4, "203.0.113.10")
 		self.assertEqual(self.server.public_ipv6, "2001:db8:5::7")
 
-	def test_only_a_changed_report_keeps_a_version(self):
-		"""Every report moves the observation clock, so an unchanged report must not fill the timeline."""
+	def test_only_a_changed_report_saves_the_server(self):
+		"""An unchanged report only moves the observation clock, so it writes no Version and runs
+		no hooks."""
 		save = self.enterContext(
 			patch.object(VirtualMachine, "save", autospec=True, side_effect=VirtualMachine.save)
 		)
@@ -98,7 +99,7 @@ class TestServerObservation(IntegrationTestCase):
 		observe_server(self.server)
 		observe_server(self.server)
 
-		self.assertEqual([call.kwargs["ignore_version"] for call in save.call_args_list], [False, True])
+		self.assertEqual(save.call_count, 1)
 
 	def test_gateway_waits_for_an_enrolled_pilot(self):
 		self.assertEqual(observe_server(self.server), "Running")
@@ -135,26 +136,16 @@ class TestServerObservation(IntegrationTestCase):
 		now = frappe.utils.now_datetime()
 		self.server.db_set({"status": "Running", "last_reported_at": now})
 
-		applied = VirtualMachine.record_observed_state(
-			self.server.name,
-			now,
-			{"status": "Stopped"},
-			reported_at=frappe.utils.add_to_date(now, seconds=-1),
+		applied = self.server.record_observed_state(
+			{"status": "Stopped"}, now, reported_at=frappe.utils.add_to_date(now, seconds=-1)
 		)
 		self.assertFalse(applied)
 		self.assertEqual(self.server.reload().status, "Running")
 
-	def test_report_for_an_unknown_server_is_ignored(self):
-		self.assertFalse(VirtualMachine.record_observed_state("server-absent", None, {"status": "Stopped"}))
-
 	def test_report_writes_only_the_fields_it_carries(self):
 		self.server.db_set({"public_ipv4": "203.0.113.7"})
 
-		self.assertTrue(
-			VirtualMachine.record_observed_state(
-				self.server.name, frappe.utils.now_datetime(), {"status": "Stopped"}
-			)
-		)
+		self.assertTrue(self.server.record_observed_state({"status": "Stopped"}, frappe.utils.now_datetime()))
 		self.server.reload()
 		self.assertEqual(self.server.status, "Stopped")
 		self.assertEqual(self.server.public_ipv4, "203.0.113.7")
@@ -162,10 +153,8 @@ class TestServerObservation(IntegrationTestCase):
 	def test_report_never_touches_a_field_Central_owns(self):
 		self.server.db_set({"title": "acme-1", "plan": None})
 
-		VirtualMachine.record_observed_state(
-			self.server.name,
-			frappe.utils.now_datetime(),
-			{"status": "Running", "title": "vm-00001", "team": "another-team"},
+		self.server.record_observed_state(
+			{"status": "Running", "title": "vm-00001", "team": "another-team"}, frappe.utils.now_datetime()
 		)
 		self.server.reload()
 		self.assertEqual(self.server.title, "acme-1")
@@ -175,9 +164,7 @@ class TestServerObservation(IntegrationTestCase):
 		"""The console learns about its own servers through its team's room, so one
 		team's traffic never reaches another's browser."""
 		with patch("frappe.publish_realtime") as published:
-			VirtualMachine.record_observed_state(
-				self.server.name, frappe.utils.now_datetime(), {"status": "Stopped"}
-			)
+			self.server.record_observed_state({"status": "Stopped"}, frappe.utils.now_datetime())
 
 		# Frappe's own save() also publishes doc_update and list_update for Desk.
 		published.assert_any_call(
@@ -213,14 +200,10 @@ class TestServerObservation(IntegrationTestCase):
 		self.server.db_set({"last_reported_at": now})
 
 		with patch("frappe.publish_realtime") as published:
-			# A stale (older) report and an unknown server both change nothing.
-			VirtualMachine.record_observed_state(
-				self.server.name,
-				now,
-				{"status": "Stopped"},
-				reported_at=frappe.utils.add_to_date(now, seconds=-1),
+			# A stale (older) report changes nothing.
+			self.server.record_observed_state(
+				{"status": "Stopped"}, now, reported_at=frappe.utils.add_to_date(now, seconds=-1)
 			)
-			VirtualMachine.record_observed_state("server-absent", now, {"status": "Stopped"})
 
 		self.assertNotIn(
 			"server_state_changed", [call.args[0] for call in published.call_args_list if call.args]
@@ -229,28 +212,26 @@ class TestServerObservation(IntegrationTestCase):
 	def test_a_newer_same_state_report_updates_only_the_watermark(self):
 		now = frappe.utils.now_datetime()
 		self.server.db_set({"status": "Stopped", "last_reported_at": now})
+		modified = self.server.modified
 		later = frappe.utils.add_to_date(now, seconds=1)
 
 		with patch("frappe.publish_realtime") as published:
 			self.assertTrue(
-				VirtualMachine.record_observed_state(
-					self.server.name, later, {"status": "Stopped"}, reported_at=later
-				)
+				self.server.record_observed_state({"status": "Stopped"}, later, reported_at=later)
 			)
 
 		self.assertEqual(frappe.utils.get_datetime(self.server.reload().last_reported_at), later)
+		self.assertEqual(frappe.utils.get_datetime(self.server.modified), frappe.utils.get_datetime(modified))
 		self.assertNotIn(
 			"server_state_changed", [call.args[0] for call in published.call_args_list if call.args]
 		)
 
-	def test_record_locks_before_loading(self):
-		with patch("frappe.get_doc", wraps=frappe.get_doc) as get_doc:
-			VirtualMachine.record_observed_state(
-				self.server.name, frappe.utils.now_datetime(), {"status": "Stopped"}
-			)
-		self.assertTrue(
-			any(
-				call.args == ("Virtual Machine", self.server.name) and call.kwargs.get("for_update")
-				for call in get_doc.call_args_list
-			)
+	def test_a_report_keeps_a_write_made_since_the_record_was_loaded(self):
+		frappe.db.set_value("Virtual Machine", self.server.name, "public_ipv4", "203.0.113.9")
+
+		self.server.record_observed_state({"status": "Stopped"}, frappe.utils.now_datetime())
+
+		self.assertEqual(self.server.public_ipv4, "203.0.113.9")
+		self.assertEqual(
+			frappe.db.get_value("Virtual Machine", self.server.name, "public_ipv4"), "203.0.113.9"
 		)
