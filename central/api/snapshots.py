@@ -8,7 +8,7 @@ from central.billing.catalog.snapshots import get_snapshot_rate
 from central.billing.doctype.billing_profile.billing_profile import get_team_currency
 from central.billing.settings import daily_snapshot_retention_hours, free_snapshots_per_server
 from central.iam import can, get_server_capabilities
-from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.infrastructure.doctype.virtual_machine.virtual_machine import get_team_server
 from central.infrastructure.doctype.vm_snapshot.vm_snapshot import VMSnapshot
 from central.utils.guards import require_capability
 
@@ -150,15 +150,14 @@ def set_automatic_snapshots(
 ) -> dict:
 	"""Turn the daily free snapshot of one server on or off. Gated on `server:snapshot`."""
 	server = _team_server(team, resource_id)
-	server.db_set("skip_automatic_snapshot", 0 if frappe.utils.cint(enabled) else 1)
-	# db_set writes no Version, and the activity feed reads Versions.
-	server.save_version()
+	server.skip_automatic_snapshot = 0 if frappe.utils.cint(enabled) else 1
+	server.save_as_system()
 
 	return _automatic_setting(team, resource_id)
 
 
 def _team_server(team: str, resource_id: str | None):
-	return frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	return get_team_server(team, resource_id)
 
 
 def _team_snapshot(team: str, name: str | None) -> VMSnapshot:

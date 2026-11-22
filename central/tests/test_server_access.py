@@ -118,7 +118,9 @@ class TestServerAccess(IntegrationTestCase):
 		self.server_client.set_termination_protection.return_value = {"is_termination_protected": True}
 		frappe.set_user(self.developer)
 
-		set_termination_protection(self.team, self.server.name, enabled=1)
+		# Frappe skips Versions under tests unless a save asks for them.
+		with patch.object(frappe, "in_test", False):
+			set_termination_protection(self.team, self.server.name, enabled=1)
 
 		events = server_activity(team=self.team, resource_id=self.server.resource_id)["events"]
 		self.assertEqual(events[0]["event"], "server.updated")

@@ -9,8 +9,6 @@ import frappe
 from frappe import _
 from frappe.utils.password import get_decrypted_password
 
-from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.integrations import servers
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 
 # Webhooks are ordered by the region's own `observed_at` (stored as `last_reported_at`):
@@ -97,7 +95,7 @@ def _apply_deletion(name: str) -> None:
 	if server.status == "Terminated":
 		return
 
-	servers.mark_terminated(server)
+	server.record_terminated()
 	server.settle_pending_action("Terminated")
 
 
@@ -105,12 +103,18 @@ def _apply_state(name: str, report: dict) -> None:
 	status = STATUS_FROM_REPORT.get(report.get("status"))
 	if not status or not _reported_at(report):
 		return
-	if not VirtualMachine.record_observed_state(
-		name, frappe.utils.now_datetime(), _observed(report, status), reported_at=report.get("observed_at")
+	try:
+		server = frappe.get_doc("Virtual Machine", name)
+	except frappe.DoesNotExistError:
+		return
+
+	observed_at = frappe.utils.now_datetime()
+	if not server.record_observed_state(
+		_observed(report, status), observed_at, reported_at=report.get("observed_at")
 	):
 		return
 
-	frappe.get_doc("Virtual Machine", name).settle_pending_action(status)
+	server.settle_pending_action(status)
 	if status == "Running":
 		frappe.enqueue(
 			"central.integrations.servers.refresh_server",
@@ -157,11 +161,8 @@ def _decide(report: dict, server: frappe._dict) -> dict | None:
 		# A same-state report still advances the regional watermark. This prevents an
 		# older state change arriving later from regressing the server.
 		if not server.last_reported_at or reported_at > frappe.utils.get_datetime(server.last_reported_at):
-			VirtualMachine.record_observed_state(
-				server.name,
-				frappe.utils.now_datetime(),
-				{"status": status},
-				reported_at=reported_at,
+			frappe.get_doc("Virtual Machine", server.name).record_observed_state(
+				{"status": status}, frappe.utils.now_datetime(), reported_at=reported_at
 			)
 		return _ignored("no change")
 	if server.last_reported_at and reported_at <= frappe.utils.get_datetime(server.last_reported_at):

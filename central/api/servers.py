@@ -16,7 +16,11 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 	get_pending_labels,
 )
 from central.infrastructure.doctype.site.site import Site
-from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.infrastructure.doctype.virtual_machine.virtual_machine import (
+	VirtualMachine,
+	get_team_server,
+	get_team_server_name,
+)
 from central.integrations.atlas import ConsoleMode
 from central.integrations.servers import get_cached_metrics, get_console_url, reconcile
 from central.server_models import FirewallChange
@@ -302,7 +306,7 @@ def _metrics_window(period: str, start: str | None, end: str | None) -> tuple[da
 def server_hostnames(team: str | None = None, resource_id: str | None = None) -> list[dict]:
 	"""The site and custom-domain hostnames a server answers. They stop working when the
 	server is terminated, so the console lists them before it asks. Gated on `server:view`."""
-	server = VirtualMachine.get_team_server_name(team, resource_id)
+	server = get_team_server_name(team, resource_id)
 	sites = frappe.get_list(
 		"Site",
 		filters={"team": team, "server": server},
@@ -572,7 +576,7 @@ def resize_server(
 	if not resource_id:
 		frappe.throw(_("A server is required."))
 
-	server = VirtualMachine.get_team_server_name(team, resource_id)
+	server = get_team_server_name(team, resource_id)
 	subscription = frappe.db.get_value("Subscription", {"team": team, "server_id": server}, "name")
 	if not subscription and (trial := Trial.find_open(server)):
 		# The chosen plan is what the team pays once the trial converts.
@@ -629,7 +633,7 @@ def set_termination_protection(
 	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = False
 ) -> None:
 	"""Turn termination protection on or off. Gated on `server:terminate`."""
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	server.set_termination_protection(bool(frappe.utils.cint(enabled)))
 
 
@@ -664,7 +668,7 @@ def set_server_public_ip(
 	if version not in (4, 6):
 		frappe.throw(_("Choose IPv4 or IPv6."))
 
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	is_done = server.set_public_ip(version, bool(frappe.utils.cint(is_attached)))
 	return {"is_pending": not is_done}
 
@@ -680,7 +684,7 @@ def set_server_ipv4_internet(
 	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = True
 ) -> None:
 	"""Turn IPv4 internet access on or off. Gated on `server:network`."""
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	server.set_ipv4_internet(bool(frappe.utils.cint(enabled)))
 
 
@@ -695,7 +699,7 @@ def set_server_wireguard_access(
 	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = True
 ) -> None:
 	"""Turn WireGuard device access on or off. Gated on `server:network`."""
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	server.set_wireguard_access(bool(frappe.utils.cint(enabled)))
 
 
@@ -739,7 +743,7 @@ def _update_one_firewall(team: str, resource_id: str, change: FirewallChange) ->
 		return _("You can't change the network of this server. Ask a team admin to review your access.")
 
 	try:
-		server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+		server = get_team_server(team, resource_id)
 		server.update_firewall(change)
 	except (frappe.ValidationError, frappe.DoesNotExistError) as error:
 		# The error goes back in this server's result, not as a page-wide message.
@@ -757,7 +761,7 @@ def keep_trial_site(team: str | None = None, resource_id: str | None = None) -> 
 	"""Keep the ended trial on a server: it moves to its paid plan and starts again."""
 	from central.signups.trial import Trial
 
-	server = VirtualMachine.get_team_server_name(team, resource_id)
+	server = get_team_server_name(team, resource_id)
 	site = frappe.db.get_value("Site", {"team": team, "server": server, "trial_state": "Ended"})
 	if not site:
 		frappe.throw(_("This server has no ended trial to keep."))
@@ -893,7 +897,7 @@ def get_rescue_state(team: str | None = None, resource_id: str | None = None) ->
 	"""Read the region's boot selection and last boot mode for this server."""
 	from central.integrations.servers import get_rescue_state
 
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	server.require_live()
 	return get_rescue_state(server)
 
@@ -903,7 +907,7 @@ def get_rescue_state(team: str | None = None, resource_id: str | None = None) ->
 @require_capability("server:power", _lt("You cannot change this server's boot mode."), server="resource_id")
 def set_rescue_mode(enabled: bool, team: str | None = None, resource_id: str | None = None) -> None:
 	"""Select the next boot mode without starting or restarting the server."""
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	server.set_rescue_mode(enabled)
 
 
@@ -912,7 +916,7 @@ def set_rescue_mode(enabled: bool, team: str | None = None, resource_id: str | N
 @require_capability("server:view", _lt("You cannot view this server."), server="resource_id")
 def get_idle_sleep(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Read how long this server stays idle before it sleeps. Zero means it never sleeps."""
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	return {"sleep_after_idle_seconds": server.get_idle_sleep_seconds()}
 
 
@@ -925,5 +929,5 @@ def get_idle_sleep(team: str | None = None, resource_id: str | None = None) -> d
 )
 def set_idle_sleep(seconds: int, team: str | None = None, resource_id: str | None = None) -> None:
 	"""Turn sleep when idle on or off. Gated on `server:resize`, the capability to change a server."""
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	server.set_idle_sleep_seconds(seconds)

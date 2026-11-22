@@ -37,6 +37,17 @@ def requires_server_access(method: Callable) -> Callable:
 	return wrapper
 
 
+def requires_live(method: Callable) -> Callable:
+	"""Refuse a server method once the server is terminated."""
+
+	@functools.wraps(method)
+	def wrapper(self: "VirtualMachine", *args, **kwargs):
+		self.require_live()
+		return method(self, *args, **kwargs)
+
+	return wrapper
+
+
 class VirtualMachine(Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -89,20 +100,6 @@ class VirtualMachine(Document):
 		title: DF.Data | None
 		vcpus: DF.Float
 	# end: auto-generated types
-
-	@staticmethod
-	def get_team_server_name(team: str, resource_id: str | None) -> str:
-		"""The server `resource_id` of `team`, or a not-found error."""
-		name = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
-		if not name:
-			frappe.throw(
-				_(
-					"Server '{0}' is not available on this team. Return to Servers and refresh the list."
-				).format(resource_id),
-				frappe.DoesNotExistError,
-			)
-
-		return name
 
 	@classmethod
 	def create_from_action(cls, action, resource_id: str) -> Self:
@@ -185,8 +182,10 @@ class VirtualMachine(Document):
 		if pending := self.get_pending_action():
 			pending.record_observed_status(observed_status)
 
-	def validate(self):
+	def before_validate(self) -> None:
 		self.title = (self.title or "").strip() or None
+
+	def validate(self):
 		# A discovered server may have no title, but a rename must name it.
 		if not self.is_new() and self.has_value_changed("title") and not self.title:
 			frappe.throw(_("Enter a server name."))
@@ -195,31 +194,41 @@ class VirtualMachine(Document):
 		self.set_onload("is_access_locked", self.is_access_locked())
 		self.set_onload("has_wireguard_gateway", self.has_wireguard_gateway)
 
-	def after_insert(self) -> None:
-		# The region accepted a creation. Open consoles list the new server now, not at its first state report.
-		self.publish_state_change()
-
 	def on_update(self):
-		if self.has_value_changed("status") or self.has_value_changed("plan"):
-			self.sync_subscription_on_status_change()
-
-		if self.has_value_changed("status") or self.has_value_changed("public_ipv4"):
-			self.sync_public_ipv4_billing()
-
-		if self.has_value_changed("status") and self.status == "Failed":
-			self.queue_status_notification("server_failed")
+		# Every save is a real change, so open consoles reload this team's servers. On insert, the
+		# console lists a server the region just accepted, before its first state report.
+		self.publish_state_change()
+		self.sync_billing()
 
 		previous = self.get_doc_before_save()
 		if self.ipv6_address and not (previous and previous.ipv6_address):
 			self.route_app_subdomain_once_addressable()
 
-		if self.has_value_changed("status") and self.status == "Terminated":
-			self.close_trial()
-			self.enqueue_route_removal()
-			self.revoke_pilot_credentials()
-			UserMailAccount.queue_removal(server=self.name)
-			AITrialKey.queue_revoke(server=self.name)
-			self.queue_status_notification("server_terminated")
+		if not self.has_value_changed("status"):
+			return
+
+		if self.status == "Failed":
+			self.queue_status_notification("server_failed")
+		elif self.status == "Terminated":
+			self.release_resources()
+
+	def release_resources(self) -> None:
+		"""A terminated server ends its trial, loses its routes and Pilot access, and releases what
+		it held: its mailbox and its AI trial key."""
+		self.close_trial()
+		self.enqueue_route_removal()
+		self.revoke_pilot_credentials()
+		UserMailAccount.queue_removal(server=self.name)
+		AITrialKey.queue_revoke(server=self.name)
+		self.queue_status_notification("server_terminated")
+
+	def sync_billing(self) -> None:
+		"""Keep the server's subscriptions in step with what it runs and what it holds."""
+		if self.has_value_changed("status") or self.has_value_changed("plan"):
+			self.sync_subscription_on_status_change()
+
+		if self.has_value_changed("status") or self.has_value_changed("public_ipv4"):
+			self.sync_public_ipv4_billing()
 
 	def close_trial(self) -> None:
 		"""A terminated server ends its open trial now, so its owner can start a new trial at once."""
@@ -456,32 +465,52 @@ class VirtualMachine(Document):
 		"atlas_host_id",
 	)
 
-	@classmethod
-	def record_observed_state(cls, resource_id: str, observed_at, state: dict, *, reported_at=None) -> bool:
-		"""Apply a region's report. `reported_at` is the region's own timestamp for a
-		webhook; a report not newer than the last is dropped (reconcile omits it and always
-		applies). Returns False when the server is absent or the report is stale."""
-		try:
-			# Lock first, so a concurrent worker's write is not missed.
-			doc = frappe.get_doc("Virtual Machine", resource_id, for_update=True)
-		except frappe.DoesNotExistError:
-			return False
-		if reported_at is not None and not doc.is_newer_report(reported_at):
+	def record_observed_state(self, state: dict, observed_at, *, reported_at=None) -> bool:
+		"""Apply a region's report. `reported_at` is the region's own timestamp for a webhook;
+		a report not newer than the last is dropped (a scoped read omits it and always applies).
+		Returns False when the report is stale."""
+		self.reload_for_update()
+		if reported_at is not None and not self.is_newer_report(reported_at):
 			return False
 
-		observed = {field: state[field] for field in cls.OBSERVED_FIELDS if field in state}
-		changed = any(doc.get(field) != value for field, value in observed.items())
-		for field, value in observed.items():
-			setattr(doc, field, value)
-		doc.state_observed_at = observed_at
+		observed = {field: state[field] for field in self.OBSERVED_FIELDS if field in state}
+		clock = {"state_observed_at": observed_at}
 		if reported_at is not None:
-			doc.last_reported_at = reported_at
-		# Every report moves the observation clock, so keep a Version only for a real change.
-		doc.save(ignore_permissions=True, ignore_version=not changed)
-		if changed:
-			doc.publish_state_change()
+			clock["last_reported_at"] = reported_at
+
+		if all(self.get(field) == value for field, value in observed.items()):
+			# A report that changes nothing only moves the observation clock: no Version, no hooks.
+			self.db_set(clock, update_modified=False)
+			return True
+
+		self.update({**observed, **clock})
+		self.save_as_system()
 
 		return True
+
+	def record_terminated(self, observed_at=None) -> None:
+		"""Record the server as gone, from a delete event or a read that found it absent.
+		Termination is final, so no later report can outrank it."""
+		self.reload_for_update()
+		if self.status == "Terminated":
+			return
+
+		self.status = "Terminated"
+		self.state_observed_at = observed_at or frappe.utils.now_datetime()
+		self.save_as_system()
+
+	def reload_for_update(self) -> None:
+		"""Read the latest values under the row lock, so a concurrent worker's write is not missed."""
+		self.flags.for_update = True
+		try:
+			self.reload()
+		finally:
+			self.flags.for_update = False
+
+	def save_as_system(self) -> None:
+		"""Save a change that a region reported or that an authorized caller asked the region for."""
+		# Customers cannot write a Virtual Machine; the route or the region report authorizes it.
+		self.save(ignore_permissions=True)
 
 	def route_app_subdomain_once_addressable(self) -> None:
 		"""Route the site name chosen for an app server once, when it first gets an address, the
@@ -591,20 +620,20 @@ class VirtualMachine(Document):
 		return f"{gateway}/?sid={mint_bench_login(audience)}"
 
 	@requires_server_access
+	@requires_live
 	def set_ssh_keys(self, key_names: list[str]) -> None:
 		"""Replace the team keys that can sign in to this server."""
 		from central.integrations.ssh_keys import replace_server_ssh_keys
 		from central.resource_actions import resolve_team_ssh_keys
 
-		self.require_live()
 		replace_server_ssh_keys(self, key_names, resolve_team_ssh_keys(self.team, key_names))
 
 	@requires_server_access
+	@requires_live
 	def set_rescue_mode(self, enabled: bool) -> None:
 		"""Select rescue for a caller with both boot control and console access."""
 		from central.integrations.servers import set_rescue_mode
 
-		self.require_live()
 		if not all(
 			can(frappe.session.user, self.team, capability, server=self.name)
 			for capability in ("server:power", "server:console")
@@ -618,39 +647,38 @@ class VirtualMachine(Document):
 		set_rescue_mode(self, enabled)
 
 	@requires_server_access
+	@requires_live
 	def set_termination_protection(self, enabled: bool) -> None:
 		"""Turn termination protection on or off. The region refuses to terminate a protected server."""
 		from central.integrations.servers import set_termination_protection
 
-		self.require_live()
-		set_termination_protection(self, enabled)
-		# The region's answer arrives through db_set, so record the Version by hand.
-		self.save_version()
+		self.is_termination_protected = set_termination_protection(self, enabled)
+		self.save_as_system()
 
+	@requires_live
 	def set_public_ip(self, version: int, is_attached: bool) -> bool:
 		"""Attach or detach a public address. Returns False while Atlas is still applying it."""
 		from central.billing.catalog.public_ips import require_public_ipv4_rate
 		from central.integrations.servers import set_public_ip
 
-		self.require_live()
 		if version == 4 and is_attached:
 			require_public_ipv4_rate(self.team, self.region)
 
 		return set_public_ip(self, version, is_attached)
 
+	@requires_live
 	def set_ipv4_internet(self, enabled: bool) -> None:
 		from central.integrations.servers import set_ipv4_internet
 
-		self.require_live()
 		if not enabled and self.public_ipv4:
 			frappe.throw(_("Detach the public IPv4 address before you turn off IPv4 internet access."))
 
 		set_ipv4_internet(self, enabled)
 
+	@requires_live
 	def set_wireguard_access(self, enabled: bool) -> None:
 		from central.integrations.servers import set_wireguard_access
 
-		self.require_live()
 		if enabled and not self.has_wireguard_gateway:
 			frappe.throw(_("WireGuard VPN is not available in this region yet."))
 
@@ -660,10 +688,10 @@ class VirtualMachine(Document):
 	def has_wireguard_gateway(self) -> bool:
 		return bool(frappe.get_cached_value("Region", self.region, "has_wireguard_gateway"))
 
+	@requires_live
 	def update_firewall(self, change: FirewallChange) -> None:
 		from central.integrations.servers import update_firewall
 
-		self.require_live()
 		if self.firewall_rulesets and (change.inbound is not None or change.outbound is not None):
 			frappe.throw(
 				_(
@@ -673,13 +701,13 @@ class VirtualMachine(Document):
 
 		update_firewall(self, change)
 
+	@requires_live
 	def set_firewall_rulesets(self, rulesets: list[str]) -> None:
 		"""Use these team rulesets together and turn the firewall on. With none, keep the rules
 		as the server's own."""
 		from central.infrastructure.doctype.firewall_ruleset.firewall_ruleset import get_merged_firewall
 		from central.integrations.servers import update_firewall
 
-		self.require_live()
 		rulesets = list(dict.fromkeys(rulesets))
 		owned = frappe.get_all(
 			"Firewall Ruleset", filters={"team": self.team, "name": ["in", rulesets]}, pluck="name"
@@ -689,12 +717,9 @@ class VirtualMachine(Document):
 
 		if rulesets:
 			update_firewall(self, get_merged_firewall(rulesets).model_copy(update={"enabled": True}))
-			# The region's report was saved on a fresh copy of this server.
-			self.reload()
 
 		self.set("firewall_rulesets", [{"firewall_ruleset": name} for name in rulesets])
-		# Customers cannot write a Virtual Machine; the route checks server:network.
-		self.save(ignore_permissions=True)
+		self.save_as_system()
 
 	def sync_firewall_rulesets(self) -> None:
 		"""Send the rules of this server's rulesets to the region again, after one of them changed."""
@@ -771,23 +796,24 @@ class VirtualMachine(Document):
 
 		return frappe.utils.get_datetime(reported_at) > frappe.utils.get_datetime(self.last_reported_at)
 
-	@staticmethod
-	def mark_terminated(resource_id: str, observed_at=None) -> bool:
-		"""Record a server as gone, from a delete event or a scoped read that found it
-		absent. Termination is final, so no later report can outrank it and there is no
-		staleness check to make. Returns False when Central holds no such server."""
-		try:
-			doc = frappe.get_doc("Virtual Machine", resource_id, for_update=True)
-		except frappe.DoesNotExistError:
-			return False
 
-		doc.status = "Terminated"
-		doc.state_observed_at = observed_at or frappe.utils.now_datetime()
-		# save(), not db_set(): `on_update` closes the billing segment for a dead server.
-		doc.save(ignore_permissions=True)
-		doc.publish_state_change()
+def get_team_server_name(team: str, resource_id: str | None) -> str:
+	"""The server `resource_id` of `team`, or a not-found error."""
+	name = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
+	if not name:
+		frappe.throw(
+			_("Server '{0}' is not available on this team. Return to Servers and refresh the list.").format(
+				resource_id
+			),
+			frappe.DoesNotExistError,
+		)
 
-		return True
+	return name
+
+
+def get_team_server(team: str, resource_id: str | None, for_update: bool = False) -> VirtualMachine:
+	"""The server `resource_id` of `team` as a document, or a not-found error."""
+	return frappe.get_doc("Virtual Machine", get_team_server_name(team, resource_id), for_update=for_update)
 
 
 def on_doctype_update() -> None:

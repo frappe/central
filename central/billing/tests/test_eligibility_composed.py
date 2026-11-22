@@ -220,6 +220,7 @@ class TestEligibilityComposed(IntegrationTestCase):
 		# assert the end-to-end effect (queued path).
 		def record_resize(server, shape):
 			frappe.db.set_value("Virtual Machine", server.name, shape)
+			server.reload()
 
 		with (
 			patch("central.integrations.servers.resize_server", side_effect=record_resize) as resize_vm,

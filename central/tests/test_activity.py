@@ -102,7 +102,9 @@ class TestActivity(IntegrationTestCase):
 
 	def test_a_switch_stored_inverted_reads_as_its_label(self):
 		frappe.set_user(self.admin)
-		set_automatic_snapshots(team=self.team.name, resource_id=self.server.resource_id, enabled=0)
+		# Frappe skips Versions under tests unless a save asks for them.
+		with patch.object(frappe, "in_test", False):
+			set_automatic_snapshots(team=self.team.name, resource_id=self.server.resource_id, enabled=0)
 
 		events = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"]
 		self.assertEqual(events[0]["details"], [{"label": "Automatic snapshots", "from": "on", "to": "off"}])

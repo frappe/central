@@ -327,10 +327,8 @@ def process_resize(action) -> None:
 	try:
 		if not first_dispatch:
 			servers.observe_server(server)
-			server.reload()
 		if _needs_resize(server, target, configuration):
 			servers.resize_server(server, target)
-			server.reload()
 		if not _matches_shape(server, target):
 			raise AtlasConnectionError(_("Atlas did not report the requested server size."))
 	except AtlasRejected as error:
@@ -412,7 +410,7 @@ def process_command(action) -> None:
 			if action.action != "terminate":
 				action.fail(error, "Atlas command failed")
 				return
-			servers.mark_terminated(server)
+			server.record_terminated()
 			action.set_status("Succeeded")
 			return
 		except AtlasConnectionError as error:
