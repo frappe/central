@@ -342,17 +342,43 @@ class TestTrialLifecycle(TrialOnAMachine):
 
 		self.assertFalse(trial.is_billing_deferred(self.server.name))
 
+	def activate_payment_method(self) -> None:
+		"""Activate a payment method for the team, then run the conversion job it queues."""
+		method = Mock(team=self.team.name, status="Active")
+		method.get_doc_before_save.return_value = Mock(status="Pending Validation")
+
+		with patch("central.signups.credit.grant_welcome_credits"):
+			credit.on_payment_method_update(method)
+
+		frappe.enqueue.assert_any_call(
+			"central.signups.trial.convert_team",
+			team=self.team.name,
+			enqueue_after_commit=True,
+			job_id=f"trial-convert-team:{self.team.name}",
+			deduplicate=True,
+		)
+		trial.convert_team(self.team.name)
+
+	def test_a_failed_conversion_cannot_undo_the_payment_method(self):
+		method = Mock(team=self.team.name, status="Active")
+		method.get_doc_before_save.return_value = Mock(status="Pending Validation")
+
+		with (
+			patch("central.signups.credit.grant_welcome_credits"),
+			patch.object(trial, "convert_team", side_effect=frappe.ValidationError("catalog unavailable")),
+		):
+			credit.on_payment_method_update(method)
+
+		self.assertEqual(self.site().trial_state, "Active")
+
 	def test_an_active_payment_method_converts_the_team_trials(self):
 		self.price_trial(30)
 		frappe.db.set_value(
 			"Site", self.site().name, "creation", add_days(now_datetime(), -3), update_modified=False
 		)
 		self.server.db_set("status", "Running")
-		method = Mock(team=self.team.name, status="Active")
-		method.get_doc_before_save.return_value = Mock(status="Pending Validation")
 
-		with patch("central.signups.credit.grant_welcome_credits"):
-			credit.on_payment_method_update(method)
+		self.activate_payment_method()
 
 		site = self.site()
 		self.assertEqual(site.trial_state, "Converted")
@@ -467,11 +493,8 @@ class TestTrialLifecycle(TrialOnAMachine):
 
 	def test_a_payment_method_leaves_an_ended_trial_stopped(self):
 		self.site().db_set("trial_state", "Ended")
-		method = Mock(team=self.team.name, status="Active")
-		method.get_doc_before_save.return_value = Mock(status="Pending Validation")
 
-		with patch("central.signups.credit.grant_welcome_credits"):
-			credit.on_payment_method_update(method)
+		self.activate_payment_method()
 
 		self.assertEqual(self.site().trial_state, "Ended")
 		with patch("central.signups.trial.has_active_payment_method", return_value=True):
