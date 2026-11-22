@@ -5,7 +5,6 @@ from central.billing import settings
 from central.billing.payments.provisioning import grant_welcome_credits, has_owner_received_welcome_credits
 from central.billing.revenue.credits import get_balance, grant_promotional_credits
 from central.signups.eligibility import get_team_open_trial, has_active_payment_method
-from central.signups.trial import convert_team
 
 
 def on_payment_method_update(doc, method: str | None = None) -> None:
@@ -18,7 +17,16 @@ def on_payment_method_update(doc, method: str | None = None) -> None:
 	# Checked before the conversion, which closes the team's open trials.
 	if is_welcome_credit_due(doc.team):
 		grant_welcome_credits(doc.team, doc.instrument_fingerprint)
-	convert_team(doc.team)
+
+	# A failed conversion must not undo the payment method, so it runs once this save commits.
+	# The daily trial job converts any trial that this job leaves behind.
+	frappe.enqueue(
+		"central.signups.trial.convert_team",
+		team=doc.team,
+		enqueue_after_commit=True,
+		job_id=f"trial-convert-team:{doc.team}",
+		deduplicate=True,
+	)
 
 
 def is_welcome_credit_due(team: str) -> bool:
