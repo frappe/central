@@ -43,8 +43,8 @@ class TestErrorTranslation(IntegrationTestCase):
 		action = frappe.new_doc("Resource Action")
 		action.action, action.resource_id = "resize", "vm-1"
 
-		catalog = action._get_custom_copy(build_envelope("ACTION_FAILED", action="resize"))
-		region = action._get_custom_copy(build_envelope("ACTION_FAILED", message="The disk is full."))
+		catalog = action.get_custom_copy(build_envelope("ACTION_FAILED", action="resize"))
+		region = action.get_custom_copy(build_envelope("ACTION_FAILED", message="The disk is full."))
 
 		self.assertEqual(catalog, {"error_message": None, "remediation": None})
 		self.assertEqual(region["error_message"], "The disk is full.")

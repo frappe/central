@@ -10,7 +10,11 @@ from pydantic import ValidationError
 
 from central.errors import handle_resource_operation
 from central.iam import can, get_server_capabilities, user_has_operator_bypass
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
+from central.infrastructure.doctype.resource_action.resource_action import (
+	get_creators,
+	get_open_creations,
+	get_pending_labels,
+)
 from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.atlas import ConsoleMode
@@ -72,12 +76,12 @@ def registry(team: str | None = None) -> dict:
 	# Overlay the transitional label of any in-flight action, so a just-clicked
 	# start/stop/terminate (or a still-provisioning create) reads as "…ing" until the
 	# mirror catches up — instead of looking like nothing happened.
-	pending = ResourceAction.pending_labels(team)
+	pending = get_pending_labels(team)
 	audiences = _pilot_audiences(team)
 	locked = get_locked_servers(team)
 	is_idle_sleep_available = VirtualMachine.is_idle_sleep_available(team)
 	plan_titles = _plan_titles({server["plan"] for server in servers if server["plan"]})
-	creators = ResourceAction.get_creators(team)
+	creators = get_creators(team)
 	images = {
 		image.name: image
 		for image in frappe.get_all("Image Offering", fields=["name", "title", "description"])
@@ -98,7 +102,7 @@ def registry(team: str | None = None) -> dict:
 	# A creation has no server row until the region accepts it, so it cannot be overlaid
 	# like the pending actions above. It rides here as its own list: the console picks its
 	# own request back up after a reload, and the fleet can show what is still building.
-	creations = ResourceAction.open_creations(team)
+	creations = get_open_creations(team)
 
 	rows = frappe.get_list(
 		"Site",

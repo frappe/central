@@ -4,7 +4,6 @@ import frappe
 from frappe.utils import add_days, getdate, now_datetime, nowdate
 
 from central.billing.catalog.trials import is_trial_plan
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.resource_actions import process_resize
@@ -25,17 +24,20 @@ class TrialOnAMachine(SiteOnAMachine):
 				"Central Settings", trial_days=14, trial_deletion_days=7, trial_notice_days=3
 			)
 		)
-		ResourceAction.queue(
-			"create",
-			self.team.name,
-			self.region.name,
-			self.server.name,
-			server=self.server.name,
-			resource_type="Site",
-			is_free_trial=1,
-			request_key="request-" + frappe.generate_hash(length=8),
-			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
-		)
+		frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "create",
+				"team": self.team.name,
+				"region": self.region.name,
+				"title": self.server.name,
+				"server": self.server.name,
+				"resource_type": "Site",
+				"is_free_trial": 1,
+				"request_key": "request-" + frappe.generate_hash(length=8),
+				"request_payload": {"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
+			}
+		).insert(ignore_permissions=True)
 		self.enroll()
 		self.enterContext(
 			patch("central.integrations.pilot.rename_admin_domain", return_value={"task_id": "task-1"})
@@ -196,15 +198,18 @@ class TestTrialLifecycle(TrialOnAMachine):
 	def test_the_patch_marks_a_pending_creation_that_has_no_server_yet(self):
 		from central.patches.v0_0 import set_free_trial_on_creations
 
-		pending = ResourceAction.queue(
-			"create",
-			self.team.name,
-			self.region.name,
-			"pending-" + frappe.generate_hash(length=8),
-			resource_type="Site",
-			request_key="request-" + frappe.generate_hash(length=8),
-			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
-		)
+		pending = frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "create",
+				"team": self.team.name,
+				"region": self.region.name,
+				"title": "pending-" + frappe.generate_hash(length=8),
+				"resource_type": "Site",
+				"request_key": "request-" + frappe.generate_hash(length=8),
+				"request_payload": {"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
+			}
+		).insert(ignore_permissions=True)
 		set_free_trial_on_creations.execute()
 
 		self.assertEqual(frappe.db.get_value("Resource Action", pending.name, "is_free_trial"), 1)
@@ -595,9 +600,17 @@ class TestTrialLifecycle(TrialOnAMachine):
 		"""Any pending action on the server, not only a resize, defers it with a reason to retry."""
 		self.site().db_set("trial_state", "Converted")
 		for action in ("resize", "restart"):
-			pending = ResourceAction.queue(
-				action, self.team.name, self.region.name, "pending", server=self.server.name
-			)
+			pending = frappe.get_doc(
+				{
+					"doctype": "Resource Action",
+					"action": action,
+					"team": self.team.name,
+					"region": self.region.name,
+					"title": "pending",
+					"resource_type": "Server",
+					"server": self.server.name,
+				}
+			).insert(ignore_permissions=True)
 			with patch("central.integrations.servers.convert_trial_server") as convert_trial_server:
 				trial.finish_conversion(self.site().name)
 

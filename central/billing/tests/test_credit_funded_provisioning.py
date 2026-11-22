@@ -177,14 +177,18 @@ class TestConcurrentFunding(CreditFundedTestBase):
 		"""The locked part of a create request: check the purchase, then reserve its rate."""
 		frappe.db.get_value("Team", TEAM, "name", for_update=True)
 		rate = self._purchase()
-		ResourceAction.queue(
-			"create",
-			TEAM,
-			REGION,
-			f"web-{index}",
-			request_key=f"race-{index}-{frappe.generate_hash(length=8)}",
-			reserved_monthly_rate=rate,
-		)
+		frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "create",
+				"team": TEAM,
+				"region": REGION,
+				"title": f"web-{index}",
+				"resource_type": "Server",
+				"request_key": f"race-{index}-{frappe.generate_hash(length=8)}",
+				"reserved_monthly_rate": rate,
+			}
+		).insert(ignore_permissions=True)
 
 	def test_only_one_of_four_racing_creates_is_funded(self):
 		# Credit for one server at RATE, four callers asking at the same moment.

@@ -13,6 +13,7 @@ from central.errors import PilotStarting
 from central.iam import can, user_has_operator_bypass
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.region.region import Region
+from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, ResourceAction
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
 from central.integrations.images import APP_PURPOSE
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
@@ -139,6 +140,50 @@ class VirtualMachine(Document):
 
 		# The authorized Resource Action permits this system-owned mirror write.
 		return server.insert(ignore_permissions=True)
+
+	def get_pending_action(self, action: str | None = None) -> ResourceAction | None:
+		"""The oldest unfinished action on this server. With `action`, refuse when a different
+		action is the one pending, because two actions must not change the server at once."""
+		name = frappe.db.get_value(
+			"Resource Action",
+			{"resource_id": self.name, "status": ["in", PENDING_STATES]},
+			order_by="creation asc",
+		)
+		if not name:
+			return None
+
+		pending = frappe.get_doc("Resource Action", name)
+		if action and pending.action != action:
+			frappe.throw(_("Another action is still pending for this server."))
+
+		return pending
+
+	def queue_action(self, action: str, *, requested_by: str | None = None, **fields) -> ResourceAction:
+		"""The pending `action` on this server, or a new queued one. The caller has authorized it."""
+		if pending := self.get_pending_action(action):
+			return pending
+
+		document = frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"resource_type": "Server",
+				"action": action,
+				"team": self.team,
+				"region": self.region,
+				"title": self.title or self.name,
+				"server": self.name,
+				"remote_vm_id": self.atlas_vm_id,
+				"requested_by": requested_by,
+				**fields,
+			}
+		)
+		# Customers have read-only access, so the authorized caller inserts for them.
+		return document.insert(ignore_permissions=True)
+
+	def settle_pending_action(self, observed_status: str) -> None:
+		"""Complete the action waiting on this server when the region reports its goal state."""
+		if pending := self.get_pending_action():
+			pending.record_observed_status(observed_status)
 
 	def validate(self):
 		self.title = (self.title or "").strip() or None

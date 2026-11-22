@@ -17,16 +17,19 @@ class PlanChangeCase(SiteOnAMachine):
 
 	def setUp(self):
 		super().setUp()
-		ResourceAction.queue(
-			"create",
-			self.team.name,
-			self.region.name,
-			self.server.name,
-			server=self.server.name,
-			resource_type="Site",
-			request_key="request-" + frappe.generate_hash(length=8),
-			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
-		)
+		frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "create",
+				"team": self.team.name,
+				"region": self.region.name,
+				"title": self.server.name,
+				"server": self.server.name,
+				"resource_type": "Site",
+				"request_key": "request-" + frappe.generate_hash(length=8),
+				"request_payload": {"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
+			}
+		).insert(ignore_permissions=True)
 		self.enroll()
 		self.enterContext(
 			patch("central.integrations.pilot.rename_admin_domain", return_value={"task_id": "task-1"})
@@ -34,14 +37,18 @@ class PlanChangeCase(SiteOnAMachine):
 		observe_server(self.server)
 
 	def resize(self, server: str | None = None) -> ResourceAction:
-		return ResourceAction.queue(
-			"resize",
-			self.team.name,
-			self.region.name,
-			self.server.name,
-			server=server or self.server.name,
-			request_payload={"subscription": "subscription-1", "shape": SHAPE},
-		)
+		return frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "resize",
+				"team": self.team.name,
+				"region": self.region.name,
+				"title": self.server.name,
+				"resource_type": "Server",
+				"server": server or self.server.name,
+				"request_payload": {"subscription": "subscription-1", "shape": SHAPE},
+			}
+		).insert(ignore_permissions=True)
 
 	def open_link(self, url: str) -> PlanChange:
 		query = dict(parse_qsl(urlsplit(url).query))
