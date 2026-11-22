@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Self
 
 import frappe
 from frappe import _
-from frappe.model.document import Document
 from pydantic import ValidationError
 from requests import RequestException
 
@@ -15,6 +14,7 @@ from central.infrastructure.doctype.pilot_credential.pilot_credential import Pil
 from central.infrastructure.doctype.region.region import Region
 from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES, ResourceAction
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.infrastructure.system_record import SystemRecord
 from central.integrations.images import APP_PURPOSE
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 from central.sso import mint_bench_login
@@ -48,7 +48,7 @@ def requires_live(method: Callable) -> Callable:
 	return wrapper
 
 
-class VirtualMachine(Document):
+class VirtualMachine(SystemRecord):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -498,19 +498,6 @@ class VirtualMachine(Document):
 		self.status = "Terminated"
 		self.state_observed_at = observed_at or frappe.utils.now_datetime()
 		self.save_as_system()
-
-	def reload_for_update(self) -> None:
-		"""Read the latest values under the row lock, so a concurrent worker's write is not missed."""
-		self.flags.for_update = True
-		try:
-			self.reload()
-		finally:
-			self.flags.for_update = False
-
-	def save_as_system(self) -> None:
-		"""Save a change that a region reported or that an authorized caller asked the region for."""
-		# Customers cannot write a Virtual Machine; the route or the region report authorizes it.
-		self.save(ignore_permissions=True)
 
 	def route_app_subdomain_once_addressable(self) -> None:
 		"""Route the site name chosen for an app server once, when it first gets an address, the
