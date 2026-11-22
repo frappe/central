@@ -12,7 +12,6 @@ from central.central.doctype.activity_event.activity_event import ActivityEvent
 from central.central.doctype.activity_event.tracked import CONSOLE
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone, build_envelope
 from central.iam import can_on_any_server
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.virtual_machine import firewall
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
@@ -47,7 +46,7 @@ def observe_server(server: VirtualMachine) -> str:
 		remote = client.get_vm(server.atlas_vm_id)
 	except AtlasResourceGone:
 		mark_terminated(server)
-		ResourceAction.confirm_observed_status(server.name, "Terminated")
+		server.settle_pending_action("Terminated")
 		return "Terminated"
 
 	if remote.get("id") != server.atlas_vm_id or remote.get("tenant_id") != client.tenant_id:
@@ -103,7 +102,7 @@ def observe_server(server: VirtualMachine) -> str:
 
 	# A Pilot machine carries a site, and this report is where its address arrives.
 	Site.create_once_addressable(server.name)
-	ResourceAction.confirm_observed_status(server.name, status)
+	server.settle_pending_action(status)
 	if status == "Running" and gateway and not server.admin_domain_task:
 		frappe.enqueue_doc(
 			"Virtual Machine",

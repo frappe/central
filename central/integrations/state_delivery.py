@@ -9,7 +9,6 @@ import frappe
 from frappe import _
 from frappe.utils.password import get_decrypted_password
 
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations import servers
 from central.services.doctype.service_detail.service_detail import ServiceDetail
@@ -99,7 +98,7 @@ def _apply_deletion(name: str) -> None:
 		return
 
 	servers.mark_terminated(server)
-	ResourceAction.confirm_observed_status(server.name, "Terminated")
+	server.settle_pending_action("Terminated")
 
 
 def _apply_state(name: str, report: dict) -> None:
@@ -111,7 +110,7 @@ def _apply_state(name: str, report: dict) -> None:
 	):
 		return
 
-	ResourceAction.confirm_observed_status(name, status)
+	frappe.get_doc("Virtual Machine", name).settle_pending_action(status)
 	if status == "Running":
 		frappe.enqueue(
 			"central.integrations.servers.refresh_server",

@@ -8,7 +8,6 @@ from frappe.tests import IntegrationTestCase
 from central.api.sites import claim_site, get_site, login_site, onboarding_status, terminate_site
 from central.errors import AtlasResourceGone
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import (
 	on_host,
 	poll_site_renames,
@@ -89,15 +88,19 @@ class SiteOnAMachine(IntegrationTestCase):
 
 	def record_creation(self, has_site: str) -> None:
 		"""Save the creation request that built this machine from an image with this tag."""
-		ResourceAction.queue(
-			"create",
-			self.team.name,
-			self.region.name,
-			self.server.name,
-			server=self.server.name,
-			request_key="request-" + frappe.generate_hash(length=8),
-			request_payload={"image_tags": {"purpose": "pilot", "has_site": has_site}},
-		)
+		frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "create",
+				"team": self.team.name,
+				"region": self.region.name,
+				"title": self.server.name,
+				"resource_type": "Server",
+				"server": self.server.name,
+				"request_key": "request-" + frappe.generate_hash(length=8),
+				"request_payload": {"image_tags": {"purpose": "pilot", "has_site": has_site}},
+			}
+		).insert(ignore_permissions=True)
 
 
 class TestSiteMirror(SiteOnAMachine):
@@ -122,16 +125,19 @@ class TestSiteMirror(SiteOnAMachine):
 		frappe.get_doc(
 			{"doctype": "Product", "product_key": "raven-site", "title": "Raven", "signup_app": "raven"}
 		).insert()
-		ResourceAction.queue(
-			"create",
-			self.team.name,
-			self.region.name,
-			self.server.name,
-			server=self.server.name,
-			resource_type="Site",
-			request_key="request-" + frappe.generate_hash(length=8),
-			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": "raven-site"}},
-		)
+		frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "create",
+				"team": self.team.name,
+				"region": self.region.name,
+				"title": self.server.name,
+				"server": self.server.name,
+				"resource_type": "Site",
+				"request_key": "request-" + frappe.generate_hash(length=8),
+				"request_payload": {"image_tags": {"purpose": "pilot"}, "site": {"product": "raven-site"}},
+			}
+		).insert(ignore_permissions=True)
 		self.enroll()
 		observe_server(self.server)
 
@@ -1343,15 +1349,18 @@ class TestTrialFunnelEvents(SiteOnAMachine):
 	"""A trial's create request sends its funnel step once, with the product it named."""
 
 	def queue(self, resource_type: str):
-		return ResourceAction.queue(
-			"create",
-			self.team.name,
-			self.region.name,
-			self.server.name,
-			resource_type=resource_type,
-			request_key="request-" + frappe.generate_hash(length=8),
-			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": "raven"}},
-		)
+		return frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "create",
+				"team": self.team.name,
+				"region": self.region.name,
+				"title": self.server.name,
+				"resource_type": resource_type,
+				"request_key": "request-" + frappe.generate_hash(length=8),
+				"request_payload": {"image_tags": {"purpose": "pilot"}, "site": {"product": "raven"}},
+			}
+		).insert(ignore_permissions=True)
 
 	def captured(self, resource_type: str):
 		with patch("central.signups.funnel.capture") as capture:
@@ -1387,16 +1396,19 @@ class TestTrialSignIn(SiteOnAMachine):
 
 	def setUp(self):
 		super().setUp()
-		ResourceAction.queue(
-			"create",
-			self.team.name,
-			self.region.name,
-			self.server.name,
-			server=self.server.name,
-			resource_type="Site",
-			request_key="request-" + frappe.generate_hash(length=8),
-			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
-		)
+		frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "create",
+				"team": self.team.name,
+				"region": self.region.name,
+				"title": self.server.name,
+				"server": self.server.name,
+				"resource_type": "Site",
+				"request_key": "request-" + frappe.generate_hash(length=8),
+				"request_payload": {"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
+			}
+		).insert(ignore_permissions=True)
 		self.enroll()
 		observe_server(self.server)
 

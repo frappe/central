@@ -9,7 +9,6 @@ from central.infrastructure.doctype.blocked_domain.blocked_domain import (
 	seed_for_zone,
 	seed_regional_domains,
 )
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site_domain.site_domain import SiteDomain
 from central.site_provisioning import subdomain_availability
 from central.tests.test_iam import ensure_user
@@ -172,7 +171,17 @@ class TestBlockedDomainAssignments(SiteOnAMachine):
 		block("blocked", self.region.proxy_domain)
 
 		with self.assertRaises(frappe.ValidationError):
-			ResourceAction.queue("create", self.team.name, self.region.name, "Blocked", subdomain="BLOCKED.")
+			frappe.get_doc(
+				{
+					"doctype": "Resource Action",
+					"action": "create",
+					"team": self.team.name,
+					"region": self.region.name,
+					"title": "Blocked",
+					"resource_type": "Server",
+					"subdomain": "BLOCKED.",
+				}
+			).insert(ignore_permissions=True)
 
 	def test_a_delayed_rename_rechecks_reservations_before_calling_pilot(self):
 		from central.integrations.servers import observe_server
@@ -230,9 +239,17 @@ class TestBlockedDomainAssignments(SiteOnAMachine):
 		other_team = frappe.get_doc(
 			{"doctype": "Team", "team_name": "Other blocked domain team", "owner_user": "Administrator"}
 		).insert()
-		action = ResourceAction.queue(
-			"create", other_team.name, self.region.name, "Legacy", subdomain="legacy"
-		)
+		action = frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "create",
+				"team": other_team.name,
+				"region": self.region.name,
+				"title": "Legacy",
+				"resource_type": "Server",
+				"subdomain": "legacy",
+			}
+		).insert(ignore_permissions=True)
 		reservation = block("legacy", self.region.proxy_domain)
 		conflicts = reservation.find_conflicts()
 
