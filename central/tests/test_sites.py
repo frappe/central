@@ -1,13 +1,20 @@
+from datetime import datetime
 from unittest.mock import Mock, patch
 
 import frappe
+import requests
 from frappe.tests import IntegrationTestCase
 
 from central.api.sites import claim_site, get_site, login_site, onboarding_status, terminate_site
 from central.errors import AtlasResourceGone
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
-from central.infrastructure.doctype.site.site import on_host, poll_site_renames, record_ready_sites
+from central.infrastructure.doctype.site.site import (
+	on_host,
+	poll_site_renames,
+	record_ready_sites,
+	retry_refused_renames,
+)
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.pilot import PilotLoginPending, fetch_site_login_url
 from central.integrations.servers import observe_server
@@ -1011,6 +1018,64 @@ class TestSiteNaming(SiteOnAMachine):
 
 		self.assertFalse(self.site().rename_task)
 		self.assertIn("did not return a task", site.rename_error)
+
+	def test_a_rename_pilot_refuses_with_401_is_retried_a_minute_later(self):
+		site = self.site()
+		started = frappe.utils.now_datetime()
+		unauthorized = requests.Response()
+		unauthorized.status_code = 401
+		with patch(
+			"central.integrations.pilot.rename_site",
+			side_effect=requests.HTTPError(response=unauthorized),
+		):
+			site.apply_subdomain()
+
+		self.assertEqual(self.site().rename_status, "refused")
+		self.assertEqual(self.count_rename_error_logs(since=started), 0)
+
+		self.enqueue_doc.reset_mock()
+		retry_refused_renames()
+		self.enqueue_doc.assert_not_called()
+
+		self.backdate_rename(claimed_minutes_ago=2)
+		retry_refused_renames()
+		self.enqueue_doc.assert_called_once()
+		self.assertEqual(self.enqueue_doc.call_args.kwargs["job_id"], f"site-rename:{site.name}")
+
+	def test_a_rename_refused_for_an_hour_goes_to_an_operator(self):
+		self.site().db_set({"rename_status": "refused", "rename_diagnostic": "401 Client Error"})
+		self.backdate_rename(claimed_minutes_ago=61)
+		started = frappe.utils.now_datetime()
+
+		self.enqueue_doc.reset_mock()
+		retry_refused_renames()
+
+		site = self.site()
+		self.enqueue_doc.assert_not_called()
+		self.assertEqual(site.rename_status, "")
+		self.assertIn("Retry", site.rename_error)
+		self.assertEqual(self.count_rename_error_logs(since=started), 1)
+
+	def backdate_rename(self, claimed_minutes_ago: int) -> None:
+		now = frappe.utils.now_datetime()
+		frappe.db.set_value(
+			"Site",
+			self.site().name,
+			{
+				"claimed_at": frappe.utils.add_to_date(now, minutes=-claimed_minutes_ago),
+				"modified": frappe.utils.add_to_date(now, minutes=-2),
+			},
+			update_modified=False,
+		)
+
+	def count_rename_error_logs(self, since: datetime) -> int:
+		filters = {
+			"method": "Pilot site rename failed",
+			"reference_doctype": "Site",
+			"reference_name": self.site().name,
+			"creation": [">=", since],
+		}
+		return len(frappe.get_all("Error Log", filters=filters, pluck="name"))
 
 	def test_rename_completion_is_recorded_only_after_pilot_succeeds(self):
 		site = self.site()
