@@ -614,7 +614,7 @@ def resize_server(
 )
 def rename_server(team: str | None = None, resource_id: str | None = None, title: str = "") -> dict:
 	"""Rename one server. Gated on `server:resize`, the capability to change a server."""
-	server = frappe.get_doc("Virtual Machine", {"team": team, "resource_id": resource_id}, for_update=True)
+	server = get_team_server(team, resource_id, for_update=True)
 	server.title = title
 	# Customers cannot write a Virtual Machine; this route checks server:resize.
 	server.save(ignore_permissions=True)

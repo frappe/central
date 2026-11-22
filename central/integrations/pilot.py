@@ -269,18 +269,6 @@ def rename_admin_domain(server: str, base_url: str | None = None, tls: bool = Tr
 	return _request_pilot("POST", server, base_url or expected, "/api/v1/settings/admin-domain", payload)
 
 
-def set_site_primary_domain(server: str, site: str, domain: str) -> dict:
-	"""Attach the customer's primary domain without moving the site's directory."""
-	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
-	return _request_pilot(
-		"POST",
-		server,
-		base_url,
-		f"/api/v1/sites/{quote(site, safe='')}/domains",
-		{"domain": domain, "primary": True},
-	)
-
-
 def rename_site(
 	server: str,
 	site: str,
