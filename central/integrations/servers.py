@@ -12,7 +12,6 @@ from central.central.doctype.activity_event.activity_event import ActivityEvent
 from central.central.doctype.activity_event.tracked import CONSOLE
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone, build_envelope
 from central.iam import can_on_any_server
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.virtual_machine import firewall
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
@@ -46,8 +45,8 @@ def observe_server(server: VirtualMachine) -> str:
 	try:
 		remote = client.get_vm(server.atlas_vm_id)
 	except AtlasResourceGone:
-		mark_terminated(server)
-		ResourceAction.confirm_observed_status(server.name, "Terminated")
+		server.record_terminated()
+		server.settle_pending_action("Terminated")
 		return "Terminated"
 
 	if remote.get("id") != server.atlas_vm_id or remote.get("tenant_id") != client.tenant_id:
@@ -82,9 +81,7 @@ def observe_server(server: VirtualMachine) -> str:
 	if frappe.db.exists("Pilot Credential", {"server": server.name, "team": server.team, "status": "Active"}):
 		gateway = frappe.get_cached_doc("Region", server.region).get_vm_gateway_url(network.get("mesh_ipv6"))
 
-	VirtualMachine.record_observed_state(
-		server.name,
-		frappe.utils.now_datetime(),
+	server.record_observed_state(
 		{
 			"status": status,
 			"vcpus": millicores_to_vcpus(compute["cpu_millicores"]),
@@ -99,11 +96,12 @@ def observe_server(server: VirtualMachine) -> str:
 			"has_wireguard_access": bool(network.get("wireguard_gateway_access")),
 			**firewall.get_observed_firewall(network),
 		},
+		frappe.utils.now_datetime(),
 	)
 
 	# A Pilot machine carries a site, and this report is where its address arrives.
 	Site.create_once_addressable(server.name)
-	ResourceAction.confirm_observed_status(server.name, status)
+	server.settle_pending_action(status)
 	if status == "Running" and gateway and not server.admin_domain_task:
 		frappe.enqueue_doc(
 			"Virtual Machine",
@@ -428,19 +426,13 @@ def set_wireguard_access(server: VirtualMachine, enabled: bool) -> None:
 	observe_server(server)
 
 
-def set_termination_protection(server: VirtualMachine, enabled: bool) -> None:
-	"""Change termination protection on Atlas, then record the state Atlas reports."""
+def set_termination_protection(server: VirtualMachine, enabled: bool) -> bool:
+	"""Change termination protection on Atlas and return the state Atlas reports."""
 	remote = get_client(server).set_termination_protection(server.atlas_vm_id, enabled)
 	if type(remote.get("is_termination_protected")) is not bool:
 		raise AtlasConnectionError(_("Atlas returned an invalid termination protection state."))
 
-	server.db_set("is_termination_protected", remote["is_termination_protected"])
-
-
-def mark_terminated(server: VirtualMachine) -> None:
-	"""Record a server as gone. Its on_update revokes its Pilot and removes its mailbox."""
-	server.status = "Terminated"
-	VirtualMachine.mark_terminated(server.name)
+	return remote["is_termination_protected"]
 
 
 def get_cached_metrics(server: VirtualMachine, start: datetime, end: datetime | None = None) -> dict:

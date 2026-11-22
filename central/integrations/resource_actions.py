@@ -53,18 +53,20 @@ def process_request(name: str) -> None:
 				diagnostic = frappe.get_traceback()
 				frappe.db.rollback()
 				action = frappe.get_doc("Resource Action", name, for_update=True)
+				if action.status in TERMINAL_STATES:
+					return
 				if action.status == "Queued":
-					action.transition("Failed", envelope=build_envelope("UNEXPECTED"), diagnostic=diagnostic)
+					action.set_status("Failed", envelope=build_envelope("UNEXPECTED"), diagnostic=diagnostic)
 				elif action.action == "resize" and action.status == "Dispatching":
-					action.transition(
+					action.set_status(
 						"Uncertain", envelope=build_envelope("OUTCOME_UNKNOWN"), diagnostic=diagnostic
 					)
 				elif action.remote_vm_id:
-					action.transition(
+					action.set_status(
 						"Sent", envelope=build_envelope("FINALIZATION_FAILED"), diagnostic=diagnostic
 					)
 				else:
-					action.transition(
+					action.set_status(
 						"Uncertain", envelope=build_envelope("OUTCOME_UNKNOWN"), diagnostic=diagnostic
 					)
 	except LockNotOwnedError:
@@ -115,7 +117,7 @@ def _process_locked(name: str) -> None:
 			frappe.throw(_("This region is not accepting server creation."))
 		client = _client(request)
 		payload = _create_payload(request)
-		request.transition("Dispatching", notify=False)
+		request.set_status("Dispatching")
 		# Persist the dispatch marker and credential before a remote mutation can succeed.
 		try:
 			frappe.db.commit()
@@ -129,8 +131,7 @@ def _process_locked(name: str) -> None:
 				_("Atlas returned an invalid creation receipt. An operator must check the result.")
 			)
 
-		request.db_set("remote_vm_id", remote_id)
-		request.transition("Sent", notify=False)
+		request.set_status("Sent", remote_vm_id=remote_id)
 		# Retain the remote identity even if local billing or mirror finalization fails.
 		frappe.db.commit()
 	except AtlasRequestUncertain:
@@ -151,7 +152,7 @@ def recover_unanswered(request) -> None:
 	try:
 		remote_vm_id = find_created_vm(request)
 	except AtlasConnectionError:
-		request.transition(
+		request.set_status(
 			"Uncertain",
 			envelope=build_envelope("OUTCOME_UNKNOWN"),
 			diagnostic=frappe.get_traceback(),
@@ -160,11 +161,10 @@ def recover_unanswered(request) -> None:
 		return
 
 	if not remote_vm_id:
-		request.transition("Failed", envelope=build_envelope("CREATE_NOT_ACCEPTED", action=request.action))
+		request.set_status("Failed", envelope=build_envelope("CREATE_NOT_ACCEPTED", action=request.action))
 		return
 
-	request.db_set("remote_vm_id", remote_vm_id)
-	request.transition("Sent", notify=False)
+	request.set_status("Sent", remote_vm_id=remote_vm_id)
 	frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep the accepted VM id before finalizing
 	_finalize(request)
 
@@ -272,14 +272,14 @@ def _finalize(request) -> None:
 			PilotCredential.link_server(request.credential, server_id)
 			UserMailAccount.link_server(request.name, server_id)
 			AITrialKey.link_server(request.name, server_id)
-			request.db_set({"server": server_id, "resource_id": server_id})
+			request.bind_server(server_id)
 		# Finalize local ownership and billing together, independently of the next remote read.
 		frappe.db.commit()
 	except Exception:
 		diagnostic = frappe.get_traceback()
 		frappe.db.rollback()
 		request.reload()
-		request.transition(
+		request.set_status(
 			"Sent",
 			envelope=build_envelope("FINALIZATION_FAILED"),
 			diagnostic=diagnostic,
@@ -290,7 +290,7 @@ def _finalize(request) -> None:
 	try:
 		status = servers.observe_server(frappe.get_doc("Virtual Machine", server_id))
 	except AtlasConnectionError:
-		request.transition(
+		request.set_status(
 			"Sent",
 			envelope=build_envelope("REFRESH_FAILED"),
 			diagnostic=frappe.get_traceback(),
@@ -298,28 +298,39 @@ def _finalize(request) -> None:
 		)
 		return
 
-	request.finish(status)
+	request.settle(status)
 
 
-def process_resize(action) -> None:
-	"""Apply one durable resize, then re-lock billing after the shape is confirmed."""
+def get_allowed_server(action) -> VirtualMachine | None:
+	"""The action's server under its row lock, or None once the action is failed. The server must
+	still be the one the action was accepted for, and a first dispatch needs the requester's access."""
 	server = frappe.get_doc("Virtual Machine", action.server, for_update=True)
 	if (
 		server.team != action.team
 		or server.region != action.region
 		or server.atlas_vm_id != action.remote_vm_id
 	):
-		action.transition(
+		action.set_status(
 			"Failed", envelope=build_envelope("SERVER_NOT_FOUND", resource_id=action.resource_id)
 		)
+		return None
+
+	if action.status == "Queued" and not action.is_allowed():
+		action.set_status("Failed", envelope=build_envelope("PERMISSION_DENIED", action=action.action))
+		return None
+
+	return server
+
+
+def process_resize(action) -> None:
+	"""Apply one durable resize, then re-lock billing after the shape is confirmed."""
+	server = get_allowed_server(action)
+	if not server:
 		return
 
 	first_dispatch = action.status == "Queued"
 	if first_dispatch:
-		if not action.is_allowed():
-			action.transition("Failed", envelope=build_envelope("PERMISSION_DENIED", action="resize"))
-			return
-		action.transition("Dispatching", notify=False)
+		action.set_status("Dispatching")
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- record the dispatch before calling Atlas
 
 	configuration = action.get_resize_configuration()
@@ -327,10 +338,8 @@ def process_resize(action) -> None:
 	try:
 		if not first_dispatch:
 			servers.observe_server(server)
-			server.reload()
 		if _needs_resize(server, target, configuration):
 			servers.resize_server(server, target)
-			server.reload()
 		if not _matches_shape(server, target):
 			raise AtlasConnectionError(_("Atlas did not report the requested server size."))
 	except AtlasRejected as error:
@@ -338,7 +347,7 @@ def process_resize(action) -> None:
 		return
 	except AtlasConnectionError:
 		# A resize sets absolute values, so recovery can safely run it again.
-		action.transition(
+		action.set_status(
 			"Uncertain",
 			envelope=build_envelope("OUTCOME_UNKNOWN"),
 			diagnostic=frappe.get_traceback(),
@@ -346,7 +355,7 @@ def process_resize(action) -> None:
 		)
 		return
 
-	action.transition("Sent", notify=False)
+	action.set_status("Sent")
 	frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep the accepted resize before billing it
 	try:
 		from central.billing.catalog.subscriptions import apply_resize_billing
@@ -357,7 +366,7 @@ def process_resize(action) -> None:
 		diagnostic = frappe.get_traceback()
 		frappe.db.rollback()
 		action.reload()
-		action.transition(
+		action.set_status(
 			"Sent",
 			envelope=build_envelope("FINALIZATION_FAILED"),
 			diagnostic=diagnostic,
@@ -365,7 +374,7 @@ def process_resize(action) -> None:
 		)
 		return
 
-	action.transition("Succeeded")
+	action.set_status("Succeeded")
 
 
 def _needs_resize(server: VirtualMachine, shape: dict, configuration) -> bool:
@@ -382,27 +391,16 @@ def _matches_shape(server: VirtualMachine, shape: dict) -> bool:
 
 
 def process_command(action) -> None:
-	server = frappe.get_doc("Virtual Machine", action.server, for_update=True)
-	if (
-		server.team != action.team
-		or server.region != action.region
-		or server.atlas_vm_id != action.remote_vm_id
-	):
-		action.transition(
-			"Failed", envelope=build_envelope("SERVER_NOT_FOUND", resource_id=action.resource_id)
-		)
+	server = get_allowed_server(action)
+	if not server:
 		return
 
 	if action.status == "Queued":
-		if not action.is_allowed():
-			action.transition("Failed", envelope=build_envelope("PERMISSION_DENIED", action=action.action))
-			return
-
 		client = servers.get_client(server)
 		if action.take_snapshot and not is_final_snapshot_ready(action, server, client):
 			return
 
-		action.transition("Dispatching", notify=False)
+		action.set_status("Dispatching")
 		# The remote command can outlive this worker; recovery must never redispatch it.
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist dispatch before Atlas mutates the VM
 		try:
@@ -412,8 +410,8 @@ def process_command(action) -> None:
 			if action.action != "terminate":
 				action.fail(error, "Atlas command failed")
 				return
-			servers.mark_terminated(server)
-			action.transition("Succeeded")
+			server.record_terminated()
+			action.set_status("Succeeded")
 			return
 		except AtlasConnectionError as error:
 			action.fail(error, "Atlas command failed")
@@ -421,14 +419,14 @@ def process_command(action) -> None:
 			if action.status == "Failed":
 				return
 		else:
-			action.transition("Sent", notify=False)
+			action.set_status("Sent")
 
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist Atlas acceptance before observation
 
 	try:
 		status = servers.observe_server(server)
 	except AtlasConnectionError:
-		action.transition(
+		action.set_status(
 			action.status,
 			envelope=build_envelope("REFRESH_FAILED"),
 			diagnostic=frappe.get_traceback(),
@@ -436,7 +434,7 @@ def process_command(action) -> None:
 		)
 		return
 
-	action.finish(status)
+	action.settle(status)
 
 
 def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient) -> bool:
@@ -451,7 +449,7 @@ def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient)
 		if status == "Pending":
 			action.db_set("last_checked_at", frappe.utils.now_datetime())
 		else:
-			action.transition("Failed", envelope=build_envelope("SNAPSHOT_FAILED", action="terminate"))
+			action.set_status("Failed", envelope=build_envelope("SNAPSHOT_FAILED", action="terminate"))
 		return False
 
 	# One snapshot runs per server; a daily one already running is waited out first.
@@ -462,7 +460,7 @@ def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient)
 	try:
 		servers.wait_for_power_state(client, server.atlas_vm_id, "stop", "stopped")
 	except AtlasConnectionError as error:
-		action.transition(
+		action.set_status(
 			"Failed",
 			envelope=to_error_response(error),
 			diagnostic=frappe.get_traceback(),

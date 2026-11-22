@@ -9,7 +9,7 @@ from frappe.utils.translations import _lt
 from central.central.doctype.activity_event.activity_event import ActivityEvent, get_initiators
 from central.central.doctype.activity_event.tracked import get_sentence
 from central.iam import user_has_operator_bypass
-from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.infrastructure.doctype.virtual_machine.virtual_machine import get_team_server_name
 from central.utils.guards import require_capability, require_team_member
 
 DEFAULT_LIMIT = 50
@@ -35,7 +35,7 @@ def server_activity(
 	until: str | None = None,
 ) -> dict:
 	"""One server's activity, including its sites, domains and snapshots, newest first."""
-	server = VirtualMachine.get_team_server_name(team, resource_id)
+	server = get_team_server_name(team, resource_id)
 	return get_activity(team, cursor, limit, category, since, until, server=server)
 
 

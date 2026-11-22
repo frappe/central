@@ -72,7 +72,9 @@ class TestResizeComposed(IntegrationTestCase):
 		frappe.db.delete("Invoice", {"team": TEAM})
 
 		def record_resize(server, shape):
+			# Like the real resize, which records the region's report on the server it was given.
 			frappe.db.set_value("Virtual Machine", server.name, shape)
+			server.reload()
 
 		self.resize_server = self.enterContext(
 			patch("central.integrations.servers.resize_server", side_effect=record_resize)
@@ -597,6 +599,7 @@ class TestResizeComposed(IntegrationTestCase):
 
 		def record_target(_server, shape):
 			frappe.db.set_value("Virtual Machine", server, shape)
+			_server.reload()
 
 		self.resize_server.side_effect = record_target
 		with patch(

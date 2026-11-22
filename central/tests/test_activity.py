@@ -102,7 +102,9 @@ class TestActivity(IntegrationTestCase):
 
 	def test_a_switch_stored_inverted_reads_as_its_label(self):
 		frappe.set_user(self.admin)
-		set_automatic_snapshots(team=self.team.name, resource_id=self.server.resource_id, enabled=0)
+		# Frappe skips Versions under tests unless a save asks for them.
+		with patch.object(frappe, "in_test", False):
+			set_automatic_snapshots(team=self.team.name, resource_id=self.server.resource_id, enabled=0)
 
 		events = server_activity(team=self.team.name, resource_id=self.server.resource_id)["events"]
 		self.assertEqual(events[0]["details"], [{"label": "Automatic snapshots", "from": "on", "to": "off"}])
@@ -196,8 +198,8 @@ class TestActivity(IntegrationTestCase):
 		frappe.set_user("Administrator")
 
 		action = frappe.get_last_doc("Resource Action", filters={"server": self.server.name})
-		action.transition("In Progress")
-		action.transition("Succeeded")
+		action.set_status("In Progress")
+		action.set_status("Succeeded")
 
 		events = self._team_events(self.admin, category="action")
 		self.assertEqual(events, ["server.restarted"])
@@ -210,7 +212,7 @@ class TestActivity(IntegrationTestCase):
 		submit_command("restart", self.team.name, self.server.name)
 		frappe.set_user("Administrator")
 
-		frappe.get_last_doc("Resource Action", filters={"server": self.server.name}).transition("Failed")
+		frappe.get_last_doc("Resource Action", filters={"server": self.server.name}).set_status("Failed")
 
 		frappe.set_user(self.admin)
 		event = team_activity(team=self.team.name, category="action")["events"][0]

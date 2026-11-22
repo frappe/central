@@ -5,7 +5,7 @@ from frappe.utils.translations import _lt
 
 from central.errors import handle_resource_operation
 from central.iam import can, can_on_any_server
-from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.infrastructure.doctype.virtual_machine.virtual_machine import get_team_server
 from central.utils.guards import require_capability
 
 
@@ -84,7 +84,7 @@ def set_server_firewall_rulesets(
 ) -> None:
 	"""Make a server use these team rulesets together. With none, the server keeps the rules
 	as its own."""
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	server.set_firewall_rulesets(frappe.parse_json(rulesets) or [])
 
 

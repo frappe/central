@@ -344,17 +344,14 @@ class TestTrialUpgradeBucket(UnitTestCase):
 		)
 		resource_action = "central.infrastructure.doctype.resource_action.resource_action"
 		with (
-			patch.object(action, "db_set"),
 			patch(f"{resource_action}.is_trial_plan", side_effect=lambda name: name == "trial"),
 			patch(
 				"central.integrations.pilot.plan_includes_storage",
 				return_value=bundles_storage,
 			),
 			patch(f"{resource_action}.frappe.enqueue") as enqueue,
-			# The server is not in the database; its activity feed is tested elsewhere.
-			patch(f"{resource_action}.ActivityEvent.record_action"),
 		):
-			action.transition("Succeeded")
+			action.handle_success()
 
 		return enqueue
 
