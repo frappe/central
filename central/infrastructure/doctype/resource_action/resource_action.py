@@ -1,6 +1,5 @@
 import frappe
 from frappe import _
-from frappe.model.document import Document
 
 from central.billing.catalog.trials import is_trial_plan
 from central.central.doctype.activity_event.activity_event import ActivityEvent
@@ -9,6 +8,7 @@ from central.iam import can
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain, normalize_domain
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.user_mail_account.user_mail_account import UserMailAccount
+from central.infrastructure.system_record import SystemRecord
 from central.server_models import ActionStatus, ResizeConfiguration, ServerCreation, SiteCreation
 from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 
@@ -84,7 +84,7 @@ def get_error(row) -> dict | None:
 	)
 
 
-class ResourceAction(Document):
+class ResourceAction(SystemRecord):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -330,13 +330,6 @@ class ResourceAction(Document):
 		self.server = server
 		self.resource_id = server
 		self.save_as_system()
-
-	def save_as_system(self) -> None:
-		"""Save a write that only Central makes. Its links were checked at insert, and the record
-		one points to can be gone by the time the region answers, which must not block the outcome."""
-		self.flags.ignore_links = True
-		# Only Central writes an action after insert; customers hold read access to it.
-		self.save(ignore_permissions=True)
 
 	def fail(self, error: Exception, title: str) -> None:
 		"""Record a failed dispatch. An uncertain Atlas reply stays pending for recovery."""
