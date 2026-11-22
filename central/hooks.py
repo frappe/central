@@ -294,6 +294,7 @@ scheduler_events = {
 			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",
 			"central.infrastructure.doctype.site.site.record_ready_sites",
 			"central.infrastructure.doctype.site.site.poll_site_renames",
+			"central.infrastructure.doctype.site.site.retry_refused_renames",
 			"central.infrastructure.doctype.vm_snapshot.vm_snapshot.sync_pending_snapshots",
 			"central.infrastructure.doctype.frappemail_service.frappemail_service.refill_mailboxes",
 			"central.services.doctype.ai_trial_key.ai_trial_key.refill_trial_keys",

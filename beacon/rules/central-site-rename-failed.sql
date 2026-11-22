@@ -1,11 +1,11 @@
 -- title: Central site renames failing
--- description: Sites do not get the name the customer chose. Pilot refused the rename, or the Pilot task failed.
+-- description: Sites do not get the name the customer chose. Pilot refused the rename, kept answering 401 for an hour, or the Pilot task failed.
 -- severity: Medium
 -- resource_type: Central
 -- interval: 60
 -- pending_for: 60
 -- resolve_after: 3600
--- One failure is enough: a new site must always get its chosen name. Central writes the Error Log "Pilot site rename failed" for each failure, with the Site as its reference.
+-- One failure is enough: a new site must always get its chosen name. Central writes the Error Log "Pilot site rename failed" for each failure, with the Site as its reference. A 401 writes it only when the retries stop, one hour after the claim.
 -- affected names each failed Site. An operator retries it with Retry Site Rename on the Site.
 SELECT 'central' AS resource_id, 'site-rename' AS alert_key, toFloat64(failed_sites) AS value,
        concat(toString(failed_sites), ' sites failed to rename in 1 h') AS detail, affected
