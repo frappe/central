@@ -220,13 +220,17 @@ async function open_compute_settings(frm) {
 	const response = await frm.call({ doc: frm.doc, method: "get_compute_settings", freeze: true });
 	if (response.exc || !response.message) return;
 
+	const { is_offload_allowed, ...settings } = response.message;
+	const offload_description = is_offload_allowed
+		? __("Only for servers with at most 4 GiB memory and 50 GiB disk.")
+		: __("Only for servers with at most 4 GiB memory and 50 GiB disk. This server is larger.");
 	const dialog = new frappe.ui.Dialog({
 		title: __("Compute Settings"),
 		fields: [
 			{
 				fieldtype: "HTML",
 				options: `<p class="text-muted small">${__(
-					"The region keeps these settings. Zero turns a setting off. A plan resize turns sleep off again.",
+					"The region keeps these settings. Zero turns a setting off. On an internal team, the server owner can also change Sleep After Idle on the server page. A resize keeps sleep, and turns deep sleep and coma off when the new size is too large.",
 				)}</p>`,
 			},
 			{ fieldtype: "Section Break", label: __("Sleep") },
@@ -240,13 +244,15 @@ async function open_compute_settings(frm) {
 				fieldname: "deep_sleep_after_idle_seconds",
 				fieldtype: "Int",
 				label: __("Deep Sleep After Idle (seconds)"),
-				description: __("Move saved memory to object storage. Needs at most 4 GiB memory and 50 GiB disk."),
+				description: `${__("Move saved memory to object storage.")} ${offload_description}`,
+				read_only: !is_offload_allowed,
 			},
 			{
 				fieldname: "coma_after_idle_seconds",
 				fieldtype: "Int",
 				label: __("Coma After Idle (seconds)"),
-				description: __("Also move the disk to object storage. Must be longer than deep sleep."),
+				description: `${__("Also move the disk to object storage. Must be longer than deep sleep.")} ${offload_description}`,
+				read_only: !is_offload_allowed,
 			},
 			{ fieldtype: "Section Break", label: __("CPU Burst") },
 			{ fieldname: "is_burstable", fieldtype: "Check", label: __("Burstable") },
@@ -279,6 +285,6 @@ async function open_compute_settings(frm) {
 			frm.reload_doc();
 		},
 	});
-	dialog.set_values({ ...response.message, is_burstable: response.message.is_burstable ? 1 : 0 });
+	dialog.set_values({ ...settings, is_burstable: settings.is_burstable ? 1 : 0 });
 	dialog.show();
 }

@@ -249,7 +249,7 @@ def _create_payload(request) -> dict:
 
 
 def idle_shutdown_seconds(request) -> int:
-	"""How long a free trial or staging machine may sit idle before its region puts it to sleep. A paid server, or one its owner resized, never sleeps."""
+	"""How long a free trial or staging machine may sit idle before its region puts it to sleep. A paid server sleeps only when its owner turns sleep on."""
 	if not request.is_free_trial and not frappe.db.get_value("Team", request.team, "is_staging_trial"):
 		return 0
 
