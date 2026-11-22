@@ -16,7 +16,8 @@ from central.integrations.email_oauth.setup import DEFAULT_PROVIDERS, ensure_ema
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
-ZONE = "oauth.example.test"
+# Region.get_zone: the test region below the wildcard domain that setUp sets
+ZONE = "test-email-oauth.example.test"
 SITE_CALLBACK = "/api/method/frappe.integrations.frappe_providers.email_oauth.callback"
 
 
@@ -123,9 +124,16 @@ class TestEmailOAuth(IntegrationTestCase):
 			f"https://evil.example.com{SITE_CALLBACK}",
 			f"https://{self.site}/some/other/path",
 			f"https://attacker@{self.site}{SITE_CALLBACK}",
+			f"ftp://{self.site}{SITE_CALLBACK}",
 		):
 			with self.subTest(url=url), self.assertRaises(frappe.PermissionError):
 				self.call_start(url)
+
+	def test_start_accepts_a_plain_http_return_url(self):
+		with patch.dict(frappe.conf, {"developer_mode": False}):
+			self.call_start(f"http://{self.site}{SITE_CALLBACK}")
+
+		self.assertEqual(frappe.cache.get_value("email_oauth:state-1")["server"], self.server)
 
 	def test_start_accepts_a_zone_route_before_it_is_recorded_active(self):
 		route = self.insert_site_domain(f"chosen-{frappe.generate_hash(length=6)}.{ZONE}")

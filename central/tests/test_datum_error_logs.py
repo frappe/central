@@ -27,6 +27,8 @@ class TestErrorLogPublisher(IntegrationTestCase):
 			error=TRACEBACK,
 			fingerprint="f1",
 			trace_id="",
+			reference_doctype="Site",
+			reference_name="site-1",
 			metadata=json.dumps(
 				{
 					"type": "background_job",
@@ -41,6 +43,7 @@ class TestErrorLogPublisher(IntegrationTestCase):
 		self.assertEqual(line["product"], "central")
 		self.assertEqual(line["attributes"]["exception"], "ValueError")
 		self.assertEqual(line["attributes"]["unhandled"], "1")
+		self.assertEqual(line["attributes"]["reference_name"], "site-1")
 		self.assertNotIn("secret", json.dumps(line))
 
 	def test_new_error_logs_are_read_after_the_cursor(self) -> None:
