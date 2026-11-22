@@ -1,8 +1,10 @@
+from collections import defaultdict
 from typing import Self
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils.translations import N_
 
 from central.billing.catalog.trials import is_trial_plan
 from central.central.doctype.activity_event.activity_event import ActivityEvent
@@ -44,7 +46,15 @@ GOAL_STATUS = {
 }
 # A command that has not reached its goal this long after dispatch has timed out.
 COMMAND_TIMEOUT_SECONDS = 10 * 60
+# The steps a resize takes, in the order its worker takes them.
+RESIZE_STEPS = (
+	("sent", N_("Sending request")),
+	("stopped", N_("Stopping server")),
+	("applied", N_("Applying new size")),
+	("started", N_("Starting server")),
+)
 TERMINAL_STATES = ("Succeeded", "Failed", "Timed Out")
+FAILED_STATES = ("Failed", "Timed Out")
 # A creation in one of these states can be sent again while it holds no VM identity.
 RETRYABLE_CREATE_STATES = ("Failed", "Timed Out")
 ACTION_STATES = (*PENDING_STATES, *TERMINAL_STATES)
@@ -85,6 +95,81 @@ def get_error(row) -> dict | None:
 		message=row.error_message,
 		remediation=row.remediation,
 	)
+
+
+def get_resize_steps(configuration: ResizeConfiguration) -> list[tuple[str, str]]:
+	"""The steps this resize takes. The worker stops the server only when CPU or memory changes."""
+	target, origin = configuration.shape, configuration.from_shape
+	if origin and (target.vcpus, target.memory_megabytes) == (origin.vcpus, origin.memory_megabytes):
+		return [step for step in RESIZE_STEPS if step[0] != "stopped"]
+
+	return list(RESIZE_STEPS)
+
+
+def get_resize_done_steps(action, statuses: list[str]) -> dict[str, bool]:
+	"""Whether each step is done. `statuses` are the server's observed statuses since the resize
+	was sent, ending with the current one."""
+	sent = bool(action.dispatched_at)
+	finished = action.status in ("Sent", "Succeeded")
+	failed = action.status in FAILED_STATES
+	stop = statuses.index("Stopped") if sent and "Stopped" in statuses else None
+	# The worker starts the server only after Atlas took the new size.
+	restarted = stop is not None and any(status != "Stopped" for status in statuses[stop + 1 :])
+
+	return {
+		"sent": sent,
+		"stopped": finished or stop is not None,
+		"applied": finished or (restarted and not failed),
+		"started": finished,
+	}
+
+
+def get_resize_step_rows(action, configuration: ResizeConfiguration, statuses: list[str]) -> list[dict]:
+	"""Each step of the resize, `done`, `current` or `pending`."""
+	steps = get_resize_steps(configuration)
+	done = get_resize_done_steps(action, statuses)
+	current = next((key for key, _label in steps if not done[key]), None)
+
+	return [
+		{
+			"key": key,
+			"label": _(label),
+			"state": "done" if done[key] else ("current" if key == current else "pending"),
+		}
+		for key, label in steps
+	]
+
+
+def get_status_changes(version) -> list[str]:
+	"""The statuses one Version of a Virtual Machine moved between, old then new."""
+	changed = frappe.parse_json(version.data).get("changed") or []
+	return [status for field, old, new in changed if field == "status" for status in (old, new)]
+
+
+def get_observed_statuses(servers: dict[str, str], since: dict[str, object]) -> dict[str, list[str]]:
+	"""Each server's status changes since its resize was sent, from Frappe's Version history, ending
+	with its current status. `servers` maps a server to its status now, `since` to its dispatch time."""
+	statuses = defaultdict(list)
+	sent = {server: at for server, at in since.items() if at}
+	if not sent:
+		return {server: [status] for server, status in servers.items()}
+
+	# A system read: Version is not team-scoped, and the caller owns these servers.
+	versions = frappe.get_all(
+		"Version",
+		filters={
+			"ref_doctype": "Virtual Machine",
+			"docname": ["in", list(sent)],
+			"creation": [">=", min(sent.values())],
+		},
+		fields=["docname", "creation", "data"],
+		order_by="creation asc",
+	)
+	for version in versions:
+		if version.creation >= sent[version.docname]:
+			statuses[version.docname].extend(get_status_changes(version))
+
+	return {server: [*statuses[server], status] for server, status in servers.items()}
 
 
 class ResourceAction(Document):
@@ -474,6 +559,23 @@ class ResourceAction(Document):
 			{"label": _("Name applied"), "at": site.renamed_at, "error": site.rename_error},
 		]
 
+	def get_resize_progress(self) -> dict | None:
+		"""The steps the resize has reached. None once it succeeded."""
+		if self.status == "Succeeded":
+			return None
+
+		configuration = self.get_resize_configuration()
+		status = frappe.db.get_value("Virtual Machine", self.server, "status")
+		statuses = get_observed_statuses({self.server: status}, {self.server: self.dispatched_at})
+		error = (get_error(self) or {}).get("message") or _("The resize failed.")
+
+		return {
+			"steps": get_resize_step_rows(self, configuration, statuses[self.server]),
+			"target": configuration.shape.model_dump(),
+			"started_at": self.dispatched_at or self.creation,
+			"error": error if self.status in FAILED_STATES else None,
+		}
+
 	@frappe.whitelist(methods=["POST"])
 	def retry(self) -> ActionStatus:
 		"""Send this creation again on the same record, with the same request key, configuration
@@ -558,6 +660,55 @@ class ResourceAction(Document):
 		return {
 			row.server: {"created_by": row.requested_by, "created_by_name": row.full_name} for row in rows
 		}
+
+	@classmethod
+	def get_latest_resize_progress(cls, server: str, team: str) -> dict | None:
+		"""The progress of the server's resize in flight, or of one that failed in the last day."""
+		names = frappe.get_list(
+			"Resource Action",
+			filters={"resource_id": server, "team": team, "action": "resize"},
+			or_filters={
+				"status": ["in", PENDING_STATES],
+				"completed_at": [">=", frappe.utils.add_days(frappe.utils.now_datetime(), -1)],
+			},
+			order_by="creation desc",
+			limit=1,
+			pluck="name",
+		)
+
+		return frappe.get_doc("Resource Action", names[0]).get_resize_progress() if names else None
+
+	@classmethod
+	def pending_resize_steps(cls, team: str, servers: dict[str, str]) -> dict[str, str]:
+		"""The current step label of each of the team's resizes in flight, keyed by server.
+		`servers` maps each server to its status."""
+		rows = frappe.get_list(
+			"Resource Action",
+			filters={
+				"team": team,
+				"action": "resize",
+				"status": ["in", PENDING_STATES],
+				"server": ["in", list(servers)],
+			},
+			fields=["server", "status", "dispatched_at", "request_payload"],
+			order_by="creation asc",
+			limit=0,
+		)
+		latest = {row.server: row for row in rows}
+		statuses = get_observed_statuses(
+			{server: servers[server] for server in latest},
+			{server: row.dispatched_at for server, row in latest.items()},
+		)
+
+		steps = {}
+		for server, row in latest.items():
+			step_rows = get_resize_step_rows(
+				row, ResourceAction.get_resize_configuration(row), statuses[server]
+			)
+			if current := next((step["label"] for step in step_rows if step["state"] == "current"), None):
+				steps[server] = current
+
+		return steps
 
 
 def on_doctype_update() -> None:

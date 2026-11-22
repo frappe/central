@@ -2,7 +2,7 @@ import { useCall } from 'frappe-ui'
 import { computed, type Ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
-import { getErrorMessage } from '@/lib/feedback'
+import { getErrorMessage, isAbortError } from '@/lib/feedback'
 import { LONGEST_METRICS_SECONDS } from '@/lib/serverMetrics'
 import { __ } from '@/lib/translate'
 import type {
@@ -106,7 +106,7 @@ export const useServerOverview = (
 		metrics: computed(() => metricsCall.data),
 		metricsLoading: computed(() => metricsCall.loading),
 		metricsError: computed(() =>
-			metricsCall.error
+			metricsCall.error && !isAbortError(metricsCall.error)
 				? getErrorMessage(metricsCall.error, "Usage couldn't load.")
 				: '',
 		),

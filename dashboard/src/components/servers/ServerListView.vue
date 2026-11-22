@@ -278,6 +278,12 @@ const filters = computed<ListViewFilter[]>(() => [
 					/>
 				</span>
 				<span class="truncate">{{ row.visual.label }}</span>
+				<span
+					v-if="row.server?.resize_step"
+					class="truncate text-sm text-ink-gray-5"
+				>
+					{{ row.server.resize_step }}
+				</span>
 			</span>
 		</template>
 

@@ -320,6 +320,7 @@ def process_resize(action) -> None:
 			action.transition("Failed", envelope=build_envelope("PERMISSION_DENIED", action="resize"))
 			return
 		action.transition("Dispatching", notify=False)
+		server.publish_state_change()
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- record the dispatch before calling Atlas
 
 	configuration = action.get_resize_configuration()

@@ -23,7 +23,11 @@ type ZoomWindow = { start: number; end: number }
 /** Drag, pinch or ctrl-scroll zoom on one time-axis chart. Each zoom reports its window in seconds. */
 export function useChartZoom(
 	getRows: () => MetricRow[],
-	onZoom: (window: ZoomWindow) => void,
+	getVisibleWindow: () => ZoomWindow | undefined,
+	report: {
+		zoom: (window: ZoomWindow) => void
+		preview: (window: ZoomWindow) => void
+	},
 ) {
 	const plot = useTemplateRef<AreaChartApi>('plot')
 	const plotBox = useTemplateRef<HTMLElement>('plotBox')
@@ -32,9 +36,8 @@ export function useChartZoom(
 	const WHEEL_STEP = 1.15
 	let dragStart: number | null = null
 	let wheelTimer: ReturnType<typeof setTimeout> | undefined
-	let wheelFactor = 1
-	let wheelAt: number | null = null
-	let lastZoomAt = 0
+	let pinch: { base: [number, number]; at: number; factor: number } | null =
+		null
 
 	const getChart = () => plot.value?.chart
 
@@ -61,21 +64,26 @@ export function useChartZoom(
 		return [first.getTime(), last.getTime()]
 	}
 
-	// Zoom keeps the timestamp under the pointer in place, so the chart grows or shrinks around it.
-	const zoomAround = (at: number, factor: number): void => {
-		const window = rowsWindow()
-		if (!window) return
+	const shownWindow = (): [number, number] | null => {
+		const visible = getVisibleWindow()
+		return visible ? [visible.start, visible.end] : rowsWindow()
+	}
 
-		const [first, last] = window
+	// Zoom keeps the timestamp under the pointer in place, so the chart grows or shrinks around it.
+	const windowAround = (
+		[first, last]: [number, number],
+		at: number,
+		factor: number,
+	): ZoomWindow => {
 		const span = Math.max(60_000, last - first)
 		const anchor = Math.min(Math.max(at, first), last)
 		const width = span * factor
 		const start = anchor - width * ((anchor - first) / span)
 
-		onZoom({
+		return {
 			start: Math.floor(start / 1000),
 			end: Math.ceil((start + width) / 1000),
-		})
+		}
 	}
 
 	const wheelZoom = (event: WheelEvent): void => {
@@ -85,21 +93,22 @@ export function useChartZoom(
 		event.preventDefault()
 		globalThis.clearTimeout?.(wheelTimer)
 
-		const at = timeAt(event)
-		if (at !== null) wheelAt = at
-		wheelFactor *= event.deltaY > 0 ? WHEEL_STEP : 1 / WHEEL_STEP
-
-		// The first tick answers at once; the rest of a pinch coalesce into one refetch.
-		const run = (): void => {
-			const factor = wheelFactor
-			const target = wheelAt
-			wheelFactor = 1
-			lastZoomAt = Date.now()
-			if (target !== null && factor !== 1) zoomAround(target, factor)
+		if (!pinch) {
+			const base = shownWindow()
+			const at = timeAt(event)
+			if (!base || at === null) return
+			pinch = { base, at, factor: 1 }
 		}
 
-		if (Date.now() - lastZoomAt > 160) run()
-		else wheelTimer = globalThis.setTimeout(run, 120)
+		pinch.factor *= event.deltaY > 0 ? WHEEL_STEP : 1 / WHEEL_STEP
+		const window = windowAround(pinch.base, pinch.at, pinch.factor)
+
+		// The axis follows every tick; the request waits until the pinch pauses.
+		report.preview(window)
+		wheelTimer = globalThis.setTimeout(() => {
+			pinch = null
+			report.zoom(window)
+		}, 250)
 	}
 
 	onBeforeUnmount(() => globalThis.clearTimeout?.(wheelTimer))
@@ -152,7 +161,7 @@ export function useChartZoom(
 		)
 		if (!edges.every(Number.isFinite) || edges[1] - edges[0] <= 0) return
 
-		onZoom({ start: Math.floor(edges[0]), end: Math.ceil(edges[1]) })
+		report.zoom({ start: Math.floor(edges[0]), end: Math.ceil(edges[1]) })
 	}
 
 	const formatSpan = (seconds: number): string => {

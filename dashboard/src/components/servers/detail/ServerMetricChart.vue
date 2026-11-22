@@ -16,12 +16,19 @@ const props = withDefaults(defineProps<ServerMetricChartProps>(), {
 	averageLabel: 'Average over the selected duration',
 })
 
-const emit = defineEmits<{ zoom: [{ start: number; end: number }] }>()
+const emit = defineEmits<{
+	zoom: [{ start: number; end: number }]
+	preview: [{ start: number; end: number }]
+}>()
 
 const { band, bandSpan, wheelZoom, startZoom, moveZoom, finishZoom } =
 	useChartZoom(
 		() => props.chart.rows,
-		(window) => emit('zoom', window),
+		() => props.visibleWindow,
+		{
+			zoom: (window) => emit('zoom', window),
+			preview: (window) => emit('preview', window),
+		},
 	)
 
 const hiddenSeries = ref<string[]>([])

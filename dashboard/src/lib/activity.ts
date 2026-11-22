@@ -70,9 +70,7 @@ const STATUS_THEMES: Record<string, StatusTheme> = {
 }
 
 const DETAIL_UNITS: Record<string, (value: string) => string> = {
-	Memory: (value) => formatMemory(Number(value)),
 	Size: (value) => formatMemory(Number.parseFloat(value)),
-	Disk: (value) => `${Number(value)} GB`,
 }
 
 // the row title already names these, so the summary carries the value alone
