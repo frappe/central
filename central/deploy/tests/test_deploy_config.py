@@ -15,6 +15,12 @@ class UnitTestDeployConfig(UnitTestCase):
 			{"cpu_millicores": 4000, "disk_mib": 40960},
 		)
 
+	def test_the_machine_profile_is_read(self):
+		self.assertEqual(
+			get_machine_specs('[machine]\nprofile = "CPU Optimised"\ncpu_millicores = 4000\n'),
+			{"cpu_millicores": 4000, "profile": "CPU Optimised"},
+		)
+
 	def test_bad_configs_are_refused(self):
 		for config in (
 			"[machine",
@@ -24,6 +30,7 @@ class UnitTestDeployConfig(UnitTestCase):
 			"[machine]\nmemory_mib = 4096.5",
 			'[machine]\nmemory_mib = "4096"',
 			"[machine]\ndisk_mib = true",
+			"[machine]\nprofile = 4",
 		):
 			with self.subTest(config=config), self.assertRaises(frappe.ValidationError):
 				get_machine_specs(config)

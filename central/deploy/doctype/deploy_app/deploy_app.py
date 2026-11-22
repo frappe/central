@@ -56,8 +56,10 @@ class DeployApp(Document):
 		frappe.throw(_("This deploy agent token is not valid."), frappe.AuthenticationError)
 
 	@staticmethod
-	def add(installation: GitHubDeployAppInstallation, found: dict, branch: str | None = None) -> DeployApp:
-		"""Deploy a repository the installation lists, from `branch` or else its default branch.
+	def add(
+		installation: GitHubDeployAppInstallation, found: dict, region: str, branch: str | None = None
+	) -> DeployApp:
+		"""Deploy a repository the installation lists in `region`, from `branch` or else its default branch.
 		The caller has checked that the user adding it is admin on the repository."""
 		app = GitHubDeployApp()
 		team = installation.team
@@ -80,6 +82,7 @@ class DeployApp(Document):
 				"repository": found["full_name"],
 				"repository_id": found["repository_id"],
 				"branch": branch,
+				"region": region,
 				"status": "Active",
 			}
 		)

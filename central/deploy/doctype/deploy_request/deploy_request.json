@@ -17,6 +17,7 @@
   "cpu_millicores",
   "memory_mib",
   "disk_mib",
+  "profile",
   "error_section",
   "error",
   "build_log"
@@ -132,11 +133,20 @@
    "fieldtype": "Int",
    "label": "Disk (MiB)",
    "read_only": 1
+  },
+  {
+   "default": "General",
+   "description": "The optimisation profile the VM is billed under, from machine.profile in the commit's config.",
+   "fieldname": "profile",
+   "fieldtype": "Link",
+   "label": "Profile",
+   "options": "Plan Sub-Category",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-22 12:00:00.000000",
+ "modified": "2026-11-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Deploy",
  "name": "Deploy Request",

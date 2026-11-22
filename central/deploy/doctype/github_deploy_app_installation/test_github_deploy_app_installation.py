@@ -13,6 +13,7 @@ from central.deploy.doctype.github_deploy_app_installation.github_deploy_app_ins
 )
 from central.infrastructure.doctype.github_connection.test_github_connection import make_team
 from central.tests.test_iam import ensure_user
+from central.tests.utils import ensure_region
 
 INSTALLATION = {"installation_id": "101", "account": "octo", "account_type": "Organization"}
 REPOSITORY = {"repository_id": "11", "full_name": "octo/app", "default_branch": "main", "is_admin": True}
@@ -37,6 +38,7 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 		self.outsider = ensure_user("github.deploy.outsider@example.test")
 		self.team = make_team("GitHub Deploy Team", self.owner)
 		self.other_team = make_team("GitHub Deploy Other Team", self.owner)
+		self.region = ensure_region("github-deploy-test")
 
 		app = patch(
 			"central.deploy.doctype.github_deploy_app_installation.github_deploy_app_installation.GitHubDeployApp"
@@ -49,7 +51,7 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 		branches.return_value.has_branch.return_value = True
 
 	def start(self) -> str:
-		return GitHubDeployAppInstallation.start(self.team, self.owner, "Octo/App")
+		return GitHubDeployAppInstallation.start(self.team, self.owner, "Octo/App", self.region)
 
 	def test_a_team_links_an_installation_once(self):
 		make_installation(self.team)
@@ -70,7 +72,9 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 		app = GitHubDeployAppInstallation.complete(state, self.owner)
 		installation = frappe.get_doc("GitHub Deploy App Installation", app.installation)
 		self.assertEqual((installation.team, installation.account), (self.team, "octo"))
-		self.assertEqual((app.team, app.repository, app.branch), (self.team, "octo/app", "main"))
+		self.assertEqual(
+			(app.team, app.repository, app.branch, app.region), (self.team, "octo/app", "main", self.region)
+		)
 		with self.assertRaises(frappe.DoesNotExistError):
 			GitHubDeployAppInstallation.complete(state, self.owner)
 
@@ -101,7 +105,7 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 
 	def test_a_user_without_deploy_access_cannot_start(self):
 		with self.assertRaises(frappe.PermissionError):
-			GitHubDeployAppInstallation.start(self.team, self.outsider, "octo/app")
+			GitHubDeployAppInstallation.start(self.team, self.outsider, "octo/app", self.region)
 
 	def test_a_repository_the_user_cannot_access_is_refused(self):
 		# The installation covers the repository, but this user's own list doesn't.
@@ -117,3 +121,7 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			GitHubDeployAppInstallation.verify(state, "code", "101", self.owner)
 		self.assertFalse(frappe.db.exists("Deploy App", {"team": self.team}))
+
+	def test_an_unknown_region_is_refused_before_github(self):
+		with self.assertRaises(frappe.DoesNotExistError):
+			GitHubDeployAppInstallation.start(self.team, self.owner, "octo/app", "no-such-region")

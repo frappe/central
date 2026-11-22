@@ -36,11 +36,15 @@ class GitHubDeployAppInstallation(Document):
 	# end: auto-generated types
 
 	@staticmethod
-	def start(team: str, user: str, repository: str, branch: str | None = None) -> str:
-		"""A new attempt to deploy `repository` (owner/name) for `team`. Its state lets only `user` finish it."""
+	def start(team: str, user: str, repository: str, region: str, branch: str | None = None) -> str:
+		"""A new attempt to deploy `repository` (owner/name) for `team` in `region`. Its state lets only `user` finish it."""
 		require_deploy_access(user, team)
+		if not frappe.db.exists("Region", region):
+			frappe.throw(_("Region {0} does not exist.").format(region), frappe.DoesNotExistError)
 		state = secrets.token_urlsafe(24)
-		save_attempt(state, {"team": team, "user": user, "repository": repository, "branch": branch})
+		save_attempt(
+			state, {"team": team, "user": user, "repository": repository, "region": region, "branch": branch}
+		)
 		return state
 
 	@staticmethod
@@ -97,7 +101,7 @@ class GitHubDeployAppInstallation(Document):
 
 		frappe.cache.delete_value(state_key(state))
 		installation = GitHubDeployAppInstallation.link(attempt["team"], attempt["installation"])
-		return DeployApp.add(installation, attempt["found_repository"], attempt["branch"])
+		return DeployApp.add(installation, attempt["found_repository"], attempt["region"], attempt["branch"])
 
 	@staticmethod
 	def link(team: str, installation: dict) -> GitHubDeployAppInstallation:

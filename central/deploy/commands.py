@@ -13,9 +13,12 @@ POLL_SECONDS = 2
 	"--user", required=True, help="The Central user signed in to the browser that approves on GitHub."
 )
 @click.option("--repository", required=True, help="owner/name on GitHub. The user must be admin on it.")
+@click.option("--region", required=True, help="The Region the app's VM runs in.")
 @click.option("--branch", help="The branch whose pushes deploy. Defaults to the repository's default branch.")
 @pass_context
-def connect_github_repository(context, team: str, user: str, repository: str, branch: str | None) -> None:
+def connect_github_repository(
+	context, team: str, user: str, repository: str, region: str, branch: str | None
+) -> None:
 	"""Deploy a repository for a team, after the user proves on GitHub that they are admin on it."""
 	from central.deploy.doctype.github_deploy_app_installation.github_deploy_app_installation import (
 		GitHubDeployAppInstallation,
@@ -25,7 +28,7 @@ def connect_github_repository(context, team: str, user: str, repository: str, br
 	frappe.init(get_site(context))
 	frappe.connect()
 	try:
-		state = GitHubDeployAppInstallation.start(team, user, repository, branch)
+		state = GitHubDeployAppInstallation.start(team, user, repository, region, branch)
 		click.echo(f"Sign in to Central as {user} in your browser, then open:\n")
 		click.echo(GitHubDeployApp().get_install_url(state) + "\n")
 		click.echo("Waiting for GitHub (Ctrl+C to stop)...")

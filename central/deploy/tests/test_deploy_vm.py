@@ -51,6 +51,10 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		self.machine.create.return_value = self.atlas_vm_id
 		patch(f"{MODULE}.DeployMachine", return_value=self.machine).start()
 		self.wait = patch.object(DeployRequest, "wait").start()
+		self.validate_purchase = patch(f"{MODULE}.validate_vm_purchase", return_value=12.5).start()
+		self.open_subscription = patch(f"{MODULE}.open_vm_subscription").start()
+		self.validate_resize = patch(f"{MODULE}.validate_vm_resize").start()
+		self.update_subscription = patch(f"{MODULE}.update_vm_subscription").start()
 		self.addCleanup(patch.stopall)
 
 	def test_the_first_deploy_creates_a_vm_at_its_size(self):
@@ -64,6 +68,19 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		server = frappe.get_doc("Virtual Machine", machine["name"])
 		self.assertEqual((server.atlas_vm_id, server.vcpus), (self.atlas_vm_id, 4))
 		self.assertEqual(frappe.db.get_value("Deploy App", self.app.name, "virtual_machine"), server.name)
+		specs = {"cpu_millicores": 4000, "memory_mib": 8192, "disk_mib": 20480}
+		self.validate_purchase.assert_called_once_with(self.app.team, self.app.region, specs, "General")
+		self.open_subscription.assert_called_once_with(
+			server.name, self.app.team, self.app.region, specs, "General", 12.5
+		)
+
+	def test_a_purchase_billing_refuses_creates_no_vm(self):
+		self.validate_purchase.side_effect = frappe.ValidationError
+
+		with self.assertRaises(frappe.ValidationError):
+			self.request.get_virtual_machine()
+		self.machine.create.assert_not_called()
+		self.open_subscription.assert_not_called()
 
 	def test_a_later_deploy_reuses_the_linked_vm(self):
 		first = self.request.get_virtual_machine()
@@ -75,6 +92,9 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 
 		self.assertFalse(self.request.get_virtual_machine()["is_new"])
 		self.machine.create.assert_not_called()
+		self.validate_purchase.assert_not_called()
+		# Billed at the current rate card, since the accepted rate was lost with the create reply.
+		self.assertIsNone(self.open_subscription.call_args.args[-1])
 
 	def test_two_vms_for_one_app_are_refused(self):
 		self.machine.find.return_value = [{"id": "atlas-vm-a"}, {"id": "atlas-vm-b"}]
@@ -97,6 +117,7 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		self.machine.stop.assert_not_called()
 		self.machine.resize.assert_not_called()
 		self.wait.assert_not_called()
+		self.update_subscription.assert_called_once()
 
 	def test_a_new_size_stops_then_resizes_then_starts_the_vm(self):
 		name = self.request.get_virtual_machine()["name"]
@@ -104,7 +125,9 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 
 		self.machine.get.return_value = make_vm("running")
 		self.request.resize_virtual_machine(name)
+		self.validate_resize.assert_called_once_with(name, self.request.specs, "General")
 		self.machine.stop.assert_called_once_with(self.atlas_vm_id)
+		self.update_subscription.assert_not_called()
 
 		self.machine.get.return_value = make_vm("stopped")
 		self.request.resize_virtual_machine(name)
@@ -120,6 +143,17 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		self.machine.get.return_value = make_vm("stopped", cpu=4000, memory=8192)
 		self.request.resize_virtual_machine(name)
 		self.machine.start.assert_called_once_with(self.atlas_vm_id)
+		self.update_subscription.assert_called_with(name, self.request.specs, "General")
+
+	def test_a_size_billing_refuses_keeps_the_vm_running(self):
+		name = self.request.get_virtual_machine()["name"]
+		self.request.cpu_millicores, self.request.memory_mib = 4000, 8192
+		self.validate_resize.side_effect = frappe.ValidationError
+		self.machine.get.return_value = make_vm("running")
+
+		with self.assertRaises(frappe.ValidationError):
+			self.request.resize_virtual_machine(name)
+		self.machine.stop.assert_not_called()
 
 	def test_a_smaller_disk_is_refused(self):
 		name = self.request.get_virtual_machine()["name"]

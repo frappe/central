@@ -12,6 +12,12 @@ from frappe import _
 from frappe.utils import now_datetime, time_diff_in_seconds
 from redis.exceptions import LockError
 
+from central.deploy.billing import (
+	open_vm_subscription,
+	update_vm_subscription,
+	validate_vm_purchase,
+	validate_vm_resize,
+)
 from central.deploy.config import CONFIG_FILE, MACHINE_LIMITS, find_containerfile, get_machine_specs
 from central.deploy.github import GitHubDeployApp
 from central.deploy.virtual_machine import DeployMachine
@@ -69,6 +75,7 @@ class DeployRequest(PipelineBuilder):
 		disk_mib: DF.Int
 		error: DF.SmallText | None
 		memory_mib: DF.Int
+		profile: DF.Link
 		status: DF.Literal[
 			"Queued",
 			"Validating",
@@ -175,7 +182,7 @@ class DeployRequest(PipelineBuilder):
 		state, current = vm.get("current_state"), machine.get_specs(vm)
 
 		if current == self.specs:
-			# No resize required
+			update_vm_subscription(name, self.specs, self.profile)
 			if state == "stopped":
 				machine.start(atlas_vm_id)
 			elif state == "migrating":
@@ -187,6 +194,8 @@ class DeployRequest(PipelineBuilder):
 				_("The disk can't shrink from {0} MiB to {1} MiB.").format(current["disk_mib"], self.disk_mib)
 			)
 		if state == "running":
+			# Billing refuses the new size before the live app goes down for it.
+			validate_vm_resize(name, self.specs, self.profile)
 			machine.stop(atlas_vm_id)
 		elif state == "stopped":
 			machine.resize(atlas_vm_id, self.specs)
@@ -245,14 +254,16 @@ class DeployRequest(PipelineBuilder):
 				)
 			)
 		if found:
-			atlas_vm_id, image_id = found[0]["id"], found[0].get("image_id")
+			atlas_vm_id, image_id, rate = found[0]["id"], found[0].get("image_id"), None
 		else:
 			image_id = machine.get_newest_image_id()
 			if not image_id:
 				frappe.throw(_("Region {0} has no deploy image yet.").format(app.region))
+			rate = validate_vm_purchase(app.team, app.region, self.specs, self.profile)
 			atlas_vm_id = machine.create(image_id, self.specs)
 
 		server = self.record_virtual_machine(app, atlas_vm_id, image_id)
+		open_vm_subscription(server.name, app.team, app.region, self.specs, self.profile, rate)
 		app.virtual_machine = server.name
 		# Central links the server it created for the team's app; no Desk user owns it.
 		app.save(ignore_permissions=True)

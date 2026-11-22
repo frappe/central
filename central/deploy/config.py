@@ -12,10 +12,13 @@ MACHINE_LIMITS = {
 	"memory_mib": (512, 128 * 1024),
 	"disk_mib": (10 * 1024, 1024 * 1024),
 }
+# The optimisation profile (Plan Sub-Category) the VM is billed under, like a custom-size server.
+MACHINE_PROFILE_KEY = "profile"
 
 
 def get_machine_specs(config: str | None) -> dict[str, int]:
-	"""The `[machine]` keys of a `frappe_cloud_deploy.toml`, checked against `MACHINE_LIMITS`."""
+	"""The `[machine]` keys of a `frappe_cloud_deploy.toml`: sizes checked against `MACHINE_LIMITS`, and the
+	profile name, which billing checks."""
 	if config is None:
 		return {}
 	try:
@@ -25,12 +28,19 @@ def get_machine_specs(config: str | None) -> dict[str, int]:
 
 	if not isinstance(machine, dict):
 		frappe.throw(_("[machine] in {0} must be a table.").format(CONFIG_FILE))
+	profile = machine.pop(MACHINE_PROFILE_KEY, None)
+	if profile is not None and not isinstance(profile, str):
+		frappe.throw(
+			_("machine.{0} must be the name of an optimisation profile.").format(MACHINE_PROFILE_KEY)
+		)
 	if unknown := set(machine) - set(MACHINE_LIMITS):
 		frappe.throw(_("Unknown keys in [machine]: {0}").format(", ".join(sorted(unknown))))
 	for key, value in machine.items():
 		low, high = MACHINE_LIMITS[key]
 		if type(value) is not int or not low <= value <= high:
 			frappe.throw(_("machine.{0} must be a whole number from {1} to {2}.").format(key, low, high))
+	if profile is not None:
+		machine[MACHINE_PROFILE_KEY] = profile
 	return machine
 
 
