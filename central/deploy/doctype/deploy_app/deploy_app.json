@@ -93,7 +93,7 @@
    "search_index": 1
   },
   {
-   "description": "The deploy agent on the app's VM sends this to claim and report builds.",
+   "description": "The deploy agent on the app's VM sends this to get and report builds.",
    "fieldname": "agent_token",
    "fieldtype": "Password",
    "label": "Agent Token",

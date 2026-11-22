@@ -8,6 +8,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 
 from central.deploy.doctype.deploy_request.deploy_request import (
+	BUILD_REPORT_TIMEOUT_SECONDS,
 	DeployRequest,
 	DeploySupersededError,
 	DeployTimeoutError,
@@ -122,7 +123,7 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 			"disk": {"size_mib": 20480},
 		}
 		self.machine.get_specs = DeployMachine.get_specs
-		# The deploy agent reports while the VM step runs; None leaves the build unclaimed.
+		# The deploy agent reports while the VM step runs; None means the agent has not reported yet.
 		self.build_status = "Succeeded"
 		patch.object(DeployRequest, "wait_for_virtual_machine", side_effect=self.report_build).start()
 		# The repository holds a Dockerfile and, unless a test sets one, no deploy config.
@@ -262,3 +263,16 @@ class IntegrationTestDeployWait(IntegrationTestCase):
 	def test_a_step_that_waited_too_long_fails(self):
 		with self.assertRaises(DeployTimeoutError):
 			self.run_wait_after(400)
+
+	def test_an_agent_that_reported_recently_is_not_silent(self):
+		self.request.build_reported_at = add_to_date(now_datetime(), seconds=-10)
+		self.assertFalse(self.request.is_agent_silent)
+
+	def test_an_agent_that_stopped_reporting_is_silent(self):
+		self.request.build_reported_at = add_to_date(
+			now_datetime(), seconds=-BUILD_REPORT_TIMEOUT_SECONDS - 1
+		)
+		self.assertTrue(self.request.is_agent_silent)
+
+	def test_an_agent_that_never_reported_is_silent_once_the_step_waited_too_long(self):
+		self.assertTrue(self.request.is_agent_silent)

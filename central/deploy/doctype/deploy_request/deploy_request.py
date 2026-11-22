@@ -19,6 +19,8 @@ from central.integrations import servers
 from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
 
 if TYPE_CHECKING:
+	from datetime import datetime
+
 	from cloudtoolkit.pipeline.doctype.pipeline.pipeline import Pipeline
 
 	from central.deploy.doctype.deploy_app.deploy_app import DeployApp
@@ -30,6 +32,8 @@ SUPERSEDABLE_STATES = ("Queued", "Validating", "Provisioning", "Building")
 VM_LOCK_SECONDS = 5 * 60
 # The agent reports while it builds; a build that runs longer fails the deploy.
 BUILD_TIMEOUT_SECONDS = 60 * 60
+# The agent reports every 10 to 20 seconds; silence this long means its VM or the agent died.
+BUILD_REPORT_TIMEOUT_SECONDS = 5 * 60
 
 
 class DeploySupersededError(frappe.ValidationError):
@@ -56,6 +60,7 @@ class DeployRequest(PipelineBuilder):
 		from frappe.types import DF
 
 		build_log: DF.Code | None
+		build_reported_at: DF.Datetime | None
 		build_status: DF.Literal["", "Running", "Succeeded", "Failed"]
 		commit: DF.Data
 		cpu_millicores: DF.Int
@@ -189,18 +194,33 @@ class DeployRequest(PipelineBuilder):
 
 	@task
 	def wait_for_virtual_machine(self, name: str) -> None:
-		"""Wait until the VM runs, so its deploy agent can claim the build."""
+		"""Wait until the VM runs, so its deploy agent can get the build."""
 		if servers.observe_server(frappe.get_doc("Virtual Machine", name)) != "Running":
 			self.wait(_("Virtual Machine {0} is not ready yet.").format(name), for_=500)
 
 	@task
 	def wait_for_build(self):
-		"""The deploy agent on the VM claims the build and reports on it; this only waits for its result."""
+		"""The deploy agent on the VM gets the build and reports on it; this only waits for its result."""
 		self.set_status("Building")
 		if self.build_status == "Failed":
 			frappe.throw(_("The build failed. See its log."), DeployBuildError)
-		if self.build_status != "Succeeded":
-			self.wait(_("The build has not finished."), for_=BUILD_TIMEOUT_SECONDS)
+		if self.build_status == "Succeeded":
+			return
+		# A report arriving after this gets `cancel`, since the request is no longer Building.
+		if self.is_agent_silent:
+			frappe.throw(_("The deploy agent stopped reporting on the build."), DeployTimeoutError)
+		self.wait(_("The build has not finished."), for_=BUILD_TIMEOUT_SECONDS)
+
+	@property
+	def is_agent_silent(self) -> bool:
+		"""No report since the last one, or since the build step started, for too long."""
+		last_heard = self.build_reported_at or self.step_started
+		return time_diff_in_seconds(now_datetime(), last_heard) > BUILD_REPORT_TIMEOUT_SECONDS
+
+	@property
+	def step_started(self) -> datetime:
+		task = self.flags.current_pipeline_task
+		return frappe.db.get_value("Pipeline Task", task, "creation") if task else self.creation
 
 	@property
 	def specs(self) -> dict[str, int]:
@@ -281,9 +301,7 @@ class DeployRequest(PipelineBuilder):
 
 	def wait(self, message: str, for_: int) -> None:
 		"""Try this step again later, or fail the deploy once this step has waited `for_` seconds."""
-		task = self.flags.current_pipeline_task
-		started = frappe.db.get_value("Pipeline Task", task, "creation") if task else self.creation
-		if time_diff_in_seconds(now_datetime(), started) > for_:
+		if time_diff_in_seconds(now_datetime(), self.step_started) > for_:
 			frappe.throw(message, DeployTimeoutError)
 		self.defer_current_task(message)
 

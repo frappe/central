@@ -2,6 +2,7 @@ import json
 
 import frappe
 from frappe import _
+from frappe.utils import now_datetime
 
 from central.deploy.doctype.deploy_app.deploy_app import DeployApp
 from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
@@ -77,8 +78,8 @@ def get_deploy_apps(push: dict) -> list[str]:
 
 # nosemgrep: guest-whitelisted-method -- the app's agent token authenticates the deploy agent.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def claim_build() -> dict | None:
-	"""The app's newest build no agent has taken yet, for the deploy agent on the app's VM."""
+def get_build() -> dict | None:
+	"""The app's newest build the agent hasn't reported on yet. Changes nothing; only report_build sets the build status."""
 	app = DeployApp.get_for_agent(frappe.get_request_header(AGENT_TOKEN_HEADER) or "")
 	name = frappe.db.get_value(
 		"Deploy Request",
@@ -88,17 +89,14 @@ def claim_build() -> dict | None:
 	if not name:
 		return None
 
-	request: DeployRequest = frappe.get_doc("Deploy Request", name, for_update=True)
-	request.build_status = "Running"
-	# The agent claims the team's build; no Desk user owns it.
-	request.save(ignore_permissions=True)
+	request: DeployRequest = frappe.get_doc("Deploy Request", name)
 	return request.get_build_payload()
 
 
 # nosemgrep: guest-whitelisted-method -- the app's agent token authenticates the deploy agent.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def report_build(deploy_request: str, status: str, log: str = "") -> dict:
-	"""Save what the agent says about a build it claimed. `cancel` tells it a newer push replaced the build."""
+	"""Save what the agent says about a build it got from get_build. `cancel` tells it a newer push replaced the build."""
 	app = DeployApp.get_for_agent(frappe.get_request_header(AGENT_TOKEN_HEADER) or "")
 	if status not in BUILD_REPORT_STATES:
 		frappe.throw(_("Unknown build status {0}.").format(status))
@@ -110,6 +108,7 @@ def report_build(deploy_request: str, status: str, log: str = "") -> dict:
 		return {"cancel": True}
 
 	request.build_status = status
+	request.build_reported_at = now_datetime()
 	request.build_log = log[-BUILD_LOG_CHARACTERS:]
 	# The agent reports on the team's build; no Desk user owns it.
 	request.save(ignore_permissions=True)
