@@ -36,6 +36,8 @@ _DAY_FIELDS = (
 	"written_off",
 )
 _INSERT_FIELDS = (*_META_FIELDS, *_DAY_FIELDS, "landed_at", "estimated")
+# A new day without a bundle stores none.
+_INSERT_DEFAULTS = {"included": 0.0}
 
 
 @dataclass
@@ -80,7 +82,9 @@ def _is_higher(row: dict, current) -> bool:
 
 def _is_rebundled(row: dict, current) -> bool:
 	"""Whether a reading no older than the day's last one says the plan's bundle changed, as a resize does."""
-	if frappe.utils.flt(row.get("included")) == frappe.utils.flt(current.get("included")):
+	if "included" not in row:
+		return False
+	if frappe.utils.flt(row["included"]) == frappe.utils.flt(current.get("included")):
 		return False
 	return _is_as_new(row, current)
 
@@ -112,10 +116,12 @@ def _merged(rows: list[dict]) -> list[dict]:
 			**row,
 			"dimension": row.get("dimension") or "",
 			"quantity": frappe.utils.flt(row.get("quantity")),
-			"included": frappe.utils.flt(row.get("included")),
 			"source_amount": frappe.utils.flt(row.get("source_amount")),
 			"written_off": _is_before_billing(row, bill_from.get(row["service"])),
 		}
+		if "included" in row:
+			# Only a line that carries a bundle may change a stored day's one; absent is not 0.
+			row["included"] = frappe.utils.flt(row["included"])
 		key = _key(row)
 		if key not in kept or is_newer(kept[key], row):
 			kept[key] = row
@@ -267,7 +273,7 @@ def _insert(rows: list[dict], now) -> list[dict]:
 			now,
 			user,
 			user,
-			*(row.get(field) for field in _DAY_FIELDS),
+			*(row.get(field, _INSERT_DEFAULTS.get(field)) for field in _DAY_FIELDS),
 			now,
 			frappe.utils.cint(row.get("estimated")),
 		)
@@ -285,9 +291,11 @@ def _update(name: str, row: dict, now) -> None:
 	day = frappe.qb.DocType(DOCTYPE)
 	# An older reading may still raise the peak, but never brings back the bundle it was read with.
 	as_new = (day.estimated == 1) | day.as_of.isnull() | (day.as_of <= row["as_of"])
+	# A line without a bundle compares and writes the stored one, so it never changes it.
+	included = row.get("included", day.included)
 	if row["aggregation"] == LEVEL:
 		raises = (day.estimated == 1) | (day.quantity < row["quantity"])
-		newer_than_stored = raises | ((day.included != row["included"]) & as_new)
+		newer_than_stored = raises | ((day.included != included) & as_new)
 	else:
 		raises = newer_than_stored = (day.estimated == 1) | (day.as_of < row["as_of"])
 	(
@@ -295,7 +303,7 @@ def _update(name: str, row: dict, now) -> None:
 		# MariaDB assigns left to right, so the columns the CASEs read are set after them.
 		.set(day.source_amount, Case().when(raises, row.get("source_amount")).else_(day.source_amount))
 		.set(day.quantity, Case().when(raises, row["quantity"]).else_(day.quantity))
-		.set(day.included, Case().when(as_new, row["included"]).else_(day.included))
+		.set(day.included, Case().when(as_new, included).else_(day.included))
 		.set(day.as_of, Case().when(as_new, row.get("as_of")).else_(day.as_of))
 		.set(day.estimated, 0)
 		.set(day.landed_at, now)
