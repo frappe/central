@@ -233,7 +233,7 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 		existing = frappe.db.get_value(
 			"Usage Rollup",
 			{"idempotency_key": key},
-			["name", "quantity", "sequence", "superseded_by", "rate_date"],
+			["name", "quantity", "sequence", "superseded_by", "rate_date", "idempotency_key"],
 			as_dict=True,
 			for_update=True,
 		)
@@ -245,13 +245,14 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 				existing = frappe.db.get_value(
 					"Usage Rollup",
 					head,
-					["name", "quantity", "sequence", "rate_date"],
+					["name", "quantity", "sequence", "rate_date", "idempotency_key"],
 					as_dict=True,
 					for_update=True,
 				)
 			apply_report(existing, mode, qty, seq, refuse_lower)
 			rerate(existing, meter.get("locked_terms"))
-			recount_allowance(existing, meter)
+			# An operator's corrected allowance outranks the recount's.
+			recount_allowance(existing, meter, is_corrected=_version_of(existing.idempotency_key) > 0)
 			return key
 
 		terms = _resolve_terms(meter)

@@ -8,7 +8,7 @@ import frappe
 
 from central.billing.api.dashboard._shared import _describe_line, _qty
 from central.billing.platform import invariants, readiness
-from central.billing.revenue import storage_bridge, usage_ledger, usage_recount
+from central.billing.revenue import metering, storage_bridge, usage_ledger, usage_recount
 from central.billing.revenue.bundled_buckets import bundled_buckets
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.tests.utils import (
@@ -85,6 +85,17 @@ class TestBundledBuckets(IntegrationTestCase):
 	def test_the_bucket_is_named_as_pilot_names_it(self):
 		self.assertEqual(list(bundled_buckets()), [self.bucket])
 		self.assertEqual(bundled_buckets()[self.bucket].included, 40)
+
+	def test_a_recount_keeps_an_operators_corrected_allowance(self):
+		self.read("2026-06-01", 100)
+		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
+		[rollup] = frappe.get_all("Usage Rollup", filters={"resource_id": SERVER}, pluck="name")
+		head = metering.override_terms(rollup, allowance=5, reason="test")
+		self.read("2026-06-02", 130)
+		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
+		quantity, allowance = frappe.db.get_value("Usage Rollup", head, ["quantity", "locked_allowance"])
+		self.assertAlmostEqual(allowance, 5)
+		self.assertAlmostEqual(quantity, 230 / 30)  # two days held, 100 then 130 GB
 
 	def test_a_day_keeps_what_was_held_and_what_the_plan_included(self):
 		self.read("2026-06-01", 30)

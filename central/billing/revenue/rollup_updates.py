@@ -34,7 +34,7 @@ def rerate(existing, terms) -> None:
 	)
 
 
-def recount_allowance(existing, meter: dict) -> None:
+def recount_allowance(existing, meter: dict, is_corrected: bool = False) -> None:
 	"""Keep the bundle a recount counted from the month's days, which change until it is billed."""
-	if "counted_allowance" in meter:
+	if "counted_allowance" in meter and not is_corrected:
 		frappe.db.set_value("Usage Rollup", existing.name, "locked_allowance", meter["counted_allowance"])
