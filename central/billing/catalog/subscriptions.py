@@ -947,6 +947,7 @@ def _latest_segment_by_subscription(subscription_names: list[str], for_update: b
 	query = (
 		frappe.qb.from_(change)
 		.select(change.subscription, change.change_type, change.locked_rate, change.currency)
+		.select(change.new_value)
 		.where(change.subscription.isin(subscription_names))
 		.where(change.change_type.isin(list(SEGMENT_CHANGE_TYPES)))
 		.orderby(change.effective_at, order=Order.desc)
@@ -984,7 +985,8 @@ def active_segments(filters: dict | None = None, at=None) -> list:
 
 	`filters` narrows the underlying Subscriptions (e.g. `{"team": t}` or
 	`{"plan": p}`). Each row is a `frappe._dict`: subscription, team, plan,
-	pricing_mode, server_id, resource_id, cluster, currency, locked_rate."""
+	pricing_mode, server_id, resource_id, cluster, currency, locked_rate. With `at`, the
+	segments open just before it, each on the plan it ran then."""
 	subs = frappe.get_all(
 		"Subscription",
 		filters=filters or {},
@@ -993,6 +995,7 @@ def active_segments(filters: dict | None = None, at=None) -> list:
 	if not subs:
 		return []
 	latest = _latest_segment_by_subscription([s.name for s in subs], at=at)
+	plans = _plans_in_force(latest, at)
 	clusters = _server_clusters([s.server_id for s in subs])
 	out = []
 	for s in subs:
@@ -1008,7 +1011,7 @@ def active_segments(filters: dict | None = None, at=None) -> list:
 				{
 					"subscription": s.name,
 					"team": s.team,
-					"plan": s.plan,
+					"plan": plans.get(s.name, s.plan),
 					"pricing_mode": s.pricing_mode,
 					"server_id": s.server_id,
 					"service_subject": s.service_subject,
@@ -1020,6 +1023,20 @@ def active_segments(filters: dict | None = None, at=None) -> list:
 			)
 		)
 	return out
+
+
+def _plans_in_force(latest: dict, at) -> dict:
+	"""The plan each segment open at `at` was on, None for a composed one; empty for now."""
+	if at is None:
+		return {}
+	# A rated change names its plan, and a resume the plan it resumed.
+	labels = {seg.new_value for seg in latest.values() if seg.new_value}
+	plans = set(frappe.get_all("Plan", filters={"name": ["in", list(labels)]}, pluck="name"))
+	return {
+		name: seg.new_value if seg.new_value in plans else None
+		for name, seg in latest.items()
+		if seg.new_value
+	}
 
 
 def uncancelled_subscriptions(filters: dict) -> list[str]:

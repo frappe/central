@@ -204,6 +204,48 @@ class TestBundledBuckets(IntegrationTestCase):
 		usage_ledger.fill_missing_days("2026-06-18")
 		self.assertEqual(len(self.days()), 9)
 
+	def estimated_bundles(self) -> list[float]:
+		return frappe.get_all(
+			"Usage Day", filters={"subject": self.bucket, "estimated": 1}, pluck="included", order_by="day"
+		)
+
+	def test_an_estimated_day_carries_the_bundle_of_its_own_day(self):
+		self.read("2026-06-01", 100)
+		self.resize(200, "2026-06-02 12:00:00")
+		usage_ledger.fill_missing_days("2026-06-05")
+		self.assertEqual(self.estimated_bundles(), [200])
+
+	def test_an_estimated_day_takes_the_plan_it_was_on_not_todays(self):
+		self.read("2026-06-01", 100)
+		self.resize(200, "2026-06-10 12:00:00")
+		usage_ledger.fill_missing_days("2026-06-05")
+		self.assertEqual(self.estimated_bundles(), [40])
+
+	def test_a_server_resized_off_storage_is_still_estimated_for_its_storage_days(self):
+		self.read("2026-06-01", 100)
+		plan = make_plan(f"{VM_PLAN}-no-storage", includes=DEFAULT_INCLUDES)
+		frappe.db.set_value("Subscription", self.subscription, "plan", plan)
+		add_segment(self.subscription, "Plan Changed", 1000, "2026-06-10 12:00:00", plan=plan)
+		usage_ledger.fill_missing_days("2026-06-05")
+		self.assertEqual(self.days(), [100, 100])
+
+	def test_a_server_paused_partway_through_a_day_is_estimated_for_it(self):
+		self.read("2026-06-01", 100)
+		add_segment(self.subscription, "Paused", 0, "2026-06-02 12:00:00", plan=VM_PLAN)
+		usage_ledger.fill_missing_days("2026-06-05")
+		self.assertEqual(self.days(), [100, 100])
+
+	def test_an_older_reading_does_not_bring_back_an_older_bundle(self):
+		self.read("2026-06-01", 100)
+		[stored] = frappe.get_all(
+			"Usage Day", filters={"subject": self.bucket}, fields=list(usage_ledger._DAY_FIELDS)
+		)
+		earlier = frappe.utils.add_to_date(stored.as_of, hours=-1)
+		for quantity in (120, 50):
+			usage_ledger.write_days([{**stored, "quantity": quantity, "included": 10, "as_of": earlier}])
+		[day] = frappe.get_all("Usage Day", filters={"subject": self.bucket}, fields=["quantity", "included"])
+		self.assertEqual((day.quantity, day.included), (120, 40))  # the peak rises, the bundle stays
+
 	def flagged(self, today: str) -> list:
 		frappe.db.set_value("Virtual Machine", SERVER, "creation", "2026-06-01", update_modified=False)
 		with patch.object(usage_ledger, "utc_today", return_value=frappe.utils.getdate(today)):
@@ -216,6 +258,10 @@ class TestBundledBuckets(IntegrationTestCase):
 		add_segment(self.subscription, "Paused", 0, "2026-06-04 00:00:00", plan=VM_PLAN)
 		add_segment(self.subscription, "Resumed", 1000, "2026-06-05 12:00:00", plan=VM_PLAN)
 		self.assertNotIn(self.subscription, self.flagged("2026-06-05"))
+
+	def test_a_server_paused_partway_through_yesterday_is_flagged(self):
+		add_segment(self.subscription, "Paused", 0, "2026-06-04 12:00:00", plan=VM_PLAN)
+		self.assertIn(self.subscription, self.flagged("2026-06-05"))
 
 
 class TestBundleCount(IntegrationTestCase):
@@ -235,8 +281,6 @@ class TestBundleCount(IntegrationTestCase):
 		# The 2nd day's unused address does not cover the 1st day's two extra ones.
 		self.assertAlmostEqual(usage_recount._billable(days, 3 / 30), 2 / 30)
 
-
-class TestStoragePrice(IntegrationTestCase):
 	def setUp(self):
 		self.plan = frappe.db.get_value(
 			"Plan", {"title": "Object Storage Plan", "category": "Remote Storage", "is_active": 1}, "name"
