@@ -170,14 +170,9 @@ def _estimate_day(day: datetime.date) -> int:
 
 def _live_subjects(services: set) -> set:
 	"""(service, subject) of every service a team still has, suspended ones included."""
-	from central.billing.revenue.bundled_buckets import billed_storage_subjects
-	from central.services.doctype.service.service import STORAGE_SERVICE
-	from central.services.doctype.team_service.team_service import billed_subjects
+	from central.billing.revenue.bundled_buckets import billed_subjects_of
 
-	def subjects(service: str) -> dict:
-		return billed_storage_subjects() if service == STORAGE_SERVICE else billed_subjects(service)
-
-	return {(service, subject) for service in services for subject in subjects(service)}
+	return {(service, subject) for service in services for subject in billed_subjects_of(service)}
 
 
 def _key(row) -> tuple:

@@ -27,6 +27,13 @@ def billed_storage_subjects() -> dict[str, frappe._dict]:
 	return {**billed_subjects(STORAGE_SERVICE), **bundled_buckets()}
 
 
+def billed_subjects_of(service: str) -> dict[str, frappe._dict]:
+	"""Every subject a service bills, a storage service's backup buckets too."""
+	if service == STORAGE_SERVICE:
+		return billed_storage_subjects()
+	return billed_subjects(service)
+
+
 def _all_bundled_buckets() -> dict[str, frappe._dict]:
 	included = included_by_plan("Storage")
 	if not included:
