@@ -148,7 +148,7 @@ def _meter(subscription: str, resource_type: str, dimension: str = ""):
 		"Service Meter", {"parent": meter.service, "meter_key": meter.meter}, "cost_currency"
 	)
 	owner = frappe.db.get_value(
-		"Subscription", subscription, ["team", "cluster", "service_subject"], as_dict=True
+		"Subscription", subscription, ["team", "cluster", "service_subject", "server_id"], as_dict=True
 	)
 	return frappe._dict(
 		meter,
@@ -156,7 +156,8 @@ def _meter(subscription: str, resource_type: str, dimension: str = ""):
 		resource_type=resource_type,
 		team=owner.team,
 		cluster=owner.cluster,
-		subject=owner.service_subject,
+		# A server's backup bucket bills on the server's own subscription.
+		subject=owner.service_subject or owner.server_id,
 		dimension=dimension,
 		cost_currency=cost_currency,
 	)
@@ -170,6 +171,7 @@ def _write_month(meter, month: datetime.date, closed: set, final: bool) -> Month
 	quantity = sum(_weight(day) for day in days)
 	key = ingest_rollup(
 		{
+			**_bundle(days, quantity),
 			"idempotency_key": rollup_key(meter.service, meter.subject, month, meter.dimension),
 			"resource_id": meter.subject,
 			"resource_type": meter.resource_type,
@@ -196,7 +198,7 @@ def _unbilled_days(meter, month: datetime.date) -> list:
 	day = frappe.qb.DocType(DOCTYPE)
 	return (
 		frappe.qb.from_(day)
-		.select(day.name, day.day, day.quantity, day.aggregation)
+		.select(day.name, day.day, day.quantity, day.included, day.aggregation)
 		.where(
 			(day.subscription == meter.subscription)
 			& (day.resource_type == meter.resource_type)
@@ -304,8 +306,33 @@ def _weight(day) -> float:
 	quantity = frappe.utils.flt(day.quantity)
 	if day.aggregation != LEVEL:
 		return quantity
-	on = frappe.utils.getdate(day.day)
-	return quantity / calendar.monthrange(on.year, on.month)[1]
+	return quantity / _days_in_month(day.day)
+
+
+def _bundle(days: list, quantity: float) -> dict:
+	"""The month's bundle as the rollup's allowance, when any day had one."""
+	if not any(frappe.utils.flt(day.included) for day in days):
+		return {}
+	# Rewritten with each recount, as the month's days and their bundles change.
+	return {"counted_allowance": quantity - _billable(days, quantity)}
+
+
+def _billable(days: list, quantity: float) -> float:
+	"""The month's quantity above the bundle: each Level day above its own, a Sum month above its share."""
+	if all(day.aggregation == LEVEL for day in days):
+		return sum(
+			max(0.0, frappe.utils.flt(day.quantity) - frappe.utils.flt(day.included))
+			/ _days_in_month(day.day)
+			for day in days
+		)
+	# A Sum meter writes a day for each day its plan ran, so the bundle scales with those days.
+	share = sum(frappe.utils.flt(day.included) / _days_in_month(day.day) for day in days)
+	return max(0.0, quantity - share)
+
+
+def _days_in_month(on) -> int:
+	on = frappe.utils.getdate(on)
+	return calendar.monthrange(on.year, on.month)[1]
 
 
 def _month_end(month: datetime.date) -> datetime.date:
