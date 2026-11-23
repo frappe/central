@@ -3,14 +3,14 @@
 """A server's backup bucket bills each past day on the bundle that day was on."""
 
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 
-from central.billing.revenue import usage_ledger, usage_recount
+from central.billing.revenue import storage_bridge, usage_ledger, usage_recount
 from central.billing.tests import test_bundled_buckets as base
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import add_segment, make_metered_plan
+from central.billing.tests.utils import add_segment, make_metered_plan, make_plan
 
 PAUSED_AT = "2026-06-02 12:00:00"
 
@@ -21,6 +21,40 @@ class TestBundledBucketHistory(IntegrationTestCase):
 	read = base.TestBundledBuckets.read
 	estimated_bundles = base.TestBundledBuckets.estimated_bundles
 	transfer_day = base.TestBundledBuckets.transfer_day
+
+	def read_page(self, day: str, gb: float) -> None:
+		"""Run a page queued for `day`, after whatever changed since."""
+		client = MagicMock()
+		client.get_usage.return_value = {"usage": {"used_bytes": gb * base.GB}}
+		with patch.object(storage_bridge.ObjectStorageClient, "from_region", return_value=client):
+			storage_bridge.RegionRead("test-run", base.CLUSTER).start(1)
+			storage_bridge.read_bundled_page("test-run", base.CLUSTER, [self.bucket], day=day)
+
+	def stored_days(self) -> list:
+		return frappe.get_all(
+			"Usage Day",
+			filters={"subject": self.bucket},
+			fields=["day", "quantity", "included"],
+			order_by="day asc",
+		)
+
+	def test_a_page_queued_before_a_pause_still_reads_its_day(self):
+		add_segment(self.subscription, "Paused", 0, PAUSED_AT, plan=base.VM_PLAN)
+		self.read_page("2026-06-02", 100)
+		[day] = self.stored_days()
+		self.assertEqual((str(day.day), day.quantity, day.included), ("2026-06-02", 100, 40))
+
+	def test_a_page_for_a_day_after_the_pause_reads_nothing(self):
+		add_segment(self.subscription, "Paused", 0, PAUSED_AT, plan=base.VM_PLAN)
+		self.read_page("2026-06-03", 100)
+		self.assertEqual(self.stored_days(), [])
+
+	def test_only_a_servers_bucket_pages_carry_their_day(self):
+		jobs = {"read_page": {base.CLUSTER: [["team-bucket"]]}, "read_bundled_page": {base.CLUSTER: [["vm"]]}}
+		with patch.object(frappe, "enqueue") as enqueue:
+			storage_bridge._enqueue_pages("run", jobs, frappe.utils.getdate("2026-06-02"))
+		days = {call.args[0].rsplit(".", 1)[1]: call.kwargs.get("day") for call in enqueue.call_args_list}
+		self.assertEqual(days, {"read_page": None, "read_bundled_page": "2026-06-02"})
 
 	def compose(self, storage_gb: float, on: str) -> None:
 		"""Resize the server onto a composed shape holding `storage_gb` of storage from `on`."""

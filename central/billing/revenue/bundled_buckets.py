@@ -22,9 +22,9 @@ from central.services.doctype.service.service import STORAGE_SERVICE
 from central.services.doctype.team_service.team_service import billed_subjects, bucket_name_for
 
 
-def bundled_buckets(names: list[str] | None = None) -> dict[str, frappe._dict]:
-	"""The backup bucket of every server billing now whose plan includes storage."""
-	buckets = _all_bundled_buckets()
+def bundled_buckets(names: list[str] | None = None, day=None) -> dict[str, frappe._dict]:
+	"""The backup bucket of every server billing now, or on `day`, whose plan includes storage."""
+	buckets = _bundled_buckets_on(day)
 	if names is None:
 		return buckets
 	return {name: buckets[name] for name in names if name in buckets}
