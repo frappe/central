@@ -246,6 +246,16 @@ class TestBundledBuckets(IntegrationTestCase):
 		[day] = frappe.get_all("Usage Day", filters={"subject": self.bucket}, fields=["quantity", "included"])
 		self.assertEqual((day.quantity, day.included), (120, 40))  # the peak rises, the bundle stays
 
+	def test_a_bundle_corrected_to_nothing_is_cleared_on_recount(self):
+		self.read("2026-06-01", 100)
+		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
+		frappe.db.set_value("Usage Day", {"subject": self.bucket}, "included", 0)
+		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
+		[allowance] = frappe.get_all(
+			"Usage Rollup", filters={"resource_id": SERVER}, pluck="locked_allowance"
+		)
+		self.assertEqual(allowance, 0)
+
 	def flagged(self, today: str) -> list:
 		frappe.db.set_value("Virtual Machine", SERVER, "creation", "2026-06-01", update_modified=False)
 		with patch.object(usage_ledger, "utc_today", return_value=frappe.utils.getdate(today)):
@@ -281,6 +291,15 @@ class TestBundleCount(IntegrationTestCase):
 		# The 2nd day's unused address does not cover the 1st day's two extra ones.
 		self.assertAlmostEqual(usage_recount._billable(days, 3 / 30), 2 / 30)
 
+	def test_only_a_servers_month_counts_its_bundle(self):
+		days = [self.day("2026-06-01", 3, 0, "Level")]
+		self.assertEqual(usage_recount._bundle(frappe._dict(on_server=False), days, 0.1), {})
+		self.assertEqual(
+			usage_recount._bundle(frappe._dict(on_server=True), days, 0.1), {"counted_allowance": 0}
+		)
+
+
+class TestStoragePrice(IntegrationTestCase):
 	def setUp(self):
 		self.plan = frappe.db.get_value(
 			"Plan", {"title": "Object Storage Plan", "category": "Remote Storage", "is_active": 1}, "name"

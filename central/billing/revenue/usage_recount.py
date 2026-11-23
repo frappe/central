@@ -158,6 +158,7 @@ def _meter(subscription: str, resource_type: str, dimension: str = ""):
 		cluster=owner.cluster,
 		# A server's backup bucket bills on the server's own subscription.
 		subject=owner.service_subject or owner.server_id,
+		on_server=not owner.service_subject and bool(owner.server_id),
 		dimension=dimension,
 		cost_currency=cost_currency,
 	)
@@ -171,7 +172,7 @@ def _write_month(meter, month: datetime.date, closed: set, final: bool) -> Month
 	quantity = sum(_weight(day) for day in days)
 	key = ingest_rollup(
 		{
-			**_bundle(days, quantity),
+			**_bundle(meter, days, quantity),
 			"idempotency_key": rollup_key(meter.service, meter.subject, month, meter.dimension),
 			"resource_id": meter.subject,
 			"resource_type": meter.resource_type,
@@ -309,11 +310,11 @@ def _weight(day) -> float:
 	return quantity / _days_in_month(day.day)
 
 
-def _bundle(days: list, quantity: float) -> dict:
-	"""The month's bundle as the rollup's allowance, when any day had one."""
-	if not any(frappe.utils.flt(day.included) for day in days):
+def _bundle(meter, days: list, quantity: float) -> dict:
+	"""A server's month's bundle as the rollup's allowance; a team's keeps what its terms set."""
+	if not meter.on_server:
 		return {}
-	# Rewritten with each recount, as the month's days and their bundles change.
+	# Rewritten with each recount, as the month's days and their bundles change, down to none.
 	return {"counted_allowance": quantity - _billable(days, quantity)}
 
 
