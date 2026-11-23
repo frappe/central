@@ -21,7 +21,7 @@ def read_storage_usage() -> int:
 		return 0
 	run = frappe.generate_hash(length=12)
 	# Team buckets and servers' backup buckets are read by their own page jobs.
-	jobs = {"read_page": _pages(billed_buckets()), "read_bundled_page": _pages(bundled_buckets_by_region())}
+	jobs = {"read_page": _pages(billed_buckets()), "read_bundled_page": _pages(_bundled_buckets_by_region())}
 	_start_regions(run, jobs)
 	return _enqueue_pages(run, jobs)
 
@@ -88,21 +88,20 @@ def _enqueue_pages(run: str, jobs: dict) -> int:
 
 	queued = 0
 	for method, pages in jobs.items():
-		for region, page in (
-			(region, page) for region, region_pages in pages.items() for page in region_pages
-		):
-			frappe.enqueue(
-				f"central.billing.revenue.storage_bridge.{method}",
-				queue=billing_queue(),
-				run=run,
-				region=region,
-				names=page,
-			)
-			queued += len(page)
+		for region, region_pages in pages.items():
+			for page in region_pages:
+				frappe.enqueue(
+					f"central.billing.revenue.storage_bridge.{method}",
+					queue=billing_queue(),
+					run=run,
+					region=region,
+					names=page,
+				)
+				queued += len(page)
 	return queued
 
 
-def bundled_buckets_by_region() -> dict[str, list[str]]:
+def _bundled_buckets_by_region() -> dict[str, list[str]]:
 	"""Every server's backup bucket that bills, by region."""
 	regions: dict[str, list[str]] = {}
 	for name, bucket in bundled_buckets().items():
