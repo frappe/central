@@ -114,7 +114,7 @@ def plan_includes_storage(plan: str | None) -> bool:
 
 
 def create_bundled_bucket(team: str, region: str, server: str) -> dict | None:
-	"""Create the server's uncapped backup bucket; billing reconciles its usage."""
+	"""Create the server's uncapped backup bucket; what it holds above the plan's storage is billed."""
 	endpoint_url = get_storage_endpoint_url(region)
 	client = ObjectStorageClient.from_region(region)
 	name = get_bucket_name(team, region, server)

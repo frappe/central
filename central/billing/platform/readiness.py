@@ -329,10 +329,10 @@ def check_terminated_servers_stop_billing() -> list[Violation]:
 
 
 def check_storage_usage_is_recorded() -> list[Violation]:
-	"""Every billed bucket that existed yesterday (UTC) has a Usage Day for it, so no day is left unbilled."""
+	"""Every billed bucket, a server's backup bucket too, that existed yesterday (UTC) has a Usage Day."""
+	from central.billing.revenue.bundled_buckets import billed_storage_subjects
 	from central.billing.revenue.usage_ledger import utc_today
 	from central.services.doctype.service.service import STORAGE_SERVICE
-	from central.services.doctype.team_service.team_service import billed_subjects
 
 	today = utc_today()
 	yesterday = today - datetime.timedelta(days=1)
@@ -351,7 +351,7 @@ def check_storage_usage_is_recorded() -> list[Violation]:
 			subject=bucket.subscription,
 			detail=f"Bucket {subject} has no usage for {yesterday} (UTC). The next reading or the daily estimate fills it.",
 		)
-		for subject, bucket in billed_subjects(STORAGE_SERVICE).items()
+		for subject, bucket in billed_storage_subjects().items()
 		if subject not in read and bucket.creation < cutoff
 	]
 
