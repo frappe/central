@@ -10,11 +10,33 @@ A meter records each day what was used and what the plan included that day. A he
 import frappe
 
 
-def included_by_plan(resource_type: str) -> dict[str, float]:
-	"""Each plan's included quantity of `resource_type`, for the plans that include any."""
+class Bundles:
+	"""The included quantity of one resource on billing segments, preset or composed."""
+
+	def __init__(self, resource_type: str, segments: list):
+		self.by_plan = _included(resource_type, "Plan", {s.plan for s in segments if s.plan})
+		# A composed segment names no plan; its subscription carries what it includes.
+		composed = {s.subscription for s in segments if not s.plan}
+		self.by_subscription = _included(resource_type, "Subscription", composed)
+
+	def of(self, segment) -> float:
+		"""What `segment` includes of the resource, 0 when nothing."""
+		if segment.plan:
+			return self.by_plan.get(segment.plan, 0)
+		return self.by_subscription.get(segment.subscription, 0)
+
+
+def _included(resource_type: str, parenttype: str, parents: set) -> dict[str, float]:
+	if not parents:
+		return {}
 	rows = frappe.get_all(
 		"Plan Includes",
-		filters={"parenttype": "Plan", "resource_type": resource_type, "quantity": [">", 0]},
+		filters={
+			"parenttype": parenttype,
+			"parent": ["in", list(parents)],
+			"resource_type": resource_type,
+			"quantity": [">", 0],
+		},
 		fields=["parent", "quantity"],
 	)
 	return {row.parent: frappe.utils.flt(row.quantity) for row in rows}
