@@ -2,46 +2,45 @@ import tomllib
 
 import frappe
 from frappe import _
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 CONFIG_FILE = "frappe_cloud_deploy.toml"
 # What `buildah build .` looks for at the root of the context, in order, when no `-f` is given.
 CONTAINERFILE_NAMES = ("Containerfile", "Dockerfile")
-# Inclusive bounds for each `[machine]` key, in Atlas units. Will make this configurabale in team later.
-MACHINE_LIMITS = {
-	"cpu_millicores": (100, 32000),
-	"memory_mib": (512, 128 * 1024),
-	"disk_mib": (10 * 1024, 1024 * 1024),
-}
-# The optimisation profile (Plan Sub-Category) the VM is billed under, like a custom-size server.
-MACHINE_PROFILE_KEY = "profile"
+# A build needs room, so a deploy VM starts at Growth unless the config names another size.
+DEFAULT_SIZE = "Growth"
 
 
-def get_machine_specs(config: str | None) -> dict[str, int]:
-	"""The `[machine]` keys of a `frappe_cloud_deploy.toml`: sizes checked against `MACHINE_LIMITS`, and the
-	profile name, which billing checks."""
+class MachineConfig(BaseModel):
+	"""`[machine]`: the server plan the VM runs and is billed at, by its title (Starter, Growth, Pro…)."""
+
+	model_config = ConfigDict(extra="forbid", strict=True)
+
+	size: str = DEFAULT_SIZE
+
+
+class DeployConfig(BaseModel):
+	"""A `frappe_cloud_deploy.toml`. Each table is added here when deploys start reading it."""
+
+	model_config = ConfigDict(extra="forbid", strict=True)
+
+	machine: MachineConfig = Field(default_factory=MachineConfig)
+
+
+def get_deploy_config(config: str | None) -> DeployConfig:
+	"""The commit's `frappe_cloud_deploy.toml`, or the defaults when it has none."""
 	if config is None:
-		return {}
+		return DeployConfig()
 	try:
-		machine = tomllib.loads(config).get("machine", {})
+		return DeployConfig.model_validate(tomllib.loads(config))
 	except tomllib.TOMLDecodeError as error:
 		frappe.throw(_("{0} is not valid TOML: {1}").format(CONFIG_FILE, str(error)))
-
-	if not isinstance(machine, dict):
-		frappe.throw(_("[machine] in {0} must be a table.").format(CONFIG_FILE))
-	profile = machine.pop(MACHINE_PROFILE_KEY, None)
-	if profile is not None and not isinstance(profile, str):
-		frappe.throw(
-			_("machine.{0} must be the name of an optimisation profile.").format(MACHINE_PROFILE_KEY)
+	except ValidationError as error:
+		problems = "; ".join(
+			f"{'.'.join(str(part) for part in problem['loc'])}: {problem['msg']}"
+			for problem in error.errors()
 		)
-	if unknown := set(machine) - set(MACHINE_LIMITS):
-		frappe.throw(_("Unknown keys in [machine]: {0}").format(", ".join(sorted(unknown))))
-	for key, value in machine.items():
-		low, high = MACHINE_LIMITS[key]
-		if type(value) is not int or not low <= value <= high:
-			frappe.throw(_("machine.{0} must be a whole number from {1} to {2}.").format(key, low, high))
-	if profile is not None:
-		machine[MACHINE_PROFILE_KEY] = profile
-	return machine
+		frappe.throw(_("{0} is not valid: {1}").format(CONFIG_FILE, problems))
 
 
 def find_containerfile(root: list[dict]) -> str:

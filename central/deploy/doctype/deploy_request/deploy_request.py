@@ -13,12 +13,14 @@ from frappe.utils import now_datetime, time_diff_in_seconds
 from redis.exceptions import LockError
 
 from central.deploy.billing import (
+	get_plan_specs,
+	get_size_plan,
 	open_vm_subscription,
-	update_vm_subscription,
+	update_vm_plan,
 	validate_vm_purchase,
 	validate_vm_resize,
 )
-from central.deploy.config import CONFIG_FILE, MACHINE_LIMITS, find_containerfile, get_machine_specs
+from central.deploy.config import CONFIG_FILE, find_containerfile, get_deploy_config
 from central.deploy.github import GitHubDeployApp
 from central.deploy.virtual_machine import DeployMachine
 from central.integrations import servers
@@ -40,6 +42,8 @@ VM_LOCK_SECONDS = 5 * 60
 BUILD_TIMEOUT_SECONDS = 60 * 60
 # The agent reports every 10 to 20 seconds; silence this long means its VM or the agent died.
 BUILD_REPORT_TIMEOUT_SECONDS = 5 * 60
+# The VM size in Atlas units, copied from the plan when the deploy reads the commit's config.
+SPEC_FIELDS = ("cpu_millicores", "memory_mib", "disk_mib")
 
 
 class DeploySupersededError(frappe.ValidationError):
@@ -75,7 +79,7 @@ class DeployRequest(PipelineBuilder):
 		disk_mib: DF.Int
 		error: DF.SmallText | None
 		memory_mib: DF.Int
-		profile: DF.Link
+		plan: DF.Link | None
 		status: DF.Literal[
 			"Queued",
 			"Validating",
@@ -145,19 +149,21 @@ class DeployRequest(PipelineBuilder):
 
 	@task
 	def check_machine_specs(self) -> None:
-		"""Take the VM size from `[machine]` in the commit's config; keys it leaves out keep the defaults."""
+		"""Take the VM's plan from `[machine] size` in the commit's config, Growth when it names none."""
 		self.set_status("Provisioning")
 		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
+		if not app.region:
+			frappe.throw(_("Choose a region for {0} first.").format(app.repository))
 		installation_id = frappe.db.get_value(
 			"GitHub Deploy App Installation", app.installation, "installation_id"
 		)
 		config = GitHubDeployApp().get_file(
 			installation_id, app.repository_id, app.repository, CONFIG_FILE, self.commit
 		)
-		if specs := get_machine_specs(config):
-			self.update(specs)
-			# Central records the size the team's commit asks for; no Desk user owns the deploy.
-			self.save(ignore_permissions=True)
+		self.plan = get_size_plan(app.team, app.region, get_deploy_config(config).machine.size)
+		self.update(get_plan_specs(self.plan))
+		# Central records the size the team's commit asks for; no Desk user owns the deploy.
+		self.save(ignore_permissions=True)
 
 	@task
 	def get_virtual_machine(self) -> dict:
@@ -182,7 +188,7 @@ class DeployRequest(PipelineBuilder):
 		state, current = vm.get("current_state"), machine.get_specs(vm)
 
 		if current == self.specs:
-			update_vm_subscription(name, self.specs, self.profile)
+			update_vm_plan(name, self.plan)
 			if state == "stopped":
 				machine.start(atlas_vm_id)
 			elif state == "migrating":
@@ -195,7 +201,7 @@ class DeployRequest(PipelineBuilder):
 			)
 		if state == "running":
 			# Billing refuses the new size before the live app goes down for it.
-			validate_vm_resize(name, self.specs, self.profile)
+			validate_vm_resize(name, self.plan)
 			machine.stop(atlas_vm_id)
 		elif state == "stopped":
 			machine.resize(atlas_vm_id, self.specs)
@@ -233,7 +239,7 @@ class DeployRequest(PipelineBuilder):
 
 	@property
 	def specs(self) -> dict[str, int]:
-		return {key: self.get(key) for key in MACHINE_LIMITS}
+		return {key: self.get(key) for key in SPEC_FIELDS}
 
 	def find_or_create_virtual_machine(self) -> dict:
 		"""Link the app's VM: the one Atlas already has for it, or a new one at this deploy's specs.
@@ -259,11 +265,11 @@ class DeployRequest(PipelineBuilder):
 			image_id = machine.get_newest_image_id()
 			if not image_id:
 				frappe.throw(_("Region {0} has no deploy image yet.").format(app.region))
-			rate = validate_vm_purchase(app.team, app.region, self.specs, self.profile)
+			rate = validate_vm_purchase(app.team, app.region, self.plan)
 			atlas_vm_id = machine.create(image_id, self.specs)
 
 		server = self.record_virtual_machine(app, atlas_vm_id, image_id)
-		open_vm_subscription(server.name, app.team, app.region, self.specs, self.profile, rate)
+		open_vm_subscription(server.name, app.team, app.region, self.plan, rate)
 		app.virtual_machine = server.name
 		# Central links the server it created for the team's app; no Desk user owns it.
 		app.save(ignore_permissions=True)
@@ -287,6 +293,7 @@ class DeployRequest(PipelineBuilder):
 				"status": "Provisioning",
 				"atlas_vm_id": atlas_vm_id,
 				"atlas_image_id": image_id,
+				"plan": self.plan,
 				"vcpus": millicores_to_vcpus(self.cpu_millicores),
 				"memory_megabytes": self.memory_mib,
 				"disk_gigabytes": mebibytes_to_gigabytes(self.disk_mib),

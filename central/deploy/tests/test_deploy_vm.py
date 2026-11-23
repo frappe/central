@@ -9,6 +9,7 @@ from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
 from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
 	make_installation,
 )
+from central.deploy.tests.test_deploy_billing import make_size
 from central.deploy.virtual_machine import AtlasError, DeployMachine
 from central.infrastructure.doctype.github_connection.test_github_connection import make_team
 from central.tests.test_iam import ensure_user
@@ -43,6 +44,7 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		).insert()
 		with patch.object(DeployRequest, "after_insert"):
 			self.request = DeployRequest.queue(self.app.name, "a" * 40)
+		self.request.plan = make_size("Growth", 2, 8, 100)
 
 		self.atlas_vm_id = f"atlas-vm-{frappe.generate_hash(length=8)}"
 		self.machine = MagicMock(get_specs=DeployMachine.get_specs)
@@ -54,7 +56,7 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		self.validate_purchase = patch(f"{MODULE}.validate_vm_purchase", return_value=12.5).start()
 		self.open_subscription = patch(f"{MODULE}.open_vm_subscription").start()
 		self.validate_resize = patch(f"{MODULE}.validate_vm_resize").start()
-		self.update_subscription = patch(f"{MODULE}.update_vm_subscription").start()
+		self.update_plan = patch(f"{MODULE}.update_vm_plan").start()
 		self.addCleanup(patch.stopall)
 
 	def test_the_first_deploy_creates_a_vm_at_its_size(self):
@@ -68,10 +70,10 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		server = frappe.get_doc("Virtual Machine", machine["name"])
 		self.assertEqual((server.atlas_vm_id, server.vcpus), (self.atlas_vm_id, 4))
 		self.assertEqual(frappe.db.get_value("Deploy App", self.app.name, "virtual_machine"), server.name)
-		specs = {"cpu_millicores": 4000, "memory_mib": 8192, "disk_mib": 20480}
-		self.validate_purchase.assert_called_once_with(self.app.team, self.app.region, specs, "General")
+		self.assertEqual(server.plan, self.request.plan)
+		self.validate_purchase.assert_called_once_with(self.app.team, self.app.region, self.request.plan)
 		self.open_subscription.assert_called_once_with(
-			server.name, self.app.team, self.app.region, specs, "General", 12.5
+			server.name, self.app.team, self.app.region, self.request.plan, 12.5
 		)
 
 	def test_a_purchase_billing_refuses_creates_no_vm(self):
@@ -117,7 +119,7 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		self.machine.stop.assert_not_called()
 		self.machine.resize.assert_not_called()
 		self.wait.assert_not_called()
-		self.update_subscription.assert_called_once()
+		self.update_plan.assert_called_once_with(name, self.request.plan)
 
 	def test_a_new_size_stops_then_resizes_then_starts_the_vm(self):
 		name = self.request.get_virtual_machine()["name"]
@@ -125,9 +127,9 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 
 		self.machine.get.return_value = make_vm("running")
 		self.request.resize_virtual_machine(name)
-		self.validate_resize.assert_called_once_with(name, self.request.specs, "General")
+		self.validate_resize.assert_called_once_with(name, self.request.plan)
 		self.machine.stop.assert_called_once_with(self.atlas_vm_id)
-		self.update_subscription.assert_not_called()
+		self.update_plan.assert_not_called()
 
 		self.machine.get.return_value = make_vm("stopped")
 		self.request.resize_virtual_machine(name)
@@ -143,7 +145,7 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		self.machine.get.return_value = make_vm("stopped", cpu=4000, memory=8192)
 		self.request.resize_virtual_machine(name)
 		self.machine.start.assert_called_once_with(self.atlas_vm_id)
-		self.update_subscription.assert_called_with(name, self.request.specs, "General")
+		self.update_plan.assert_called_with(name, self.request.plan)
 
 	def test_a_size_billing_refuses_keeps_the_vm_running(self):
 		name = self.request.get_virtual_machine()["name"]

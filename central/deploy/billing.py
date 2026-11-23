@@ -1,34 +1,49 @@
 import frappe
+from frappe import _
 
-from central.billing.catalog.composition import COMPUTE, DISK, MEMORY, validate_composition
+from central.billing.catalog.server_plans import get_server_plans
 from central.billing.catalog.subscriptions import (
 	_plan_resize,
+	_require_offered_plan,
 	create_subscription,
-	resize_composed_subscription,
+	get_plan_shape,
+	resize_to_plan,
 )
 from central.billing.doctype.billing_profile.billing_profile import get_team_currency
 from central.resource_actions import validate_purchase
-from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
+from central.utils.units import gigabytes_to_mebibytes, vcpus_to_millicores
 
 
-def get_composition(specs: dict[str, int]) -> list[dict]:
-	"""A deploy VM's shape as the composition a custom-size server is billed by."""
-	return [
-		{"resource_type": COMPUTE, "quantity": millicores_to_vcpus(specs["cpu_millicores"])},
-		{"resource_type": MEMORY, "quantity": mebibytes_to_gigabytes(specs["memory_mib"])},
-		{"resource_type": DISK, "quantity": mebibytes_to_gigabytes(specs["disk_mib"])},
-	]
+def get_size_plan(team: str, region: str, size: str) -> str:
+	"""The server plan titled `size` that the team may buy in the region, as the server plan list offers it."""
+	catalog = get_server_plans(team, cluster=region)
+	plans = [row["plan"] for rows in catalog["plans"].values() for row in rows if row["title"] == size]
+	if len(plans) > 1:
+		frappe.throw(_("More than one plan is titled {0}. An operator must rename one.").format(size))
+	if not plans:
+		titles = sorted({row["title"] for rows in catalog["plans"].values() for row in rows})
+		frappe.throw(
+			_("Size {0} is not available in {1}. Choose one of: {2}.").format(size, region, ", ".join(titles))
+		)
+	return plans[0]
 
 
-def validate_vm_purchase(team: str, region: str, specs: dict[str, int], profile: str) -> float:
-	"""Run the checks a new custom-size server passes, and return its monthly rate."""
-	_composition, rate = validate_purchase(team, region, None, get_composition(specs), profile)
-	return rate
+def get_plan_specs(plan: str) -> dict[str, int]:
+	"""The plan's size in Atlas units."""
+	shape = get_plan_shape(plan)
+	return {
+		"cpu_millicores": vcpus_to_millicores(shape["vcpus"]),
+		"memory_mib": shape["memory_megabytes"],
+		"disk_mib": gigabytes_to_mebibytes(shape["disk_gigabytes"]),
+	}
 
 
-def open_vm_subscription(
-	server: str, team: str, region: str, specs: dict[str, int], profile: str, rate: float | None
-) -> None:
+def validate_vm_purchase(team: str, region: str, plan: str) -> float:
+	"""Run the checks a new server on `plan` passes, and return its monthly rate."""
+	return validate_purchase(team, region, plan, None, None)[1]
+
+
+def open_vm_subscription(server: str, team: str, region: str, plan: str, rate: float | None) -> None:
 	"""Bill the deploy VM from the rate accepted before Atlas created it. A VM found again keeps its subscription."""
 	if frappe.db.exists("Subscription", {"server_id": server}):
 		return
@@ -36,23 +51,23 @@ def open_vm_subscription(
 	create_subscription(
 		team,
 		region,
+		plan=plan,
 		resource_id=server,
-		pricing_mode="Composed",
-		includes=get_composition(specs),
-		sub_category=profile,
 		opening_quote=(rate, get_team_currency(team)) if rate is not None else None,
 	)
 
 
-def validate_vm_resize(server: str, specs: dict[str, int], profile: str) -> None:
-	"""Run the checks a server resize passes (shape, headroom, a way to pay), before the VM stops."""
-	composition = get_composition(specs)
-	validate_composition(profile, composition)
+def validate_vm_resize(server: str, plan: str) -> None:
+	"""Run the checks a server moving to `plan` passes (offered, headroom, a way to pay), before the VM stops."""
 	subscription = frappe.get_doc("Subscription", {"server_id": server})
-	_plan_resize(subscription, frappe.get_doc("Virtual Machine", server), None, composition, profile)
+	machine = frappe.get_doc("Virtual Machine", server)
+	_require_offered_plan(subscription, plan, machine.region)
+	_plan_resize(subscription, machine, plan, None, None)
 
 
-def update_vm_subscription(server: str, specs: dict[str, int], profile: str) -> None:
-	"""Re-price the subscription to the VM's size. Nothing changes while the size is the same."""
+def update_vm_plan(server: str, plan: str) -> None:
+	"""Bill the VM at `plan` once it runs at that size. Nothing changes while the plan is the same."""
 	subscription = frappe.db.get_value("Subscription", {"server_id": server}, "name")
-	resize_composed_subscription(subscription, get_composition(specs), profile)
+	resize_to_plan(subscription, plan)
+	# The VM's plan is what its subscription follows each time Central sees it running.
+	frappe.db.set_value("Virtual Machine", server, "plan", plan)

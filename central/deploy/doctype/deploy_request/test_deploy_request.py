@@ -16,9 +16,11 @@ from central.deploy.doctype.deploy_request.deploy_request import (
 from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
 	make_installation,
 )
+from central.deploy.tests.test_deploy_billing import catalog, make_size
 from central.deploy.virtual_machine import DeployMachine
 from central.infrastructure.doctype.github_connection.test_github_connection import make_team
 from central.tests.test_iam import ensure_user
+from central.tests.utils import ensure_region
 
 
 class IntegrationTestDeployRequest(IntegrationTestCase):
@@ -106,8 +108,14 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 				"repository": "octo/app",
 				"repository_id": "11",
 				"branch": "main",
+				"region": ensure_region("deploy-pipeline-test"),
 			}
 		).insert()
+		self.growth, self.pro = make_size("Growth", 2, 8, 100), make_size("Pro", 4, 16, 200)
+		patch(
+			"central.deploy.billing.get_server_plans",
+			return_value=catalog((self.growth, "Growth"), (self.pro, "Pro")),
+		).start()
 
 		module = "central.deploy.doctype.deploy_request.deploy_request"
 		self.find_or_create = patch.object(
@@ -167,25 +175,38 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		self.assertIn("Add a Dockerfile", error)
 		self.find_or_create.assert_not_called()
 
-	def test_a_commit_without_a_config_deploys_at_the_default_size(self):
+	def test_a_commit_without_a_config_deploys_at_growth(self):
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 
 		self.assertEqual(
-			frappe.db.get_value("Deploy Request", request.name, ["cpu_millicores", "memory_mib", "disk_mib"]),
-			(2000, 4096, 20480),
+			frappe.db.get_value(
+				"Deploy Request", request.name, ["plan", "cpu_millicores", "memory_mib", "disk_mib"]
+			),
+			(self.growth, 2000, 8192, 102400),
 		)
 		self.assertIn(
 			call("101", "11", "octo/app", "frappe_cloud_deploy.toml", "a" * 40), self.get_file.call_args_list
 		)
 
 	def test_the_size_in_the_commits_config_is_saved_on_the_request(self):
-		self.files["frappe_cloud_deploy.toml"] = "[machine]\ncpu_millicores = 4000\nmemory_mib = 8192\n"
+		self.files["frappe_cloud_deploy.toml"] = '[machine]\nsize = "Pro"\n'
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 
 		self.assertEqual(
-			frappe.db.get_value("Deploy Request", request.name, ["cpu_millicores", "memory_mib", "disk_mib"]),
-			(4000, 8192, 20480),
+			frappe.db.get_value(
+				"Deploy Request", request.name, ["plan", "cpu_millicores", "memory_mib", "disk_mib"]
+			),
+			(self.pro, 4000, 16384, 204800),
 		)
+
+	def test_a_size_that_is_not_for_sale_fails_the_deploy(self):
+		self.files["frappe_cloud_deploy.toml"] = '[machine]\nsize = "Huge"\n'
+		request = DeployRequest.queue(self.app.name, "a" * 40)
+
+		status, error = frappe.db.get_value("Deploy Request", request.name, ["status", "error"])
+		self.assertEqual(status, "Failed")
+		self.assertIn("Growth, Pro", error)
+		self.find_or_create.assert_not_called()
 
 	def test_a_config_with_an_unknown_machine_key_fails_the_deploy(self):
 		self.files["frappe_cloud_deploy.toml"] = '[machine]\nteam = "someone-else"\n'
