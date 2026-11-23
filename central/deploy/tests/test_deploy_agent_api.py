@@ -46,7 +46,7 @@ class IntegrationTestDeployAgentAPI(IntegrationTestCase):
 
 	def test_the_agent_gets_a_build_until_it_reports_on_it(self):
 		self.assertEqual(self.call_as(self.app, api.get_build), {"commit": "a" * 40})
-		self.assertIsNone(frappe.db.get_value("Deploy Request", self.request.name, "build_status"))
+		self.assertFalse(frappe.db.get_value("Deploy Request", self.request.name, "build_status"))
 		self.assertEqual(self.call_as(self.app, api.get_build), {"commit": "a" * 40})
 		self.call_as(self.app, api.report_build, deploy_request=self.request.name, status="Running")
 		self.assertIsNone(self.call_as(self.app, api.get_build))

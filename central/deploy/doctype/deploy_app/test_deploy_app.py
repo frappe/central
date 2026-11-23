@@ -43,7 +43,7 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 
 	def test_a_new_app_gets_a_domain_named_after_its_repository(self):
 		app = DeployApp.add(self.installation, REPOSITORY, self.region)
-		self.assertRegex(app.domain, rf"^app-[0-9a-f]{{4}}\.{re.escape(Region.get_zone(self.region))}$")
+		self.assertRegex(app.domain, rf"^app-[0-9a-f]{{6}}\.{re.escape(Region.get_zone(self.region))}$")
 
 	def test_adding_the_app_again_keeps_its_domain(self):
 		first = DeployApp.add(self.installation, REPOSITORY, self.region).domain

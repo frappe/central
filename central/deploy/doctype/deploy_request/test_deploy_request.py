@@ -138,11 +138,11 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		self.create_domain_mapping = patch.object(DeployRequest, "create_domain_mapping").start()
 		# The repository holds a Dockerfile and, unless a test sets one, no deploy config.
 		self.root = [{"name": "Dockerfile", "type": "file"}]
-		patch(f"{module}.GitHubDeployApp.list_root", side_effect=lambda *args: self.root).start()
+		github = patch(f"{module}.GitHubDeployApp").start().return_value
+		github.list_root.side_effect = lambda *args: self.root
 		self.files = {}
-		self.get_file = patch(
-			f"{module}.GitHubDeployApp.get_file", side_effect=lambda *args: self.files.get(args[3])
-		).start()
+		self.get_file = github.get_file
+		self.get_file.side_effect = lambda *args: self.files.get(args[3])
 		self.addCleanup(patch.stopall)
 
 	def report_build(self, virtual_machine: str) -> None:
