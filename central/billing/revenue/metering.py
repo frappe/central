@@ -12,11 +12,10 @@ selects one of two modes:
   - **Grandfathered** (default): `max(0, quantity - locked_allowance) x locked_rate`,
     where the allowance (the base plan's included baseline) and the per-unit rate are
     locked at ingest, exactly like fixed prices are grandfathered by the price-lock.
-  - **Live** (e.g. snapshot — depreciating storage): no plan allowance (only a server's
-    bundle, counted from its days) and the rate is
-    read from the CURRENT Catalog Rate each billing period, never locked. A live
-    resource has its own resource_id from birth and needs no price-lock to bill,
-    so it survives VM termination.
+  - **Live** (e.g. snapshot — depreciating storage): the only allowance is a server's
+    bundle, counted from its days, and the rate is read from the CURRENT Catalog Rate
+    each billing period, never locked. A live resource has its own resource_id from
+    birth and needs no price-lock to bill, so it survives VM termination.
 """
 
 import frappe
@@ -74,8 +73,8 @@ def _resolve_terms(meter: dict):
 	  used as given, whatever the family's pricing mode.
 	- **Live** (e.g. snapshot): no price-lock needed — a live metered resource has its
 	  own resource_id from birth and survives VM termination. team/cluster/currency
-	  come from the meter payload; there is NO allowance and NO locked rate (the
-	  rate is read live at billing). See ADR 0002.
+	  come from the meter payload; the only allowance is a server's bundle counted
+	  from its days, and there is NO locked rate (the rate is read live at billing).
 	- **Grandfathered**: the locked allowance + per-unit rate off the resource's
 	  active price-lock (skipped when there is no active lock).
 	"""
@@ -400,16 +399,15 @@ def _metered_lines(
 		if settlement_by_type[r.resource_type] == "Prepaid Pack":
 			continue
 
-		# A live metered plan (e.g. snapshot) reads the CURRENT catalog rate and has no
-		# allowance; a grandfathered one uses the terms locked at ingest. `resolved`
-		# stays None (not 0) when no rate is configured, so an unpriced overage is
-		# distinguishable from a genuinely free one below.
+		# A live metered plan (e.g. snapshot) reads the CURRENT catalog rate; a grandfathered
+		# one uses the terms locked at ingest. `resolved` stays None (not 0) when no rate is
+		# configured, so an unpriced overage is distinguishable from a genuinely free one below.
 		plan = plan_by_type[r.resource_type]
 		if plan and plan.pricing_mode == "Live":
 			resolved = resolve_rate(get_catalog_rates("Plan", plan.name), r.currency, r.cluster)
 		else:
 			resolved = r.locked_rate
-		# A live plan's own allowance is 0; a server's bundle is counted from its days.
+		# A live plan carries only the bundle counted from its days.
 		allowance = frappe.utils.flt(r.locked_allowance)
 
 		billable_qty = max(0.0, frappe.utils.flt(r.quantity) - allowance)
