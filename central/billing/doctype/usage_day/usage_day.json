@@ -20,6 +20,7 @@
   "resource_type",
   "section_quantity",
   "quantity",
+  "included",
   "unit",
   "source_amount",
   "source_currency",
@@ -114,6 +115,12 @@
    "in_list_view": 1
   },
   {
+   "fieldname": "included",
+   "fieldtype": "Float",
+   "label": "Included",
+   "description": "What the subscription's plan included that day, in the same unit. Only the quantity above it bills."
+  },
+  {
    "fieldname": "unit",
    "fieldtype": "Data",
    "label": "Unit"
@@ -170,7 +177,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-18 10:00:00.000000",
+ "modified": "2026-11-23 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Day",

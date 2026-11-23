@@ -12,7 +12,8 @@ selects one of two modes:
   - **Grandfathered** (default): `max(0, quantity - locked_allowance) x locked_rate`,
     where the allowance (the base plan's included baseline) and the per-unit rate are
     locked at ingest, exactly like fixed prices are grandfathered by the price-lock.
-  - **Live** (e.g. snapshot — depreciating storage): no allowance and the rate is
+  - **Live** (e.g. snapshot — depreciating storage): no plan allowance (only a server's
+    bundle, counted from its days) and the rate is
     read from the CURRENT Catalog Rate each billing period, never locked. A live
     resource has its own resource_id from birth and needs no price-lock to bill,
     so it survives VM termination.
@@ -24,7 +25,7 @@ from frappe.query_builder.functions import Coalesce
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
 from central.billing.revenue.metered_lines import line_description, rollups_in
-from central.billing.revenue.rollup_updates import apply_report, rerate
+from central.billing.revenue.rollup_updates import apply_report, recount_allowance, rerate
 
 
 def _metered_plan_for(resource_type: str):
@@ -251,11 +252,14 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 				)
 			apply_report(existing, mode, qty, seq, refuse_lower)
 			rerate(existing, meter.get("locked_terms"))
+			recount_allowance(existing, meter)
 			return key
 
 		terms = _resolve_terms(meter)
 		if not terms:
 			return None  # no active lock — nothing to bill this against yet
+		if "counted_allowance" in meter:
+			terms = {**terms, "allowance": meter["counted_allowance"]}
 
 		try:
 			frappe.db.savepoint("usage_rollup_insert")
@@ -403,10 +407,10 @@ def _metered_lines(
 		plan = plan_by_type[r.resource_type]
 		if plan and plan.pricing_mode == "Live":
 			resolved = resolve_rate(get_catalog_rates("Plan", plan.name), r.currency, r.cluster)
-			allowance = 0.0
 		else:
 			resolved = r.locked_rate
-			allowance = frappe.utils.flt(r.locked_allowance)
+		# A live plan's own allowance is 0; a server's bundle is counted from its days.
+		allowance = frappe.utils.flt(r.locked_allowance)
 
 		billable_qty = max(0.0, frappe.utils.flt(r.quantity) - allowance)
 		if billable_qty <= 0:
