@@ -97,6 +97,15 @@ class TestBundledBuckets(IntegrationTestCase):
 		self.assertAlmostEqual(allowance, 5)
 		self.assertAlmostEqual(quantity, 230 / 30)  # two days held, 100 then 130 GB
 
+	def test_a_recount_still_counts_the_allowance_after_a_rate_correction(self):
+		self.read("2026-06-01", 100)
+		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
+		[rollup] = frappe.get_all("Usage Rollup", filters={"resource_id": SERVER}, pluck="name")
+		head = metering.override_terms(rollup, rate=1.0, reason="test")
+		self.read("2026-06-02", 130)
+		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
+		self.assertAlmostEqual(frappe.db.get_value("Usage Rollup", head, "locked_allowance"), 80 / 30)
+
 	def test_a_day_keeps_what_was_held_and_what_the_plan_included(self):
 		self.read("2026-06-01", 30)
 		[day] = frappe.get_all("Usage Day", filters={"subject": self.bucket}, fields=["quantity", "included"])
