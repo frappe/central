@@ -931,7 +931,7 @@ def _is_resizable(doc) -> bool:
 	return True
 
 
-def _latest_segment_by_subscription(subscription_names: list[str], for_update: bool = False) -> dict:
+def _latest_segment_by_subscription(subscription_names: list[str], for_update: bool = False, at=None) -> dict:
 	"""The most-recent rate-bearing change per subscription, in ONE batched query.
 
 	Ordered newest-first so the first row seen per subscription is its latest segment
@@ -954,6 +954,8 @@ def _latest_segment_by_subscription(subscription_names: list[str], for_update: b
 	)
 	if for_update:
 		query = query.for_update()
+	if at is not None:
+		query = query.where(change.effective_at < at)
 	latest: dict = {}
 	for r in query.run(as_dict=True):
 		latest.setdefault(r.subscription, r)
@@ -971,7 +973,7 @@ def _server_clusters(server_ids) -> dict:
 	}
 
 
-def active_segments(filters: dict | None = None) -> list:
+def active_segments(filters: dict | None = None, at=None) -> list:
 	"""Every open, rate-bearing billing segment — one row per subscription — resolved
 	from the `Subscription Change` ledger (ADR 0010) in batched queries.
 
@@ -990,7 +992,7 @@ def active_segments(filters: dict | None = None) -> list:
 	)
 	if not subs:
 		return []
-	latest = _latest_segment_by_subscription([s.name for s in subs])
+	latest = _latest_segment_by_subscription([s.name for s in subs], at=at)
 	clusters = _server_clusters([s.server_id for s in subs])
 	out = []
 	for s in subs:
