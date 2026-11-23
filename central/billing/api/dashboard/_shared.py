@@ -219,7 +219,6 @@ def _describe_line(team: str, li, period: tuple) -> dict:
 	(prorated days), or a metered overage above the plan's included allowance.
 	"""
 	from central.billing.projection.basis import MEASURED
-	from central.billing.revenue.metering import _metered_plan_for
 
 	row = {
 		"resource_type": li.resource_type,
@@ -261,15 +260,25 @@ def _describe_line(team: str, li, period: tuple) -> dict:
 		# the order and the changeover themselves.
 		row["detail"] = _billed_window(li)
 	else:
-		metered_plan = _metered_plan_for(li.resource_type)
-		title = frappe.db.get_value("Plan", metered_plan.name, "title") if metered_plan else None
-		row["item"] = title or f"{li.resource_type.title()} overage"
-		row["kind"] = "Overage"
-		row["detail"] = _metered_detail(team, li, period)
-		# Such as the AI model and the rate it was converted at, which tell its lines apart.
-		if li.get("description"):
-			row["detail"] += f" · {li.description}"
+		row.update(_describe_metered(team, li, period))
 	return row
+
+
+def _describe_metered(team: str, li, period: tuple) -> dict:
+	"""The item, kind and detail of a metered line."""
+	from central.billing.revenue.metering import _metered_plan_for
+
+	metered_plan = _metered_plan_for(li.resource_type)
+	title = frappe.db.get_value("Plan", metered_plan.name, "title") if metered_plan else None
+	item = title or f"{li.resource_type.title()} overage"
+	# A server's own bucket bills on the server; name it so two servers' lines differ.
+	if server := _metered_server(li.subscription_resource):
+		item += f" · {server}"
+	detail = _metered_detail(team, li, period)
+	# Such as the AI model and the rate it was converted at, which tell its lines apart.
+	if li.get("description"):
+		detail += f" · {li.description}"
+	return {"item": item, "kind": "Overage", "detail": detail}
 
 
 def _metered_detail(team: str, li, period: tuple) -> str:
@@ -314,6 +323,14 @@ def _server_name(resource_id: str | None) -> str | None:
 	if not resource_id:
 		return None
 	return frappe.db.get_value("Virtual Machine", resource_id, "title") or resource_id
+
+
+def _metered_server(resource_id: str | None) -> str | None:
+	"""The server's name when the resource is a server, else None."""
+	if not resource_id:
+		return None
+	found = frappe.db.get_value("Virtual Machine", resource_id, ["name", "title"])
+	return (found[1] or found[0]) if found else None
 
 
 def _billed_window(li) -> str | None:
