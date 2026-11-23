@@ -235,6 +235,21 @@ class TestBundledBuckets(IntegrationTestCase):
 		usage_ledger.fill_missing_days("2026-06-05")
 		self.assertEqual(self.days(), [100, 100])
 
+	def test_a_server_billing_only_midday_is_estimated_for_that_day(self):
+		self.read("2026-06-01", 100)
+		add_segment(self.subscription, "Paused", 0, "2026-06-01 20:00:00", plan=VM_PLAN)
+		add_segment(self.subscription, "Resumed", 1000, "2026-06-02 10:00:00", plan=VM_PLAN)
+		add_segment(self.subscription, "Paused", 0, "2026-06-02 20:00:00", plan=VM_PLAN)
+		usage_ledger.fill_missing_days("2026-06-05")
+		self.assertEqual(self.days(), [100, 100])
+
+	def test_a_day_resized_then_paused_is_estimated_on_the_new_plan(self):
+		self.read("2026-06-01", 100)
+		self.resize(200, "2026-06-02 10:00:00")
+		add_segment(self.subscription, "Paused", 0, "2026-06-02 20:00:00", plan=VM_PLAN)
+		usage_ledger.fill_missing_days("2026-06-05")
+		self.assertEqual(self.estimated_bundles(), [200])
+
 	def test_an_older_reading_does_not_bring_back_an_older_bundle(self):
 		self.read("2026-06-01", 100)
 		[stored] = frappe.get_all(
@@ -271,6 +286,12 @@ class TestBundledBuckets(IntegrationTestCase):
 
 	def test_a_server_paused_partway_through_yesterday_is_flagged(self):
 		add_segment(self.subscription, "Paused", 0, "2026-06-04 12:00:00", plan=VM_PLAN)
+		self.assertIn(self.subscription, self.flagged("2026-06-05"))
+
+	def test_a_server_billing_only_midday_yesterday_is_flagged(self):
+		add_segment(self.subscription, "Paused", 0, "2026-06-03 12:00:00", plan=VM_PLAN)
+		add_segment(self.subscription, "Resumed", 1000, "2026-06-04 10:00:00", plan=VM_PLAN)
+		add_segment(self.subscription, "Paused", 0, "2026-06-04 20:00:00", plan=VM_PLAN)
 		self.assertIn(self.subscription, self.flagged("2026-06-05"))
 
 
