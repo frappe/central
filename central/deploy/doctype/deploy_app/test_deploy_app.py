@@ -25,6 +25,7 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 		# Each test's apps would otherwise share installation 101 with the next test's team.
 		frappe.db.savepoint("deploy_app_test")
 		self.addCleanup(frappe.db.rollback, save_point="deploy_app_test")
+		frappe.db.set_single_value("Central Settings", "wildcard_domain", "example.test")
 		owner = ensure_user("deploy.app.owner@example.test")
 		self.team = make_team("Deploy App Team", owner)
 		self.installation = make_installation(self.team)

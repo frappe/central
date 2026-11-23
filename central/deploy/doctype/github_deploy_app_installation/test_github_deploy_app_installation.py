@@ -34,6 +34,7 @@ def make_installation(team: str, installation_id: str = "101") -> Document:
 class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
+		frappe.db.set_single_value("Central Settings", "wildcard_domain", "example.test")
 		self.owner = ensure_user("github.deploy.owner@example.test")
 		self.outsider = ensure_user("github.deploy.outsider@example.test")
 		self.team = make_team("GitHub Deploy Team", self.owner)
