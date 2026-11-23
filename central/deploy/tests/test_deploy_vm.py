@@ -1,8 +1,8 @@
+import json
 from unittest.mock import MagicMock, patch
 
 import frappe
 import httpx
-import yaml
 from frappe.tests import IntegrationTestCase
 
 from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
@@ -200,16 +200,15 @@ class IntegrationTestDeployMachine(IntegrationTestCase):
 		self.assertEqual(request["params"]["tag"], "purpose:deploy,deploy_app:deploy-app-1")
 		self.assertEqual(request["headers"]["X-Tenant-ID"], str(TENANT_ID))
 
-	def test_the_user_data_gives_the_agent_central_and_its_credential(self):
+	def test_the_metadata_gives_the_agent_central_and_its_credential(self):
 		self.machine.app = MagicMock(get_password=MagicMock(return_value="secret"))
 		self.machine.app.name = "deploy-app-1"
 		with patch("central.deploy.virtual_machine.central_url", return_value="https://central.test"):
-			config = yaml.safe_load(self.machine.user_data)
+			metadata = self.machine.metadata
 
-		(file,) = config["write_files"]
-		self.assertEqual((file["path"], file["permissions"]), ("/etc/deploy-agent/agent.env", "0600"))
 		self.assertEqual(
-			file["content"], "CENTRAL_URL=https://central.test\nAGENT_CREDENTIAL=deploy-app-1:secret\n"
+			json.loads(metadata["deploy-agent"]),
+			{"central_url": "https://central.test", "credential": "deploy-app-1:secret"},
 		)
 
 	def test_a_failed_call_raises_atlas_error(self):
