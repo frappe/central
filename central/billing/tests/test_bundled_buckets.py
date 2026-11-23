@@ -203,7 +203,22 @@ class TestBundledBuckets(IntegrationTestCase):
 		add_segment(self.subscription, "Paused", 0, "2026-06-10 00:00:00", plan=VM_PLAN)
 		add_segment(self.subscription, "Resumed", 1000, "2026-06-15 12:00:00", plan=VM_PLAN)
 		usage_ledger.fill_missing_days("2026-06-18")
-		self.assertEqual(len(self.days()), 9)
+		days = frappe.get_all("Usage Day", filters={"subject": self.bucket}, pluck="day", order_by="day")
+		self.assertEqual([d.day for d in days], [*range(1, 10), 15])  # resumed on the 15th, which bills
+
+	def test_a_server_resumed_after_a_pause_is_estimated_from_its_last_reading(self):
+		for day in range(1, 6):
+			self.read(f"2026-06-{day:02d}", 100)
+		add_segment(self.subscription, "Paused", 0, "2026-06-06 00:00:00", plan=VM_PLAN)
+		bigger = make_plan(
+			f"{VM_PLAN}-resumed",
+			includes=[*DEFAULT_INCLUDES, {"resource_type": "Storage", "quantity": 200, "unit": "GB"}],
+		)
+		add_segment(self.subscription, "Resumed", 1000, "2026-06-10 12:00:00", plan=bigger)
+		usage_ledger.fill_missing_days("2026-06-13")
+		days = frappe.get_all("Usage Day", filters={"subject": self.bucket}, pluck="day", order_by="day")
+		self.assertEqual([d.day for d in days], [1, 2, 3, 4, 5, 10])  # the paused days stay empty
+		self.assertEqual(self.estimated_bundles(), [200])
 
 	def estimated_bundles(self) -> list[float]:
 		return frappe.get_all(

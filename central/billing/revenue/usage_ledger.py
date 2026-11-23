@@ -181,12 +181,9 @@ def utc_day_start(day) -> datetime.datetime:
 
 
 def _estimate_day(day: datetime.date) -> int:
-	"""Copy the previous day's Level rows onto `day` for subjects billed on it that have no row on it."""
-	previous = frappe.get_all(
-		DOCTYPE,
-		filters={"day": day - datetime.timedelta(days=1), "aggregation": LEVEL},
-		fields=[*_DAY_FIELDS, "estimated"],
-	)
+	"""Copy each Level subject's last recent reading onto `day` when the subject is billed on it."""
+	# Not only yesterday's: a server paused until `day` has its last reading before the pause.
+	previous = _last_readings(day)
 	if not previous:
 		return 0
 	live = _live_subjects({row.service for row in previous}, day)
@@ -198,8 +195,28 @@ def _estimate_day(day: datetime.date) -> int:
 	return write_days(rows).count
 
 
+def _last_readings(day: datetime.date) -> list:
+	"""The latest Level row of each subject, meter and dimension in the lookback days before `day`."""
+	rows = frappe.get_all(
+		DOCTYPE,
+		filters={
+			"day": [
+				"between",
+				[day - datetime.timedelta(days=ESTIMATE_LOOKBACK_DAYS), day - datetime.timedelta(days=1)],
+			],
+			"aggregation": LEVEL,
+		},
+		fields=[*_DAY_FIELDS, "estimated"],
+		order_by="day desc",
+	)
+	latest: dict = {}
+	for row in rows:
+		latest.setdefault((row.service, row.subject, row.meter, row.dimension or ""), row)
+	return list(latest.values())
+
+
 def _estimated(row, day: datetime.date, subject) -> dict:
-	"""The previous day's row as `day`'s estimate."""
+	"""A subject's last reading as `day`'s estimate."""
 	# A server resized since its last reading has that day's bundle, not the reading's.
 	included = subject.get("included", row.included)
 	return {**row, "day": day, "included": included, "estimated": 1, "as_of": None, "landed_at": None}
