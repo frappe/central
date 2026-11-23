@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
+from central.billing.api.dashboard._shared import _describe_line, _qty
 from central.billing.platform import invariants, readiness
 from central.billing.revenue import storage_bridge, usage_ledger, usage_recount
 from central.billing.revenue.bundled_buckets import bundled_buckets
@@ -127,6 +128,22 @@ class TestBundledBuckets(IntegrationTestCase):
 		self.read("2026-06-01", 90)
 		[day] = frappe.get_all("Usage Day", filters={"subject": self.bucket}, fields=["quantity", "included"])
 		self.assertEqual((day.quantity, day.included), (100, 200))  # the day keeps its peak
+
+	def test_each_months_line_says_what_its_own_plan_included(self):
+		self.read("2026-06-01", 100)
+		self.resize(10, "2026-07-01 00:00:00")
+		self.read("2026-07-01", 100)
+		details = [
+			self.storage_detail(*month)
+			for month in (("2026-06-01", "2026-06-30"), ("2026-07-01", "2026-07-31"))
+		]
+		self.assertIn(f"over {_qty(40 / 30)} included", details[0])
+		self.assertIn(f"over {_qty(10 / 31)} included", details[1])
+
+	def storage_detail(self, start: str, end: str) -> str:
+		invoice = frappe.get_doc("Invoice", generate_team_invoice(TEAM, start, end))
+		[line] = [li for li in invoice.items if li.resource_type == "Storage"]
+		return _describe_line(TEAM, line, (invoice.period_start, invoice.period_end))["detail"]
 
 	def test_a_bucket_never_attached_reads_as_empty(self):
 		self.read("2026-06-01", None)
