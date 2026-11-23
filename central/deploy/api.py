@@ -15,6 +15,7 @@ DELIVERY_TTL_SECONDS = 24 * 60 * 60
 BRANCH_REF_PREFIX = "refs/heads/"
 AGENT_TOKEN_HEADER = "X-Deploy-Agent-Token"
 BUILD_REPORT_STATES = ("Running", "Succeeded", "Failed")
+RELEASE_REPORT_STATES = ("Releasing", "Live", "Failed")
 # The end of the build output Central keeps; the full log stays on the VM.
 BUILD_LOG_CHARACTERS = 20_000
 
@@ -113,3 +114,23 @@ def report_build(deploy_request: str, status: str, log: str = "") -> dict:
 	# The agent reports on the team's build; no Desk user owns it.
 	request.save(ignore_permissions=True)
 	return {"cancel": False}
+
+
+# nosemgrep: guest-whitelisted-method -- the app's agent token authenticates the deploy agent.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def report_deployment_status(deploy_request: str, status: str, logs: str) -> None:
+	"""Save what the agent says about a release it started after the build. Nothing cancels a release; when the new
+	container fails its health check, the agent removes it, keeps its logs, and the old one keeps serving."""
+	app = DeployApp.get_for_agent(frappe.get_request_header(AGENT_TOKEN_HEADER) or "")
+	if status not in RELEASE_REPORT_STATES:
+		frappe.throw(_("Unknown release status {0}.").format(status))
+
+	request: DeployRequest = frappe.get_doc("Deploy Request", deploy_request, for_update=True)
+	if request.deploy_app != app.name:
+		frappe.throw(_("This release belongs to another app."), frappe.PermissionError)
+
+	request.release_status = status
+	request.release_reported_at = now_datetime()
+	request.release_log = logs[-BUILD_LOG_CHARACTERS:]
+	# The agent reports on the team's release; no Desk user owns it.
+	request.save(ignore_permissions=True)

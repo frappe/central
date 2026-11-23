@@ -13,14 +13,20 @@
   "delivery",
   "build_status",
   "build_reported_at",
+  "release_status",
+  "release_reported_at",
   "machine_section",
   "cpu_millicores",
   "memory_mib",
   "disk_mib",
   "plan",
+  "health_section",
+  "health_path",
+  "health_timeout",
   "error_section",
   "error",
-  "build_log"
+  "build_log",
+  "release_log"
  ],
  "fields": [
   {
@@ -88,6 +94,21 @@
    "read_only": 1
   },
   {
+   "description": "What the deploy agent last reported about the release. Empty until the image is built.",
+   "fieldname": "release_status",
+   "fieldtype": "Select",
+   "label": "Release Status",
+   "options": "\nReleasing\nLive\nFailed",
+   "read_only": 1
+  },
+  {
+   "description": "When the deploy agent last reported on the release. Central fails the release once the agent stays silent too long.",
+   "fieldname": "release_reported_at",
+   "fieldtype": "Datetime",
+   "label": "Release Reported At",
+   "read_only": 1
+  },
+  {
    "collapsible": 1,
    "fieldname": "error_section",
    "fieldtype": "Section Break",
@@ -105,6 +126,13 @@
    "fieldname": "build_log",
    "fieldtype": "Code",
    "label": "Build Log",
+   "read_only": 1
+  },
+  {
+   "description": "The end of the release's output: the health check, and the new container's log when it failed.",
+   "fieldname": "release_log",
+   "fieldtype": "Code",
+   "label": "Release Log",
    "read_only": 1
   },
   {
@@ -141,11 +169,31 @@
    "label": "Plan",
    "options": "Plan",
    "read_only": 1
+  },
+  {
+   "description": "What the new container must answer before traffic moves to it, from the commit's frappe_cloud_deploy.toml or the defaults.",
+   "fieldname": "health_section",
+   "fieldtype": "Section Break",
+   "label": "Health Check"
+  },
+  {
+   "description": "Must return 2xx. Empty means any HTTP answer on / will do.",
+   "fieldname": "health_path",
+   "fieldtype": "Data",
+   "label": "Health Path",
+   "read_only": 1
+  },
+  {
+   "description": "Seconds the new container gets to answer.",
+   "fieldname": "health_timeout",
+   "fieldtype": "Int",
+   "label": "Health Timeout",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-23 13:00:00.000000",
+ "modified": "2026-11-23 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Deploy",
  "name": "Deploy Request",

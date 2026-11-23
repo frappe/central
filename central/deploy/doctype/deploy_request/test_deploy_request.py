@@ -286,14 +286,12 @@ class IntegrationTestDeployWait(IntegrationTestCase):
 			self.run_wait_after(400)
 
 	def test_an_agent_that_reported_recently_is_not_silent(self):
-		self.request.build_reported_at = add_to_date(now_datetime(), seconds=-10)
-		self.assertFalse(self.request.is_agent_silent)
+		self.assertFalse(self.request.is_silent(add_to_date(now_datetime(), seconds=-10)))
 
 	def test_an_agent_that_stopped_reporting_is_silent(self):
-		self.request.build_reported_at = add_to_date(
-			now_datetime(), seconds=-BUILD_REPORT_TIMEOUT_SECONDS - 1
+		self.assertTrue(
+			self.request.is_silent(add_to_date(now_datetime(), seconds=-BUILD_REPORT_TIMEOUT_SECONDS - 1))
 		)
-		self.assertTrue(self.request.is_agent_silent)
 
 	def test_an_agent_that_never_reported_is_silent_once_the_step_waited_too_long(self):
-		self.assertTrue(self.request.is_agent_silent)
+		self.assertTrue(self.request.is_silent(None))

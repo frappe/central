@@ -9,6 +9,10 @@ CONFIG_FILE = "frappe_cloud_deploy.toml"
 CONTAINERFILE_NAMES = ("Containerfile", "Dockerfile")
 # A build needs room, so a deploy VM starts at Growth unless the config names another size.
 DEFAULT_SIZE = "Growth"
+# The agent writes the path into an environment file, so it holds only URL path characters.
+HEALTH_PATH_PATTERN = r"^(/[A-Za-z0-9._~%/-]*)?$"
+DEFAULT_HEALTH_TIMEOUT_SECONDS = 60
+MAX_HEALTH_TIMEOUT_SECONDS = 600
 
 
 class MachineConfig(BaseModel):
@@ -19,12 +23,23 @@ class MachineConfig(BaseModel):
 	size: str = DEFAULT_SIZE
 
 
+class HealthConfig(BaseModel):
+	"""`[health]`: what the new container must answer before traffic moves to it.
+	Without a path, any HTTP answer on `/` will do; with one, it must return 2xx."""
+
+	model_config = ConfigDict(extra="forbid", strict=True)
+
+	path: str = Field(default="", pattern=HEALTH_PATH_PATTERN)
+	timeout: int = Field(default=DEFAULT_HEALTH_TIMEOUT_SECONDS, gt=0, le=MAX_HEALTH_TIMEOUT_SECONDS)
+
+
 class DeployConfig(BaseModel):
 	"""A `frappe_cloud_deploy.toml`. Each table is added here when deploys start reading it."""
 
 	model_config = ConfigDict(extra="forbid", strict=True)
 
 	machine: MachineConfig = Field(default_factory=MachineConfig)
+	health: HealthConfig = Field(default_factory=HealthConfig)
 
 
 def get_deploy_config(config: str | None) -> DeployConfig:

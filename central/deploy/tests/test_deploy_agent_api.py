@@ -86,3 +86,25 @@ class IntegrationTestDeployAgentAPI(IntegrationTestCase):
 		self.request.set_status("Failed")
 		reply = self.call_as(self.app, api.report_build, deploy_request=self.request.name, status="Running")
 		self.assertEqual(reply, {"cancel": True})
+
+	def report_release(self, app, status: str, logs: str = ""):
+		return self.call_as(
+			app, api.report_deployment_status, deploy_request=self.request.name, status=status, logs=logs
+		)
+
+	def test_a_release_report_saves_the_status_and_the_end_of_the_log(self):
+		self.report_release(self.app, "Releasing")
+		self.report_release(self.app, "Failed", logs="x" * 30_000)
+		status, log, reported_at = frappe.db.get_value(
+			"Deploy Request", self.request.name, ["release_status", "release_log", "release_reported_at"]
+		)
+		self.assertEqual((status, len(log)), ("Failed", api.BUILD_LOG_CHARACTERS))
+		self.assertIsNotNone(reported_at)
+
+	def test_another_apps_agent_cannot_report_a_release(self):
+		with self.assertRaises(frappe.PermissionError):
+			self.report_release(self.other_app, "Live")
+
+	def test_an_unknown_release_status_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.report_release(self.app, "Succeeded")

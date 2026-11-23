@@ -13,6 +13,14 @@ class UnitTestDeployConfig(UnitTestCase):
 	def test_the_machine_size_is_read(self):
 		self.assertEqual(get_deploy_config('[machine]\nsize = "Pro"\n').machine.size, "Pro")
 
+	def test_without_a_health_path_any_answer_will_do_within_a_minute(self):
+		health = get_deploy_config(None).health
+		self.assertEqual((health.path, health.timeout), ("", 60))
+
+	def test_the_health_check_is_read(self):
+		health = get_deploy_config('[health]\npath = "/api/health"\ntimeout = 120\n').health
+		self.assertEqual((health.path, health.timeout), ("/api/health", 120))
+
 	def test_bad_configs_are_refused(self):
 		for config in (
 			"[machine",
@@ -21,6 +29,11 @@ class UnitTestDeployConfig(UnitTestCase):
 			"[machine]\nsize = 4",
 			"[machine]\ncpu_millicores = 4000",
 			'[build]\nlanguage = "python"',
+			'[health]\npath = "health"',
+			'[health]\npath = "/a b"',
+			"[health]\ntimeout = 0",
+			"[health]\ntimeout = 601",
+			'[health]\ntimeout = "60"',
 		):
 			with self.subTest(config=config), self.assertRaises(frappe.ValidationError):
 				get_deploy_config(config)

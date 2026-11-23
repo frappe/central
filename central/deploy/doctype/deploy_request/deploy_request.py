@@ -20,8 +20,14 @@ from central.deploy.billing import (
 	validate_vm_purchase,
 	validate_vm_resize,
 )
-from central.deploy.config import CONFIG_FILE, find_containerfile, get_deploy_config
+from central.deploy.config import (
+	CONFIG_FILE,
+	DEFAULT_HEALTH_TIMEOUT_SECONDS,
+	find_containerfile,
+	get_deploy_config,
+)
 from central.deploy.github import GitHubDeployApp
+from central.deploy.notifications import notify
 from central.deploy.virtual_machine import DeployMachine
 from central.integrations import servers
 from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
@@ -42,6 +48,8 @@ VM_LOCK_SECONDS = 5 * 60
 BUILD_TIMEOUT_SECONDS = 60 * 60
 # The agent reports every 10 to 20 seconds; silence this long means its VM or the agent died.
 BUILD_REPORT_TIMEOUT_SECONDS = 5 * 60
+# Longer than the agent takes to start the container, wait out the longest health timeout, and switch traffic.
+RELEASE_TIMEOUT_SECONDS = 15 * 60
 # The VM size in Atlas units, copied from the plan when the deploy reads the commit's config.
 SPEC_FIELDS = ("cpu_millicores", "memory_mib", "disk_mib")
 
@@ -52,6 +60,10 @@ class DeploySupersededError(frappe.ValidationError):
 
 class DeployBuildError(frappe.ValidationError):
 	"""The deploy agent failed the build."""
+
+
+class DeployReleaseError(frappe.ValidationError):
+	"""The new container failed its health check, so the old one keeps serving."""
 
 
 class DeployTimeoutError(frappe.ValidationError):
@@ -78,8 +90,13 @@ class DeployRequest(PipelineBuilder):
 		deploy_app: DF.Link
 		disk_mib: DF.Int
 		error: DF.SmallText | None
+		health_path: DF.Data | None
+		health_timeout: DF.Int
 		memory_mib: DF.Int
 		plan: DF.Link | None
+		release_log: DF.Code | None
+		release_reported_at: DF.Datetime | None
+		release_status: DF.Literal["", "Releasing", "Live", "Failed"]
 		status: DF.Literal[
 			"Queued",
 			"Validating",
@@ -133,6 +150,7 @@ class DeployRequest(PipelineBuilder):
 			self.resize_virtual_machine(machine["name"])
 		self.wait_for_virtual_machine(machine["name"])
 		self.wait_for_build()
+		self.wait_for_release()
 
 	@task
 	def ensure_dockerfile(self) -> str:
@@ -160,8 +178,11 @@ class DeployRequest(PipelineBuilder):
 		config = GitHubDeployApp().get_file(
 			installation_id, app.repository_id, app.repository, CONFIG_FILE, self.commit
 		)
-		self.plan = get_size_plan(app.team, app.region, get_deploy_config(config).machine.size)
+		deploy_config = get_deploy_config(config)
+		self.plan = get_size_plan(app.team, app.region, deploy_config.machine.size)
 		self.update(get_plan_specs(self.plan))
+		self.health_path = deploy_config.health.path
+		self.health_timeout = deploy_config.health.timeout
 		# Central records the size the team's commit asks for; no Desk user owns the deploy.
 		self.save(ignore_permissions=True)
 
@@ -222,14 +243,29 @@ class DeployRequest(PipelineBuilder):
 		if self.build_status == "Succeeded":
 			return
 		# A report arriving after this gets `cancel`, since the request is no longer Building.
-		if self.is_agent_silent:
+		if self.is_silent(self.build_reported_at):
 			frappe.throw(_("The deploy agent stopped reporting on the build."), DeployTimeoutError)
 		self.wait(_("The build has not finished."), for_=BUILD_TIMEOUT_SECONDS)
 
-	@property
-	def is_agent_silent(self) -> bool:
-		"""No report since the last one, or since the build step started, for too long."""
-		last_heard = self.build_reported_at or self.step_started
+	@task
+	def wait_for_release(self):
+		"""The agent starts the new container next to the old one and moves traffic to it once it passes its health
+		check; this only waits for its result."""
+		self.set_status("Releasing")
+		if self.release_status == "Failed":
+			frappe.throw(
+				_("The new container failed its health check. The old one keeps serving."), DeployReleaseError
+			)
+		if self.release_status == "Live":
+			return
+		# Also fails a release the agent never started, since it reports Releasing only once it runs.
+		if self.is_silent(self.release_reported_at):
+			frappe.throw(_("The deploy agent stopped reporting on the release."), DeployTimeoutError)
+		self.wait(_("The release has not finished."), for_=RELEASE_TIMEOUT_SECONDS)
+
+	def is_silent(self, last_reported: datetime | None) -> bool:
+		"""No report since the last one, or since the current step started, for too long."""
+		last_heard = last_reported or self.step_started
 		return time_diff_in_seconds(now_datetime(), last_heard) > BUILD_REPORT_TIMEOUT_SECONDS
 
 	@property
@@ -315,6 +351,9 @@ class DeployRequest(PipelineBuilder):
 			"repository": app.repository,
 			"commit": self.commit,
 			"token": token,
+			"health_path": self.health_path or "",
+			# Requests queued before the commit's config was read have none.
+			"health_timeout": self.health_timeout or DEFAULT_HEALTH_TIMEOUT_SECONDS,
 		}
 
 	def wait(self, message: str, for_: int) -> None:
@@ -334,6 +373,7 @@ class DeployRequest(PipelineBuilder):
 		traceback = (pipeline.pipeline_traceback or pipeline.traceback or "").strip()
 		self.error = traceback.splitlines()[-1] if traceback else _("The deploy failed.")
 		self.set_status("Failed")
+		notify(self.deploy_app, "deploy_failed", self.error)
 
 	def set_status(self, status: str) -> None:
 		"""Save `status`, unless a newer push superseded this deploy meanwhile, which stops its pipeline."""

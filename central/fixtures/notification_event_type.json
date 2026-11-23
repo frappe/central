@@ -880,5 +880,23 @@
   "in_app_body": "We could not move the LLM API key of {{ reference_title or \"your trial site\" }} to your team, so it is being revoked and the site will stop reaching the models with it.\n\nCreate a new key on the LLM page to keep using them.",
   "is_critical": 1,
   "reportable_by": "None"
+ },
+ {
+  "action_label": "View server",
+  "action_route": "/servers/{{ server }}",
+  "category": "Server",
+  "create_in_app": 1,
+  "direct_recipients": "None",
+  "docstatus": 0,
+  "doctype": "Notification Event Type",
+  "event_type": "deploy_failed",
+  "in_app_body": "A deploy of {{ context.app if context else reference_title }} failed{% if message %}: {{ message.strip().rstrip('.') }}{% endif %}. The app keeps serving its previous commit.",
+  "in_app_title": "Deploy failed: {{ context.app if context else reference_title }}",
+  "is_critical": 0,
+  "modified": "2026-11-23 00:00:00",
+  "name": "deploy_failed",
+  "reportable_by": "None",
+  "required_cap": "server:view",
+  "severity": "Error"
  }
 ]
