@@ -1,5 +1,10 @@
 frappe.ui.form.on("Team", {
 	refresh(frm) {
+		if (!frm.is_new() && frm.doc.connect_partner_id && frappe.user.has_role("System Manager")) {
+			frm.add_custom_button(__("Customers"), () =>
+				frappe.set_route("List", "Partner Link", { partner_team: frm.doc.name }),
+			);
+		}
 		if (frm.is_new() || !frm.has_perm("write")) {
 			return;
 		}
