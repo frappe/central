@@ -183,7 +183,9 @@ def override_terms(rollup: str, rate=None, allowance=None, reason: str | None = 
 	new.locked_rate = old.locked_rate if rate is None else rate
 	new.locked_allowance = old.locked_allowance if allowance is None else allowance
 	new.superseded_by = None
-	new.idempotency_key = f"{old.idempotency_key}::v{_version_of(old.idempotency_key) + 1}"
+	# The key says which versions moved the allowance, so a recount leaves those alone.
+	mark = "v" if allowance is None else "a"
+	new.idempotency_key = f"{old.idempotency_key}::{mark}{_version_of(old.idempotency_key) + 1}"
 	new.insert(ignore_permissions=True)
 
 	frappe.db.set_value("Usage Rollup", name, "superseded_by", new.name)
@@ -193,8 +195,17 @@ def override_terms(rollup: str, rate=None, allowance=None, reason: str | None = 
 
 def _version_of(idempotency_key: str) -> int:
 	"""The version suffix on a rollup key, 0 for an original."""
-	_head, _sep, tail = idempotency_key.rpartition("::v")
-	return frappe.utils.cint(tail) if tail.isdigit() else 0
+	_head, sep, tail = idempotency_key.rpartition("::")
+	return frappe.utils.cint(tail[1:]) if sep and _is_version_mark(tail, "va") else 0
+
+
+def _is_allowance_corrected(idempotency_key: str) -> bool:
+	"""Whether an operator corrected the allowance in this version of a rollup or an earlier one."""
+	return any(_is_version_mark(part, "a") for part in idempotency_key.split("::")[1:])
+
+
+def _is_version_mark(part: str, marks: str) -> bool:
+	return part[:1] in marks and part[1:].isdigit()
 
 
 def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
@@ -252,7 +263,7 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 			apply_report(existing, mode, qty, seq, refuse_lower)
 			rerate(existing, meter.get("locked_terms"))
 			# An operator's corrected allowance outranks the recount's.
-			recount_allowance(existing, meter, is_corrected=_version_of(existing.idempotency_key) > 0)
+			recount_allowance(existing, meter, is_corrected=_is_allowance_corrected(existing.idempotency_key))
 			return key
 
 		terms = _resolve_terms(meter)
