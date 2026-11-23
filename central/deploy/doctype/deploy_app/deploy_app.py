@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hmac
+import re
 from typing import TYPE_CHECKING
 
 import frappe
@@ -11,11 +12,18 @@ from frappe import _
 from frappe.model.document import Document
 
 from central.deploy.github import GitHubDeployApp
+from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain
+from central.infrastructure.doctype.region.atlas_connection import is_auto_routed_label
+from central.infrastructure.doctype.region.region import Region
 
 if TYPE_CHECKING:
 	from central.deploy.doctype.github_deploy_app_installation.github_deploy_app_installation import (
 		GitHubDeployAppInstallation,
 	)
+
+DOMAIN_SUFFIX_LENGTH = 6
+DOMAIN_ATTEMPTS = 5
+MAX_LABEL_LENGTH = 63
 
 
 class DeployApp(Document):
@@ -31,6 +39,7 @@ class DeployApp(Document):
 
 		agent_token: DF.Password | None
 		branch: DF.Data
+		domain: DF.Data | None
 		installation: DF.Link
 		region: DF.Link | None
 		repository: DF.Data
@@ -92,6 +101,9 @@ class DeployApp(Document):
 		# Checked again here, since the repository may have been renamed while the user was on GitHub.
 		if doc.virtual_machine and doc.region != region:
 			throw_region_change(found["full_name"], doc.region)
+		# The domain lives under its region's zone; an app without a VM has no route yet to move.
+		if not doc.domain or doc.region != region:
+			doc.domain = get_new_domain(found["full_name"], region)
 		doc.update(
 			{
 				"team": team,
@@ -137,3 +149,23 @@ def on_doctype_update() -> None:
 
 def throw_region_change(repository: str, region: str) -> None:
 	frappe.throw(_("{0} already runs in {1}. Its region cannot change.").format(repository, region))
+
+
+def get_new_domain(repository: str, region: str) -> str:
+	"""`<repository name>-<6 random characters>` under the region's zone, unused and not reserved."""
+	name = re.sub(r"[^a-z0-9]+", "-", repository.rpartition("/")[2].lower()).strip("-")
+	name = name[: MAX_LABEL_LENGTH - DOMAIN_SUFFIX_LENGTH - 1].strip("-")
+	# The proxy routes `site-*` and `*-vm-*` labels from the label itself, so they cannot be mapped.
+	if not name or is_auto_routed_label(f"{name}-"):
+		name = "app"
+
+	zone = Region.get_zone(region)
+	for _attempt in range(DOMAIN_ATTEMPTS):
+		domain = f"{name}-{frappe.generate_hash(length=DOMAIN_SUFFIX_LENGTH)}.{zone}"
+		if not (
+			BlockedDomain.is_blocked(domain)
+			or frappe.db.exists("Site Domain", domain)
+			or frappe.db.exists("Deploy App", {"domain": domain})
+		):
+			return domain
+	frappe.throw(_("Could not find a free domain for {0}. Try again.").format(repository))

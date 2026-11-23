@@ -1,16 +1,18 @@
 # Copyright (c) 2026, frappe and Contributors
 # See license.txt
 
+import re
 from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.deploy.doctype.deploy_app.deploy_app import DeployApp
+from central.deploy.doctype.deploy_app.deploy_app import DeployApp, get_new_domain
 from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
 	make_installation,
 )
 from central.infrastructure.doctype.github_connection.test_github_connection import make_team
+from central.infrastructure.doctype.region.region import Region
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_region
 
@@ -20,6 +22,9 @@ REPOSITORY = {"repository_id": "11", "full_name": "octo/app", "default_branch": 
 class IntegrationTestDeployApp(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
+		# Each test's apps would otherwise share installation 101 with the next test's team.
+		frappe.db.savepoint("deploy_app_test")
+		self.addCleanup(frappe.db.rollback, save_point="deploy_app_test")
 		owner = ensure_user("deploy.app.owner@example.test")
 		self.team = make_team("Deploy App Team", owner)
 		self.installation = make_installation(self.team)
@@ -35,6 +40,29 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 			(app.repository, app.repository_id, app.branch, app.installation, app.region),
 			("octo/app", "11", "main", self.installation.name, self.region),
 		)
+
+	def test_a_new_app_gets_a_domain_named_after_its_repository(self):
+		app = DeployApp.add(self.installation, REPOSITORY, self.region)
+		self.assertRegex(app.domain, rf"^app-[0-9a-f]{{4}}\.{re.escape(Region.get_zone(self.region))}$")
+
+	def test_adding_the_app_again_keeps_its_domain(self):
+		first = DeployApp.add(self.installation, REPOSITORY, self.region).domain
+		self.assertEqual(DeployApp.add(self.installation, REPOSITORY, self.region).domain, first)
+
+	def test_an_app_without_a_vm_moving_region_gets_a_domain_there(self):
+		other = ensure_region("deploy-app-other")
+		DeployApp.add(self.installation, REPOSITORY, self.region)
+		self.assertTrue(
+			DeployApp.add(self.installation, REPOSITORY, other).domain.endswith(Region.get_zone(other))
+		)
+
+	def test_a_domain_label_is_cut_to_fit_dns_and_never_auto_routed(self):
+		with patch("central.deploy.doctype.deploy_app.deploy_app.Region.get_zone", return_value="zone.test"):
+			long_name = get_new_domain("octo/" + "My_Repo." * 20, "region")
+			self.assertLessEqual(len(long_name.split(".")[0]), 63)
+			self.assertTrue(long_name.startswith("my-repo-my-repo"))
+			self.assertTrue(get_new_domain("octo/site-builder", "region").startswith("app-"))
+			self.assertTrue(get_new_domain("octo/my-vm-tools", "region").startswith("app-"))
 
 	def test_one_repository_can_deploy_from_two_branches(self):
 		DeployApp.add(self.installation, REPOSITORY, self.region)

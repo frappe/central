@@ -135,6 +135,7 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		self.build_status = "Succeeded"
 		self.release_status = "Live"
 		patch.object(DeployRequest, "wait_for_virtual_machine", side_effect=self.report_build).start()
+		self.create_domain_mapping = patch.object(DeployRequest, "create_domain_mapping").start()
 		# The repository holds a Dockerfile and, unless a test sets one, no deploy config.
 		self.root = [{"name": "Dockerfile", "type": "file"}]
 		patch(f"{module}.GitHubDeployApp.list_root", side_effect=lambda *args: self.root).start()
@@ -158,6 +159,11 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		self.release_status = None
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 		self.assertEqual(frappe.db.get_value("Deploy Request", request.name, "status"), "Releasing")
+
+	def test_a_live_release_routes_the_apps_domain(self):
+		DeployRequest.queue(self.app.name, "a" * 40)
+		# The flow replays its steps each time it resumes; the step itself is safe to repeat.
+		self.create_domain_mapping.assert_called()
 
 	def test_a_failed_release_fails_the_deploy(self):
 		self.release_status = "Failed"
@@ -318,3 +324,51 @@ class IntegrationTestDeployWait(IntegrationTestCase):
 
 	def test_an_agent_that_never_reported_is_silent_once_the_step_waited_too_long(self):
 		self.assertTrue(self.request.is_silent(None))
+
+
+class IntegrationTestDeployDomain(IntegrationTestCase):
+	"""An app keeps one domain; only its first deploy creates the route."""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self.request = frappe.new_doc("Deploy Request")
+		self.request.deploy_app = "deploy-app-test"
+		self.app = MagicMock(
+			domain="octo-app-ab12.zone.test", virtual_machine="server-1", team="team-1", region="region-1"
+		)
+		self.inserted = []
+		real_get_doc = frappe.get_doc
+
+		def get_doc(*args, **kwargs):
+			if args[0] == "Deploy App":
+				return self.app
+			if isinstance(args[0], dict):
+				self.inserted.append(args[0])
+				return MagicMock()
+			return real_get_doc(*args, **kwargs)
+
+		patch(
+			"central.deploy.doctype.deploy_request.deploy_request.frappe.get_doc", side_effect=get_doc
+		).start()
+		self.addCleanup(patch.stopall)
+
+	def test_the_first_deploy_routes_the_domain_to_the_apps_vm(self):
+		with patch.object(frappe.db, "exists", return_value=False):
+			self.request.create_domain_mapping._wrapped(self.request)
+		self.assertEqual(
+			self.inserted,
+			[
+				{
+					"doctype": "Site Domain",
+					"domain": "octo-app-ab12.zone.test",
+					"server": "server-1",
+					"team": "team-1",
+					"region": "region-1",
+				}
+			],
+		)
+
+	def test_a_later_deploy_keeps_the_route(self):
+		with patch.object(frappe.db, "exists", return_value=True):
+			self.request.create_domain_mapping._wrapped(self.request)
+		self.assertEqual(self.inserted, [])

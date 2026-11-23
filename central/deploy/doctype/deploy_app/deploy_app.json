@@ -15,6 +15,7 @@
   "machine_section",
   "region",
   "virtual_machine",
+  "domain",
   "agent_token"
  ],
  "fields": [
@@ -93,6 +94,14 @@
    "search_index": 1
   },
   {
+   "description": "The app's URL, picked once when the app is added. Every deploy keeps it.",
+   "fieldname": "domain",
+   "fieldtype": "Data",
+   "label": "Domain",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
    "description": "The deploy agent on the app's VM sends this to get and report builds.",
    "fieldname": "agent_token",
    "fieldtype": "Password",
@@ -107,7 +116,7 @@
    "link_fieldname": "deploy_app"
   }
  ],
- "modified": "2026-11-16 12:00:00.000000",
+ "modified": "2026-11-23 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Deploy",
  "name": "Deploy App",

@@ -151,6 +151,7 @@ class DeployRequest(PipelineBuilder):
 		self.wait_for_virtual_machine(machine["name"])
 		self.wait_for_build()
 		self.wait_for_release()
+		self.create_domain_mapping()
 
 	@task
 	def ensure_dockerfile(self) -> str:
@@ -262,6 +263,27 @@ class DeployRequest(PipelineBuilder):
 		if self.is_silent(self.release_reported_at):
 			frappe.throw(_("The deploy agent stopped reporting on the release."), DeployTimeoutError)
 		self.wait(_("The release has not finished."), for_=RELEASE_TIMEOUT_SECONDS)
+
+	@task
+	def create_domain_mapping(self):
+		"""Route the app's domain to its VM on the first deploy. Later deploys keep the same URL and the same VM,
+		so they find the route and change nothing."""
+		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
+		if not app.domain:
+			frappe.throw(_("{0} has no domain. Connect the repository again.").format(app.repository))
+		if frappe.db.exists("Site Domain", app.domain):
+			return
+
+		# Site Domain checks the name, sends it to the regional proxy, and retries until the proxy takes it.
+		frappe.get_doc(
+			{
+				"doctype": "Site Domain",
+				"domain": app.domain,
+				"server": app.virtual_machine,
+				"team": app.team,
+				"region": app.region,
+			}
+		).insert(ignore_permissions=True)
 
 	def is_silent(self, last_reported: datetime | None) -> bool:
 		"""No report since the last one, or since the current step started, for too long."""
