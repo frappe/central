@@ -19,7 +19,6 @@ from central.billing.tests.utils import (
 )
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.integrations.object_storage import ObjectStorageNotFound
-from central.services.doctype.service.service import STORAGE_SERVICE
 from central.services.doctype.team_service.team_service import bucket_name_for
 
 TEAM = "team-bundled-bucket"
@@ -144,14 +143,32 @@ class TestBundledBuckets(IntegrationTestCase):
 		self.assertEqual(bundled_buckets(), {})
 
 	def test_a_missed_day_is_estimated_like_a_team_bucket(self):
-		live = usage_ledger._live_subjects({STORAGE_SERVICE})
-		self.assertIn((STORAGE_SERVICE, self.bucket), live)
+		self.read("2026-06-01", 100)
+		# Paused since, but it was billing on the missed day.
+		add_segment(self.subscription, "Paused", 0, "2026-06-10 00:00:00", plan=VM_PLAN)
+		usage_ledger.fill_missing_days("2026-06-05")
+		self.assertEqual(self.days(), [100, 100])
+
+	def test_a_paused_server_gets_no_estimate_for_its_paused_days(self):
+		for day in range(1, 10):
+			self.read(f"2026-06-{day:02d}", 100)
+		add_segment(self.subscription, "Paused", 0, "2026-06-10 00:00:00", plan=VM_PLAN)
+		add_segment(self.subscription, "Resumed", 1000, "2026-06-15 12:00:00", plan=VM_PLAN)
+		usage_ledger.fill_missing_days("2026-06-18")
+		self.assertEqual(len(self.days()), 9)
+
+	def flagged(self, today: str) -> list:
+		frappe.db.set_value("Virtual Machine", SERVER, "creation", "2026-06-01", update_modified=False)
+		with patch.object(usage_ledger, "utc_today", return_value=frappe.utils.getdate(today)):
+			return [v.subject for v in invariants.audit(only="M1", checks=readiness.CHECKS)]
 
 	def test_a_bucket_with_no_usage_for_yesterday_is_flagged(self):
-		frappe.db.set_value("Virtual Machine", SERVER, "creation", "2026-06-01", update_modified=False)
-		with patch.object(usage_ledger, "utc_today", return_value=frappe.utils.getdate("2026-06-05")):
-			flagged = [v for v in invariants.audit(only="M1", checks=readiness.CHECKS)]
-		self.assertIn(self.subscription, [v.subject for v in flagged])
+		self.assertIn(self.subscription, self.flagged("2026-06-05"))
+
+	def test_a_server_paused_yesterday_is_not_flagged(self):
+		add_segment(self.subscription, "Paused", 0, "2026-06-04 00:00:00", plan=VM_PLAN)
+		add_segment(self.subscription, "Resumed", 1000, "2026-06-05 12:00:00", plan=VM_PLAN)
+		self.assertNotIn(self.subscription, self.flagged("2026-06-05"))
 
 
 class TestBundleCount(IntegrationTestCase):
