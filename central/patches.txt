@@ -122,3 +122,5 @@ central.patches.v0_0.fill_resize_activity_details
 central.patches.v0_0.grant_support_view_to_custom_roles
 # A Team is a Helpdesk customer now, so every team and its earlier tickets need their customer.
 central.patches.v0_0.sync_helpdesk_customers
+# Price object storage per GB-month: $0.025 and ₹2.5. A server's backup bucket bills what it holds above its plan.
+central.patches.v0_0.price_object_storage
