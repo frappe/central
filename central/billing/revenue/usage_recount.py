@@ -312,6 +312,8 @@ def _weight(day) -> float:
 
 def _bundle(meter, days: list, quantity: float) -> dict:
 	"""The month's bundle as the rollup's allowance, or nothing where its terms set the allowance."""
+	# A meter that records a daily bundle is billed by it, by design: it replaces a plan's
+	# monthly allowance, so a plan that ran part of the month or changed mid-month bills its days.
 	if any(frappe.utils.flt(day.included) for day in days):
 		return {"counted_allowance": quantity - _billable(days, quantity)}
 	# A live-priced server meter has no allowance of its own, so a bundle gone to none clears it.
