@@ -211,7 +211,7 @@ def _from_inr(amount: float, currency: str) -> float:
 	return frappe.utils.flt(frappe.utils.flt(amount) / _FX_TO_INR.get(currency, 1.0), 2)
 
 
-def _describe_line(team: str, li) -> dict:
+def _describe_line(team: str, li, period: tuple | None = None) -> dict:
 	"""Turn a stored line item into a human-readable charge row.
 
 	Resource slugs and plan IDs mean nothing to a customer, so we resolve the
@@ -265,21 +265,17 @@ def _describe_line(team: str, li) -> dict:
 		title = frappe.db.get_value("Plan", metered_plan.name, "title") if metered_plan else None
 		row["item"] = title or f"{li.resource_type.title()} overage"
 		row["kind"] = "Overage"
-		row["detail"] = _metered_detail(team, li)
+		row["detail"] = _metered_detail(team, li, period)
 		# Such as the AI model and the rate it was converted at, which tell its lines apart.
 		if li.get("description"):
 			row["detail"] += f" · {li.description}"
 	return row
 
 
-def _metered_detail(team: str, li) -> str:
+def _metered_detail(team: str, li, period: tuple | None) -> str:
 	"""How much a metered line used, and how much of it was included."""
 	# Surface the included allowance the usage ran past, so the bill is legible.
-	allowance = frappe.db.get_value(
-		"Usage Rollup",
-		{"team": team, "resource_id": li.subscription_resource, "resource_type": li.resource_type},
-		"locked_allowance",
-	)
+	allowance = _rollup_allowance(team, li, period)
 	# li.quantity is the BILLABLE overage (usage already minus the allowance). Spell
 	# out the metered story so the charge is legible: total used, what was included,
 	# and the units actually billed (used − included). Unit is a plain label (Nos, GB).
@@ -294,6 +290,23 @@ def _metered_detail(team: str, li) -> str:
 		)
 	# No free tier — every used unit is billed at the per-unit rate.
 	return f"Metered · {_qty(billed)} {unit} used"
+
+
+def _rollup_allowance(team: str, li, period: tuple | None) -> float:
+	"""The allowance of the rollup the line billed, of the line's own period when it is known."""
+	filters = [
+		["team", "=", team],
+		["resource_id", "=", li.subscription_resource],
+		["resource_type", "=", li.resource_type],
+		["superseded_by", "is", "not set"],
+	]
+	# Each month of a server has its own rollup and its own bundle.
+	if period:
+		start, end = (frappe.utils.getdate(on) for on in period)
+		filters += [["period_start", ">=", start], ["period_start", "<", frappe.utils.add_days(end, 1)]]
+	return frappe.utils.flt(
+		frappe.db.get_value("Usage Rollup", filters, "locked_allowance", order_by="period_start desc")
+	)
 
 
 def _server_name(resource_id: str | None) -> str | None:
