@@ -931,3 +931,27 @@ def set_idle_sleep(seconds: int, team: str | None = None, resource_id: str | Non
 	"""Turn sleep when idle on or off. Gated on `server:resize`, the capability to change a server."""
 	server = get_team_server(team, resource_id)
 	server.set_idle_sleep_seconds(seconds)
+
+
+@frappe.whitelist(methods=["GET"])
+@handle_resource_operation
+@require_capability("server:view", _lt("You cannot view this server."), server="resource_id")
+def get_usage_alert_limits(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Read this server's CPU, memory, and disk usage alert percentages."""
+	server = get_team_server(team, resource_id)
+	return server.get_usage_alert_limits()
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability(
+	"server:resize",
+	_lt("You can't change this server's usage alerts. Ask a team admin to review your access."),
+	server="resource_id",
+)
+def set_usage_alert_limits(
+	limits: dict | str, team: str | None = None, resource_id: str | None = None
+) -> None:
+	"""Change this server's usage alert percentages. Pilot owns the values."""
+	server = get_team_server(team, resource_id)
+	server.set_usage_alert_limits(frappe.parse_json(limits))

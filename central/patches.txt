@@ -118,3 +118,5 @@ central.patches.v0_0.start_ai_billing
 central.patches.v0_0.seed_exchange_rate_url
 # Fill the plan and size on resize events recorded before the feed showed them.
 central.patches.v0_0.fill_resize_activity_details
+# Turn on the default usage alerts on live servers that have them all off.
+central.patches.v0_0.backfill_usage_alert_defaults
