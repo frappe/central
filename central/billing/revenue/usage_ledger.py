@@ -79,8 +79,17 @@ def _is_higher(row: dict, current) -> bool:
 
 
 def _is_rebundled(row: dict, current) -> bool:
-	"""Whether the plan's bundle changed since the day was read, as a resize does."""
-	return frappe.utils.flt(row.get("included")) != frappe.utils.flt(current.get("included"))
+	"""Whether a reading no older than the day's last one says the plan's bundle changed, as a resize does."""
+	if frappe.utils.flt(row.get("included")) == frappe.utils.flt(current.get("included")):
+		return False
+	return _is_as_new(row, current)
+
+
+def _is_as_new(row: dict, current) -> bool:
+	"""Whether `row` was read no earlier than the stored day's last reading."""
+	if not current.get("as_of"):
+		return True
+	return frappe.utils.get_datetime(row["as_of"]) >= frappe.utils.get_datetime(current.get("as_of"))
 
 
 def _changed(rows: list[dict], existing: dict) -> list[tuple]:
@@ -166,7 +175,7 @@ def utc_day_start(day) -> datetime.datetime:
 
 
 def _estimate_day(day: datetime.date) -> int:
-	"""Copy the previous day's Level rows onto `day` for subjects billed at its end that have no row on it."""
+	"""Copy the previous day's Level rows onto `day` for subjects billed on it that have no row on it."""
 	previous = frappe.get_all(
 		DOCTYPE,
 		filters={"day": day - datetime.timedelta(days=1), "aggregation": LEVEL},
@@ -174,20 +183,31 @@ def _estimate_day(day: datetime.date) -> int:
 	)
 	if not previous:
 		return 0
-	live = _live_subjects({row.service for row in previous}, utc_day_start(day + datetime.timedelta(days=1)))
+	live = _live_subjects({row.service for row in previous}, day)
 	rows = [
-		{**row, "day": day, "estimated": 1, "as_of": None, "landed_at": None}
+		_estimated(row, day, live[(row.service, row.subject)])
 		for row in previous
 		if (row.service, row.subject) in live
 	]
 	return write_days(rows).count
 
 
-def _live_subjects(services: set, at) -> set:
-	"""(service, subject) of every service a team still has, suspended ones included."""
+def _estimated(row, day: datetime.date, subject) -> dict:
+	"""The previous day's row as `day`'s estimate."""
+	# A server resized since its last reading has that day's bundle, not the reading's.
+	included = subject.get("included", row.included)
+	return {**row, "day": day, "included": included, "estimated": 1, "as_of": None, "landed_at": None}
+
+
+def _live_subjects(services: set, day: datetime.date) -> dict:
+	"""Each (service, subject) a team still has on `day`, suspended ones included."""
 	from central.billing.revenue.bundled_buckets import billed_subjects_of
 
-	return {(service, subject) for service in services for subject in billed_subjects_of(service, at)}
+	return {
+		(service, name): subject
+		for service in services
+		for name, subject in billed_subjects_of(service, day).items()
+	}
 
 
 def _key(row) -> tuple:
@@ -263,10 +283,11 @@ def _insert(rows: list[dict], now) -> list[dict]:
 def _update(name: str, row: dict, now) -> None:
 	"""Apply a newer line. The guard is in the WHERE, so a concurrent writer can never lower a day."""
 	day = frappe.qb.DocType(DOCTYPE)
+	# An older reading may still raise the peak, but never brings back the bundle it was read with.
+	as_new = (day.estimated == 1) | day.as_of.isnull() | (day.as_of <= row["as_of"])
 	if row["aggregation"] == LEVEL:
 		raises = (day.estimated == 1) | (day.quantity < row["quantity"])
-		# A new bundle alone keeps the day's peak.
-		newer_than_stored = raises | (day.included != row["included"])
+		newer_than_stored = raises | ((day.included != row["included"]) & as_new)
 	else:
 		raises = newer_than_stored = (day.estimated == 1) | (day.as_of < row["as_of"])
 	(
@@ -274,8 +295,8 @@ def _update(name: str, row: dict, now) -> None:
 		# MariaDB assigns left to right, so the columns the CASEs read are set after them.
 		.set(day.source_amount, Case().when(raises, row.get("source_amount")).else_(day.source_amount))
 		.set(day.quantity, Case().when(raises, row["quantity"]).else_(day.quantity))
-		.set(day.included, row["included"])
-		.set(day.as_of, row.get("as_of"))
+		.set(day.included, Case().when(as_new, row["included"]).else_(day.included))
+		.set(day.as_of, Case().when(as_new, row.get("as_of")).else_(day.as_of))
 		.set(day.estimated, 0)
 		.set(day.landed_at, now)
 		.set(day.modified, now)

@@ -336,7 +336,7 @@ def check_storage_usage_is_recorded() -> list[Violation]:
 
 	today = utc_today()
 	yesterday = today - datetime.timedelta(days=1)
-	# A bucket made after yesterday ended (UTC) had nothing to read; a server paused then bills none.
+	# A bucket made after yesterday ended (UTC) had nothing to read; a server paused all day bills none.
 	cutoff = utc_day_start(today)
 	read = set(
 		frappe.get_all("Usage Day", filters={"service": STORAGE_SERVICE, "day": yesterday}, pluck="subject")
@@ -349,7 +349,7 @@ def check_storage_usage_is_recorded() -> list[Violation]:
 			subject=bucket.subscription,
 			detail=f"Bucket {subject} has no usage for {yesterday} (UTC). The next reading or the daily estimate fills it.",
 		)
-		for subject, bucket in billed_storage_subjects(at=cutoff).items()
+		for subject, bucket in billed_storage_subjects(day=yesterday).items()
 		if subject not in read and bucket.creation < cutoff
 	]
 
