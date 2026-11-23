@@ -43,29 +43,28 @@ def _bundled_buckets_on(day) -> dict[str, frappe._dict]:
 		return _all_bundled_buckets()
 	day = frappe.utils.getdate(day)
 	start, end = utc_day_start(day), utc_day_start(day + datetime.timedelta(days=1))
-	# A server billing at either edge billed part of the day; the bundle is the one it ended on.
-	return {**_all_bundled_buckets(start), **_all_bundled_buckets(end)}
+	return _all_bundled_buckets((start, end))
 
 
-def _all_bundled_buckets(at=None) -> dict[str, frappe._dict]:
+def _all_bundled_buckets(during=None) -> dict[str, frappe._dict]:
 	included = included_by_plan("Storage")
 	if not included:
 		return {}
-	segments = _segments_with_storage(included, at)
+	segments = _segments_with_storage(included, during)
 	servers = _servers([segment.server_id for segment in segments])
 	tenants = _tenants({segment.team for segment in segments})
 	rows = [_bucket(segment, servers, tenants, included) for segment in segments]
 	return {row.external_id: row for row in rows if row}
 
 
-def _segments_with_storage(included: dict, at) -> list:
-	"""The open server segments, now or at `at`, whose plan includes storage."""
+def _segments_with_storage(included: dict, during) -> list:
+	"""The server segments open now, or at some moment of `during`, whose plan includes storage."""
 	filters = {"server_id": ["is", "set"]}
-	if at is None:
+	if during is None:
 		filters["plan"] = ["in", list(included)]
-	# A paused or ended server has no open segment, so its bucket bills nothing. A past moment
-	# takes the plan the server ran then, which a resize may have changed since.
-	return [segment for segment in active_segments(filters, at=at) if segment.plan in included]
+	# A paused or ended server has no open segment, so its bucket bills nothing. A past day takes
+	# the last plan the server ran in it, which a resize may have changed since.
+	return [segment for segment in active_segments(filters, during=during) if segment.plan in included]
 
 
 def _bucket(segment, servers: dict, tenants: dict, included: dict) -> frappe._dict | None:
