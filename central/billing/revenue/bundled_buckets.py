@@ -3,15 +3,20 @@
 """The backup bucket that comes with a server whose plan includes storage.
 
 Pilot creates it in Cargo with no cap and no Team Service. It is billed on the server's own
-subscription; the plan's Storage is its bundle.
+subscription; the Storage its plan or composed shape includes is its bundle.
 """
 
 import datetime
 
 import frappe
+from frappe.query_builder import Order
 
 from central.billing.catalog.subscriptions import active_segments
-from central.billing.revenue.bundles import included_by_plan
+from central.billing.doctype.subscription_change.subscription_change import (
+	RATED_CHANGE_TYPES,
+	SEGMENT_CHANGE_TYPES,
+)
+from central.billing.revenue.bundles import Bundles
 from central.billing.revenue.usage_ledger import utc_day_start
 from central.services.doctype.service.service import STORAGE_SERVICE
 from central.services.doctype.team_service.team_service import billed_subjects, bucket_name_for
@@ -47,24 +52,77 @@ def _bundled_buckets_on(day) -> dict[str, frappe._dict]:
 
 
 def _all_bundled_buckets(during=None) -> dict[str, frappe._dict]:
-	included = included_by_plan("Storage")
-	if not included:
-		return {}
-	segments = _segments_with_storage(included, during)
+	# A paused or ended server has no open segment, so its bucket bills nothing.
+	segments, included = _segments_with_storage(during)
 	servers = _servers([segment.server_id for segment in segments])
 	tenants = _tenants({segment.team for segment in segments})
 	rows = [_bucket(segment, servers, tenants, included) for segment in segments]
 	return {row.external_id: row for row in rows if row}
 
 
-def _segments_with_storage(included: dict, during) -> list:
-	"""The server segments open now, or at some moment of `during`, whose plan includes storage."""
-	filters = {"server_id": ["is", "set"]}
-	if during is None:
-		filters["plan"] = ["in", list(included)]
-	# A paused or ended server has no open segment, so its bucket bills nothing. A past day takes
-	# the last plan the server ran in it, which a resize may have changed since.
-	return [segment for segment in active_segments(filters, during=during) if segment.plan in included]
+def _segments_with_storage(during) -> tuple[list, dict[str, float]]:
+	"""The server segments open now, or at some moment of `during`, with a storage bundle; and the bundles."""
+	segments = active_segments({"server_id": ["is", "set"]}, during=during)
+	included = _bundles_now(segments) if during is None else _bundles_during(segments, during)
+	return [segment for segment in segments if included.get(segment.subscription)], included
+
+
+def _bundles_now(segments: list) -> dict[str, float]:
+	"""Each subscription's storage bundle on the plan or composed shape it is billed on now."""
+	bundles = Bundles("Storage", segments)
+	return {segment.subscription: bundles.of(segment) for segment in segments}
+
+
+def _bundles_during(segments: list, during: tuple) -> dict[str, float]:
+	"""Each subscription's storage bundle on a past day: the last segment open in it that has one."""
+	candidates = _segments_in(segments, during)
+	bundles = Bundles("Storage", [c for rows in candidates.values() for c in rows])
+	return {name: next((b for b in map(bundles.of, rows) if b), 0) for name, rows in candidates.items()}
+
+
+def _segments_in(segments: list, during: tuple) -> dict[str, list]:
+	"""The rated segments open at some moment of `during`, newest first, per subscription."""
+	start, end = during
+	rows = _changes_before(end, [segment.subscription for segment in segments])
+	plans = _plan_names({row.new_value for row in rows if row.new_value})
+	open_in: dict[str, list] = {}
+	settled = set()
+	for row in rows:
+		if row.subscription in settled:
+			continue
+		# The change in force at the start ends the walk; it counts only when it opened a segment.
+		if row.effective_at <= start:
+			settled.add(row.subscription)
+		if row.change_type in RATED_CHANGE_TYPES:
+			open_in.setdefault(row.subscription, []).append(_segment(row, plans))
+	return open_in
+
+
+def _segment(row, plans: set) -> frappe._dict:
+	# The ledger keeps no composed shape, so a composed segment takes the subscription's own.
+	plan = row.new_value if row.new_value in plans else None
+	return frappe._dict(subscription=row.subscription, plan=plan)
+
+
+def _changes_before(end, names: list[str]) -> list:
+	if not names:
+		return []
+	change = frappe.qb.DocType("Subscription Change")
+	return (
+		frappe.qb.from_(change)
+		.select(change.subscription, change.change_type, change.new_value, change.effective_at)
+		.where(change.subscription.isin(names))
+		.where(change.change_type.isin(list(SEGMENT_CHANGE_TYPES)))
+		.where(change.effective_at < end)
+		.orderby(change.effective_at, order=Order.desc)
+		.orderby(change.creation, order=Order.desc)
+	).run(as_dict=True)
+
+
+def _plan_names(labels: set) -> set:
+	return (
+		set(frappe.get_all("Plan", filters={"name": ["in", list(labels)]}, pluck="name")) if labels else set()
+	)
 
 
 def _bucket(segment, servers: dict, tenants: dict, included: dict) -> frappe._dict | None:
@@ -78,7 +136,7 @@ def _bucket(segment, servers: dict, tenants: dict, included: dict) -> frappe._di
 		subscription=segment.subscription,
 		region=server.region,
 		creation=server.creation,
-		included=included[segment.plan],
+		included=included[segment.subscription],
 	)
 
 

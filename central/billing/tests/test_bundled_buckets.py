@@ -224,11 +224,40 @@ class TestBundledBuckets(IntegrationTestCase):
 
 	def test_a_server_resized_off_storage_is_still_estimated_for_its_storage_days(self):
 		self.read("2026-06-01", 100)
-		plan = make_plan(f"{VM_PLAN}-no-storage", includes=DEFAULT_INCLUDES)
-		frappe.db.set_value("Subscription", self.subscription, "plan", plan)
-		add_segment(self.subscription, "Plan Changed", 1000, "2026-06-10 12:00:00", plan=plan)
+		self.resize_off_storage("2026-06-10 12:00:00")
 		usage_ledger.fill_missing_days("2026-06-05")
 		self.assertEqual(self.days(), [100, 100])
+
+	def resize_off_storage(self, on: str):
+		plan = make_plan(f"{VM_PLAN}-no-storage", includes=DEFAULT_INCLUDES)
+		frappe.db.set_value("Subscription", self.subscription, "plan", plan)
+		add_segment(self.subscription, "Plan Changed", 1000, on, plan=plan)
+
+	def test_a_day_resized_off_storage_at_noon_is_estimated_on_its_morning_plan(self):
+		self.read("2026-06-01", 100)
+		self.resize_off_storage("2026-06-02 12:00:00")
+		usage_ledger.fill_missing_days("2026-06-05")
+		self.assertEqual(self.estimated_bundles(), [40])
+
+	def test_a_composed_disk_resize_keeps_the_bucket_and_its_storage(self):
+		from central.billing.catalog.subscriptions import _resize_disk_choice, resize_composed_subscription
+
+		_, rows, _ = _resize_disk_choice(VM_PLAN, None, "General", 120)
+		# A preset grown past its disk keeps its bundle price plus the extra disk; the spend cap is not under test.
+		with patch("central.billing.catalog.subscriptions.enforce_headroom"):
+			resize_composed_subscription(
+				self.subscription, rows, "General", override_rate=1000, preset_plan=VM_PLAN
+			)
+		self.assertIsNone(frappe.db.get_value("Subscription", self.subscription, "plan"))
+		self.assertEqual(bundled_buckets()[self.bucket].included, 40)
+
+	def test_a_server_resized_onto_a_storage_plan_is_read_now(self):
+		from central.billing.catalog.subscriptions import change_plan
+
+		self.resize_off_storage("2026-06-01 06:00:00")
+		self.assertEqual(bundled_buckets(), {})
+		change_plan(self.subscription, VM_PLAN)
+		self.assertEqual(bundled_buckets()[self.bucket].included, 40)
 
 	def test_a_server_paused_partway_through_a_day_is_estimated_for_it(self):
 		self.read("2026-06-01", 100)
@@ -332,6 +361,10 @@ class TestBundledBuckets(IntegrationTestCase):
 
 	def test_a_server_paused_partway_through_yesterday_is_flagged(self):
 		add_segment(self.subscription, "Paused", 0, "2026-06-04 12:00:00", plan=VM_PLAN)
+		self.assertIn(self.subscription, self.flagged("2026-06-05"))
+
+	def test_a_server_resized_off_storage_at_noon_yesterday_is_flagged(self):
+		self.resize_off_storage("2026-06-04 12:00:00")
 		self.assertIn(self.subscription, self.flagged("2026-06-05"))
 
 	def test_a_server_billing_only_midday_yesterday_is_flagged(self):
