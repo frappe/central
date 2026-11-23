@@ -160,10 +160,20 @@ class TestBundledBuckets(IntegrationTestCase):
 		self.assertIn(f"over {_qty(40 / 30)} included", details[0])
 		self.assertIn(f"over {_qty(10 / 31)} included", details[1])
 
-	def storage_detail(self, start: str, end: str) -> str:
+	def storage_detail(self, start: str, end: str, field: str = "detail") -> str:
 		invoice = frappe.get_doc("Invoice", generate_team_invoice(TEAM, start, end))
 		[line] = [li for li in invoice.items if li.resource_type == "Storage"]
-		return _describe_line(TEAM, line, (invoice.period_start, invoice.period_end))["detail"]
+		return _describe_line(TEAM, line, (invoice.period_start, invoice.period_end))[field]
+
+	def test_the_storage_line_names_its_server(self):
+		frappe.db.set_value("Virtual Machine", SERVER, "title", "Backups box")
+		self.read("2026-06-01", 100)
+		item = self.storage_detail("2026-06-01", "2026-06-30", field="item")
+		self.assertTrue(item.endswith(" · Backups box"))
+
+	def test_a_line_not_on_a_server_names_no_server(self):
+		line = frappe._dict(resource_type="Storage", subscription_resource="team-svc-subject", quantity=1)
+		self.assertNotIn(" · ", _describe_line(TEAM, line, ("2026-06-01", "2026-06-30"))["item"])
 
 	def test_a_bucket_never_attached_reads_as_empty(self):
 		self.read("2026-06-01", None)
