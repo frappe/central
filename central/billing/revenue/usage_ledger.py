@@ -159,8 +159,14 @@ def _utc_date(today) -> datetime.date:
 	return frappe.utils.getdate(today) if today else utc_today()
 
 
+def utc_day_start(day) -> datetime.datetime:
+	"""The moment a UTC day begins, in system time."""
+	start = datetime.datetime.combine(frappe.utils.getdate(day), datetime.time(), datetime.UTC)
+	return frappe.utils.convert_utc_to_system_timezone(start).replace(tzinfo=None)
+
+
 def _estimate_day(day: datetime.date) -> int:
-	"""Copy the previous day's Level rows onto `day` for live subjects that have no row on it."""
+	"""Copy the previous day's Level rows onto `day` for subjects billed at its end that have no row on it."""
 	previous = frappe.get_all(
 		DOCTYPE,
 		filters={"day": day - datetime.timedelta(days=1), "aggregation": LEVEL},
@@ -168,7 +174,7 @@ def _estimate_day(day: datetime.date) -> int:
 	)
 	if not previous:
 		return 0
-	live = _live_subjects({row.service for row in previous})
+	live = _live_subjects({row.service for row in previous}, utc_day_start(day + datetime.timedelta(days=1)))
 	rows = [
 		{**row, "day": day, "estimated": 1, "as_of": None, "landed_at": None}
 		for row in previous
@@ -177,11 +183,11 @@ def _estimate_day(day: datetime.date) -> int:
 	return write_days(rows).count
 
 
-def _live_subjects(services: set) -> set:
+def _live_subjects(services: set, at) -> set:
 	"""(service, subject) of every service a team still has, suspended ones included."""
 	from central.billing.revenue.bundled_buckets import billed_subjects_of
 
-	return {(service, subject) for service in services for subject in billed_subjects_of(service)}
+	return {(service, subject) for service in services for subject in billed_subjects_of(service, at)}
 
 
 def _key(row) -> tuple:
