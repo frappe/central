@@ -209,7 +209,7 @@ class TestAIBillingMonths(AIBillingCase):
 		line = frappe._dict(
 			resource_type="AI Usage", quantity=2, unit="USD", rate=84.1, amount=168.2, description="gpt-4o"
 		)
-		self.assertTrue(_describe_line(TEAM_USD, line)["detail"].endswith(" · gpt-4o"))
+		self.assertTrue(_describe_line(TEAM_USD, line, JUNE)["detail"].endswith(" · gpt-4o"))
 
 	def read_page(self, today: str, *teams: str):
 		with (

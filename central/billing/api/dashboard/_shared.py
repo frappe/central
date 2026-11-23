@@ -211,7 +211,7 @@ def _from_inr(amount: float, currency: str) -> float:
 	return frappe.utils.flt(frappe.utils.flt(amount) / _FX_TO_INR.get(currency, 1.0), 2)
 
 
-def _describe_line(team: str, li, period: tuple | None = None) -> dict:
+def _describe_line(team: str, li, period: tuple) -> dict:
 	"""Turn a stored line item into a human-readable charge row.
 
 	Resource slugs and plan IDs mean nothing to a customer, so we resolve the
@@ -272,7 +272,7 @@ def _describe_line(team: str, li, period: tuple | None = None) -> dict:
 	return row
 
 
-def _metered_detail(team: str, li, period: tuple | None) -> str:
+def _metered_detail(team: str, li, period: tuple) -> str:
 	"""How much a metered line used, and how much of it was included."""
 	# Surface the included allowance the usage ran past, so the bill is legible.
 	allowance = _rollup_allowance(team, li, period)
@@ -292,18 +292,18 @@ def _metered_detail(team: str, li, period: tuple | None) -> str:
 	return f"Metered · {_qty(billed)} {unit} used"
 
 
-def _rollup_allowance(team: str, li, period: tuple | None) -> float:
-	"""The allowance of the rollup the line billed, of the line's own period when it is known."""
+def _rollup_allowance(team: str, li, period: tuple) -> float:
+	"""The allowance of the rollup the line billed in its own period."""
+	# Each month of a server has its own rollup and its own bundle.
+	start, end = (frappe.utils.getdate(on) for on in period)
 	filters = [
 		["team", "=", team],
 		["resource_id", "=", li.subscription_resource],
 		["resource_type", "=", li.resource_type],
 		["superseded_by", "is", "not set"],
+		["period_start", ">=", start],
+		["period_start", "<", frappe.utils.add_days(end, 1)],
 	]
-	# Each month of a server has its own rollup and its own bundle.
-	if period:
-		start, end = (frappe.utils.getdate(on) for on in period)
-		filters += [["period_start", ">=", start], ["period_start", "<", frappe.utils.add_days(end, 1)]]
 	return frappe.utils.flt(
 		frappe.db.get_value("Usage Rollup", filters, "locked_allowance", order_by="period_start desc")
 	)
