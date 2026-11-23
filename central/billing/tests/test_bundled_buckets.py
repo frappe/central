@@ -58,7 +58,7 @@ class TestBundledBuckets(IntegrationTestCase):
 			patch.object(storage_bridge.ObjectStorageClient, "from_region", return_value=client),
 		):
 			storage_bridge.RegionRead("test-run", CLUSTER).start(1)
-			storage_bridge.read_page("test-run", CLUSTER, [self.bucket], bundled=True)
+			storage_bridge.read_bundled_page("test-run", CLUSTER, [self.bucket])
 
 	def days(self) -> list[float]:
 		return frappe.get_all(
