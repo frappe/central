@@ -250,6 +250,17 @@ class TestBundledBuckets(IntegrationTestCase):
 		usage_ledger.fill_missing_days("2026-06-05")
 		self.assertEqual(self.estimated_bundles(), [200])
 
+	def test_a_reading_without_a_bundle_keeps_the_stored_one(self):
+		self.read("2026-06-01", 100)
+		[stored] = frappe.get_all(
+			"Usage Day", filters={"subject": self.bucket}, fields=list(usage_ledger._DAY_FIELDS)
+		)
+		del stored["included"]
+		later = frappe.utils.add_to_date(stored.as_of, hours=1)
+		usage_ledger.write_days([{**stored, "quantity": 120, "as_of": later}])
+		[day] = frappe.get_all("Usage Day", filters={"subject": self.bucket}, fields=["quantity", "included"])
+		self.assertEqual((day.quantity, day.included), (120, 40))
+
 	def test_an_older_reading_does_not_bring_back_an_older_bundle(self):
 		self.read("2026-06-01", 100)
 		[stored] = frappe.get_all(
