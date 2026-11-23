@@ -39,6 +39,7 @@ class SubscriptionChange(Document):
 		changed_by: DF.Data | None
 		currency: DF.Link | None
 		effective_at: DF.Datetime | None
+		included_resources: DF.JSON | None
 		locked_rate: DF.Currency
 		new_value: DF.Data | None
 		old_value: DF.Data | None

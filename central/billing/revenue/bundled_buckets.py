@@ -103,9 +103,8 @@ def _segments_in(segments: list, during: tuple) -> dict[str, list]:
 
 
 def _segment(row, plans: set) -> frappe._dict:
-	# The ledger keeps no composed shape, so a composed segment takes the subscription's own.
 	plan = row.new_value if row.new_value in plans else None
-	return frappe._dict(subscription=row.subscription, plan=plan)
+	return frappe._dict(subscription=row.subscription, plan=plan, included_resources=row.included_resources)
 
 
 def _changes_before(end, names: list[str]) -> list:
@@ -114,7 +113,13 @@ def _changes_before(end, names: list[str]) -> list:
 	change = frappe.qb.DocType("Subscription Change")
 	return (
 		frappe.qb.from_(change)
-		.select(change.subscription, change.change_type, change.new_value, change.effective_at)
+		.select(
+			change.subscription,
+			change.change_type,
+			change.new_value,
+			change.included_resources,
+			change.effective_at,
+		)
 		.where(change.subscription.isin(names))
 		.where(change.change_type.isin(list(SEGMENT_CHANGE_TYPES)))
 		.where(change.effective_at < end)
