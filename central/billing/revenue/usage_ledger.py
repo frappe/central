@@ -28,6 +28,7 @@ _DAY_FIELDS = (
 	"subscription",
 	"resource_type",
 	"quantity",
+	"included",
 	"unit",
 	"source_amount",
 	"source_currency",
@@ -93,6 +94,7 @@ def _merged(rows: list[dict]) -> list[dict]:
 			**row,
 			"dimension": row.get("dimension") or "",
 			"quantity": frappe.utils.flt(row.get("quantity")),
+			"included": frappe.utils.flt(row.get("included")),
 			"source_amount": frappe.utils.flt(row.get("source_amount")),
 			"written_off": _is_before_billing(row, bill_from.get(row["service"])),
 		}
@@ -168,9 +170,14 @@ def _estimate_day(day: datetime.date) -> int:
 
 def _live_subjects(services: set) -> set:
 	"""(service, subject) of every service a team still has, suspended ones included."""
+	from central.billing.revenue.bundled_buckets import billed_storage_subjects
+	from central.services.doctype.service.service import STORAGE_SERVICE
 	from central.services.doctype.team_service.team_service import billed_subjects
 
-	return {(service, subject) for service in services for subject in billed_subjects(service)}
+	def subjects(service: str) -> dict:
+		return billed_storage_subjects() if service == STORAGE_SERVICE else billed_subjects(service)
+
+	return {(service, subject) for service in services for subject in subjects(service)}
 
 
 def _key(row) -> tuple:
