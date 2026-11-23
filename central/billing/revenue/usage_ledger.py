@@ -5,7 +5,7 @@ import datetime
 from dataclasses import dataclass, field
 
 import frappe
-from frappe.query_builder import Criterion
+from frappe.query_builder import Case, Criterion
 
 DOCTYPE = "Usage Day"
 LEVEL = "Level"
@@ -49,7 +49,7 @@ class Written:
 def write_days(rows: list[dict]) -> Written:
 	"""Store each line as its subject's row for its UTC day."""
 	# An existing day takes a line only when it is a real reading over an estimate, a higher Level
-	# peak or a newer Sum total. A billed day never changes.
+	# peak, a Level day's new bundle or a newer Sum total. A billed day never changes.
 	rows = _merged(rows)
 	if not rows:
 		return Written()
@@ -70,8 +70,17 @@ def is_newer(current, row: dict) -> bool:
 	if current.get("estimated"):
 		return True
 	if current.get("aggregation") == LEVEL:
-		return frappe.utils.flt(row["quantity"]) > frappe.utils.flt(current.get("quantity"))
+		return _is_higher(row, current) or _is_rebundled(row, current)
 	return frappe.utils.get_datetime(row["as_of"]) > frappe.utils.get_datetime(current.get("as_of"))
+
+
+def _is_higher(row: dict, current) -> bool:
+	return frappe.utils.flt(row["quantity"]) > frappe.utils.flt(current.get("quantity"))
+
+
+def _is_rebundled(row: dict, current) -> bool:
+	"""Whether the plan's bundle changed since the day was read, as a resize does."""
+	return frappe.utils.flt(row.get("included")) != frappe.utils.flt(current.get("included"))
 
 
 def _changed(rows: list[dict], existing: dict) -> list[tuple]:
@@ -213,7 +222,7 @@ def _days_where(condition) -> dict:
 	found = (
 		frappe.qb.from_(day)
 		.select(day.name, day.service, day.subject, day.meter, day.dimension, day.day, day.aggregation)
-		.select(day.quantity, day.as_of, day.estimated, day.invoice)
+		.select(day.quantity, day.included, day.as_of, day.estimated, day.invoice)
 		.where(condition)
 	).run(as_dict=True)
 	return {_key(row): row for row in found}
@@ -249,16 +258,20 @@ def _update(name: str, row: dict, now) -> None:
 	"""Apply a newer line. The guard is in the WHERE, so a concurrent writer can never lower a day."""
 	day = frappe.qb.DocType(DOCTYPE)
 	if row["aggregation"] == LEVEL:
-		newer_than_stored = day.quantity < row["quantity"]
+		raises = (day.estimated == 1) | (day.quantity < row["quantity"])
+		# A new bundle alone keeps the day's peak.
+		newer_than_stored = raises | (day.included != row["included"])
 	else:
-		newer_than_stored = day.as_of < row["as_of"]
+		raises = newer_than_stored = (day.estimated == 1) | (day.as_of < row["as_of"])
 	(
 		frappe.qb.update(day)
-		.set(day.quantity, row["quantity"])
-		.set(day.source_amount, row.get("source_amount"))
+		# MariaDB assigns left to right, so the columns the CASEs read are set after them.
+		.set(day.source_amount, Case().when(raises, row.get("source_amount")).else_(day.source_amount))
+		.set(day.quantity, Case().when(raises, row["quantity"]).else_(day.quantity))
+		.set(day.included, row["included"])
 		.set(day.as_of, row.get("as_of"))
 		.set(day.estimated, 0)
 		.set(day.landed_at, now)
 		.set(day.modified, now)
-		.where((day.name == name) & day.invoice.isnull() & ((day.estimated == 1) | newer_than_stored))
+		.where((day.name == name) & day.invoice.isnull() & newer_than_stored)
 	).run()
