@@ -64,6 +64,7 @@ def _record_change(
 	changed_by=None,
 	locked_rate=None,
 	currency=None,
+	included_resources=None,
 ):
 	"""Append one immutable Subscription Change row. A change that opens a segment
 	carries its locked rate and currency."""
@@ -74,6 +75,7 @@ def _record_change(
 			"change_type": change_type,
 			"old_value": old_value,
 			"new_value": new_value,
+			"included_resources": included_resources,
 			"effective_at": frappe.utils.now_datetime(),
 			"changed_by": changed_by or frappe.session.user,
 			"locked_rate": locked_rate,
@@ -1305,6 +1307,7 @@ def reopen_paused_billing(subscription: str, changed_by: str | None = None):
 			changed_by=changed_by,
 			locked_rate=change.locked_rate,
 			currency=change.currency,
+			included_resources=change.included_resources,
 		)
 	return doc
 
@@ -1336,7 +1339,7 @@ def _last_rated_change(subscription: str):
 	changes = frappe.get_all(
 		"Subscription Change",
 		filters={"subscription": subscription, "change_type": ["in", RATED_CHANGE_TYPES]},
-		fields=["locked_rate", "currency", "new_value"],
+		fields=["locked_rate", "currency", "new_value", "included_resources"],
 		order_by="effective_at desc, creation desc",
 		limit=1,
 	)
