@@ -77,7 +77,11 @@ def _bundles_during(segments: list, during: tuple) -> dict[str, float]:
 	"""Each subscription's storage bundle on a past day: the last segment open in it that has one."""
 	candidates = _segments_in(segments, during)
 	bundles = Bundles("Storage", [c for rows in candidates.values() for c in rows])
-	return {name: next((b for b in map(bundles.of, rows) if b), 0) for name, rows in candidates.items()}
+	return {name: _first_bundle(bundles, rows) for name, rows in candidates.items()}
+
+
+def _first_bundle(bundles, rows: list) -> float:
+	return next((found for found in (bundles.of(row) for row in rows) if found), 0)
 
 
 def _segments_in(segments: list, during: tuple) -> dict[str, list]:
