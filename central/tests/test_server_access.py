@@ -7,9 +7,11 @@ from central.api.activity import server_activity
 from central.api.servers import (
 	get_idle_sleep,
 	get_rescue_state,
+	get_usage_alert_limits,
 	set_idle_sleep,
 	set_rescue_mode,
 	set_termination_protection,
+	set_usage_alert_limits,
 )
 from central.api.ssh_keys import set_server_ssh_keys
 from central.errors import AtlasConnectionError, AtlasRejected
@@ -18,6 +20,9 @@ from central.resource_actions import submit_command
 from central.tests.test_iam import ensure_user
 from central.tests.test_server_overview import make_public_key
 from central.tests.utils import ensure_atlas_instance
+
+PILOT = "central.integrations.pilot"
+USAGE_ALERT_LIMITS = {"cpu_usage_limit": 90, "memory_usage_limit": 90, "disk_space_limit": 95}
 
 
 class TestServerAccess(IntegrationTestCase):
@@ -326,3 +331,65 @@ class TestServerAccess(IntegrationTestCase):
 		):
 			set_idle_sleep(seconds=0, team=self.team, resource_id=self.server.name)
 		self.server_client.set_compute_settings.assert_not_called()
+
+	def test_a_viewer_reads_usage_alert_limits_but_cannot_change_them(self):
+		"""Reading a server includes its alerts; changing them needs `server:resize`."""
+		frappe.set_user(self.viewer)
+		with patch(f"{PILOT}.read_pilot", return_value={"resource_limits": USAGE_ALERT_LIMITS}) as read:
+			self.assertEqual(
+				get_usage_alert_limits(team=self.team, resource_id=self.server.name), USAGE_ALERT_LIMITS
+			)
+		read.assert_called_once_with(self.server.name, "/api/v1/settings")
+
+		with patch(f"{PILOT}.write_pilot") as write, self.assertRaises(frappe.PermissionError):
+			set_usage_alert_limits(
+				limits={"disk_space_limit": 80}, team=self.team, resource_id=self.server.name
+			)
+		write.assert_not_called()
+
+	def test_a_member_with_server_resize_sets_only_the_changed_usage_alert(self):
+		"""A save sends the changed percentages and leaves the others with Pilot."""
+		frappe.set_user(self.developer)
+		with patch(f"{PILOT}.write_pilot") as write:
+			set_usage_alert_limits(
+				limits='{"disk_space_limit": 95}', team=self.team, resource_id=self.server.name
+			)
+		write.assert_called_once_with(
+			self.server.name,
+			"PATCH",
+			"/api/v1/settings",
+			{"resource_limits": {"disk_space_limit": 95}},
+		)
+
+	def test_usage_alert_limits_refuse_another_team(self):
+		"""A server's alerts belong to the team that owns it."""
+		frappe.set_user(self.developer)
+		with patch(f"{PILOT}.read_pilot") as read, patch(f"{PILOT}.write_pilot") as write:
+			with self.assertRaises(frappe.PermissionError):
+				get_usage_alert_limits(team=self.other_team, resource_id=self.server.name)
+			with self.assertRaises(frappe.PermissionError):
+				set_usage_alert_limits(
+					limits={"disk_space_limit": 80}, team=self.other_team, resource_id=self.server.name
+				)
+		read.assert_not_called()
+		write.assert_not_called()
+
+	def test_usage_alert_limits_refuse_a_value_outside_the_rule(self):
+		"""Each alert is a whole percentage from 0 to 100 and a known alert name."""
+		frappe.set_user(self.developer)
+		for limits in (
+			{"disk_space_limit": 120},
+			{"disk_space_limit": 100},
+			{"disk_space_limit": 96},
+			{"cpu_usage_limit": -1},
+			{"cpu_usage_limit": True},
+			{"site_uptime": 80},
+			{},
+		):
+			with (
+				patch(f"{PILOT}.write_pilot") as write,
+				self.subTest(limits=limits),
+				self.assertRaises(frappe.ValidationError),
+			):
+				set_usage_alert_limits(limits=limits, team=self.team, resource_id=self.server.name)
+			write.assert_not_called()

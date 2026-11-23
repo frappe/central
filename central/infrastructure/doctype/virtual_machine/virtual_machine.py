@@ -361,6 +361,32 @@ class VirtualMachine(SystemRecord):
 			message = _("{0} turned sleep when idle off.").format(frappe.session.user)
 		self.add_comment("Info", message)
 
+	def get_usage_alert_limits(self) -> dict[str, int]:
+		"""Read the server's CPU, memory, and disk usage alert percentages from its Pilot."""
+		from central.integrations.pilot import get_usage_alert_limits
+
+		self.require_live()
+		return get_usage_alert_limits(self.name)
+
+	@requires_server_access
+	def set_usage_alert_limits(self, limits: dict) -> None:
+		"""Set the usage alert percentages. Pilot owns the values and sends the alert."""
+		from central.integrations import pilot
+
+		self.require_live()
+		message = _("Set each usage alert to a percentage from 1 to {0}, or 0 to turn it off.").format(
+			pilot.USAGE_ALERT_LIMIT_MAXIMUM
+		)
+		if not limits or not set(limits) <= set(pilot.USAGE_ALERT_LIMIT_DEFAULTS):
+			frappe.throw(message)
+		if any(
+			type(value) is not int or not 0 <= value <= pilot.USAGE_ALERT_LIMIT_MAXIMUM
+			for value in limits.values()
+		):
+			frappe.throw(message)
+
+		pilot.set_usage_alert_limits(self.name, limits)
+
 	def enqueue_route_removal(self) -> None:
 		"""A terminated server serves nothing, so its site and custom-domain routes go too."""
 		frappe.enqueue(

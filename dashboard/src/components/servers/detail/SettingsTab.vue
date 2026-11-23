@@ -8,6 +8,7 @@ import type { VirtualMachineRow } from '@/composables/useServers'
 import type { ServerActions } from '@/lib/capabilities'
 import { canStart, isSettingUp } from '@/lib/status'
 import IdleSleepSection from './IdleSleepSection.vue'
+import UsageAlertsSection from './UsageAlertsSection.vue'
 
 interface Props {
 	server: VirtualMachineRow
@@ -78,6 +79,13 @@ const isLocked = computed(
 			:resource-id="server.resource_id"
 			:can-change="actions.resize"
 			:is-trial="!!actions.isAccessLocked"
+			:is-locked="isLocked"
+		/>
+
+		<UsageAlertsSection
+			v-if="server.pilot_audience"
+			:resource-id="server.resource_id"
+			:can-change="actions.resize"
 			:is-locked="isLocked"
 		/>
 

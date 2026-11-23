@@ -31,6 +31,9 @@ SITE_LOGIN_TIMEOUT_SECONDS = 120
 SITE_PING_TIMEOUT_SECONDS = (0.5, 1.5)
 # A server that a resize just started needs some minutes before its pilot answers.
 PILOT_WAKE_DELAYS_SECONDS = (5, 10, 20, 40, 60, 60, 60)
+USAGE_ALERT_LIMIT_DEFAULTS = {"cpu_usage_limit": 90, "memory_usage_limit": 90, "disk_space_limit": 95}
+# An alert above this fires with no room left to act.
+USAGE_ALERT_LIMIT_MAXIMUM = 95
 
 
 def get_bootstrap_metadata(action) -> dict[str, str]:
@@ -68,7 +71,7 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 		common_site_config |= trial_key.get_site_config()
 	metadata["pilot-common-site-config"] = json.dumps(common_site_config)
 
-	common_config = {}
+	common_config = {"resource_limits": USAGE_ALERT_LIMIT_DEFAULTS}
 	if action.requested_by:
 		if email := frappe.db.get_value("User", action.requested_by, "email"):
 			common_config["letsencrypt"] = {"email": email}
@@ -76,8 +79,7 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 		common_config["telemetry"] = get_telemetry_configuration(action)
 	except Exception:
 		action.record_diagnostic(frappe.get_traceback(), "Pilot telemetry configuration failed")
-	if common_config:
-		metadata["pilot-common-config"] = json.dumps(common_config)
+	metadata["pilot-common-config"] = json.dumps(common_config)
 
 	# Pilot merges pilot-config into bench.toml, whose [s3] section holds its backup bucket.
 	if bucket := get_bundled_bucket(action):
@@ -166,6 +168,45 @@ def delete_bundled_bucket(action: str) -> None:
 			ObjectStorageClient.from_region(request.region).delete_bucket(name)
 		except ObjectStorageNotFound:
 			pass
+
+
+def get_usage_alert_limits(server: str) -> dict[str, int]:
+	"""Read the usage alert percentages that a server's Pilot holds."""
+	settings = read_pilot(server, "/api/v1/settings")
+
+	return {key: settings["resource_limits"][key] for key in USAGE_ALERT_LIMIT_DEFAULTS}
+
+
+def set_usage_alert_limits(server: str, limits: dict[str, int]) -> None:
+	"""Set the usage alert percentages that a server's Pilot holds."""
+	write_pilot(server, "PATCH", "/api/v1/settings", {"resource_limits": limits})
+
+
+def apply_usage_alert_defaults(server: str) -> None:
+	"""Send the default usage alerts to a server whose alerts are all off. A server with any alert
+	set keeps its values, so this is safe to run again."""
+	if not any(get_usage_alert_limits(server).values()):
+		set_usage_alert_limits(server, USAGE_ALERT_LIMIT_DEFAULTS)
+
+
+def backfill_usage_alert_defaults() -> None:
+	"""Give every live server with an enrolled Pilot the default usage alerts."""
+	enrolled = frappe.get_all(
+		"Pilot Credential", filters={"status": "Active", "server": ("is", "set")}, pluck="server"
+	)
+	servers = frappe.get_all(
+		"Virtual Machine", filters={"name": ("in", enrolled), "status": ("!=", "Terminated")}, pluck="name"
+	)
+	for name in servers:
+		try:
+			apply_usage_alert_defaults(name)
+		except Exception:
+			# One unreachable Pilot must not stop the rest. The log names the server to retry.
+			frappe.log_error(
+				title=f"Usage alert defaults not sent: {name}",
+				reference_doctype="Virtual Machine",
+				reference_name=name,
+			)
 
 
 def get_telemetry_configuration(action) -> dict:

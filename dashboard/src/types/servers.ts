@@ -79,6 +79,15 @@ export interface IdleSleepState {
 	sleep_after_idle_seconds: number
 }
 
+export interface UsageAlertLimits {
+	/** Percent of CPU use that raises an alert. Zero turns the alert off. */
+	cpu_usage_limit: number
+	/** Percent of memory use that raises an alert. Zero turns the alert off. */
+	memory_usage_limit: number
+	/** Percent of disk use that raises an alert. Zero turns the alert off. */
+	disk_space_limit: number
+}
+
 export interface RescueState {
 	is_rescue_mode_enabled: boolean | null
 	is_in_rescue_mode: boolean | null

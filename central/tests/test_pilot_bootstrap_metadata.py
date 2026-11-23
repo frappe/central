@@ -6,13 +6,18 @@ import requests
 from frappe.tests import IntegrationTestCase
 
 from central.integrations.atlas import MAXIMUM_METADATA_BYTES
-from central.integrations.pilot import METADATA_VALUE_BYTES
+from central.integrations.pilot import (
+	METADATA_VALUE_BYTES,
+	apply_usage_alert_defaults,
+	backfill_usage_alert_defaults,
+)
 from central.integrations.resource_actions import _create_payload
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_region
 
 PILOT = "central.integrations.pilot"
 TELEMETRY_CONFIG = {"endpoint": "https://datum.in-mumbai.example.test"}
+RESOURCE_LIMITS = {"cpu_usage_limit": 90, "memory_usage_limit": 90, "disk_space_limit": 95}
 COMMON_SITE_CONFIG = (
 	"central.central.doctype.central_settings.central_settings.CentralSettings.get_common_site_config"
 )
@@ -82,7 +87,11 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 		metadata = payload["metadata"]
 		self.assertEqual(
 			json.loads(metadata["pilot-common-config"]),
-			{"telemetry": TELEMETRY_CONFIG, "letsencrypt": {"email": request.requested_by}},
+			{
+				"telemetry": TELEMETRY_CONFIG,
+				"letsencrypt": {"email": request.requested_by},
+				"resource_limits": RESOURCE_LIMITS,
+			},
 		)
 		self.assertLessEqual(len(json.dumps(metadata).encode()), MAXIMUM_METADATA_BYTES)
 		# The Atlas VM does not exist yet, so Pilot fetches its token from datum_token later.
@@ -92,7 +101,10 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 		with patch(f"{PILOT}.get_telemetry_base_url", return_value=None):
 			payload = _create_payload(request)
 
-		self.assertNotIn("pilot-common-config", payload["metadata"])
+		self.assertEqual(
+			json.loads(payload["metadata"]["pilot-common-config"]),
+			{"resource_limits": RESOURCE_LIMITS},
+		)
 		request.record_diagnostic.assert_called_once()
 
 	def test_customer_email_reaches_pilot_even_when_telemetry_is_unavailable(self):
@@ -103,7 +115,7 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 
 		self.assertEqual(
 			json.loads(metadata["pilot-common-config"]),
-			{"letsencrypt": {"email": request.requested_by}},
+			{"letsencrypt": {"email": request.requested_by}, "resource_limits": RESOURCE_LIMITS},
 		)
 		request.record_diagnostic.assert_called_once()
 
@@ -259,6 +271,39 @@ class TestPilotBootstrapMetadata(IntegrationTestCase):
 
 		server.log_error.assert_called_once()
 		server.add_comment.assert_called_once()
+
+	def test_usage_alert_defaults_fill_only_a_server_with_every_alert_off(self):
+		"""The backfill turns alerts on where all are off and keeps any value someone set."""
+		all_off = {"cpu_usage_limit": 0, "memory_usage_limit": 0, "disk_space_limit": 0}
+		for limits, is_filled in ((all_off, True), ({**all_off, "cpu_usage_limit": 80}, False)):
+			with (
+				self.subTest(limits=limits),
+				patch(f"{PILOT}.read_pilot", return_value={"resource_limits": limits}),
+				patch(f"{PILOT}.write_pilot") as write,
+			):
+				apply_usage_alert_defaults("web-1")
+
+				if is_filled:
+					write.assert_called_once_with(
+						"web-1", "PATCH", "/api/v1/settings", {"resource_limits": RESOURCE_LIMITS}
+					)
+				else:
+					write.assert_not_called()
+
+	def test_one_unreachable_pilot_does_not_stop_the_backfill(self):
+		"""The backfill logs a server it cannot reach and still sends the defaults to the next one."""
+		with (
+			patch(f"{PILOT}.frappe.get_all", return_value=["web-1", "web-2"]),
+			patch(
+				f"{PILOT}.apply_usage_alert_defaults", side_effect=[requests.ConnectionError(), None]
+			) as apply,
+			patch(f"{PILOT}.frappe.log_error") as log_error,
+		):
+			backfill_usage_alert_defaults()
+
+		self.assertEqual([call.args[0] for call in apply.call_args_list], ["web-1", "web-2"])
+		log_error.assert_called_once()
+		self.assertEqual(log_error.call_args.kwargs["reference_name"], "web-1")
 
 	def test_a_write_waits_for_a_pilot_that_is_still_starting(self):
 		from central.integrations.pilot import write_pilot_when_awake

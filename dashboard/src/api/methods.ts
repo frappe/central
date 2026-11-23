@@ -70,6 +70,8 @@ export const API = {
 	setRescueMode: 'central.api.servers.set_rescue_mode',
 	getIdleSleep: 'central.api.servers.get_idle_sleep',
 	setIdleSleep: 'central.api.servers.set_idle_sleep',
+	getUsageAlertLimits: 'central.api.servers.get_usage_alert_limits',
+	setUsageAlertLimits: 'central.api.servers.set_usage_alert_limits',
 	setTerminationProtection: 'central.api.servers.set_termination_protection',
 	updateServerFirewall: 'central.api.servers.update_server_firewall',
 	listFirewallRulesets: 'central.api.firewall_rulesets.list_firewall_rulesets',
