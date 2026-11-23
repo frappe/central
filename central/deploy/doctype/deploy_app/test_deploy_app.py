@@ -45,6 +45,21 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 		first = DeployApp.add(self.installation, REPOSITORY, self.region)
 		self.assertEqual(DeployApp.add(self.installation, REPOSITORY, self.region).name, first.name)
 
+	def test_an_app_with_a_vm_cannot_change_region(self):
+		app = DeployApp.add(self.installation, REPOSITORY, self.region)
+		app.db_set("virtual_machine", "server-deploy-app-test")
+		with self.assertRaisesRegex(frappe.ValidationError, "Its region cannot change"):
+			DeployApp.add(self.installation, REPOSITORY, ensure_region("deploy-app-other"))
+
+	def test_a_region_change_is_refused_before_the_user_goes_to_github(self):
+		app = DeployApp.add(self.installation, REPOSITORY, self.region)
+		app.db_set("virtual_machine", "server-deploy-app-test")
+		other = ensure_region("deploy-app-other")
+		with self.assertRaisesRegex(frappe.ValidationError, "Its region cannot change"):
+			DeployApp.validate_region(self.team, "octo/app", "main", other)
+		DeployApp.validate_region(self.team, "octo/app", "main", self.region)
+		DeployApp.validate_region(self.team, "octo/app", "staging", other)
+
 	def test_a_branch_missing_on_github_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
 			DeployApp.add(self.installation, REPOSITORY, self.region, "typo")

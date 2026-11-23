@@ -41,6 +41,7 @@ class GitHubDeployAppInstallation(Document):
 		require_deploy_access(user, team)
 		if not frappe.db.exists("Region", region):
 			frappe.throw(_("Region {0} does not exist.").format(region), frappe.DoesNotExistError)
+		DeployApp.validate_region(team, repository, branch, region)
 		state = secrets.token_urlsafe(24)
 		save_attempt(
 			state, {"team": team, "user": user, "repository": repository, "region": region, "branch": branch}

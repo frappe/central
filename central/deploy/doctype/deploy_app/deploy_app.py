@@ -56,6 +56,20 @@ class DeployApp(Document):
 		frappe.throw(_("This deploy agent token is not valid."), frappe.AuthenticationError)
 
 	@staticmethod
+	def validate_region(team: str, repository: str, branch: str | None, region: str) -> None:
+		"""An app's VM lives in its region's Atlas, so an app that has one cannot move to another region.
+		Without a branch, the default branch is unknown until GitHub returns, so `add` checks it then."""
+		if not branch:
+			return
+		current = frappe.db.get_value(
+			"Deploy App",
+			{"team": team, "repository": repository, "branch": branch, "virtual_machine": ["is", "set"]},
+			"region",
+		)
+		if current and current != region:
+			throw_region_change(repository, current)
+
+	@staticmethod
 	def add(
 		installation: GitHubDeployAppInstallation, found: dict, region: str, branch: str | None = None
 	) -> DeployApp:
@@ -75,6 +89,9 @@ class DeployApp(Document):
 			for_update=True,
 		)
 		doc = frappe.get_doc("Deploy App", name) if name else frappe.new_doc("Deploy App")
+		# Checked again here, since the repository may have been renamed while the user was on GitHub.
+		if doc.virtual_machine and doc.region != region:
+			throw_region_change(found["full_name"], doc.region)
 		doc.update(
 			{
 				"team": team,
@@ -116,3 +133,7 @@ class DeployApp(Document):
 def on_doctype_update() -> None:
 	frappe.db.add_unique("Deploy App", ["team", "repository_id", "branch"])
 	frappe.db.add_index("Deploy App", ["installation", "repository_id", "branch"])
+
+
+def throw_region_change(repository: str, region: str) -> None:
+	frappe.throw(_("{0} already runs in {1}. Its region cannot change.").format(repository, region))
