@@ -14,9 +14,14 @@ from central.resource_actions import validate_purchase
 from central.utils.units import gigabytes_to_mebibytes, vcpus_to_millicores
 
 
-def get_size_plan(team: str, region: str, size: str) -> str:
-	"""The server plan titled `size` that the team may buy in the region, as the server plan list offers it."""
-	catalog = get_server_plans(team, cluster=region)
+def get_size_plan(team: str, region: str, size: str, server: str | None = None) -> str:
+	"""The server plan titled `size` that the team may buy in the region, as the server plan list offers it.
+	For the app's existing `server`, the catalog is the resize one, so its own subscription leaves room for its plan."""
+	if server:
+		subscription = frappe.db.get_value("Subscription", {"server_id": server}, "name")
+		catalog = get_server_plans(team, cluster=region, exclude_subscription=subscription, for_resize=1)
+	else:
+		catalog = get_server_plans(team, cluster=region)
 	plans = [row["plan"] for rows in catalog["plans"].values() for row in rows if row["title"] == size]
 	if len(plans) > 1:
 		frappe.throw(_("More than one plan is titled {0}. An operator must rename one.").format(size))

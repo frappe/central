@@ -45,6 +45,18 @@ class IntegrationTestDeployBilling(IntegrationTestCase):
 		):
 			get_size_plan("team", "region", "Huge")
 
+	def test_an_existing_vm_is_sized_from_the_resize_catalog_without_its_own_subscription(self):
+		with (
+			patch(
+				"central.deploy.billing.get_server_plans", return_value=catalog(("p1", "Growth"))
+			) as get_server_plans,
+			patch.object(frappe.db, "get_value", return_value="SUB-1"),
+		):
+			self.assertEqual(get_size_plan("team", "region", "Growth", "server-1"), "p1")
+		get_server_plans.assert_called_once_with(
+			"team", cluster="region", exclude_subscription="SUB-1", for_resize=1
+		)
+
 	def test_two_plans_with_one_title_are_refused(self):
 		with (
 			patch(

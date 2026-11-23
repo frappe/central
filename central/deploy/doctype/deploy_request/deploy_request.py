@@ -179,7 +179,7 @@ class DeployRequest(PipelineBuilder):
 			installation_id, app.repository_id, app.repository, CONFIG_FILE, self.commit
 		)
 		deploy_config = get_deploy_config(config)
-		self.plan = get_size_plan(app.team, app.region, deploy_config.machine.size)
+		self.plan = get_size_plan(app.team, app.region, deploy_config.machine.size, app.virtual_machine)
 		self.update(get_plan_specs(self.plan))
 		self.health_path = deploy_config.health.path
 		self.health_timeout = deploy_config.health.timeout
