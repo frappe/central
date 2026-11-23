@@ -23,7 +23,7 @@ def read_storage_usage() -> int:
 	# Team buckets and servers' backup buckets are read by their own page jobs.
 	jobs = {"read_page": _pages(billed_buckets()), "read_bundled_page": _pages(_bundled_buckets_by_region())}
 	_start_regions(run, jobs)
-	return _enqueue_pages(run, jobs, utc_today())
+	return _enqueue_pages(run, jobs)
 
 
 def read_page(run: str, region: str, names: list[str]) -> int:
@@ -35,10 +35,11 @@ def read_page(run: str, region: str, names: list[str]) -> int:
 def read_bundled_page(run: str, region: str, names: list[str], day=None) -> int:
 	"""Read one page of a region's servers' backup buckets and write their days."""
 	meter = frappe.get_doc("Service", STORAGE_SERVICE).get_meter(STORAGE_METER)
-	# A page queued before pages carried their day reads today.
-	day = frappe.utils.getdate(day) if day else utc_today()
-	# The day the page was queued for bills a bucket whose server billed at any point of it,
-	# even one paused or resized off storage before the page ran.
+	# The reading is what the bucket holds now, so it belongs to the day it is read, even for a
+	# page queued before midnight; `day` is kept only for jobs queued with it.
+	day = utc_today()
+	# That day bills a bucket whose server billed at any point of it, even one paused or resized
+	# off storage before the page ran.
 	buckets = bundled_buckets(names, day)
 	return _read_and_write(
 		run,
@@ -86,13 +87,11 @@ def _start_regions(run: str, jobs: dict) -> None:
 		RegionRead(run, region).start(count)
 
 
-def _enqueue_pages(run: str, jobs: dict, day) -> int:
+def _enqueue_pages(run: str, jobs: dict) -> int:
 	from central.billing.revenue.invoicing.run import billing_queue
 
 	queued = 0
 	for method, pages in jobs.items():
-		# A server's bucket is read for the day the run began, whenever its page runs.
-		dated = {"day": str(day)} if method == "read_bundled_page" else {}
 		for region, region_pages in pages.items():
 			for page in region_pages:
 				frappe.enqueue(
@@ -101,7 +100,6 @@ def _enqueue_pages(run: str, jobs: dict, day) -> int:
 					run=run,
 					region=region,
 					names=page,
-					**dated,
 				)
 				queued += len(page)
 	return queued
