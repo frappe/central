@@ -154,6 +154,18 @@ class TestPartnerLinks(IntegrationTestCase):
 			link.save()
 		self.assertNotEqual(add_partner(self.customer_team, self.code)["name"], name)
 
+	def test_an_operator_ends_a_link_of_any_team(self):
+		operator = create_user(f"operator.{frappe.generate_hash(length=6)}@example.test")
+		frappe.get_doc("User", operator).add_roles("System Manager")
+		frappe.set_user(self.customer_owner)
+		name = add_partner(self.customer_team, self.code)["name"]
+
+		frappe.set_user(operator)
+		self.assertEqual(end_partner_link(name, "The partner left the program.")["status"], "Ended")
+
+		ended = frappe.db.get_value("Partner Link", name, ["ended_by", "end_reason"])
+		self.assertEqual(ended, (operator, "The partner left the program."))
+
 	def test_a_manager_cannot_edit_the_link_by_hand(self):
 		frappe.set_user(self.customer_owner)
 		link = frappe.get_doc("Partner Link", add_partner(self.customer_team, self.code)["name"])
