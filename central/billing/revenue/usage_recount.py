@@ -316,10 +316,26 @@ def _bundle(meter, days: list, quantity: float) -> dict:
 	# monthly allowance, so a plan that ran part of the month or changed mid-month bills its days.
 	if any(frappe.utils.flt(day.included) for day in days):
 		return {"counted_allowance": quantity - _billable(days, quantity)}
-	# A live-priced server meter has no allowance of its own, so a bundle gone to none clears it.
-	if meter.on_server and _is_live(meter.resource_type):
+	# A live-priced server meter has no allowance of its own, and one that has carried a daily
+	# bundle was billed by it, so a bundle gone to none clears either.
+	if meter.on_server and (_is_live(meter.resource_type) or _has_carried_bundle(meter)):
 		return {"counted_allowance": 0}
 	return {}
+
+
+def _has_carried_bundle(meter) -> bool:
+	"""Whether any day of the meter, billed or not, recorded a bundle."""
+	return bool(
+		frappe.db.exists(
+			DOCTYPE,
+			{
+				"subscription": meter.subscription,
+				"resource_type": meter.resource_type,
+				"dimension": meter.dimension,
+				"included": [">", 0],
+			},
+		)
+	)
 
 
 def _is_live(resource_type: str) -> bool:
