@@ -65,6 +65,15 @@ class TestBundledBuckets(IntegrationTestCase):
 			"Usage Day", filters={"subject": self.bucket}, pluck="quantity", order_by="day asc"
 		)
 
+	def resize(self, gb: float, on: str) -> str:
+		plan = make_plan(
+			f"{VM_PLAN}-{gb}",
+			includes=[*DEFAULT_INCLUDES, {"resource_type": "Storage", "quantity": gb, "unit": "GB"}],
+		)
+		frappe.db.set_value("Subscription", self.subscription, "plan", plan)
+		add_segment(self.subscription, "Plan Changed", 1000, on, plan=plan)
+		return plan
+
 	def storage_lines(self) -> list:
 		invoice = generate_team_invoice(TEAM, "2026-06-01", "2026-06-30")
 		return frappe.get_all(
@@ -105,18 +114,20 @@ class TestBundledBuckets(IntegrationTestCase):
 		self.assertAlmostEqual(rollup.locked_allowance, 40)
 
 	def test_each_day_bills_above_the_plan_it_was_on(self):
-		bigger = make_plan(
-			f"{VM_PLAN}-big",
-			includes=[*DEFAULT_INCLUDES, {"resource_type": "Storage", "quantity": 200, "unit": "GB"}],
-		)
 		for day in range(1, 16):
 			self.read(f"2026-06-{day:02d}", 100)
-		frappe.db.set_value("Subscription", self.subscription, "plan", bigger)
-		add_segment(self.subscription, "Plan Changed", 1000, "2026-06-16 00:00:00", plan=bigger)
+		self.resize(200, "2026-06-16 00:00:00")
 		for day in range(16, 31):
 			self.read(f"2026-06-{day:02d}", 100)
 		[line] = self.storage_lines()
 		self.assertAlmostEqual(line.quantity, 30)  # 60 GB over for 15 of 30 days, then nothing over
+
+	def test_a_resize_after_the_days_first_read_applies_that_day(self):
+		self.read("2026-06-01", 100)
+		self.resize(200, "2026-06-01 12:00:00")
+		self.read("2026-06-01", 90)
+		[day] = frappe.get_all("Usage Day", filters={"subject": self.bucket}, fields=["quantity", "included"])
+		self.assertEqual((day.quantity, day.included), (100, 200))  # the day keeps its peak
 
 	def test_a_bucket_never_attached_reads_as_empty(self):
 		self.read("2026-06-01", None)
