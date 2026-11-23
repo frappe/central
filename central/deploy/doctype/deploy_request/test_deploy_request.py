@@ -95,7 +95,7 @@ class IntegrationTestDeployRequest(IntegrationTestCase):
 
 
 class IntegrationTestDeployPipeline(IntegrationTestCase):
-	"""A push runs as a pipeline: VM, then a build the deploy agent reports on."""
+	"""A push runs as a pipeline: VM, then a build and a release the deploy agent reports on."""
 
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -133,6 +133,7 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		self.machine.get_specs = DeployMachine.get_specs
 		# The deploy agent reports while the VM step runs; None means the agent has not reported yet.
 		self.build_status = "Succeeded"
+		self.release_status = "Live"
 		patch.object(DeployRequest, "wait_for_virtual_machine", side_effect=self.report_build).start()
 		# The repository holds a Dockerfile and, unless a test sets one, no deploy config.
 		self.root = [{"name": "Dockerfile", "type": "file"}]
@@ -144,14 +145,36 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		self.addCleanup(patch.stopall)
 
 	def report_build(self, virtual_machine: str) -> None:
-		if self.build_status:
-			doc = frappe.get_last_doc("Deploy Request", filters={"deploy_app": self.app.name})
-			doc.build_status = self.build_status
-			doc.save()
+		doc = frappe.get_last_doc("Deploy Request", filters={"deploy_app": self.app.name})
+		doc.build_status = self.build_status
+		doc.release_status = self.release_status if self.build_status == "Succeeded" else None
+		doc.save()
 
 	def test_a_successful_build_succeeds_the_deploy(self):
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 		self.assertEqual(frappe.db.get_value("Deploy Request", request.name, "status"), "Succeeded")
+
+	def test_a_release_no_agent_finished_keeps_the_deploy_releasing(self):
+		self.release_status = None
+		request = DeployRequest.queue(self.app.name, "a" * 40)
+		self.assertEqual(frappe.db.get_value("Deploy Request", request.name, "status"), "Releasing")
+
+	def test_a_failed_release_fails_the_deploy(self):
+		self.release_status = "Failed"
+		request = DeployRequest.queue(self.app.name, "a" * 40)
+
+		status, error = frappe.db.get_value("Deploy Request", request.name, ["status", "error"])
+		self.assertEqual(status, "Failed")
+		self.assertIn("DeployReleaseError: The new container failed its health check.", error)
+
+	def test_the_health_check_in_the_commits_config_is_saved_on_the_request(self):
+		self.files["frappe_cloud_deploy.toml"] = '[health]\npath = "/up"\ntimeout = 90\n'
+		request = DeployRequest.queue(self.app.name, "a" * 40)
+
+		self.assertEqual(
+			frappe.db.get_value("Deploy Request", request.name, ["health_path", "health_timeout"]),
+			("/up", 90),
+		)
 
 	def test_a_build_no_agent_finished_keeps_the_deploy_building(self):
 		self.build_status = None
