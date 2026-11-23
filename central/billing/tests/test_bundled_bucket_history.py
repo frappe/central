@@ -22,13 +22,16 @@ class TestBundledBucketHistory(IntegrationTestCase):
 	estimated_bundles = base.TestBundledBuckets.estimated_bundles
 	transfer_day = base.TestBundledBuckets.transfer_day
 
-	def read_page(self, day: str, gb: float) -> None:
-		"""Run a page queued for `day`, after whatever changed since."""
+	def read_page(self, day: str, gb: float, queued_for: str | None = None) -> None:
+		"""Run a page on `day` (UTC), after whatever changed since it was queued."""
 		client = MagicMock()
 		client.get_usage.return_value = {"usage": {"used_bytes": gb * base.GB}}
-		with patch.object(storage_bridge.ObjectStorageClient, "from_region", return_value=client):
+		with (
+			patch.object(storage_bridge, "utc_today", return_value=frappe.utils.getdate(day)),
+			patch.object(storage_bridge.ObjectStorageClient, "from_region", return_value=client),
+		):
 			storage_bridge.RegionRead("test-run", base.CLUSTER).start(1)
-			storage_bridge.read_bundled_page("test-run", base.CLUSTER, [self.bucket], day=day)
+			storage_bridge.read_bundled_page("test-run", base.CLUSTER, [self.bucket], day=queued_for)
 
 	def stored_days(self) -> list:
 		return frappe.get_all(
@@ -49,12 +52,10 @@ class TestBundledBucketHistory(IntegrationTestCase):
 		self.read_page("2026-06-03", 100)
 		self.assertEqual(self.stored_days(), [])
 
-	def test_only_a_servers_bucket_pages_carry_their_day(self):
-		jobs = {"read_page": {base.CLUSTER: [["team-bucket"]]}, "read_bundled_page": {base.CLUSTER: [["vm"]]}}
-		with patch.object(frappe, "enqueue") as enqueue:
-			storage_bridge._enqueue_pages("run", jobs, frappe.utils.getdate("2026-06-02"))
-		days = {call.args[0].rsplit(".", 1)[1]: call.kwargs.get("day") for call in enqueue.call_args_list}
-		self.assertEqual(days, {"read_page": None, "read_bundled_page": "2026-06-02"})
+	def test_a_page_queued_before_midnight_writes_the_day_it_reads(self):
+		self.read_page("2026-06-02", 100, queued_for="2026-06-01")
+		[day] = self.stored_days()
+		self.assertEqual((str(day.day), day.quantity), ("2026-06-02", 100))
 
 	def compose(self, storage_gb: float, on: str) -> None:
 		"""Resize the server onto a composed shape holding `storage_gb` of storage from `on`."""
