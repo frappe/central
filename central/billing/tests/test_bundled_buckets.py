@@ -15,6 +15,7 @@ from central.billing.tests.utils import (
 	DEFAULT_INCLUDES,
 	_clear_metered_plans,
 	add_segment,
+	make_metered_plan,
 	make_plan,
 	seed_running_resource,
 )
@@ -282,6 +283,40 @@ class TestBundledBuckets(IntegrationTestCase):
 		)
 		self.assertEqual(allowance, 0)
 
+	def test_a_grandfathered_server_meter_keeps_its_locked_allowance(self):
+		make_metered_plan("bundled-bucket-transfer", resource_type="Transfer")
+		plan = make_plan(
+			f"{VM_PLAN}-transfer",
+			includes=[*DEFAULT_INCLUDES, {"resource_type": "Transfer", "quantity": 500, "unit": "GB"}],
+		)
+		frappe.db.set_value("Subscription", self.subscription, "plan", plan)
+		add_segment(self.subscription, "Plan Changed", 1000, "2026-06-01 00:00:01", plan=plan)
+		for day in ("2026-06-01", "2026-06-02"):
+			usage_ledger.write_days([self.transfer_day(day)])
+			usage_recount.recount_month(self.subscription, "Transfer", "2026-06-01")
+		[allowance] = frappe.get_all(
+			"Usage Rollup",
+			filters={"resource_id": SERVER, "resource_type": "Transfer"},
+			pluck="locked_allowance",
+		)
+		self.assertEqual(allowance, 500)
+
+	def transfer_day(self, day: str) -> dict:
+		return {
+			"service": "bundled-bucket-transfer",
+			"meter": "transfer",
+			"subject": SERVER,
+			"dimension": "",
+			"day": day,
+			"aggregation": "Sum",
+			"team": TEAM,
+			"subscription": self.subscription,
+			"resource_type": "Transfer",
+			"quantity": 100,
+			"unit": "GB",
+			"as_of": f"{day} 12:00:00",
+		}
+
 	def flagged(self, today: str) -> list:
 		frappe.db.set_value("Virtual Machine", SERVER, "creation", "2026-06-01", update_modified=False)
 		with patch.object(usage_ledger, "utc_today", return_value=frappe.utils.getdate(today)):
@@ -323,12 +358,12 @@ class TestBundleCount(IntegrationTestCase):
 		# The 2nd day's unused address does not cover the 1st day's two extra ones.
 		self.assertAlmostEqual(usage_recount._billable(days, 3 / 30), 2 / 30)
 
-	def test_only_a_servers_month_counts_its_bundle(self):
+	def test_only_a_month_with_a_bundle_counts_one(self):
 		days = [self.day("2026-06-01", 3, 0, "Level")]
-		self.assertEqual(usage_recount._bundle(frappe._dict(on_server=False), days, 0.1), {})
-		self.assertEqual(
-			usage_recount._bundle(frappe._dict(on_server=True), days, 0.1), {"counted_allowance": 0}
-		)
+		meter = frappe._dict(on_server=False, resource_type="Storage")
+		self.assertEqual(usage_recount._bundle(meter, days, 0.1), {})
+		bundled = [self.day("2026-06-01", 3, 1, "Level")]
+		self.assertAlmostEqual(usage_recount._bundle(meter, bundled, 0.1)["counted_allowance"], 1 / 30)
 
 
 class TestStoragePrice(IntegrationTestCase):
