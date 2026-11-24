@@ -11,6 +11,7 @@ from central.deploy import api
 from central.deploy.doctype.github_deploy_app_installation.github_deploy_app_installation import (
 	GitHubDeployAppInstallation,
 	state_key,
+	to_owner_and_name,
 )
 from central.infrastructure.doctype.github_connection.test_github_connection import make_team
 from central.tests.test_iam import ensure_user
@@ -69,6 +70,30 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 		frappe.set_user(self.owner)
 		app = api.complete_repository_connection(started["state"])
 		self.assertEqual((app["repository"], app["branch"]), ("octo/app", "main"))
+
+	def test_a_github_url_or_remote_is_read_as_owner_and_name(self):
+		for repository in (
+			"octo/app",
+			"https://github.com/octo/app",
+			"https://www.github.com/octo/app/",
+			"https://github.com/octo/app.git",
+			"git@github.com:octo/app.git",
+		):
+			with self.subTest(repository):
+				self.assertEqual(to_owner_and_name(repository), "octo/app")
+		self.assertEqual(to_owner_and_name("octo/app.js"), "octo/app.js")
+
+	def test_a_repository_that_is_not_on_github_or_not_owner_and_name_is_refused(self):
+		for repository in ("octo", "octo/app/tree/main", "https://gitlab.com/octo/app"):
+			with self.subTest(repository), self.assertRaises(frappe.ValidationError):
+				GitHubDeployAppInstallation.start(self.team, self.owner, repository, self.region)
+
+	def test_the_attempt_keeps_owner_and_name_from_a_url(self):
+		state = GitHubDeployAppInstallation.start(
+			self.team, self.owner, "https://github.com/Octo/App", self.region
+		)
+		GitHubDeployAppInstallation.verify(state, "code", "101", self.owner)
+		self.assertEqual(GitHubDeployAppInstallation.complete(state, self.owner).repository, "octo/app")
 
 	def test_a_team_links_an_installation_once(self):
 		make_installation(self.team)
