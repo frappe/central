@@ -6,11 +6,12 @@ from unittest.mock import patch
 
 import frappe
 
+from central.billing.catalog.subscriptions import provision_service_subscription
 from central.billing.revenue import report_subjects, service_reports
 from central.billing.tests import test_bundled_buckets as base
 from central.billing.tests.test_service_reports import signed
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import add_segment
+from central.billing.tests.utils import add_segment, complete_billing_profile, give_team_a_card
 
 SECRET = "storage-report-secret"
 PAUSED_AT = "2026-06-02 12:00:00"
@@ -55,6 +56,32 @@ class TestPushedBackupBuckets(base.BundledServerFixture, IntegrationTestCase):
 			order_by="day asc",
 		)
 
+	def team_bucket_of_the_same_name(self) -> str:
+		"""A team's own bucket that shares the backup bucket's name, and its subscription."""
+		complete_billing_profile(base.TEAM)
+		give_team_a_card(base.TEAM)
+		subscription = provision_service_subscription(
+			base.TEAM, base.STORAGE_PLAN, cluster=base.CLUSTER, start_date="2026-06-01"
+		)["subscription"]
+		frappe.get_doc(
+			{
+				"doctype": "Team Service",
+				"team": base.TEAM,
+				"add_on_service": "storage",
+				"region": base.CLUSTER,
+				"bucket_name": self.bucket,
+				"external_id": self.bucket,
+				"status": "Active",
+				"subscription": subscription,
+			}
+		).db_insert()  # Skips before_insert, which would create the bucket in Cargo.
+		self.addCleanup(frappe.db.delete, "Team Service", {"team": base.TEAM})
+		return subscription
+
+	def subjects_on(self, days: set[str]) -> dict:
+		with patch.object(report_subjects, "utc_today", return_value=frappe.utils.getdate("2026-06-04")):
+			return report_subjects.subjects_by_day("storage", [self.bucket], days)
+
 	def test_a_billed_servers_bucket_is_taken_with_its_days_bundle(self):
 		answer = self.send(["2026-06-01"])
 
@@ -79,4 +106,31 @@ class TestPushedBackupBuckets(base.BundledServerFixture, IntegrationTestCase):
 		answer = self.send(["2026-06-03"], today="2026-06-03")
 
 		self.assertEqual(answer["accepted"], 0)
+		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
+
+	def test_a_name_billed_on_one_day_is_a_deleted_subject_on_another(self):
+		add_segment(self.subscription, "Paused", 0, PAUSED_AT, plan=base.VM_PLAN)
+		own = self.team_bucket_of_the_same_name()
+		self.send(["2026-06-03"], today="2026-06-04")
+		frappe.db.delete("Team Service", {"team": base.TEAM})
+
+		together = self.subjects_on({"2026-06-02", "2026-06-03"})
+		alone = {day: self.subjects_on({day})[day] for day in together}
+		answer = self.send(["2026-06-02", "2026-06-03"], today="2026-06-04")
+
+		self.assertEqual(together, alone)
+		self.assertEqual(together["2026-06-02"][self.bucket].subscription, self.subscription)
+		self.assertEqual(together["2026-06-03"][self.bucket].subscription, own)
+		self.assertEqual(answer, {"accepted": 2, "rejected": []})
+		subscriptions = [(str(day.day), day.subscription) for day in self.stored_days()]
+		self.assertEqual(subscriptions, [("2026-06-02", self.subscription), ("2026-06-03", own)])
+
+	def test_a_paused_servers_bucket_stays_unknown_beside_a_billed_day(self):
+		add_segment(self.subscription, "Paused", 0, PAUSED_AT, plan=base.VM_PLAN)
+		self.send(["2026-06-02"], today="2026-06-03")
+
+		answer = self.send(["2026-06-02", "2026-06-03"], today="2026-06-03")
+
+		self.assertEqual(answer["accepted"], 1)
+		self.assertEqual([r["day"] for r in answer["rejected"]], ["2026-06-03"])
 		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
