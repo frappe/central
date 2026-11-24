@@ -139,17 +139,20 @@ def silent_services() -> list[dict]:
 		filters={"enabled": 1, "central_reads": 0},
 		fields=["name", "expected_cadence", "last_report_at"],
 	)
-	return [
-		{
-			"alert": "silent_service",
-			"doctype": "Service",
-			"subject": service.name,
-			"team": None,
-			"detail": _silence_detail(service),
-		}
-		for service in services
-		if _is_silent(service, now)
-	]
+	alerts = []
+	for service in services:
+		cadence = service.expected_cadence or "Hourly"
+		if _is_silent(service.last_report_at, cadence, now):
+			alerts.append(
+				{
+					"alert": "silent_service",
+					"doctype": "Service",
+					"subject": service.name,
+					"team": None,
+					"detail": _silence_detail(service.last_report_at, cadence),
+				}
+			)
+	return alerts
 
 
 def usage_mismatches() -> list[dict]:
@@ -180,18 +183,15 @@ def usage_mismatches() -> list[dict]:
 	]
 
 
-def _is_silent(service, now: datetime.datetime) -> bool:
-	window = datetime.timedelta(hours=2 * CADENCE_HOURS.get(service.expected_cadence, 1))
-	return not service.last_report_at or service.last_report_at < now - window
+def _is_silent(last_report_at, cadence: str, now: datetime.datetime) -> bool:
+	window = datetime.timedelta(hours=2 * CADENCE_HOURS[cadence])
+	return not last_report_at or last_report_at < now - window
 
 
-def _silence_detail(service) -> str:
-	if not service.last_report_at:
-		return f"No report since Central stopped reading it (expected {service.expected_cadence or 'Hourly'})"
-	return (
-		f"Last report {service.last_report_at} ({frappe.utils.get_system_timezone()}) "
-		f"(expected {service.expected_cadence or 'Hourly'})"
-	)
+def _silence_detail(last_report_at, cadence: str) -> str:
+	if not last_report_at:
+		return f"No report since Central stopped reading it (expected {cadence})"
+	return f"Last report {last_report_at} ({frappe.utils.get_system_timezone()}) (expected {cadence})"
 
 
 def _mismatch_detail(check, unit: str | None) -> str:
