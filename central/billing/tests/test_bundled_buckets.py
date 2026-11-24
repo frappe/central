@@ -416,9 +416,9 @@ class TestBundleCount(IntegrationTestCase):
 
 class TestStoragePrice(IntegrationTestCase):
 	def setUp(self):
-		self.plan = frappe.db.get_value(
-			"Plan", {"title": "Object Storage Plan", "category": "Remote Storage", "is_active": 1}, "name"
-		) or make_plan(
+		from central.services.doctype.team_service.team_service import find_storage_plan
+
+		self.plan = find_storage_plan() or make_plan(
 			"object-storage-price-test",
 			title="Object Storage Plan",
 			category="Remote Storage",
@@ -430,21 +430,13 @@ class TestStoragePrice(IntegrationTestCase):
 
 		self.addCleanup(set_catalog_rates, "Plan", self.plan, get_catalog_rates("Plan", self.plan))
 
-	def rates(self) -> dict:
-		rows = frappe.get_all(
-			"Catalog Rate",
-			filters={"priced_doctype": "Plan", "priced_for": self.plan},
-			fields=["currency", "rate"],
-		)
-		return {row.currency: row.rate for row in rows}
-
 	def test_the_patch_prices_storage_and_keeps_a_rate_already_set(self):
 		from central.billing.catalog.pricing import set_catalog_rates
 		from central.patches.v0_0 import set_object_storage_rates
 
 		set_catalog_rates("Plan", self.plan, [{"currency": "USD", "rate": 0.03}])
 		set_object_storage_rates.execute()
-		self.assertEqual(self.rates(), {"USD": 0.03, "INR": 2.5})
+		self.assertEqual(self.rows(), {("USD", None): 0.03, ("INR", None): 2.5})
 
 	def test_the_patch_replaces_a_rate_of_zero_and_keeps_one_above_it(self):
 		from central.billing.catalog.pricing import set_catalog_rates
@@ -457,6 +449,7 @@ class TestStoragePrice(IntegrationTestCase):
 			[
 				{"currency": "INR", "rate": 0, "cluster": region},
 				{"currency": "USD", "rate": 0.03, "cluster": region},
+				{"currency": "USD", "rate": 0},
 			],
 		)
 		set_object_storage_rates.execute()

@@ -122,5 +122,5 @@ central.patches.v0_0.fill_resize_activity_details
 central.patches.v0_0.grant_support_view_to_custom_roles
 # A Team is a Helpdesk customer now, so every team and its earlier tickets need their customer.
 central.patches.v0_0.sync_helpdesk_customers
-# Price object storage per GB-month where it has no rate or a rate of 0. A server's backup bucket bills what it holds above its plan.
+# Price object storage per GB-month: replace each rate of 0, keep a rate above 0, add a no-region rate where none exists.
 central.patches.v0_0.set_object_storage_rates
