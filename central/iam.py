@@ -26,6 +26,7 @@ CAP_IMPLICATIONS = {
 	"server:wireguard": ("server:view",),
 	"server:console": ("server:view",),
 	"service:manage": ("service:view",),
+	"support:manage": ("support:view",),
 }
 
 # The capabilities a grant can scope to one server. Every other capability is team-wide,

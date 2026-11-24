@@ -276,7 +276,7 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, setup 
 | hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
 | cron `0 8 1 * *` (08:00 IST on the 1st) | `revenue.invoicing.draft_monthly_invoices` | after the UTC month closes at 05:30 IST: waive internal teams' unpaid invoices, start the month's Billing Run, then draft the just-closed month as page jobs on the `billing` queue |
 | hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run once the draft tick has started it |
-| hourly | `revenue.storage_bridge.read_storage_usage` | until Cargo reports usage itself: read every billed bucket in pages of 100, one job per page, and keep each UTC day's peak as a Usage Day; a failed bucket never stops its page, and the last page of a region writes one Error Log that names how many of the region's buckets the run could not read |
+| hourly | `revenue.storage_bridge.read_storage_usage` | until Cargo reports usage itself: read every billed bucket, and each billed server's backup bucket, in pages of 100, one job per page, and keep each UTC day's peak as a Usage Day; a failed bucket never stops its page, and the last page of a region writes one Error Log that names how many of the region's buckets the run could not read |
 | hourly | `revenue.grove_bridge.read_ai_usage` | until Grove reports usage itself: subscribe AI teams that now have a billing currency, then read each AI team's cost per model that landed at Grove from the team's `usage_read_until` day through today (UTC), at most 7 days a run, as one Usage Day per model and landing day; a team read in full moves its `usage_read_until` to the last day read, so a missed hour, an outage or a late subscription is caught up; a team never read starts at the later of `Service.bill_from` and the day AI was turned on; a correction lands as a negative day; one Error Log per page names the teams it could not read, and their day does not move |
 | hourly | `revenue.usage_recount.recount_changed` | recount the usage months whose Usage Days changed since the last run, as page jobs |
 | daily | `revenue.usage_ledger.fill_missing_days` | give a Level subject with no reading for a UTC day that ended 48 hours ago its last reading, marked estimated |
@@ -712,6 +712,15 @@ AI (ADR 0027): grove_bridge.read_ai_usage (hourly) → Usage Day per team, model
     (metered_lines.rollups_in); other services' blank-cluster rollups are not billed
   → readiness M2: a non-USD billing currency of an AI team with no kept rate for the month, none
     from the rate API and no earlier kept rate
+
+Server bundles (#188): a server plan's Plan Includes row is the server's bundle of that resource
+  → a meter writes the server's Usage Day on its subscription: quantity measured, `included` the
+    plan's amount that day (from the open segment, so a resize applies from that day)
+  → usage_recount: a Level day bills above its own bundle; a Sum month bills above the bundle
+    scaled to its days; the rollup keeps the measured quantity and the covered part as its
+    allowance (a Live family keeps its live rate and applies it)
+  → storage: storage_bridge reads each server's backup bucket (bundled_buckets: tenant, region and
+    server name it) beside the team buckets; a paused or ended server's bucket is not read
 ```
 
 ### F. Credits waterfall & wallet gating

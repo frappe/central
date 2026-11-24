@@ -6,6 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from central.iam import can, clear_grants_cache, user_has_operator_bypass
+from central.support import enqueue_helpdesk_customer_sync
 
 
 class TeamRole(Document):
@@ -39,6 +40,8 @@ class TeamRole(Document):
 				role=self.name,
 				enqueue_after_commit=True,
 			)
+			if self.team:
+				enqueue_helpdesk_customer_sync(self.team)
 
 	def has_capabilities_changed(self) -> bool:
 		previous = self.get_doc_before_save()

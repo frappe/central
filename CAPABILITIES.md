@@ -23,9 +23,9 @@ The distinction matters:
 - **The vocabulary** is the set of capability strings below. Central enforces it, and stored grants, fixtures, and the dashboard depend on it. It is small and changes rarely.
 - **Roles** (system roles and team-defined custom roles) are named subsets of that vocabulary. A custom role recombines existing capabilities. It never mints a new capability string. Teams can create as many custom roles as they like without an effect on this contract.
 
-## The 20 capabilities
+## The 22 capabilities
 
-### `central` plane (11)
+### `central` plane (13)
 
 | Capability | Meaning |
 | --- | --- |
@@ -38,6 +38,8 @@ The distinction matters:
 | `team:delete` | Archive a team. |
 | `service:view` | View managed service configuration. |
 | `service:manage` | Create and delete storage buckets, set bucket quotas, rotate bucket credentials, and download, upload, and delete stored objects. |
+| `support:view` | Open support tickets and see your own. In Helpdesk the member is a Customer. |
+| `support:manage` | See every support ticket of the team. In Helpdesk the member is a Customer Manager. |
 | `server:ssh-key` | Add, rotate, and remove Team SSH keys for selected servers. |
 | `server:wireguard` | See, add, and remove team WireGuard devices that reach servers through the regional gateway. A member removes only their own devices unless they also hold `team:manage_members`. |
 
@@ -70,6 +72,7 @@ Acting on a resource is meaningless without seeing it. Central closes every gran
 | `server:ssh-key` / `wireguard` | `server:view` |
 | `server:console` | `server:view` |
 | `service:manage` | `service:view` |
+| `support:manage` | `support:view` |
 
 The role builder can let a user tick `server:create` without `server:view` and `cluster:view`. A grant made directly through the API cannot bypass the closure either.
 
@@ -101,10 +104,12 @@ System roles are seeded from `fixtures/team_role.json` and are identical across 
 | `server:console` | ✓ | ✓ | ✓ | | |
 | `service:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `service:manage` | ✓ | ✓ | ✓ | | ✓ |
+| `support:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `support:manage` | ✓ | ✓ | ✓ | | ✓ |
 | `app:deploy` | ✓ | ✓ | ✓ | | |
 | `app:view` | ✓ | ✓ | ✓ | ✓ | |
 
-Totals: Owner 20, Admin 19, Developer 15, Viewer 4, Billing 6.
+Totals: Owner 22, Admin 21, Developer 17, Viewer 5, Billing 8.
 
 The ladder reads top to bottom: **Viewer** (look), **Billing** (look and pay), **Developer** (operate servers), **Admin** (Developer and run the team), **Owner** (Admin and delete the team). A team has exactly one Owner, transferable through Transfer Ownership. For a different mix, such as server operations without billing, create a custom role.
 

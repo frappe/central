@@ -12,10 +12,10 @@ selects one of two modes:
   - **Grandfathered** (default): `max(0, quantity - locked_allowance) x locked_rate`,
     where the allowance (the base plan's included baseline) and the per-unit rate are
     locked at ingest, exactly like fixed prices are grandfathered by the price-lock.
-  - **Live** (e.g. snapshot — depreciating storage): no allowance and the rate is
-    read from the CURRENT Catalog Rate each billing period, never locked. A live
-    resource has its own resource_id from birth and needs no price-lock to bill,
-    so it survives VM termination.
+  - **Live** (e.g. snapshot — depreciating storage): the only allowance is a server's
+    bundle, counted from its days, and the rate is read from the CURRENT Catalog Rate
+    each billing period, never locked. A live resource has its own resource_id from
+    birth and needs no price-lock to bill, so it survives VM termination.
 """
 
 import frappe
@@ -24,7 +24,7 @@ from frappe.query_builder.functions import Coalesce
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
 from central.billing.revenue.metered_lines import line_description, rollups_in
-from central.billing.revenue.rollup_updates import apply_report, rerate
+from central.billing.revenue.rollup_updates import apply_report, recount_allowance, rerate
 
 
 def _metered_plan_for(resource_type: str):
@@ -73,8 +73,8 @@ def _resolve_terms(meter: dict):
 	  used as given, whatever the family's pricing mode.
 	- **Live** (e.g. snapshot): no price-lock needed — a live metered resource has its
 	  own resource_id from birth and survives VM termination. team/cluster/currency
-	  come from the meter payload; there is NO allowance and NO locked rate (the
-	  rate is read live at billing). See ADR 0002.
+	  come from the meter payload; the only allowance is a server's bundle counted
+	  from its days, and there is NO locked rate (the rate is read live at billing).
 	- **Grandfathered**: the locked allowance + per-unit rate off the resource's
 	  active price-lock (skipped when there is no active lock).
 	"""
@@ -183,7 +183,9 @@ def override_terms(rollup: str, rate=None, allowance=None, reason: str | None = 
 	new.locked_rate = old.locked_rate if rate is None else rate
 	new.locked_allowance = old.locked_allowance if allowance is None else allowance
 	new.superseded_by = None
-	new.idempotency_key = f"{old.idempotency_key}::v{_version_of(old.idempotency_key) + 1}"
+	# The key says which versions moved the allowance, so a recount leaves those alone.
+	mark = "v" if allowance is None else "a"
+	new.idempotency_key = f"{old.idempotency_key}::{mark}{_version_of(old.idempotency_key) + 1}"
 	new.insert(ignore_permissions=True)
 
 	frappe.db.set_value("Usage Rollup", name, "superseded_by", new.name)
@@ -193,8 +195,17 @@ def override_terms(rollup: str, rate=None, allowance=None, reason: str | None = 
 
 def _version_of(idempotency_key: str) -> int:
 	"""The version suffix on a rollup key, 0 for an original."""
-	_head, _sep, tail = idempotency_key.rpartition("::v")
-	return frappe.utils.cint(tail) if tail.isdigit() else 0
+	_head, sep, tail = idempotency_key.rpartition("::")
+	return frappe.utils.cint(tail[1:]) if sep and _is_version_mark(tail, "va") else 0
+
+
+def _is_allowance_corrected(idempotency_key: str) -> bool:
+	"""Whether an operator corrected the allowance in this version of a rollup or an earlier one."""
+	return any(_is_version_mark(part, "a") for part in idempotency_key.split("::")[1:])
+
+
+def _is_version_mark(part: str, marks: str) -> bool:
+	return part[:1] in marks and part[1:].isdigit()
 
 
 def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
@@ -233,7 +244,7 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 		existing = frappe.db.get_value(
 			"Usage Rollup",
 			{"idempotency_key": key},
-			["name", "quantity", "sequence", "superseded_by", "rate_date"],
+			["name", "quantity", "sequence", "superseded_by", "rate_date", "idempotency_key"],
 			as_dict=True,
 			for_update=True,
 		)
@@ -245,17 +256,21 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 				existing = frappe.db.get_value(
 					"Usage Rollup",
 					head,
-					["name", "quantity", "sequence", "rate_date"],
+					["name", "quantity", "sequence", "rate_date", "idempotency_key"],
 					as_dict=True,
 					for_update=True,
 				)
 			apply_report(existing, mode, qty, seq, refuse_lower)
 			rerate(existing, meter.get("locked_terms"))
+			# An operator's corrected allowance outranks the recount's.
+			recount_allowance(existing, meter, is_corrected=_is_allowance_corrected(existing.idempotency_key))
 			return key
 
 		terms = _resolve_terms(meter)
 		if not terms:
 			return None  # no active lock — nothing to bill this against yet
+		if "counted_allowance" in meter:
+			terms = {**terms, "allowance": meter["counted_allowance"]}
 
 		try:
 			frappe.db.savepoint("usage_rollup_insert")
@@ -396,17 +411,16 @@ def _metered_lines(
 		if settlement_by_type[r.resource_type] == "Prepaid Pack":
 			continue
 
-		# A live metered plan (e.g. snapshot) reads the CURRENT catalog rate and has no
-		# allowance; a grandfathered one uses the terms locked at ingest. `resolved`
-		# stays None (not 0) when no rate is configured, so an unpriced overage is
-		# distinguishable from a genuinely free one below.
+		# A live metered plan (e.g. snapshot) reads the CURRENT catalog rate; a grandfathered
+		# one uses the terms locked at ingest. `resolved` stays None (not 0) when no rate is
+		# configured, so an unpriced overage is distinguishable from a genuinely free one below.
 		plan = plan_by_type[r.resource_type]
 		if plan and plan.pricing_mode == "Live":
 			resolved = resolve_rate(get_catalog_rates("Plan", plan.name), r.currency, r.cluster)
-			allowance = 0.0
 		else:
 			resolved = r.locked_rate
-			allowance = frappe.utils.flt(r.locked_allowance)
+		# A live plan carries only the bundle counted from its days.
+		allowance = frappe.utils.flt(r.locked_allowance)
 
 		billable_qty = max(0.0, frappe.utils.flt(r.quantity) - allowance)
 		if billable_qty <= 0:

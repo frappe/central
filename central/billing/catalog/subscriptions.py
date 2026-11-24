@@ -64,6 +64,7 @@ def _record_change(
 	changed_by=None,
 	locked_rate=None,
 	currency=None,
+	included_resources=None,
 ):
 	"""Append one immutable Subscription Change row. A change that opens a segment
 	carries its locked rate and currency."""
@@ -74,6 +75,7 @@ def _record_change(
 			"change_type": change_type,
 			"old_value": old_value,
 			"new_value": new_value,
+			"included_resources": included_resources,
 			"effective_at": frappe.utils.now_datetime(),
 			"changed_by": changed_by or frappe.session.user,
 			"locked_rate": locked_rate,
@@ -931,7 +933,9 @@ def _is_resizable(doc) -> bool:
 	return True
 
 
-def _latest_segment_by_subscription(subscription_names: list[str], for_update: bool = False) -> dict:
+def _latest_segment_by_subscription(
+	subscription_names: list[str], for_update: bool = False, before=None, types=SEGMENT_CHANGE_TYPES
+) -> dict:
 	"""The most-recent rate-bearing change per subscription, in ONE batched query.
 
 	Ordered newest-first so the first row seen per subscription is its latest segment
@@ -947,13 +951,16 @@ def _latest_segment_by_subscription(subscription_names: list[str], for_update: b
 	query = (
 		frappe.qb.from_(change)
 		.select(change.subscription, change.change_type, change.locked_rate, change.currency)
+		.select(change.new_value, change.effective_at)
 		.where(change.subscription.isin(subscription_names))
-		.where(change.change_type.isin(list(SEGMENT_CHANGE_TYPES)))
+		.where(change.change_type.isin(list(types)))
 		.orderby(change.effective_at, order=Order.desc)
 		.orderby(change.creation, order=Order.desc)
 	)
 	if for_update:
 		query = query.for_update()
+	if before is not None:
+		query = query.where(before)
 	latest: dict = {}
 	for r in query.run(as_dict=True):
 		latest.setdefault(r.subscription, r)
@@ -971,7 +978,7 @@ def _server_clusters(server_ids) -> dict:
 	}
 
 
-def active_segments(filters: dict | None = None) -> list:
+def active_segments(filters: dict | None = None, during: tuple | None = None) -> list:
 	"""Every open, rate-bearing billing segment — one row per subscription — resolved
 	from the `Subscription Change` ledger (ADR 0010) in batched queries.
 
@@ -982,7 +989,8 @@ def active_segments(filters: dict | None = None) -> list:
 
 	`filters` narrows the underlying Subscriptions (e.g. `{"team": t}` or
 	`{"plan": p}`). Each row is a `frappe._dict`: subscription, team, plan,
-	pricing_mode, server_id, resource_id, cluster, currency, locked_rate."""
+	pricing_mode, server_id, resource_id, cluster, currency, locked_rate. With `during`, a
+	(start, end), the segments open at some moment of it, each on the last plan it opened on."""
 	subs = frappe.get_all(
 		"Subscription",
 		filters=filters or {},
@@ -990,7 +998,9 @@ def active_segments(filters: dict | None = None) -> list:
 	)
 	if not subs:
 		return []
-	latest = _latest_segment_by_subscription([s.name for s in subs])
+	names = [s.name for s in subs]
+	latest = _segments_open_during(names, during)
+	plans = _plans_in_force(latest, during)
 	clusters = _server_clusters([s.server_id for s in subs])
 	out = []
 	for s in subs:
@@ -1006,7 +1016,7 @@ def active_segments(filters: dict | None = None) -> list:
 				{
 					"subscription": s.name,
 					"team": s.team,
-					"plan": s.plan,
+					"plan": plans.get(s.name, s.plan),
 					"pricing_mode": s.pricing_mode,
 					"server_id": s.server_id,
 					"service_subject": s.service_subject,
@@ -1018,6 +1028,37 @@ def active_segments(filters: dict | None = None) -> list:
 			)
 		)
 	return out
+
+
+def _segments_open_during(names: list[str], during: tuple | None) -> dict:
+	"""Each one's latest change, or the last rated one before the end of those open during (start, end)."""
+	if during is None:
+		return _latest_segment_by_subscription(names)
+	start, end = during
+	change = frappe.qb.DocType("Subscription Change")
+	rated = _latest_segment_by_subscription(names, before=change.effective_at < end, types=RATED_CHANGE_TYPES)
+	# One opened before the start is in the window only if nothing closed it by then.
+	earlier = [name for name, seg in rated.items() if seg.effective_at < start]
+	at_start = _latest_segment_by_subscription(earlier, before=change.effective_at <= start)
+	return {
+		name: seg
+		for name, seg in rated.items()
+		if at_start.get(name, seg).change_type not in CLOSING_CHANGE_TYPES
+	}
+
+
+def _plans_in_force(latest: dict, during) -> dict:
+	"""The plan each segment open during the window was on, None for a composed one; empty for now."""
+	if during is None:
+		return {}
+	# A rated change names its plan, and a resume the plan it resumed.
+	labels = {seg.new_value for seg in latest.values() if seg.new_value}
+	plans = set(frappe.get_all("Plan", filters={"name": ["in", list(labels)]}, pluck="name"))
+	return {
+		name: seg.new_value if seg.new_value in plans else None
+		for name, seg in latest.items()
+		if seg.new_value
+	}
 
 
 def uncancelled_subscriptions(filters: dict) -> list[str]:
@@ -1266,6 +1307,7 @@ def reopen_paused_billing(subscription: str, changed_by: str | None = None):
 			changed_by=changed_by,
 			locked_rate=change.locked_rate,
 			currency=change.currency,
+			included_resources=change.included_resources,
 		)
 	return doc
 
@@ -1297,7 +1339,7 @@ def _last_rated_change(subscription: str):
 	changes = frappe.get_all(
 		"Subscription Change",
 		filters={"subscription": subscription, "change_type": ["in", RATED_CHANGE_TYPES]},
-		fields=["locked_rate", "currency", "new_value"],
+		fields=["locked_rate", "currency", "new_value", "included_resources"],
 		order_by="effective_at desc, creation desc",
 		limit=1,
 	)
