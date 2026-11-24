@@ -29,22 +29,46 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 	service = verified_service(service_name, signature, raw_body)
 	report = _parsed(raw_body)
 	as_of = reported_at(report.get("as_of"))
+	_record_report(service.name, as_of)
 	subjects = billed_subjects(service.name, _subject_names(report["lines"]))
 
 	rows, rejected = [], []
 	for line in report["lines"]:
 		reason = line_problem(service, line, subjects)
 		if reason:
-			rejected.append({"subject": _subject_of(line), "reason": reason})
+			rejected.append(_refused(line, reason, retry=False))
 		else:
 			rows.append(_row(service, line, subjects[line["subject"]], as_of))
 	conflicts = write_days(rows).conflicts
 	# A day another worker wrote at the same moment is not confirmed, so the service sends it again.
 	rejected += [
-		{"subject": row["subject"], "reason": _("the day changed at the same time; send it again")}
-		for row in conflicts
+		_refused(row, _("the day changed at the same time; send it again"), retry=True) for row in conflicts
 	]
 	return {"accepted": len(rows) - len(conflicts), "rejected": rejected}
+
+
+def _record_report(service_name: str, as_of: datetime.datetime) -> None:
+	# Any signed report shows the service is alive, even one whose every line is refused.
+	frappe.db.set_value(
+		"Service",
+		service_name,
+		{"last_report_at": frappe.utils.now_datetime(), "last_report_as_of": as_of},
+		update_modified=False,
+	)
+
+
+def _refused(line, reason: str, retry: bool) -> dict:
+	"""A refused line, named so the service can find it in its outbox; `retry` says whether to resend."""
+	values = line if isinstance(line, dict) else {}
+	named = {key: _text(values.get(key)) for key in ("subject", "meter", "day", "dimension")}
+	return {**named, "reason": reason, "retry": retry}
+
+
+def _text(value) -> str | None:
+	# A malformed line can carry any JSON here; only plain values are echoed back.
+	if isinstance(value, datetime.date):
+		return value.isoformat()
+	return value if isinstance(value, str) else None
 
 
 def verified_service(service_name: str | None, signature: str | None, raw_body: bytes):

@@ -14,6 +14,8 @@
   "central_reads",
   "expected_cadence",
   "bill_from",
+  "last_report_at",
+  "last_report_as_of",
   "connection_section",
   "report_secret",
   "meters_section",
@@ -70,10 +72,26 @@
    "options": "Hourly\nDaily"
   },
   {
+   "description": "The first UTC day that bills. Usage before it is kept as written off. Blank: every day bills.",
    "fieldname": "bill_from",
    "fieldtype": "Date",
-   "label": "Bill From",
-   "description": "The first UTC day that bills. Usage before it is kept as written off. Blank: every day bills."
+   "label": "Bill From"
+  },
+  {
+   "description": "When Central last accepted a signed report from this service.",
+   "fieldname": "last_report_at",
+   "fieldtype": "Datetime",
+   "label": "Last Report At",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "The time the service measured its last accepted report.",
+   "fieldname": "last_report_as_of",
+   "fieldtype": "Datetime",
+   "label": "Last Report As Of",
+   "no_copy": 1,
+   "read_only": 1
   },
   {
    "fieldname": "connection_section",
@@ -100,7 +118,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-11-18 10:00:00.000000",
+ "modified": "2026-11-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Service",
