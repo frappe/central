@@ -10,6 +10,16 @@
   "resource": "app"
  },
  {
+  "capability": "app:view",
+  "description": "View deployed apps, their deploys, and their build and release logs",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-11-24 15:00:00.000000",
+  "name": "app:view",
+  "plane": "central",
+  "resource": "app"
+ },
+ {
   "capability": "billing:manage",
   "description": "Add credit, change payment methods, and update billing details",
   "docstatus": 0,

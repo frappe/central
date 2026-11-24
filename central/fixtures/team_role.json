@@ -57,12 +57,15 @@
    },
    {
     "capability": "app:deploy"
+   },
+   {
+    "capability": "app:view"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-11-14 12:00:00.000000",
+  "modified": "2026-11-24 15:00:00.000000",
   "name": "Owner",
   "role_name": "Owner",
   "team": null
@@ -122,12 +125,15 @@
    },
    {
     "capability": "app:deploy"
+   },
+   {
+    "capability": "app:view"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-11-14 12:00:00.000000",
+  "modified": "2026-11-24 15:00:00.000000",
   "name": "Admin",
   "role_name": "Admin",
   "team": null
@@ -175,12 +181,15 @@
    },
    {
     "capability": "app:deploy"
+   },
+   {
+    "capability": "app:view"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-11-14 12:00:00.000000",
+  "modified": "2026-11-24 15:00:00.000000",
   "name": "Developer",
   "role_name": "Developer",
   "team": null
@@ -195,12 +204,15 @@
    },
    {
     "capability": "service:view"
+   },
+   {
+    "capability": "app:view"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-06-30 00:00:00",
+  "modified": "2026-11-24 15:00:00.000000",
   "name": "Viewer",
   "role_name": "Viewer",
   "team": null

@@ -116,7 +116,7 @@
    "link_fieldname": "deploy_app"
   }
  ],
- "modified": "2026-11-23 22:00:00.000000",
+ "modified": "2026-11-24 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Deploy",
  "name": "Deploy App",
@@ -134,6 +134,11 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Central User"
   }
  ],
  "search_fields": "repository,branch",

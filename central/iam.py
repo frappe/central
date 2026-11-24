@@ -11,7 +11,7 @@ OPERATOR_BYPASS_ROLE = "System Manager"
 STAFF_VIEWER_ROLE = "Staff Viewer"
 
 # The revision of the capability taxonomy. Bump it with every change (see CAPABILITIES.md).
-CAPABILITY_VERSION = 8
+CAPABILITY_VERSION = 9
 
 # Granting a key implies each capability in its value, because acting on a resource needs
 # seeing it. Every grant is closed under these before it is checked.

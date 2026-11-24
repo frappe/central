@@ -193,7 +193,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-24 12:00:00.000000",
+ "modified": "2026-11-24 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Deploy",
  "name": "Deploy Request",
@@ -211,6 +211,11 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Central User"
   }
  ],
  "search_fields": "commit",

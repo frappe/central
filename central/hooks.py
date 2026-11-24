@@ -501,6 +501,8 @@ permission_query_conditions = {
 	"Team Service": "central.permissions.team_service_query_conditions",
 	"User Notification Preference": "central.permissions.user_notification_preference_query_conditions",
 	"VM Snapshot": "central.permissions.vm_snapshot_query_conditions",
+	"Deploy App": "central.permissions.deploy_app_query_conditions",
+	"Deploy Request": "central.permissions.deploy_request_query_conditions",
 	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_query_conditions"),
 }
 
@@ -522,6 +524,8 @@ has_permission = {
 	"Team Service": "central.permissions.team_service_has_permission",
 	"User Notification Preference": "central.permissions.user_notification_preference_has_permission",
 	"VM Snapshot": "central.permissions.vm_snapshot_has_permission",
+	"Deploy App": "central.permissions.deploy_app_has_permission",
+	"Deploy Request": "central.permissions.deploy_request_has_permission",
 	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_has_permission"),
 }
 

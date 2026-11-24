@@ -33,6 +33,33 @@ def complete_repository_connection(state: str) -> dict:
 	return {"name": app.name, "repository": app.repository, "branch": app.branch, "domain": app.domain}
 
 
+@frappe.whitelist(methods=["GET"])
+def get_deploy_request(name: str) -> dict:
+	"""One deploy with its pipeline tasks, and the build and release output. The console polls it while the
+	deploy runs; a failed task's message is the deploy's `error`."""
+	request: DeployRequest = frappe.get_doc("Deploy Request", name)
+	request.check_permission("read")
+	pipelines = frappe.get_all(
+		"Pipeline", filters={"linked_doctype": request.doctype, "linked_docname": request.name}, pluck="name"
+	)
+	return {
+		"name": request.name,
+		"deploy_app": request.deploy_app,
+		"commit": request.commit,
+		"status": request.status,
+		"error": request.error,
+		"creation": request.creation,
+		"tasks": frappe.get_all(
+			"Pipeline Task",
+			filters={"pipeline": ["in", pipelines]},
+			fields=["method_title", "status", "start", "end"],
+			order_by="creation asc",
+		),
+		"build_log": request.get_log("build_log"),
+		"release_log": request.get_log("release_log"),
+	}
+
+
 # nosemgrep: guest-whitelisted-method -- the state binds the callback to the user who started it.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def oauth_callback(
