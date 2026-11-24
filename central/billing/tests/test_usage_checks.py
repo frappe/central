@@ -71,7 +71,7 @@ class TestUsageChecks(IntegrationTestCase):
 			"Usage Check",
 			filters={"service": service},
 			fields=["subject", "dimension", "read_value", "stored_value", "is_mismatch", "checked_at"],
-			order_by="dimension asc",
+			order_by="dimension asc, subject asc",
 		)
 
 	def test_a_stored_peak_below_centrals_sample_is_a_mismatch(self):
@@ -92,6 +92,21 @@ class TestUsageChecks(IntegrationTestCase):
 		usage_checks.compare_storage(DAY)
 		self.assertEqual(self.check()[0].is_mismatch, 0)
 		self.assertFalse(usage_checks.usage_mismatches())
+
+	def test_each_bucket_keeps_its_own_peak_and_outcome(self):
+		usage_checks._insert(
+			[
+				usage_checks._check(STORAGE_SERVICE, "bytes_stored", subject, "", DAY, 100, NOW)
+				for subject in ("bucket-low", "bucket-ok", "bucket-missing")
+			]
+		)
+		self.stored_day(STORAGE_SERVICE, "bucket-low", 80)
+		self.stored_day(STORAGE_SERVICE, "bucket-ok", 120)
+		self.assertEqual(usage_checks.compare_storage(DAY), 3)
+		self.assertEqual(
+			[(c.subject, c.stored_value, c.is_mismatch, bool(c.checked_at)) for c in self.check()],
+			[("bucket-low", 80, 1, True), ("bucket-missing", 0, 0, True), ("bucket-ok", 120, 0, True)],
+		)
 
 	def test_a_missing_day_is_left_to_readiness(self):
 		self.sample(100)
