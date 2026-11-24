@@ -20,10 +20,14 @@ RELEASE_REPORT_STATES = ("Releasing", "Live", "Failed")
 
 @frappe.whitelist(methods=["POST"])
 def connect_repository(team: str, repository: str, region: str, branch: str | None = None) -> dict:
-	"""Start deploying `repository` (owner/name) for `team`. The user installs the GitHub App from `install_url`,
-	then finishes with complete_repository_connection and the same `state`."""
+	"""Start deploying `repository` (owner/name) for `team`. The user signs in to GitHub at `sign_in_url`, and
+	installs the App there when it can't reach the repository yet, then finishes with
+	complete_repository_connection and the same `state`."""
 	state = GitHubDeployAppInstallation.start(team, frappe.session.user, repository, region, branch)
-	return {"state": state, "install_url": GitHubDeployApp().get_install_url(state)}
+	return {
+		"state": state,
+		"sign_in_url": GitHubDeployAppInstallation.get_sign_in_url(state, frappe.session.user),
+	}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -65,17 +69,22 @@ def get_deploy_request(name: str) -> dict:
 def oauth_callback(
 	state: str | None = None, code: str | None = None, installation_id: str | None = None, **kwargs
 ) -> None:
-	"""GitHub returns here after an install. An install started on github.com has no state to link."""
-	if not (state and code and installation_id):
+	"""GitHub returns here after the sign-in or an install. An install started on github.com has no state to link."""
+	if not (state and code):
 		return frappe.respond_as_web_page(
 			_("Nothing to connect"),
-			_("Start the connection from Frappe Cloud, then install the GitHub App from the link it gives."),
+			_("Start the connection from Frappe Cloud, then sign in to GitHub from the link it gives."),
 			indicator_color="orange",
 		)
 
-	GitHubDeployAppInstallation.verify(state, code, installation_id, frappe.session.user)
+	if not GitHubDeployAppInstallation.verify(state, code, installation_id, frappe.session.user):
+		# GitHub shows its install page, or its configure page when the App is on the account already.
+		frappe.local.response["type"] = "redirect"
+		frappe.local.response["location"] = GitHubDeployApp().get_install_url(state)
+		return
+
 	frappe.respond_as_web_page(
-		_("GitHub App installed"),
+		_("GitHub connected"),
 		_("Go back to where you started to finish connecting it."),
 		indicator_color="green",
 	)

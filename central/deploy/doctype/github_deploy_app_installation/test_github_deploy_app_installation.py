@@ -47,7 +47,10 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 			"central.deploy.doctype.github_deploy_app_installation.github_deploy_app_installation.GitHubDeployApp"
 		).start()
 		self.addCleanup(patch.stopall)
-		app.return_value.get_user_installations.return_value = [INSTALLATION]
+		self.github = app.return_value
+		self.github.exchange_code.return_value = "user-token"
+		self.github.get_authorize_url.return_value = "sign-in-url"
+		self.github.get_user_installations.return_value = [INSTALLATION]
 		self.repositories = app.return_value.get_user_repositories
 		self.repositories.return_value = [REPOSITORY]
 		branches = patch("central.deploy.doctype.deploy_app.deploy_app.GitHubDeployApp").start()
@@ -57,10 +60,9 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 		return GitHubDeployAppInstallation.start(self.team, self.owner, "Octo/App", self.region)
 
 	def test_the_signed_in_user_connects_a_repository_through_the_api(self):
-		patch("central.deploy.api.GitHubDeployApp").start().return_value.get_install_url.return_value = "url"
 		frappe.set_user(self.owner)
 		started = api.connect_repository(self.team, "octo/app", self.region)
-		self.assertEqual(started["install_url"], "url")
+		self.assertEqual(started["sign_in_url"], "sign-in-url")
 
 		GitHubDeployAppInstallation.verify(started["state"], "code", "101", self.owner)
 		frappe.set_user(self.outsider)
@@ -94,6 +96,52 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 		)
 		GitHubDeployAppInstallation.verify(state, "code", "101", self.owner)
 		self.assertEqual(GitHubDeployAppInstallation.complete(state, self.owner).repository, "octo/app")
+
+	def test_a_sign_in_finds_the_repository_in_an_installation_already_on_the_account(self):
+		state = self.start()
+		self.assertTrue(GitHubDeployAppInstallation.verify(state, "code", None, self.owner))
+		# Only the sign-in sent a PKCE challenge.
+		self.assertIsNotNone(self.github.exchange_code.call_args.args[1])
+		self.assertEqual(GitHubDeployAppInstallation.complete(state, self.owner).repository, "octo/app")
+
+	def test_a_code_from_an_install_is_traded_without_a_verifier(self):
+		GitHubDeployAppInstallation.verify(self.start(), "code", "101", self.owner)
+		self.assertIsNone(self.github.exchange_code.call_args.args[1])
+
+	def test_a_repository_added_on_github_after_the_sign_in_is_found_on_the_next_poll(self):
+		self.repositories.return_value = [{**REPOSITORY, "full_name": "octo/docs"}]
+		state = self.start()
+		self.assertFalse(GitHubDeployAppInstallation.verify(state, "code", None, self.owner))
+		with self.assertRaisesRegex(frappe.PermissionError, "Install the GitHub App first"):
+			GitHubDeployAppInstallation.complete(state, self.owner)
+
+		# GitHub sends no callback when a repository is added to an installation.
+		self.repositories.return_value = [REPOSITORY]
+		self.assertEqual(GitHubDeployAppInstallation.complete(state, self.owner).repository, "octo/app")
+
+	def test_the_user_token_is_kept_encrypted_and_dropped_once_verified(self):
+		self.repositories.return_value = []
+		state = self.start()
+		GitHubDeployAppInstallation.verify(state, "code", None, self.owner)
+		stored = frappe.cache.get_value(state_key(state))
+		self.assertNotIn("user-token", stored)
+
+		self.repositories.return_value = [REPOSITORY]
+		GitHubDeployAppInstallation.verify(state, "code", None, self.owner)
+		self.assertNotIn("user_token", frappe.cache.get_value(state_key(state)))
+
+	def test_the_callback_sends_the_user_to_install_the_app_when_no_installation_has_the_repository(self):
+		self.repositories.return_value = []
+		patch(
+			"central.deploy.api.GitHubDeployApp"
+		).start().return_value.get_install_url.return_value = "install"
+		state = self.start()
+		frappe.set_user(self.owner)
+		api.oauth_callback(state=state, code="code")
+		self.assertEqual(
+			(frappe.local.response.get("type"), frappe.local.response.get("location")),
+			("redirect", "install"),
+		)
 
 	def test_a_team_links_an_installation_once(self):
 		make_installation(self.team)
