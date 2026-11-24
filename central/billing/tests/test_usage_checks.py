@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
-from central.billing.revenue import usage_checks
+from central.billing.revenue import grove_bridge, usage_checks
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.services.doctype.service.service import AI_SERVICE, STORAGE_SERVICE
 
@@ -107,33 +107,43 @@ class TestUsageChecks(IntegrationTestCase):
 		self.assertEqual(written, 1)
 		self.assertEqual([c.subject for c in self.check()], [BUCKET])
 
-	def test_ai_days_are_compared_per_model(self):
-		self.stored_day(AI_SERVICE, TEAM, 1.25, dimension="model-a")
-		self.stored_day(AI_SERVICE, TEAM, 3.0, dimension="model-b")
-		grove = [{"dimension": "model-a", "quantity": 1.255}, {"dimension": "model-b", "quantity": 2.5}]
+	def check_ai(self, models: dict):
+		grove = [
+			{"subject": TEAM, "dimension": model, "quantity": quantity} for model, quantity in models.items()
+		]
 		with (
 			patch.object(
 				usage_checks, "billed_subjects", return_value={TEAM: frappe._dict(external_id=TEAM)}
 			),
-			patch.object(usage_checks.GroveClient, "from_settings"),
-			patch.object(usage_checks, "landing_rows", return_value=grove),
+			patch.object(grove_bridge.GroveClient, "from_settings"),
+			patch.object(grove_bridge, "landing_rows", return_value=grove),
 		):
 			usage_checks.check_ai_page([TEAM], str(DAY))
+
+	def test_ai_days_are_compared_per_model(self):
+		self.stored_day(AI_SERVICE, TEAM, 1.25, dimension="model-a")
+		self.stored_day(AI_SERVICE, TEAM, 3.0, dimension="model-b")
+		self.check_ai({"model-a": 1.255, "model-b": 2.5})
 		checks = self.check(AI_SERVICE)
 		self.assertEqual([(c.dimension, c.is_mismatch) for c in checks], [("model-a", 0), ("model-b", 1)])
 
 	def test_a_model_only_the_ledger_has_is_a_mismatch(self):
 		self.stored_day(AI_SERVICE, TEAM, 2.0, dimension="model-gone")
+		self.check_ai({})
+		[check] = self.check(AI_SERVICE)
+		self.assertEqual((check.read_value, check.stored_value, check.is_mismatch), (0, 2.0, 1))
+
+	def test_a_team_grove_cannot_answer_for_is_not_checked(self):
+		self.stored_day(AI_SERVICE, TEAM, 2.0, dimension="model-a")
 		with (
 			patch.object(
 				usage_checks, "billed_subjects", return_value={TEAM: frappe._dict(external_id=TEAM)}
 			),
-			patch.object(usage_checks.GroveClient, "from_settings"),
-			patch.object(usage_checks, "landing_rows", return_value=[]),
+			patch.object(grove_bridge.GroveClient, "from_settings"),
+			patch.object(grove_bridge, "landing_rows", side_effect=RuntimeError("grove down")),
 		):
-			usage_checks.check_ai_page([TEAM], str(DAY))
-		[check] = self.check(AI_SERVICE)
-		self.assertEqual((check.read_value, check.stored_value, check.is_mismatch), (0, 2.0, 1))
+			self.assertEqual(usage_checks.check_ai_page([TEAM], str(DAY)), 0)
+		self.assertFalse(self.check(AI_SERVICE))
 
 	def test_nothing_runs_while_central_reads_the_service(self):
 		self.sample(100)
