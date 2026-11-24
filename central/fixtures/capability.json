@@ -178,5 +178,25 @@
   "name": "team:manage_members",
   "plane": "central",
   "resource": "team"
+ },
+ {
+  "capability": "support:view",
+  "description": "Open support tickets and see your own",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-11-17 17:40:22.000000",
+  "name": "support:view",
+  "plane": "central",
+  "resource": "support"
+ },
+ {
+  "capability": "support:manage",
+  "description": "See every support ticket of the team",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-11-17 17:40:22.000000",
+  "name": "support:manage",
+  "plane": "central",
+  "resource": "support"
  }
 ]
