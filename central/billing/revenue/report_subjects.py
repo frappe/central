@@ -19,10 +19,12 @@ DELETED_SUBJECT_DAYS = 2
 def subjects_by_day(service: str, names: list[str], days: set[str]) -> dict[str, dict]:
 	"""The subjects among `names` that `service` bills on each of `days`, by day then subject."""
 	billed = {day: billed_subjects_of(service, day, names) for day in days}
-	known = {name for subjects in billed.values() for name in subjects}
-	deleted = _recently_deleted(service, [name for name in names if name not in known])
-	# A deleted subject's lines go on its last subscription for every reported day, a backlog too;
-	# a subject billed that day wins over a deleted one of the same name.
+	# One lookup for every name missing on some day, so a day's answer never depends on the other
+	# days sent with it: a name billed on one day may still be a deleted subject on another.
+	missing = {name for name in names for subjects in billed.values() if name not in subjects}
+	deleted = _recently_deleted(service, sorted(missing))
+	# A deleted subject's lines go on its last subscription for any day it is not billed, a backlog
+	# too; a subject billed that day wins over a deleted one of the same name.
 	return {day: {**deleted, **subjects} for day, subjects in billed.items()}
 
 
