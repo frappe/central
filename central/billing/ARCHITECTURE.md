@@ -751,7 +751,19 @@ Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
     be ahead) and a day written by another worker at the same time; the service sends these
     again. It is false for a malformed line, an unknown meter and a bad value, dimension, amount,
     currency or day format; the service never sends these again
+  → report_subjects.subjects_by_day resolves the subjects once per distinct day in the report:
+    the service's Team Services with a subscription; for storage, a server's backup bucket on
+    a day its server billed (bundled_buckets), with that day's bundle set as Usage Day.included,
+    as storage_bridge._bundled_reading sets it; and a subject Central no longer has (a deleted
+    bucket) from its newest Usage Day of the last 2 UTC days on a subscription that is not a
+    server's, on that day's team and subscription. Any other subject is "unknown subject"
   → every signed report sets Service.last_report_at and last_report_as_of
+  → the report secret: saving a new Service.report_secret queues it after commit
+    (integrations.report_secret). storage: one job per Registered region calls
+    cargo.api.webhooks.configure with the region's webhook secret and `report_secret`; region
+    enrolment (register_cargo) sends it too. ai: one job calls grove.api.control.set_report_secret.
+    Each job reads the secret itself; a failed send logs "Report secret not sent to Cargo/Grove"
+    with no secret and no traceback, and other regions still get theirs
   → once Central stops reading a service (central_reads off): alert `silent_service` after
     twice its expected_cadence with no report; usage_checks compares Central's own reading with
     the pushed days and raises `usage_mismatch` (a check never writes a Usage Day)
