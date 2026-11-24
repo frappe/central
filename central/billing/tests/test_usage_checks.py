@@ -64,7 +64,7 @@ class TestUsageChecks(IntegrationTestCase):
 			patch.object(TeamService, "get_usage", return_value={"used_bytes": gb * GB}),
 			patch.object(storage_bridge, "utc_today", return_value=day),
 		):
-			return usage_checks.sample_storage_page("ap-south-1", names or [self.bucket.name])
+			return usage_checks.sample_team_page("ap-south-1", names or [self.bucket.name])
 
 	def check(self, service=STORAGE_SERVICE):
 		return frappe.get_all(
@@ -133,7 +133,7 @@ class TestUsageChecks(IntegrationTestCase):
 			patch.object(storage_bridge.ObjectStorageClient, "from_region", return_value=client),
 			patch.object(storage_bridge, "utc_today", return_value=DAY),
 		):
-			usage_checks.sample_storage_page("ap-south-1", [BUCKET], bundled=True)
+			usage_checks.sample_bundled_page("ap-south-1", [BUCKET])
 		self.assertEqual([(c.subject, c.read_value) for c in self.check()], [(BUCKET, 70)])
 
 	def check_ai(self, models: dict):
@@ -198,8 +198,18 @@ class TestUsageChecks(IntegrationTestCase):
 			patch("frappe.enqueue") as enqueue,
 		):
 			self.assertEqual(usage_checks.sample_storage(), 250)
-		pages = [(call.kwargs["bundled"], len(call.kwargs["names"])) for call in enqueue.call_args_list]
-		self.assertEqual(sorted(pages), [(False, 25), (False, 100), (True, 25), (True, 100)])
+		pages = [
+			(call.args[0].rsplit(".", 1)[1], len(call.kwargs["names"])) for call in enqueue.call_args_list
+		]
+		self.assertEqual(
+			sorted(pages),
+			[
+				("sample_bundled_page", 25),
+				("sample_bundled_page", 100),
+				("sample_team_page", 25),
+				("sample_team_page", 100),
+			],
+		)
 
 	def test_a_service_silent_for_twice_its_cadence_raises_an_alert(self):
 		frappe.db.set_value("Service", STORAGE_SERVICE, "last_report_at", NOW - datetime.timedelta(hours=3))

@@ -47,17 +47,30 @@ def sample_storage() -> int:
 	if is_read_by_central(STORAGE_SERVICE):
 		return 0
 	queued = 0
-	for bundled, buckets in ((False, billed_buckets()), (True, bundled_buckets_by_region())):
+	for job, buckets in (
+		("sample_team_page", billed_buckets()),
+		("sample_bundled_page", bundled_buckets_by_region()),
+	):
 		for region, region_pages in pages(buckets).items():
 			for page in region_pages:
-				_enqueue("sample_storage_page", region=region, names=page, bundled=bundled)
+				_enqueue(job, region=region, names=page)
 				queued += len(page)
 	return queued
 
 
-def sample_storage_page(region: str, names: list[str], bundled: bool = False) -> int:
-	"""Read one page of a region's buckets as billing would, and keep each reading for the check."""
-	names, read = (bundled_bucket_reader if bundled else team_bucket_reader)(names)
+def sample_team_page(region: str, names: list[str]) -> int:
+	"""Read one page of a region's team buckets as billing would, and keep each reading."""
+	return _sample(region, names, team_bucket_reader)
+
+
+def sample_bundled_page(region: str, names: list[str]) -> int:
+	"""Read one page of a region's backup buckets as billing would, and keep each reading."""
+	return _sample(region, names, bundled_bucket_reader)
+
+
+def _sample(region: str, names: list[str], reader) -> int:
+	"""Read one page of buckets with the reader, and keep each reading for the check."""
+	names, read = reader(names)
 	now = frappe.utils.now_datetime()
 	rows, failed = [], []
 	for name in names:
