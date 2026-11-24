@@ -57,6 +57,11 @@ class IntegrationTestDeployRequest(IntegrationTestCase):
 		self.assertEqual((self.get_status(queued), self.get_status(building)), ("Superseded", "Superseded"))
 		self.assertEqual((newest.status, newest.team), ("Queued", self.app.team))
 
+	def test_a_deploy_is_named_by_its_app_and_commit(self):
+		first = DeployRequest.queue(self.app.name, "abcdef1234" + "0" * 30)
+		again = DeployRequest.queue(self.app.name, "abcdef1234" + "0" * 30)
+		self.assertEqual((first.name, again.name), (f"{self.app.name}-abcdef", f"{self.app.name}-abcdef-1"))
+
 	def test_a_release_is_never_superseded(self):
 		releasing = DeployRequest.queue(self.app.name, "a" * 40)
 		self.set_status(releasing, "Releasing")
@@ -114,7 +119,7 @@ class IntegrationTestDeployRequest(IntegrationTestCase):
 			(
 				"Failed",
 				"DeployBuildError: The build failed.",
-				("failure", "DeployBuildError: The build failed.", None),
+				("failure", "The deploy failed. See its logs in Central.", None),
 			),
 			("Superseded", None, ("error", "A newer push replaced this deploy", None)),
 		):
@@ -235,7 +240,8 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		self.assertIn("Add a Dockerfile", error)
 		self.find_or_create.assert_not_called()
 
-	def test_a_commit_without_a_config_deploys_at_growth(self):
+	def test_a_commit_without_a_config_deploys_at_the_default_size(self):
+		frappe.db.set_single_value("Central Settings", "deploy_default_size", "Growth")
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 
 		self.assertEqual(

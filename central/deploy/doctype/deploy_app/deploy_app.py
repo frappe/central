@@ -141,6 +141,13 @@ class DeployApp(Document):
 			pluck="name",
 		)
 
+	@staticmethod
+	def disable_for_server(server: str) -> None:
+		"""Stop deploying the apps of a terminated server, so a push no longer queues a deploy for it."""
+		frappe.db.set_value(
+			"Deploy App", {"virtual_machine": server, "status": "Active"}, "status", "Disabled"
+		)
+
 
 def on_doctype_update() -> None:
 	frappe.db.add_unique("Deploy App", ["team", "repository_id", "branch"])
