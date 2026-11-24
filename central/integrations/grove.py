@@ -54,6 +54,10 @@ class GroveClient:
 		"""A new secret for Central's own control user; the old one stops at once."""
 		return self.call("grove.api.control.create_control_client_key")
 
+	def set_report_secret(self, secret: str) -> None:
+		"""The secret Grove signs its AI usage reports to Central with."""
+		self.call("grove.api.control.set_report_secret", secret=secret)
+
 	def provision_team(self, team: str) -> dict:
 		"""Register `team` by its id; Grove keeps nothing else about who it is. Grove upserts
 		by `team`; `update_team` sets everything else. → `team` and `max_keys`."""
