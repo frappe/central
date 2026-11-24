@@ -31,8 +31,10 @@ STORAGE_PLAN = "bundled-bucket-storage"
 GB = 1_000_000_000
 
 
-class TestBundledBuckets(IntegrationTestCase):
-	def setUp(self):
+class BundledServerFixture:
+	"""A running server whose plan includes 40 GB of storage, and its backup bucket's name."""
+
+	def set_up_bundled_server(self):
 		frappe.db.delete("Virtual Machine", {"team": TEAM})
 		self.addCleanup(frappe.db.delete, "Virtual Machine", {"team": TEAM})
 		_clear_metered_plans("Storage", keep=STORAGE_PLAN)
@@ -60,6 +62,32 @@ class TestBundledBuckets(IntegrationTestCase):
 		):
 			storage_bridge.RegionRead("test-run", CLUSTER).start(1)
 			storage_bridge.read_bundled_page("test-run", CLUSTER, [self.bucket])
+
+	def estimated_bundles(self) -> list[float]:
+		return frappe.get_all(
+			"Usage Day", filters={"subject": self.bucket, "estimated": 1}, pluck="included", order_by="day"
+		)
+
+	def transfer_day(self, day: str) -> dict:
+		return {
+			"service": "bundled-bucket-transfer",
+			"meter": "transfer",
+			"subject": SERVER,
+			"dimension": "",
+			"day": day,
+			"aggregation": "Sum",
+			"team": TEAM,
+			"subscription": self.subscription,
+			"resource_type": "Transfer",
+			"quantity": 100,
+			"unit": "GB",
+			"as_of": f"{day} 12:00:00",
+		}
+
+
+class TestBundledBuckets(BundledServerFixture, IntegrationTestCase):
+	def setUp(self):
+		self.set_up_bundled_server()
 
 	def days(self) -> list[float]:
 		return frappe.get_all(
@@ -220,11 +248,6 @@ class TestBundledBuckets(IntegrationTestCase):
 		self.assertEqual([d.day for d in days], [1, 2, 3, 4, 5, 10])  # the paused days stay empty
 		self.assertEqual(self.estimated_bundles(), [200])
 
-	def estimated_bundles(self) -> list[float]:
-		return frappe.get_all(
-			"Usage Day", filters={"subject": self.bucket, "estimated": 1}, pluck="included", order_by="day"
-		)
-
 	def test_an_estimated_day_carries_the_bundle_of_its_own_day(self):
 		self.read("2026-06-01", 100)
 		self.resize(200, "2026-06-02 12:00:00")
@@ -344,22 +367,6 @@ class TestBundledBuckets(IntegrationTestCase):
 			pluck="locked_allowance",
 		)
 		self.assertEqual(allowance, 500)
-
-	def transfer_day(self, day: str) -> dict:
-		return {
-			"service": "bundled-bucket-transfer",
-			"meter": "transfer",
-			"subject": SERVER,
-			"dimension": "",
-			"day": day,
-			"aggregation": "Sum",
-			"team": TEAM,
-			"subscription": self.subscription,
-			"resource_type": "Transfer",
-			"quantity": 100,
-			"unit": "GB",
-			"as_of": f"{day} 12:00:00",
-		}
 
 	def flagged(self, today: str) -> list:
 		frappe.db.set_value("Virtual Machine", SERVER, "creation", "2026-06-01", update_modified=False)
