@@ -7,8 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 CONFIG_FILE = "frappe_cloud_deploy.toml"
 # What `buildah build .` looks for at the root of the context, in order, when no `-f` is given.
 CONTAINERFILE_NAMES = ("Containerfile", "Dockerfile")
-# A build needs room, so a deploy VM starts at Growth unless the config names another size.
-DEFAULT_SIZE = "Growth"
 # The agent writes the path into an environment file, so it holds only URL path characters.
 HEALTH_PATH_PATTERN = r"^(/[A-Za-z0-9._~%/-]*)?$"
 DEFAULT_HEALTH_TIMEOUT_SECONDS = 60
@@ -16,11 +14,12 @@ MAX_HEALTH_TIMEOUT_SECONDS = 600
 
 
 class MachineConfig(BaseModel):
-	"""`[machine]`: the server plan the VM runs and is billed at, by its title (Starter, Growth, Pro…)."""
+	"""`[machine]`: the server plan the VM runs and is billed at, by its title (Starter, Growth, Pro…).
+	Without a size, Central Settings' Default Deploy Size."""
 
 	model_config = ConfigDict(extra="forbid", strict=True)
 
-	size: str = DEFAULT_SIZE
+	size: str | None = None
 
 
 class HealthConfig(BaseModel):
@@ -76,3 +75,11 @@ def find_containerfile(root: list[dict]) -> str:
 			)
 		)
 	frappe.throw(_("Add a Dockerfile at the root of the repository and push again."))
+
+
+def get_machine_size(config: DeployConfig) -> str:
+	"""The size the commit's config names, else Central Settings' Default Deploy Size."""
+	size = config.machine.size or frappe.db.get_single_value("Central Settings", "deploy_default_size")
+	if not size:
+		frappe.throw(_("Set a Default Deploy Size in Central Settings."))
+	return size

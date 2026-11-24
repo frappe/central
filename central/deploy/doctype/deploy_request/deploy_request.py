@@ -9,6 +9,7 @@ import frappe
 from cloudtoolkit.pipeline.doctype.pipeline.decorators import flow, task
 from cloudtoolkit.pipeline.doctype.pipeline.pipeline_builder import PipelineBuilder
 from frappe import _
+from frappe.model.naming import append_number_if_name_exists
 from frappe.utils import now_datetime, time_diff_in_seconds
 from redis.exceptions import LockError
 
@@ -25,6 +26,7 @@ from central.deploy.config import (
 	DEFAULT_HEALTH_TIMEOUT_SECONDS,
 	find_containerfile,
 	get_deploy_config,
+	get_machine_size,
 )
 from central.deploy.github import GitHubDeployApp
 from central.deploy.notifications import notify
@@ -70,7 +72,7 @@ COMMIT_DESCRIPTIONS = {
 	"Building": "Building the image",
 	"Releasing": "Releasing the new container",
 	"Succeeded": "Live",
-	"Failed": "The deploy failed",
+	"Failed": "The deploy failed. See its logs in Central.",
 	"Superseded": "A newer push replaced this deploy",
 }
 
@@ -157,6 +159,10 @@ class DeployRequest(PipelineBuilder):
 			}
 		).insert(ignore_permissions=True)
 
+	def autoname(self):
+		"""`<app>-<6 characters of the commit>`; a commit deployed again gets -1, -2 and so on."""
+		self.name = append_number_if_name_exists(self.doctype, f"{self.deploy_app}-{self.commit[:6]}")
+
 	def after_insert(self):
 		"""We know which app we are deploying therefore let's start the flow form here."""
 		self.start_deploy.run_as_pipeline()
@@ -189,7 +195,7 @@ class DeployRequest(PipelineBuilder):
 
 	@task
 	def check_machine_specs(self) -> None:
-		"""Take the VM's plan from `[machine] size` in the commit's config, Growth when it names none."""
+		"""Take the VM's plan from `[machine] size` in the commit's config, else Central Settings' default size."""
 		self.set_status("Provisioning")
 		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
 		if not app.region:
@@ -201,7 +207,7 @@ class DeployRequest(PipelineBuilder):
 			installation_id, app.repository_id, app.repository, CONFIG_FILE, self.commit
 		)
 		deploy_config = get_deploy_config(config)
-		self.plan = get_size_plan(app.team, app.region, deploy_config.machine.size, app.virtual_machine)
+		self.plan = get_size_plan(app.team, app.region, get_machine_size(deploy_config), app.virtual_machine)
 		self.update(get_plan_specs(self.plan))
 		self.health_path = deploy_config.health.path
 		self.health_timeout = deploy_config.health.timeout
@@ -325,7 +331,7 @@ class DeployRequest(PipelineBuilder):
 			app.repository,
 			self.commit,
 			state=COMMIT_STATES.get(self.status, "pending"),
-			description=(self.status == "Failed" and self.error) or COMMIT_DESCRIPTIONS[self.status],
+			description=COMMIT_DESCRIPTIONS[self.status],
 			target_url=f"https://{app.domain}" if self.status == "Succeeded" and app.domain else None,
 		)
 

@@ -89,6 +89,17 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 		DeployApp.validate_region(self.team, "octo/app", "main", self.region)
 		DeployApp.validate_region(self.team, "octo/app", "staging", other)
 
+	def test_a_terminated_server_disables_its_apps(self):
+		main = DeployApp.add(self.installation, REPOSITORY, self.region)
+		staging = DeployApp.add(self.installation, REPOSITORY, self.region, "staging")
+		main.db_set("virtual_machine", "server-1")
+		staging.db_set("virtual_machine", "server-2")
+
+		DeployApp.disable_for_server("server-1")
+		self.assertEqual(frappe.db.get_value("Deploy App", main.name, "status"), "Disabled")
+		self.assertEqual(frappe.db.get_value("Deploy App", staging.name, "status"), "Active")
+		self.assertEqual(DeployApp.get_for_push("101", "11", "main"), [])
+
 	def test_a_branch_missing_on_github_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
 			DeployApp.add(self.installation, REPOSITORY, self.region, "typo")

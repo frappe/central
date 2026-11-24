@@ -1,14 +1,24 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import UnitTestCase
 
-from central.deploy.config import DEFAULT_SIZE, find_containerfile, get_deploy_config
+from central.deploy.config import find_containerfile, get_deploy_config, get_machine_size
 
 
 class UnitTestDeployConfig(UnitTestCase):
-	def test_a_repository_without_a_config_deploys_at_growth(self):
-		self.assertEqual(DEFAULT_SIZE, "Growth")
-		self.assertEqual(get_deploy_config(None).machine.size, "Growth")
-		self.assertEqual(get_deploy_config("[machine]\n").machine.size, "Growth")
+	def test_a_repository_without_a_size_deploys_at_the_settings_default(self):
+		with patch("frappe.db.get_single_value", return_value="Starter"):
+			self.assertEqual(get_machine_size(get_deploy_config(None)), "Starter")
+			self.assertEqual(get_machine_size(get_deploy_config("[machine]\n")), "Starter")
+			self.assertEqual(get_machine_size(get_deploy_config('[machine]\nsize = "Pro"\n')), "Pro")
+
+	def test_no_default_size_fails_loudly(self):
+		with (
+			patch("frappe.db.get_single_value", return_value=None),
+			self.assertRaises(frappe.ValidationError),
+		):
+			get_machine_size(get_deploy_config(None))
 
 	def test_the_machine_size_is_read(self):
 		self.assertEqual(get_deploy_config('[machine]\nsize = "Pro"\n').machine.size, "Pro")

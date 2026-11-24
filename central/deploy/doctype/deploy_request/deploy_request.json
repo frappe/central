@@ -1,6 +1,6 @@
 {
  "actions": [],
- "autoname": "hash",
+ "autoname": "",
  "creation": "2026-11-15 20:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -163,7 +163,7 @@
    "read_only": 1
   },
   {
-   "description": "The server plan the VM runs and is billed at, from machine.size in the commit's config.",
+   "description": "The server plan the VM runs and is billed at, from machine.size in the commit's config, else Central Settings' Default Deploy Size.",
    "fieldname": "plan",
    "fieldtype": "Link",
    "label": "Plan",
@@ -193,11 +193,11 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-24 15:00:00.000000",
+ "modified": "2026-11-24 16:30:00.000000",
  "modified_by": "Administrator",
  "module": "Deploy",
  "name": "Deploy Request",
- "naming_rule": "Random",
+ "naming_rule": "By script",
  "owner": "Administrator",
  "permissions": [
   {
