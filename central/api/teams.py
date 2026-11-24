@@ -16,7 +16,7 @@ from central.utils.guards import require_capability, require_team_member
 @frappe.whitelist(methods=["GET"])
 @require_team_member
 def list_team_members(team: str) -> list[dict[str, Any]]:
-	"""Roster of the team the caller belongs to (user, full name, role grants, status,
+	"""Roster of the team the caller belongs to (user, full name, email, role grants, status,
 	owner flag) — one entry per user, folding their Team Member rows into a `roles` list."""
 	doc = frappe.get_doc("Team", team)
 	users = {
@@ -24,7 +24,7 @@ def list_team_members(team: str) -> list[dict[str, Any]]:
 		for u in frappe.get_all(
 			"User",
 			filters={"name": ["in", [m.user for m in doc.members]]},
-			fields=["name", "full_name", "user_image"],
+			fields=["name", "full_name", "email", "user_image"],
 		)
 	}
 
@@ -36,6 +36,7 @@ def list_team_members(team: str) -> list[dict[str, Any]]:
 			entry = {
 				"user": m.user,
 				"full_name": (user and user.full_name) or m.user,
+				"email": user and user.email,
 				"user_image": user and user.user_image,
 				"roles": [],
 				"status": m.status,

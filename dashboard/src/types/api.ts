@@ -47,6 +47,7 @@ export interface TeamMemberRoleAssignment {
 export interface TeamMemberRow {
 	user: string
 	full_name: string
+	email: string | null
 	/** The frappe User's profile photo URL, when they've set one. */
 	user_image: string | null
 	roles: TeamMemberRoleAssignment[]

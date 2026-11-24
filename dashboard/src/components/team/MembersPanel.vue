@@ -84,7 +84,7 @@ const roster = computed<RosterRow[]>(() => [
 	...members.value.map((member) => ({
 		key: member.user,
 		name: member.full_name,
-		subtitle: member.user,
+		subtitle: member.email ?? member.user,
 		roles: member.roles,
 		member,
 		invite: null,
@@ -133,7 +133,7 @@ const columns = computed<ListViewColumn<RosterRow>[]>(() => [
 	{
 		key: 'member',
 		label: 'Member',
-		value: (row) => `${row.name} ${row.member?.user ?? ''}`,
+		value: (row) => `${row.name} ${row.member?.email ?? row.member?.user ?? ''}`,
 		sortable: true,
 	},
 	{

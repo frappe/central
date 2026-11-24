@@ -176,7 +176,7 @@ const updateAccessErrorTitle = __("Couldn't update access")
 							{{ member?.full_name }}
 						</p>
 						<p class="truncate text-p-sm text-ink-gray-5">
-							{{ member?.user }}
+							{{ member?.email ?? member?.user }}
 						</p>
 					</div>
 				</div>
