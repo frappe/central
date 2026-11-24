@@ -131,7 +131,9 @@ class TestReportSecret(IntegrationTestCase):
 		with patch.object(client, "call") as call:
 			client.set_report_secret(SECRET)
 
-		call.assert_called_once_with("grove.api.control.set_report_secret", redact=SECRET, secret=SECRET)
+		call.assert_called_once_with(
+			"grove.api.control.set_report_secret", secret_to_hide=SECRET, secret=SECRET
+		)
 
 
 class TestReportSecretNeverLogged(IntegrationTestCase):
@@ -172,6 +174,34 @@ class TestReportSecretNeverLogged(IntegrationTestCase):
 
 		self.assertIn("Grove request failed", [log.method for log in self.logs()])
 		self.assert_logged_without_secret()
+
+	def refuse(self, *args, json=None, **kwargs) -> requests.Response:
+		# A Frappe-format refusal whose message and exception both echo the request.
+		echoed = f"Invalid secret {json}"
+		response = requests.Response()
+		response.status_code = 417
+		response._content = frappe.as_json(
+			{
+				"exception": f"frappe.exceptions.ValidationError: {echoed}",
+				"_server_messages": frappe.as_json([frappe.as_json({"message": echoed})]),
+			}
+		).encode()
+		return response
+
+	def test_a_grove_refusal_echoing_the_secret_raises_and_logs_no_secret(self):
+		grove = GroveClient("https://grove.example.test", "key", "secret")
+		frappe.clear_messages()
+		with (
+			patch("central.integrations.grove.requests.post", side_effect=self.refuse),
+			self.assertRaises(frappe.ValidationError) as raised,
+		):
+			grove.set_report_secret(SECRET)
+
+		self.assertIn("Invalid secret", str(raised.exception))
+		self.assertNotIn(SECRET, str(raised.exception))
+		self.assertNotIn(SECRET, frappe.as_json(frappe.local.message_log))
+		for log in self.logs():
+			self.assertNotIn(SECRET, f"{log.method} {log.error}")
 
 	def test_a_cargo_500_echoing_the_secret_logs_no_secret(self):
 		region = frappe.get_doc(

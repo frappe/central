@@ -57,7 +57,7 @@ class GroveClient:
 	def set_report_secret(self, secret: str) -> None:
 		"""The secret Grove signs its AI usage reports to Central with."""
 		# Redacted, so a Grove error that echoes the request does not store the secret in a log.
-		self.call("grove.api.control.set_report_secret", redact=secret, secret=secret)
+		self.call("grove.api.control.set_report_secret", secret_to_hide=secret, secret=secret)
 
 	def provision_team(self, team: str) -> dict:
 		"""Register `team` by its id; Grove keeps nothing else about who it is. Grove upserts
@@ -183,7 +183,11 @@ class GroveClient:
 		)
 
 	def call(
-		self, method: str, timeout: tuple[int, int] = TIMEOUT, redact: str | None = None, **body
+		self,
+		method: str,
+		timeout: tuple[int, int] = TIMEOUT,
+		secret_to_hide: str | None = None,
+		**body,
 	) -> dict | list:
 		try:
 			response = requests.post(
@@ -191,7 +195,7 @@ class GroveClient:
 			)
 		except (requests.ConnectionError, requests.Timeout) as e:
 			raise GroveUnavailable(_("Grove can't be reached right now.")) from e
-		return read(response, redact)
+		return read(response, secret_to_hide)
 
 
 def get_key_balance(gateway_url: str, api_key: str) -> dict:
@@ -207,22 +211,27 @@ def get_key_balance(gateway_url: str, api_key: str) -> dict:
 	return response.json()
 
 
-def read(response: requests.Response, redact: str | None = None) -> dict | list:
-	"""Grove's answer, or a refusal. `redact` is a value replaced by *** in anything this logs."""
+def read(response: requests.Response, secret_to_hide: str | None = None) -> dict | list:
+	"""Grove's answer, or a refusal with `secret_to_hide` replaced by *** wherever it shows."""
 	if response.status_code in UNAVAILABLE:
 		raise GroveUnavailable(_("Grove is unavailable ({0}).").format(response.status_code))
 	if response.status_code >= 400:
-		message = refusal_message(response)
+		message = hide(refusal_message(response), secret_to_hide)
 		if message:
 			frappe.throw(message)
 		# Redacted before cutting, so a secret straddling the cut cannot leave a part behind.
-		text = response.text.replace(redact, "***") if redact else response.text
+		text = hide(response.text, secret_to_hide)
 		detail = f"{response.status_code}: {text[:2000]}"
 		frappe.log_error(title="Grove request failed", message=detail)
 		if user_has_operator_bypass():
 			frappe.throw(_("Grove request failed ({0})").format(detail[:200]))
 		frappe.throw(_("The AI service could not complete the request. Try again later."))
 	return response.json().get("message", {})
+
+
+def hide(text: str | None, secret_to_hide: str | None) -> str | None:
+	"""The text with the secret replaced by ***."""
+	return text.replace(secret_to_hide, "***") if text and secret_to_hide else text
 
 
 def refusal_message(response: requests.Response) -> str | None:
