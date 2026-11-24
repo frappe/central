@@ -33,18 +33,45 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 
 	rows, rejected = [], []
 	for line in report["lines"]:
-		reason = line_problem(service, line, subjects)
-		if reason:
-			rejected.append({"subject": _subject_of(line), "reason": reason})
+		problem = line_problem(service, line, subjects)
+		if problem:
+			reason, retry = problem
+			rejected.append(_refused(line, reason, retry=retry))
 		else:
 			rows.append(_row(service, line, subjects[line["subject"]], as_of))
 	conflicts = write_days(rows).conflicts
 	# A day another worker wrote at the same moment is not confirmed, so the service sends it again.
 	rejected += [
-		{"subject": row["subject"], "reason": _("the day changed at the same time; send it again")}
-		for row in conflicts
+		_refused(row, _("the day changed at the same time; send it again"), retry=True) for row in conflicts
 	]
+	# Last, so the Service row is locked only for the end of the transaction, not the whole write.
+	_record_report(service.name, as_of)
 	return {"accepted": len(rows) - len(conflicts), "rejected": rejected}
+
+
+def _record_report(service_name: str, as_of: datetime.datetime) -> None:
+	# Any signed report shows the service is alive, even one whose every line is refused.
+	frappe.db.set_value(
+		"Service",
+		service_name,
+		{"last_report_at": frappe.utils.now_datetime(), "last_report_as_of": as_of},
+		update_modified=False,
+	)
+
+
+def _refused(line, reason: str, retry: bool) -> dict:
+	"""A refused line, named so the service can find it in its outbox; `retry` says whether to resend."""
+	values = line if isinstance(line, dict) else {}
+	named = {key: _text(values.get(key)) for key in ("subject", "meter", "day")}
+	# The ledger keeps a line with no dimension as "", so every refusal names it that way.
+	return {**named, "dimension": _text(values.get("dimension")) or "", "reason": reason, "retry": retry}
+
+
+def _text(value) -> str | None:
+	# A malformed line can carry any JSON here; only plain values are echoed back.
+	if isinstance(value, datetime.date):
+		return value.isoformat()
+	return value if isinstance(value, str) else None
 
 
 def verified_service(service_name: str | None, signature: str | None, raw_body: bytes):
@@ -81,14 +108,27 @@ def reported_at(value) -> datetime.datetime:
 	return moment
 
 
-def line_problem(service, line, subjects: dict) -> str | None:
-	"""Why a line cannot be stored, or None."""
+def line_problem(service, line, subjects: dict) -> tuple[str, bool] | None:
+	"""Why a line cannot be stored and whether sending it again later can help, or None."""
+	malformed = _format_problem(service, line)
+	if malformed:
+		return malformed, False
+	# Both can clear later: a team may subscribe after it used the service, and a service's clock
+	# may run a little ahead of Central's.
+	if _subject_of(line) not in subjects:
+		return _("unknown subject"), True
+	if datetime.date.fromisoformat(line["day"]) > utc_today():
+		return _("day is in the future"), True
+	return None
+
+
+def _format_problem(service, line) -> str | None:
 	if not isinstance(line, dict):
 		return _("a line is an object")
 	if not isinstance(line.get("meter"), str) or not service.get_meter(line["meter"]):
 		return _("unknown meter")
-	if _subject_of(line) not in subjects:
-		return _("unknown subject")
+	if _subject_of(line) is None:
+		return _("subject must be text")
 	return (
 		_value_problem(service, line)
 		or _dimension_problem(line.get("dimension"))
@@ -129,11 +169,9 @@ def _source_problem(line: dict) -> str | None:
 
 def _day_problem(value) -> str | None:
 	try:
-		day = datetime.date.fromisoformat(value)
+		datetime.date.fromisoformat(value)
 	except (TypeError, ValueError):
 		return _("day must be a UTC date like 2026-11-17")
-	if day > utc_today():
-		return _("day is in the future")
 	return None
 
 

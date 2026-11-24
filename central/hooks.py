@@ -287,6 +287,10 @@ scheduler_events = {
 		],
 		# 09:00 system time (Asia/Kolkata): remind INR teams to top up before the payment date.
 		"0 9 * * *": ["central.billing.payments.top_up_reminders.run_top_up_reminders"],
+		# 17:30 IST is 12:00 UTC: Central samples each bucket once a day to check what Cargo pushes.
+		"30 17 * * *": ["central.billing.revenue.usage_checks.sample_storage"],
+		# 07:30 IST is 02:00 UTC: yesterday has closed and Grove's late commits have landed.
+		"30 7 * * *": ["central.billing.revenue.usage_checks.check_yesterday"],
 		# 08:00 IST on the 1st: usage days are UTC, and the UTC month closes at 05:30 IST.
 		"0 8 1 * *": ["central.billing.revenue.invoicing.draft_monthly_invoices"],
 		"*/5 * * * *": [
