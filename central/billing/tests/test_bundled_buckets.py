@@ -446,14 +446,44 @@ class TestStoragePrice(IntegrationTestCase):
 		set_object_storage_rates.execute()
 		self.assertEqual(self.rates(), {"USD": 0.03, "INR": 2.5})
 
-	def test_the_patch_replaces_a_rate_of_zero(self):
+	def test_the_patch_replaces_a_rate_of_zero_and_keeps_one_above_it(self):
 		from central.billing.catalog.pricing import set_catalog_rates
 		from central.patches.v0_0 import set_object_storage_rates
 
-		region = frappe.get_all("Region", pluck="name", limit=1)
+		region = self.region()
 		set_catalog_rates(
-			"Plan", self.plan, [{"currency": "INR", "rate": 0, "cluster": region[0] if region else None}]
+			"Plan",
+			self.plan,
+			[
+				{"currency": "INR", "rate": 0, "cluster": region},
+				{"currency": "USD", "rate": 0.03, "cluster": region},
+			],
 		)
 		set_object_storage_rates.execute()
-		inr = frappe.get_all("Catalog Rate", {"priced_for": self.plan, "currency": "INR"}, pluck="rate")
-		self.assertEqual((inr, self.rates()["USD"]), ([2.5], 0.025))
+		self.assertEqual(
+			self.rows(),
+			{("INR", region): 2.5, ("INR", None): 2.5, ("USD", region): 0.03, ("USD", None): 0.025},
+		)
+
+	def rows(self) -> dict:
+		rows = frappe.get_all(
+			"Catalog Rate",
+			filters={"priced_doctype": "Plan", "priced_for": self.plan},
+			fields=["currency", "cluster", "rate"],
+		)
+		return {(row.currency, row.cluster): row.rate for row in rows}
+
+	def region(self) -> str:
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Region",
+					"region": "rates-" + frappe.generate_hash(length=8),
+					"base_url": "https://atlas.example.test",
+					"proxy_domain": "rates.example.test",
+					"status": "Active",
+				}
+			)
+			.insert()
+			.name
+		)
