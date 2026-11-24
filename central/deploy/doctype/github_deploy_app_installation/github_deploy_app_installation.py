@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import secrets
 
 import frappe
@@ -15,6 +16,12 @@ from central.deploy.github import GitHubDeployApp
 from central.iam import can
 
 STATE_TTL_SECONDS = 60 * 60
+# owner/name alone, or inside a github.com URL or SSH remote. GitHub owners are letters, digits and
+# hyphens; repository names may also have dots and underscores.
+REPOSITORY_PATTERN = re.compile(
+	r"(?:(?:https?://)?(?:www\.)?github\.com/|git@github\.com:)?"
+	r"(?P<owner_and_name>[A-Za-z0-9-]+/[A-Za-z0-9._-]+?)(?:\.git)?/?"
+)
 
 
 class GitHubDeployAppInstallation(Document):
@@ -39,6 +46,7 @@ class GitHubDeployAppInstallation(Document):
 	def start(team: str, user: str, repository: str, region: str, branch: str | None = None) -> str:
 		"""A new attempt to deploy `repository` (owner/name) for `team` in `region`. Its state lets only `user` finish it."""
 		require_deploy_access(user, team)
+		repository = to_owner_and_name(repository)
 		if not frappe.db.exists("Region", region):
 			frappe.throw(_("Region {0} does not exist.").format(region), frappe.DoesNotExistError)
 		DeployApp.validate_region(team, repository, branch, region)
@@ -158,3 +166,13 @@ def state_key(state: str) -> str:
 def on_doctype_update() -> None:
 	frappe.db.add_unique("GitHub Deploy App Installation", ["team", "installation_id"])
 	frappe.db.add_index("GitHub Deploy App Installation", ["installation_id", "status"])
+
+
+def to_owner_and_name(repository: str) -> str:
+	"""owner/name from owner/name itself, a github.com URL, or an SSH remote."""
+	match = REPOSITORY_PATTERN.fullmatch(repository.strip())
+	if not match:
+		frappe.throw(
+			_("Pass the repository as owner/name, such as frappe/erpnext, not {0}.").format(repository)
+		)
+	return match["owner_and_name"]
