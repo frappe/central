@@ -17,6 +17,7 @@
   "atlas_host_id",
   "frappe_version",
   "status",
+  "sleep_state",
   "configuration_tab",
   "capacity_section",
   "vcpus",
@@ -133,6 +134,15 @@
    "in_standard_filter": 1,
    "label": "Status",
    "options": "Pending\nProvisioning\nDeploying\nRunning\nPaused\nStopped\nFailed\nTerminated",
+   "read_only": 1
+  },
+  {
+   "description": "Where the region keeps the saved memory of a sleeping server, as Atlas reports it. Empty while the server is awake.",
+   "fieldname": "sleep_state",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Sleep State",
+   "options": "\nSleeping\nDeep Sleeping\nComa",
    "read_only": 1
   },
   {
@@ -422,7 +432,7 @@
    "link_fieldname": "server"
   }
  ],
- "modified": "2026-11-13 12:00:00.000000",
+ "modified": "2026-11-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Virtual Machine",
