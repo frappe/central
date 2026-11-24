@@ -123,7 +123,7 @@ def check_ai(day: datetime.date) -> int:
 def check_ai_page(teams: list[str], day: str) -> int:
 	"""Compare each team's stored AI days with what Grove recorded that landing day, per model."""
 	subjects = billed_subjects(AI_SERVICE, teams)
-	read = read_days(subjects, {team: [day] for team in subjects})
+	read = read_days(subjects, {team: [day] for team in subjects}, "Usage check: {n} AI team(s) not read")
 	grove: dict = {}
 	for row in read.rows:
 		key = (row["subject"], row["dimension"])
