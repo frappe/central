@@ -117,6 +117,10 @@ You can delete only an empty bucket. This deletes the bucket and its access key.
 
 Your team pays one Object Storage plan for each region that holds a bucket. All buckets in the region share the storage that the plan includes. The plan stops when you delete the last bucket in the region.
 
+Storage is billed by the GB-month. Each day counts the most the bucket held that day, so a bucket that holds 100 GB for a whole month bills 100 GB-months, and one that holds it for half the month bills 50.
+
+A server whose plan includes storage gets its own backup bucket. The invoice shows that bucket's storage on its own line, named after the server. Each day bills only what the bucket held above the storage the server's plan included that day. A paused server's bucket is not billed.
+
 When the region has a price, the **Create bucket** dialog shows the included storage and the price for a month. Read [How billing works](/billing/) for the invoice.
 
 ## See also

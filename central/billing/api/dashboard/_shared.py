@@ -211,7 +211,7 @@ def _from_inr(amount: float, currency: str) -> float:
 	return frappe.utils.flt(frappe.utils.flt(amount) / _FX_TO_INR.get(currency, 1.0), 2)
 
 
-def _describe_line(team: str, li) -> dict:
+def _describe_line(team: str, li, period: tuple) -> dict:
 	"""Turn a stored line item into a human-readable charge row.
 
 	Resource slugs and plan IDs mean nothing to a customer, so we resolve the
@@ -219,7 +219,6 @@ def _describe_line(team: str, li) -> dict:
 	(prorated days), or a metered overage above the plan's included allowance.
 	"""
 	from central.billing.projection.basis import MEASURED
-	from central.billing.revenue.metering import _metered_plan_for
 
 	row = {
 		"resource_type": li.resource_type,
@@ -261,25 +260,31 @@ def _describe_line(team: str, li) -> dict:
 		# the order and the changeover themselves.
 		row["detail"] = _billed_window(li)
 	else:
-		metered_plan = _metered_plan_for(li.resource_type)
-		title = frappe.db.get_value("Plan", metered_plan.name, "title") if metered_plan else None
-		row["item"] = title or f"{li.resource_type.title()} overage"
-		row["kind"] = "Overage"
-		row["detail"] = _metered_detail(team, li)
-		# Such as the AI model and the rate it was converted at, which tell its lines apart.
-		if li.get("description"):
-			row["detail"] += f" · {li.description}"
+		row.update(_describe_metered(team, li, period))
 	return row
 
 
-def _metered_detail(team: str, li) -> str:
+def _describe_metered(team: str, li, period: tuple) -> dict:
+	"""The item, kind and detail of a metered line."""
+	from central.billing.revenue.metering import _metered_plan_for
+
+	metered_plan = _metered_plan_for(li.resource_type)
+	title = frappe.db.get_value("Plan", metered_plan.name, "title") if metered_plan else None
+	item = title or f"{li.resource_type.title()} overage"
+	# A server's own bucket bills on the server; name it so two servers' lines differ.
+	if server := _metered_server(li.subscription_resource):
+		item += f" · {server}"
+	detail = _metered_detail(team, li, period)
+	# Such as the AI model and the rate it was converted at, which tell its lines apart.
+	if li.get("description"):
+		detail += f" · {li.description}"
+	return {"item": item, "kind": "Overage", "detail": detail}
+
+
+def _metered_detail(team: str, li, period: tuple) -> str:
 	"""How much a metered line used, and how much of it was included."""
 	# Surface the included allowance the usage ran past, so the bill is legible.
-	allowance = frappe.db.get_value(
-		"Usage Rollup",
-		{"team": team, "resource_id": li.subscription_resource, "resource_type": li.resource_type},
-		"locked_allowance",
-	)
+	allowance = _rollup_allowance(team, li, period)
 	# li.quantity is the BILLABLE overage (usage already minus the allowance). Spell
 	# out the metered story so the charge is legible: total used, what was included,
 	# and the units actually billed (used − included). Unit is a plain label (Nos, GB).
@@ -296,11 +301,36 @@ def _metered_detail(team: str, li) -> str:
 	return f"Metered · {_qty(billed)} {unit} used"
 
 
+def _rollup_allowance(team: str, li, period: tuple) -> float:
+	"""The allowance of the rollup the line billed in its own period."""
+	# Each month of a server has its own rollup and its own bundle.
+	start, end = (frappe.utils.getdate(on) for on in period)
+	filters = [
+		["team", "=", team],
+		["resource_id", "=", li.subscription_resource],
+		["resource_type", "=", li.resource_type],
+		["superseded_by", "is", "not set"],
+		["period_start", ">=", start],
+		["period_start", "<", frappe.utils.add_days(end, 1)],
+	]
+	return frappe.utils.flt(
+		frappe.db.get_value("Usage Rollup", filters, "locked_allowance", order_by="period_start desc")
+	)
+
+
 def _server_name(resource_id: str | None) -> str | None:
 	"""The server's own name, falling back to the id metering keys it by."""
 	if not resource_id:
 		return None
 	return frappe.db.get_value("Virtual Machine", resource_id, "title") or resource_id
+
+
+def _metered_server(resource_id: str | None) -> str | None:
+	"""The server's name when the resource is a server, else None."""
+	if not resource_id:
+		return None
+	found = frappe.db.get_value("Virtual Machine", resource_id, ["name", "title"])
+	return (found[1] or found[0]) if found else None
 
 
 def _billed_window(li) -> str | None:

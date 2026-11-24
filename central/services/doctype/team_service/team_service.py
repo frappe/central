@@ -194,6 +194,11 @@ def get_bucket_name(team: str, region: str, name: str) -> str:
 	if not tenant_id:
 		frappe.throw(_("This team has no tenant ID."))
 
+	return bucket_name_for(tenant_id, region, name)
+
+
+def bucket_name_for(tenant_id: str, region: str, name: str) -> str:
+	"""The bucket name a tenant's `name` takes in a region."""
 	return f"{tenant_id}-{region.casefold()}-{name}"
 
 
@@ -206,7 +211,15 @@ def get_storage_endpoint_url(region: str) -> str:
 
 
 def get_storage_plan() -> str:
-	plan = frappe.db.get_value(
+	plan = find_storage_plan()
+	if not plan:
+		frappe.throw(_("The Object Storage Plan is not configured."))
+
+	return plan
+
+
+def find_storage_plan() -> str | None:
+	return frappe.db.get_value(
 		"Plan",
 		{
 			"title": "Object Storage Plan",
@@ -216,10 +229,6 @@ def get_storage_plan() -> str:
 		},
 		"name",
 	)
-	if not plan:
-		frappe.throw(_("The Object Storage Plan is not configured."))
-
-	return plan
 
 
 def has_billing_currency(team: str) -> bool:
