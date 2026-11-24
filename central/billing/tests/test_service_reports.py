@@ -68,8 +68,14 @@ class TestServiceReports(IntegrationTestCase):
 		).db_insert()  # Skips before_insert, which would create the bucket in Cargo.
 
 		storage = frappe.get_doc("Service", "storage")
-		before = (storage.enabled, storage.get_password("report_secret", raise_exception=False))
+		before = (
+			storage.enabled,
+			storage.central_reads,
+			storage.get_password("report_secret", raise_exception=False),
+		)
 		storage.enabled = 1
+		# Cargo pushes storage, so Central stores what it sends.
+		storage.central_reads = 0
 		storage.report_secret = SECRET
 		storage.save()
 		self.addCleanup(self.restore_storage, before)
@@ -77,7 +83,8 @@ class TestServiceReports(IntegrationTestCase):
 
 	def restore_storage(self, before):
 		storage = frappe.get_doc("Service", "storage")
-		storage.enabled, storage.report_secret = before[0], before[1] or ""
+		storage.enabled, storage.central_reads = before[0], before[1]
+		storage.report_secret = before[2] or ""
 		storage.save()
 
 	def send(self, lines, as_of="2026-06-20T06:30:00Z", secret=SECRET):
@@ -229,3 +236,23 @@ class TestServiceReports(IntegrationTestCase):
 		self.assertEqual(answer["accepted"], 0)
 		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
 		self.assertTrue(answer["rejected"][0]["retry"])
+
+	def test_nothing_is_stored_while_central_still_reads_the_service(self):
+		frappe.db.set_value("Service", "storage", "central_reads", 1)
+
+		answer = self.send([line("2026-06-19", 10), line("2026-06-20", 12)])
+
+		self.assertEqual(answer["accepted"], 0)
+		self.assertEqual([r["day"] for r in answer["rejected"]], ["2026-06-19", "2026-06-20"])
+		self.assertTrue(all(r["retry"] for r in answer["rejected"]))
+		self.assertIn("Central still reads this service", answer["rejected"][0]["reason"])
+		self.assertFalse(self.days())
+
+	def test_a_report_refused_while_central_reads_still_shows_the_service_alive(self):
+		frappe.db.set_value("Service", "storage", "central_reads", 1)
+
+		self.send([line("2026-06-20", 12)])
+
+		self.assertEqual(
+			frappe.db.get_value("Service", "storage", "last_report_at"), frappe.utils.get_datetime(NOW)
+		)
