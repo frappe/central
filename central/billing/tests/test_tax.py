@@ -148,6 +148,13 @@ class TestTaxLabel(TaxTestBase):
 			patch("central.billing.ingester.gst.company_state_code", return_value="27")
 		)
 		self.enterContext(patch("central.billing.ingester.connection.enabled", return_value=True))
+		self.enterContext(patch.dict(frappe.conf, {"erpnext_url": "https://erp.invalid"}))
+		self.enterContext(
+			patch(
+				"central.billing.ingester.gst.accounting_settings",
+				return_value=frappe._dict(company_address="Frappe - Billing"),
+			)
+		)
 
 	def test_same_state_is_cgst_and_sgst(self):
 		self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "CGST 9% + SGST 9%")
@@ -197,6 +204,17 @@ class TestTaxLabel(TaxTestBase):
 		self.assertEqual(self.read.call_count, 1)
 		self.assertEqual(log_error.call_count, 1)
 
+	def test_with_no_company_address_the_accounting_system_is_not_asked(self):
+		settings = frappe._dict(company_address=None)
+		with patch("central.billing.ingester.gst.accounting_settings", return_value=settings):
+			self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "GST 18%")
+		self.read.assert_not_called()
+
+	def test_with_no_accounting_url_the_accounting_system_is_not_asked(self):
+		with patch.dict(frappe.conf, {"erpnext_url": None}):
+			self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "GST 18%")
+		self.read.assert_not_called()
+
 	def test_with_the_sync_off_and_no_known_state_it_names_gst_only(self):
 		with patch("central.billing.ingester.connection.enabled", return_value=False):
 			self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "GST 18%")
@@ -207,6 +225,19 @@ def _forget_company_state():
 	frappe.cache.delete_value(
 		[gst.COMPANY_STATE_KEY, gst.LAST_COMPANY_STATE_KEY, gst.MISSED_COMPANY_STATE_KEY]
 	)
+
+
+class TestNoEmptyAccountingRead(TaxTestBase):
+	def test_a_record_with_no_name_is_never_asked_for(self):
+		from central.billing.ingester import connection
+
+		with (
+			patch("central.billing.ingester.connection.enabled", return_value=True),
+			patch("central.billing.ingester.connection.requests.get") as get,
+		):
+			self.assertIsNone(connection.fetch("Address", None))
+			self.assertIsNone(connection.fetch("Address", ""))
+		get.assert_not_called()
 
 
 class TestWithholdingSeam(TaxTestBase):

@@ -49,11 +49,28 @@ def require_team_member(func: Callable) -> Callable:
 
 
 def require_support_team_member(func: Callable) -> Callable:
-	"""Gate a support endpoint on membership of the `team` argument; operators bypass. A
-	suspended team is allowed here, because its members need support to learn why it was
-	suspended."""
+	"""Gate a support endpoint on the `team` argument.
 
-	return _require_team_member(func, ("Active", "Suspended"))
+	1. An operator passes.
+	2. The caller must be a member of the Active or Suspended team.
+	3. In an Active team the caller also needs `support:view`, which only a team-wide grant
+	   carries. A suspended team holds no grants, and its members keep support to learn why it was suspended."""
+
+	@functools.wraps(func)
+	def wrapper(*args, **kwargs):
+		statuses = ("Active", "Suspended")
+		bound = _resolve_team_call(func, args, kwargs, statuses)
+		team, user = bound.arguments["team"], frappe.session.user
+		if not user_has_operator_bypass():
+			if not is_active_team_member(user, team, statuses):
+				frappe.throw(_("You are not a member of this team."), frappe.PermissionError)
+			is_active = frappe.db.get_value("Team", team, "status") == "Active"
+			if is_active and not can(user, team, "support:view"):
+				frappe.throw(_("You do not have access to support for this team."), frappe.PermissionError)
+
+		return func(*bound.args, **bound.kwargs)
+
+	return wrapper
 
 
 def _require_team_member(func: Callable, statuses: tuple[str, ...]) -> Callable:

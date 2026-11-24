@@ -27,6 +27,8 @@ test('Save notification preferences', async ({ page, users }) => {
 	const billingEmails = page.getByRole('switch', { name: 'Email notifications for Billing' })
 	await expect(billingEmails).toBeChecked()
 	await billingEmails.click()
+	// Billing has critical events, so turning its emails off asks first.
+	await page.getByRole('dialog').getByRole('button', { name: 'Turn off' }).click()
 	await expect(billingEmails).not.toBeChecked()
 	await page.getByRole('button', { name: 'Save preferences' }).click()
 
@@ -51,5 +53,5 @@ test('Asks the owner to type the team name before archiving', async ({ page, use
 	const dialog = page.getByRole('dialog', { name: 'Archive team' })
 	await expect(dialog.getByText('All servers are terminated')).toBeVisible()
 	await expect(dialog.getByRole('button', { name: 'Archive team' })).toBeDisabled()
-	await expect(dialog.getByLabel(/^Type .* to confirm$/)).toBeVisible()
+	await expect(dialog.getByRole('textbox', { name: /^Type .* to confirm$/ })).toBeVisible()
 })

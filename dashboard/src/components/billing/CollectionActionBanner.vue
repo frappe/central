@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { Alert, Button, Dialog, useCall } from 'frappe-ui'
+import { Alert, useCall } from 'frappe-ui'
 // "Action Required" banner — shown when an INR team's bill goes over what its card
 // or UPI may pay automatically and the customer must choose how to keep paying
 // (ADR 0005 / payments-inr.md). Calm, not alarming: services keep running; this
 // is an invitation to decide. Backend feed: get_collection_status.
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
+import CollectionModeDialog from '@/components/billing/CollectionModeDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { getErrorMessage, successToast } from '@/lib/feedback'
+import { limitText, withNote } from '@/lib/collectionText'
 import { money } from '@/lib/format'
 import { __ } from '@/lib/translate'
 import type { CollectionStatus, TopUpDue } from '@/types/billing'
@@ -87,75 +88,27 @@ function topUpTextWithGst(
 }
 
 const choosing = ref(false)
-const chosen = ref<string | null>(null) // 'Manual Checkout' | 'Prepaid'
-const formError = ref('')
-watch(chosen, () => (formError.value = ''))
-
-const setMode = useCall<unknown, { team: string; mode: string }>({
-	url: method(API.setCollectionMode),
-	method: 'POST',
-	immediate: false,
-})
-
-async function choose(): Promise<void> {
-	if (!chosen.value) return
-	formError.value = ''
-	await setMode.submit({ team: activeTeam.value!, mode: chosen.value })
-	if (setMode.error) {
-		formError.value = getErrorMessage(
-			setMode.error,
-			'Could not update how you pay',
-		)
-		return
-	}
-	successToast(
-		chosen.value === 'Prepaid'
-			? __('Prepaid on: your wallet pays first, then your card or UPI')
-			: "You'll pay each invoice yourself",
-	)
-	choosing.value = false
-	chosen.value = null
-	status.reload()
-}
-
-// Tripped by an INR bill over the limit: the card or UPI cannot pay it, so only
-// wallet credit gets Prepaid past it. `threshold` is the most the card or UPI may
-// pay automatically (at most ₹15,000, lower under a smaller mandate).
-const OVER_CEILING_REASONS = [
-	'invoice_over_threshold',
-	'forecast_over_threshold',
-]
-const isOverCeiling = computed(
-	() =>
-		currency.value === 'INR' &&
-		OVER_CEILING_REASONS.includes(s.value?.reason ?? ''),
-)
-
-const prepaidOverLimitBlurb = computed(() => {
-	if (s.value?.threshold == null)
-		return __('Add credit to your wallet to cover this bill.')
-	return __(
-		'Add credit to your wallet to cover this bill. Your card or UPI pays only amounts up to {0}.',
-		[limitText(s.value.threshold)],
-	)
-})
 
 const reasonText = computed(() => {
-	const limit = s.value?.threshold
-	if (s.value?.reason === 'mandate_failed')
+	const st = s.value
+	if (!st) return ''
+	const limit = st.threshold
+	// The limit caps amounts that include tax, as the Action Required notice says.
+	const limitLabel = limit == null ? '' : limitText(st, limit)
+	if (st.reason === 'mandate_failed')
 		return __(
 			'Your automatic payment approval was cancelled or stopped working. Choose how to pay. Your services keep running.',
 		)
-	if (s.value?.reason === 'invoice_over_threshold')
+	if (st.reason === 'invoice_over_threshold')
 		return limit == null
 			? __(
 					'A bill is over the limit for automatic payments. Your services keep running.',
 				)
 			: __(
 					'A bill is over the {0} limit for automatic payments. Your services keep running.',
-					[limitText(limit)],
+					[limitLabel],
 				)
-	const projected = withTaxNote(money(s.value?.projected_total, currency.value))
+	const projected = withTaxNote(money(st.projected_total, currency.value))
 	return limit == null
 		? __(
 				'This month is heading to {0}, past the limit for automatic payments. Your services keep running.',
@@ -163,44 +116,13 @@ const reasonText = computed(() => {
 			)
 		: __(
 				'This month is heading to {0}, past the {1} limit for automatic payments. Your services keep running.',
-				[projected, limitText(limit)],
+				[projected, limitLabel],
 			)
 })
 
 function withTaxNote(amount: string): string {
 	return withNote(amount, s.value?.tax_note)
 }
-
-// The limit caps amounts that include tax, as the Action Required notice says.
-function limitText(limit: number): string {
-	return withNote(money(limit, currency.value), s.value?.limit_tax_note)
-}
-
-function withNote(amount: string, note?: string | null): string {
-	// A format, not text: the note is already translated.
-	return note ? `${amount} (${note})` : amount
-}
-
-const options = computed(() => [
-	{
-		key: 'Manual Checkout',
-		icon: 'lucide-receipt',
-		title: 'Pay each invoice',
-		blurb: 'We email you each bill; you pay in a few taps (any amount).',
-		fit: 'Best if your usage varies a lot month to month.',
-	},
-	{
-		key: 'Prepaid',
-		icon: 'lucide-wallet',
-		title: 'Prepaid wallet',
-		blurb: isOverCeiling.value
-			? prepaidOverLimitBlurb.value
-			: __(
-					'Your wallet pays first. When it is short, we charge your card or UPI.',
-				),
-		fit: 'Best for hands-off, predictable spending.',
-	},
-])
 </script>
 
 <template>
@@ -222,54 +144,10 @@ const options = computed(() => [
 		<template #description>{{ topUpText }}</template>
 	</Alert>
 
-	<Dialog v-model:open="choosing" title="How do you want to pay?">
-		<template #default>
-			<Alert
-				v-if="formError"
-				class="mb-4"
-				theme="red"
-				title="Couldn't change how you pay"
-				:description="formError"
-			/>
-			<div class="grid gap-3 sm:grid-cols-2">
-				<button
-					v-for="o in options"
-					:key="o.key"
-					type="button"
-					class="flex flex-col gap-2 rounded-6 border p-4 text-left transition-colors"
-					:class="
-            chosen === o.key
-              ? 'border-outline-gray-4 bg-surface-gray-2'
-              : 'border-outline-gray-2 hover:border-outline-gray-3'
-          "
-					@click="chosen = o.key"
-				>
-					<span
-						:class="o.icon"
-						class="size-5 text-ink-gray-7"
-						aria-hidden="true"
-					/>
-					<span class="text-base-medium text-ink-gray-9">{{ o.title }}</span>
-					<span class="text-p-sm text-ink-gray-6">{{ o.blurb }}</span>
-					<span class="mt-auto text-p-sm text-ink-gray-5">{{ o.fit }}</span>
-				</button>
-			</div>
-			<p v-if="s?.mandate_gap_note" class="mt-3 text-p-sm text-ink-gray-6">
-				{{ s.mandate_gap_note }}
-			</p>
-			<p class="mt-3 text-p-sm text-ink-gray-5">
-				You can switch anytime in Billing settings.
-			</p>
-		</template>
-		<template #actions>
-			<Button
-				variant="solid"
-				label="Confirm"
-				class="w-full"
-				:loading="setMode.loading"
-				:disabled="!chosen"
-				@click="choose"
-			/>
-		</template>
-	</Dialog>
+	<CollectionModeDialog
+		v-if="s"
+		v-model:open="choosing"
+		:status="s"
+		@changed="status.reload()"
+	/>
 </template>

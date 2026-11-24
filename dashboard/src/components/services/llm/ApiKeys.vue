@@ -69,8 +69,6 @@ const atKeyLimit = computed(
 const canSetCaps = computed(
 	() => prepaid.value && props.canManage && activeKeys.value.length > 0,
 )
-const query = ref('')
-
 const searchable = computed(() => apiKeys.value.length > 6)
 
 const sortedKeys = computed(() =>
@@ -79,32 +77,36 @@ const sortedKeys = computed(() =>
 	),
 )
 
-const visibleKeys = computed(() => {
-	const search = query.value.trim().toLowerCase()
-
-	if (!search) return sortedKeys.value
-
-	return sortedKeys.value.filter((key) =>
-		key.title.toLowerCase().includes(search),
-	)
-})
-
 const PAGE_SIZE = 10
-const page = ref(1)
 
-const pageCount = computed(() =>
-	Math.ceil(visibleKeys.value.length / PAGE_SIZE),
-)
+/** A title search over `keys`, shown a page at a time. */
+const usePagedSearch = (keys: () => AIApiKey[]) => {
+	const query = ref('')
+	const page = ref(1)
+	const matches = computed(() => {
+		const search = query.value.trim().toLowerCase()
+		return keys().filter((key) => key.title.toLowerCase().includes(search))
+	})
+	const pageCount = computed(() => Math.ceil(matches.value.length / PAGE_SIZE))
+	const rows = computed(() =>
+		matches.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE),
+	)
+	watch(pageCount, (count) => {
+		page.value = Math.min(page.value, Math.max(count, 1))
+	})
+	watch(query, () => {
+		page.value = 1
+	})
+	return { query, page, matches, pageCount, rows }
+}
 
-const pagedKeys = computed(() =>
-	visibleKeys.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE),
-)
-watch(pageCount, (count) => {
-	page.value = Math.min(page.value, Math.max(count, 1))
-})
-watch(query, () => {
-	page.value = 1
-})
+const {
+	query,
+	page,
+	matches: visibleKeys,
+	pageCount,
+	rows: pagedKeys,
+} = usePagedSearch(() => sortedKeys.value)
 const isCapReached = (key: AIApiKey): boolean =>
 	key.cap > 0 && key.month_spent >= key.cap
 const capPercent = (key: AIApiKey): number =>
@@ -121,6 +123,15 @@ const geographyLabel = (name: string): string =>
 	geographies.value.find((g) => g.name === name)?.label ?? name
 
 const rowActions = (key: AIApiKey): DropdownOptions => [
+	...(prepaid.value
+		? [
+				{
+					label: __('Set cap'),
+					icon: 'lucide-wallet',
+					onClick: () => openCaps(key.name),
+				},
+			]
+		: []),
 	{
 		label: __('Revoke'),
 		icon: 'lucide-trash-2',
@@ -218,6 +229,21 @@ const create = async (): Promise<void> => {
 }
 
 const capsOpen = ref(false)
+// The one key the dialog is open for, from its row; blank is every live key.
+const capsOnly = ref('')
+// Keys with no cap yet lead: Save waits on them, so they must not sit on a later page.
+const capKeys = computed(() =>
+	activeKeys.value
+		.filter((key) => !capsOnly.value || key.name === capsOnly.value)
+		.sort((a, b) => Number(a.cap >= 1) - Number(b.cap >= 1)),
+)
+const {
+	query: capsQuery,
+	page: capsPage,
+	matches: capMatches,
+	pageCount: capsPageCount,
+	rows: capRows,
+} = usePagedSearch(() => capKeys.value)
 const capValues = ref<Record<string, string>>({})
 const capsError = ref('')
 const committedTotal = computed(() =>
@@ -238,21 +264,24 @@ const capsOverLimit = computed(
 const isValidCap = (value: string): boolean =>
 	Number.isInteger(Number(value)) && Number(value) >= 1
 const capsInvalid = computed(() =>
-	activeKeys.value.some((key) => !isValidCap(capValues.value[key.name])),
+	capKeys.value.some((key) => !isValidCap(capValues.value[key.name])),
 )
 
-const openCaps = (): void => {
+const openCaps = (only = ''): void => {
+	capsOnly.value = only
 	capValues.value = Object.fromEntries(
 		activeKeys.value.map((key) => [key.name, String(key.cap)]),
 	)
 	capsError.value = ''
+	capsQuery.value = ''
+	capsPage.value = 1
 	capsOpen.value = true
 }
 
 const saveCaps = async (): Promise<void> => {
 	capsError.value = ''
 	const changed = Object.fromEntries(
-		activeKeys.value
+		capKeys.value
 			.filter((key) => Number(capValues.value[key.name]) !== key.cap)
 			.map((key) => [key.name, Number(capValues.value[key.name])]),
 	)
@@ -334,18 +363,10 @@ const revokeText = __(
 					v-if="canSetCaps"
 					:label="__('Set caps')"
 					icon-left="lucide-wallet"
-					@click="openCaps"
+					@click="openCaps()"
 				/>
 			</div>
 		</Teleport>
-
-		<Alert
-			v-if="spend?.suspended"
-			class="mb-4"
-			theme="red"
-			:title="__('Keys are paused')"
-			:description="__('An invoice is unpaid. Every key is refused until it is settled.')"
-		/>
 
 		<LoadingText v-if="apiKeysLoading && !apiKeys.length" :lines="3" />
 
@@ -370,6 +391,7 @@ const revokeText = __(
 				v-if="canManage"
 				:label="__('Create key')"
 				icon-left="lucide-plus"
+				:disabled="ai?.key_handover_pending"
 				@click="openCreate"
 			/>
 		</div>
@@ -586,7 +608,7 @@ const revokeText = __(
 			<div class="space-y-4">
 				<TextInput
 					v-model="newLabel"
-					:label="__('Label')"
+					:label="__('Title')"
 					required
 					:placeholder="__('e.g. n8n prod')"
 					:description="__('A name to recognise this key by. New keys can take a few minutes to start working.')"
@@ -607,7 +629,7 @@ const revokeText = __(
 					:label="__('Cap (USD)')"
 					required
 					:placeholder="__('e.g. 10')"
-					:description="__('What this key may spend each month, in whole dollars.')"
+					:description="__('What this key may spend each month.')"
 					@keyup.enter="create"
 				/>
 			</div>
@@ -631,7 +653,11 @@ const revokeText = __(
 		</template>
 	</Dialog>
 
-	<Dialog v-model="capsOpen" :title="__('Set caps')" size="2xl">
+	<Dialog
+		v-model="capsOpen"
+		:title="capsOnly ? __('Set cap') : __('Set caps')"
+		size="2xl"
+	>
 		<template #default>
 			<Alert
 				v-if="capsError"
@@ -640,7 +666,25 @@ const revokeText = __(
 				:title="saveSpendingCapsErrorTitle"
 				:description="capsError"
 			/>
+			<TextInput
+				v-if="capKeys.length > PAGE_SIZE"
+				v-model="capsQuery"
+				class="mb-4"
+				:placeholder="__('Search keys')"
+				:aria-label="__('Search keys by title')"
+			>
+				<template #prefix>
+					<span
+						class="lucide-search size-4 text-ink-gray-5"
+						aria-hidden="true"
+					/>
+				</template>
+			</TextInput>
+			<p v-if="!capRows.length" class="py-3 text-p-sm text-ink-gray-6">
+				{{ __('No key is named that. Try another name, or clear the search.') }}
+			</p>
 			<div
+				v-else
 				class="mb-2 grid grid-cols-[2fr_1fr_1fr_1fr] gap-3 text-sm-medium text-ink-gray-6"
 				aria-hidden="true"
 			>
@@ -651,7 +695,7 @@ const revokeText = __(
 			</div>
 			<div class="space-y-3">
 				<div
-					v-for="(key, index) in activeKeys"
+					v-for="(key, index) in capRows"
 					:key="key.name"
 					class="grid grid-cols-[2fr_1fr_1fr_1fr] items-center gap-3"
 				>
@@ -677,6 +721,21 @@ const revokeText = __(
 					/>
 				</div>
 			</div>
+			<ListViewPagination
+				v-if="capsPageCount > 1"
+				class="mt-3"
+				:page="capsPage"
+				:page-count="capsPageCount"
+				:page-size="PAGE_SIZE"
+				:can-previous="capsPage > 1"
+				:can-next="capsPage < capsPageCount"
+				:show-page-size="false"
+				:count-text="`${capMatches.length} keys`"
+				@first="capsPage = 1"
+				@previous="capsPage--"
+				@next="capsPage++"
+				@last="capsPage = capsPageCount"
+			/>
 			<p class="mt-4 text-p-sm text-ink-gray-5">
 				{{ __('Every key needs a cap of at least $1. Spend is as of {0}: The live figure is checked when you save.', [asOf]) }}
 			</p>
@@ -698,7 +757,7 @@ const revokeText = __(
 					/>
 					<Button
 						variant="solid"
-						:label="__('Save caps')"
+						:label="capsOnly ? __('Save cap') : __('Save caps')"
 						:loading="capsSaving"
 						:disabled="capsInvalid || capsOverLimit"
 						@click="saveCaps"

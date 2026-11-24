@@ -1,0 +1,95 @@
+name: Weekly Release
+
+# Cuts the next vX.Y.Z release. Run it by hand from main once a week.
+# Before 1.0.0, a feat or a breaking change bumps the minor version and anything else bumps the patch.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: weekly-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Require main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Run Weekly Release from main, not $GITHUB_REF_NAME." >&2
+          exit 1
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Pick the next version
+        id: version
+        run: |
+          previous=$(git tag --list 'v*' --merged HEAD --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+          if ! [[ "$previous" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Could not parse the latest release tag: '$previous'." >&2
+            exit 1
+          fi
+          major=${BASH_REMATCH[1]} minor=${BASH_REMATCH[2]} patch=${BASH_REMATCH[3]}
+          sha=$(git rev-parse HEAD)
+          if [ "$(git rev-list --count "$previous..$sha")" -eq 0 ]; then
+            echo "main has no commits since $previous. Skipping the release."
+            exit 0
+          fi
+
+          log=$(git log --no-merges --format='%s%n%b' "$previous..$sha")
+          if grep -qE '^[a-z]+(\([^)]*\))?!:|^BREAKING CHANGE:' <<< "$log"; then
+            change=breaking
+          elif grep -qE '^feat(\([^)]*\))?:' <<< "$log"; then
+            change=feature
+          else
+            change=fix
+          fi
+
+          if [ "$change" = breaking ] && [ "$major" -gt 0 ]; then
+            tag="v$((major + 1)).0.0"
+          elif [ "$change" != fix ]; then
+            tag="v$major.$((minor + 1)).0"
+          else
+            tag="v$major.$minor.$((patch + 1))"
+          fi
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "Tag $tag already exists but is not in the history of main." >&2
+            exit 1
+          fi
+          echo "Releasing $tag at $sha (previous: $previous, change: $change)."
+          {
+            echo "tag=$tag"
+            echo "sha=$sha"
+            echo "previous=$previous"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Require passing CI
+        if: steps.version.outputs.tag
+        env:
+          SHA: ${{ steps.version.outputs.sha }}
+        run: |
+          conclusion=$(gh run list --workflow ci.yml --commit "$SHA" --branch main --event push \
+            --limit 1 --json conclusion --jq '.[0].conclusion // ""')
+          if [ "$conclusion" != "success" ]; then
+            echo "CI on $SHA is '${conclusion:-missing or still running}'. Not releasing." >&2
+            exit 1
+          fi
+
+      - name: Create release
+        if: steps.version.outputs.tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          SHA: ${{ steps.version.outputs.sha }}
+          PREVIOUS: ${{ steps.version.outputs.previous }}
+        run: |
+          gh release create "$TAG" --target "$SHA" \
+            --title "$TAG" --generate-notes --notes-start-tag "$PREVIOUS"

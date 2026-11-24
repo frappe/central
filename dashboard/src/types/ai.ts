@@ -69,9 +69,22 @@ export interface AIState {
 	enabled: boolean
 	// Grove is down or in maintenance: nothing else is filled in.
 	unavailable?: boolean
+	// A converted trial's key is on its way to the team: no key is created until it lands.
+	key_handover_pending?: boolean
 	spend?: AISpend
 	usage?: AIMonthUsage
 	geographies?: AIGeography[]
+	// The rate this month's usage is billed at in the team's currency; null for a USD team.
+	billing_rate?: AIBillingRate | null
+}
+
+export interface AIBillingRate {
+	currency: string
+	// One US dollar in `currency`, fixed for the month.
+	rate: number
+	// The accounting system's date for the rate; before the 1st when it had none that day.
+	rate_date: string
+	month: string
 }
 
 export interface AIUsageModel {

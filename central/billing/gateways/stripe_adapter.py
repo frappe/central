@@ -24,6 +24,7 @@ from central.billing.gateways.base import (
 	RefundResult,
 	VerifiedPayment,
 	WebhookNotFound,
+	event_time,
 	header_value,
 )
 
@@ -454,6 +455,7 @@ class StripeAdapter(GatewayAdapter):
 			gateway_event_id=payload.get("id"),
 			event_type=payload.get("type"),
 			payload=payload,
+			occurred_at=event_time(payload.get("created")),
 		)
 
 	def get_transaction_status(self, gateway_txn_id: str) -> str:

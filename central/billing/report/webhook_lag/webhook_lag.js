@@ -22,4 +22,23 @@ frappe.query_reports["Webhook Lag"] = {
 			options: "Payment Gateway",
 		},
 	],
+	problemColors: {
+		failed: "red",
+		waiting: "orange",
+		delivered_late: "orange",
+		slow: "orange",
+		repeat_deliveries: "orange",
+		delivery_p95_seconds: "orange",
+		delivery_worst_seconds: "orange",
+		p95_seconds: "orange",
+		worst_seconds: "orange",
+	},
+	formatter(value, row, column, data, default_formatter) {
+		const text = default_formatter(value, row, column, data);
+		const color = this.problemColors[column.fieldname];
+		const isProblem = data && color && value > (column.slow_seconds ?? 0);
+		return isProblem
+			? `<span class="indicator-pill ${color}">${text}</span>`
+			: text;
+	},
 };

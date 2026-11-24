@@ -96,7 +96,7 @@ Every image receives its selected SSH keys and guest hostname. Ubuntu does not r
 
 A trial server sleeps after the idle time on Central Settings, which is 10 minutes by default. Customer traffic wakes it. Zero minutes keeps trial servers awake.
 
-A paid server never sleeps. A resize ends sleep for good, because a server its owner has resized has outgrown the hobby comfort. Atlas takes the idle timeout on its own while the server runs, so ending sleep never stops it.
+A paid server sleeps only when its owner turns sleep on. See [compute settings](../../../../spec/INTEGRATIONS.md#compute-settings). The resize off a trial plan ends trial sleep. Atlas takes the idle timeout on its own while the server runs, so ending sleep never stops it.
 
 ## Errors and permissions
 
@@ -114,7 +114,7 @@ A scoped not-found response records the server as terminated, applies the billin
 
 The console selects region, offering, exact build, and compatible plan. It keeps no copy of the request: `central.api.servers.registry` returns the team's unfinished creations, and the form picks up the one this user started. A page reload, a second tab and a lost reply all reach the same record instead of starting another. Switching Teams clears the visible action and ignores late responses from the previous Team.
 
-Resize uses the same action flow. `central.api.servers.resize_server` validates the target and inserts the action. The integration grows a disk online when CPU and memory stay the same. When CPU or memory changes, it stops the VM and sends the full CPU, memory, and disk target. This call also sets the idle time to zero. On a disk-only grow, a server with idle sleep on also receives a separate resize call that changes only the idle time. So both paths turn sleep off. The integration starts the VM, records the observed shape, and then asks billing to reprice. A billing failure leaves the action at Sent, so recovery can finish the local change without repeating a confirmed remote resize.
+Resize uses the same action flow. `central.api.servers.resize_server` validates the target and inserts the action. The integration grows a disk online when CPU and memory stay the same. When CPU or memory changes, it stops the VM and sends the full CPU, memory, and disk target. A sleeping VM is started first on both paths. The sleep times stay. Deep sleep and coma go off first when the new size is past the offload limit, and all sleep goes off on a resize off a trial plan. The integration starts the VM, records the observed shape, and then asks billing to reprice. A billing failure leaves the action at Sent, so recovery can finish the local change without repeating a confirmed remote resize.
 
 ## Console resize selection
 

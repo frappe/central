@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import datetime
+
 import frappe
 from frappe.query_builder.functions import Count
 
@@ -11,6 +13,7 @@ from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.india_gst import INDIA
 from central.billing.platform.invariants import Violation
 from central.billing.revenue import credits
+from central.billing.revenue.exchange_rates import month_rate
 
 STALLED_HOURS = 3
 
@@ -326,43 +329,65 @@ def check_terminated_servers_stop_billing() -> list[Violation]:
 
 
 def check_storage_usage_is_recorded() -> list[Violation]:
-	"""Every storage subscription's usage was read in the last day, so the month bills in full."""
-	from central.services.doctype.team_service.team_service import STORAGE_SERVICE
+	"""Every billed bucket that existed yesterday (UTC) has a Usage Day for it, so no day is left unbilled."""
+	from central.billing.revenue.usage_ledger import utc_today
+	from central.services.doctype.service.service import STORAGE_SERVICE
+	from central.services.doctype.team_service.team_service import billed_subjects
 
-	today = frappe.utils.getdate()
-	if today.day == 1:
-		return []
-	billed = set(
-		frappe.get_all(
-			"Team Service",
-			filters={"add_on_service": STORAGE_SERVICE, "status": "Active", "subscription": ["is", "set"]},
-			pluck="subscription",
-		)
-	)
-	subjects = frappe.get_all(
-		"Subscription", filters={"name": ["in", list(billed)]}, fields=["name", "team", "service_subject"]
-	)
-	read_through = dict(
-		frappe.get_all(
-			"Usage Rollup",
-			filters={"resource_type": "Storage", "period_start": [">=", today.replace(day=1)]},
-			fields=["resource_id", "sequence"],
-			as_list=True,
-		)
+	today = utc_today()
+	yesterday = today - datetime.timedelta(days=1)
+	# Creation is in system time; a bucket made after yesterday ended (UTC) had nothing to read.
+	cutoff = frappe.utils.convert_utc_to_system_timezone(
+		datetime.datetime.combine(today, datetime.time(), datetime.UTC)
+	).replace(tzinfo=None)
+	read = set(
+		frappe.get_all("Usage Day", filters={"service": STORAGE_SERVICE, "day": yesterday}, pluck="subject")
 	)
 	return [
 		Violation(
 			check="M1",
-			team=s.team,
+			team=bucket.team,
 			subject_doctype="Subscription",
-			subject=s.name,
-			expected=today.day - 1,
-			actual=frappe.utils.cint(read_through.get(s.service_subject)),
-			detail="Storage usage has not been read for a day or more. The next reading bills the missed days at its level.",
+			subject=bucket.subscription,
+			detail=f"Bucket {subject} has no usage for {yesterday} (UTC). The next reading or the daily estimate fills it.",
 		)
-		for s in subjects
-		if frappe.utils.cint(read_through.get(s.service_subject)) < today.day - 1
+		for subject, bucket in billed_subjects(STORAGE_SERVICE).items()
+		if subject not in read and bucket.creation < cutoff
 	]
+
+
+def check_converted_usage_has_a_rate() -> list[Violation]:
+	"""Every currency AI is billed in has this month's USD rate: kept, from the rate API, or an earlier kept one."""
+	from central.billing.revenue.usage_ledger import utc_today
+	from central.services.doctype.service.service import AI_SERVICE
+	from central.services.doctype.team_service.team_service import billed_subjects
+
+	month = utc_today().replace(day=1)
+	teams = list({service.team for service in billed_subjects(AI_SERVICE).values()})
+	currencies = frappe.get_all(
+		"Billing Profile",
+		filters={"name": ["in", teams or [""]], "currency": ["!=", "USD"]},
+		pluck="currency",
+		distinct=True,
+	)
+	return [
+		Violation(
+			check="M2",
+			subject_doctype="Currency",
+			subject=currency,
+			detail=f"The rate API gave no USD to {currency} rate for {month:%B %Y} and no earlier rate is kept, so AI cannot be billed in {currency}.",
+		)
+		for currency in currencies
+		if not _has_month_rate(currency, month)
+	]
+
+
+def _has_month_rate(currency: str, month: datetime.date) -> bool:
+	try:
+		month_rate("USD", currency, month)
+	except frappe.ValidationError:
+		return False
+	return True
 
 
 # --- collection -------------------------------------------------------------------
@@ -557,16 +582,8 @@ def check_billing_run_is_moving() -> list[Violation]:
 	from central.billing.revenue.invoicing.run import billing_period
 
 	_, period_end = billing_period()
-	had_billing = frappe.db.exists("Subscription", {"start_date": ["<=", period_end]})
-	if had_billing and not frappe.db.exists("Billing Run", str(period_end)):
-		return [
-			Violation(
-				check="B5",
-				subject_doctype="Billing Run",
-				subject=str(period_end),
-				detail="The monthly billing run for this month has not started.",
-			)
-		]
+	if not_started := _unstarted_run(period_end):
+		return not_started
 
 	run = frappe.db.get_value(
 		"Billing Run", str(period_end), ["teams", "drafted", "started_at"], as_dict=True
@@ -605,6 +622,23 @@ def check_billing_run_is_moving() -> list[Violation]:
 	]
 
 
+def _unstarted_run(period_end) -> list[Violation]:
+	"""The closed month had billing, its draft tick has fired, and its run has no record."""
+	from central.billing.revenue.invoicing.run import has_draft_tick_passed
+
+	had_billing = frappe.db.exists("Subscription", {"start_date": ["<=", period_end]})
+	if not had_billing or not has_draft_tick_passed() or frappe.db.exists("Billing Run", str(period_end)):
+		return []
+	return [
+		Violation(
+			check="B5",
+			subject_doctype="Billing Run",
+			subject=str(period_end),
+			detail="The monthly billing run for this month has not started.",
+		)
+	]
+
+
 CHECKS = {
 	"B1": ("Billing currency matches the country", check_currency_matches_country),
 	"B2": ("Payment methods are in the billing currency", check_mandates_in_billing_currency),
@@ -622,6 +656,7 @@ CHECKS = {
 	"S3": ("Terminated servers stop billing", check_terminated_servers_stop_billing),
 	"S4": ("Subscriptions name a known region", check_subscriptions_name_a_known_region),
 	"M1": ("Storage usage is read daily", check_storage_usage_is_recorded),
+	"M2": ("Converted usage has an exchange rate", check_converted_usage_has_a_rate),
 	"W1": ("Billed teams can pay", check_billed_teams_can_pay),
 	"W2": ("Promotional credit expires", check_promotional_credit_expires),
 	"X1": ("No staging trials outside staging", check_no_staging_trials_outside_staging),

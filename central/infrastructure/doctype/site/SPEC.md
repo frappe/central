@@ -22,7 +22,7 @@ Only what belongs to the site. Its address is its name and its state is the mach
 | `ready_at` | the first successful public readiness probe |
 | `claimed_at` | the first successful login handoff |
 | `rename_task` | the Pilot task that accepted the requested rename |
-| `rename_status` | the latest observed physical rename task status |
+| `rename_status` | the latest observed physical rename task status, or `refused` while Central retries a 401 from Pilot |
 | `rename_completed_at` | when Central confirmed physical rename success |
 | `renamed_at` | when a sign-in first found the requested hostname answering |
 | `rename_error` | a safe reason when Pilot did not accept or complete the rename |
@@ -43,7 +43,7 @@ The regional proxy decodes a VM's mesh address from the hostname label, so Centr
 
 ## Operation
 
-The funnel first calls `central.api.sites.create_trial_team(team)` with the console's current team. It returns that team when the user can create servers there (`server:create`). Otherwise it returns the first other team where the user can. Otherwise it creates a team named after the user. That new team skips the console's onboarding steps, because the product's app onboards it. So a user who is only a Viewer in another team still gets a team to start the trial in. The onboarding pages show the signed-in email and team, with **Sign out**. Sign out opens the product's signup page as a guest, so a browser signed in as another person does not start the site in that person's account.
+The funnel first calls `central.api.sites.create_trial_team(team)` with the console's current team. It returns that team when the user can create servers there (`server:create`). Otherwise it returns the first other team where the user can. Otherwise it creates a team named after the user. That new team skips the console's onboarding steps, because the product's app onboards it. So a user who is only a Viewer in another team still gets a team to start the trial in. When the user is in more than one team, the site name page shows the team and the signed-in email above **Create my site**, with **Not you?**. **Not you?** signs out and opens the product's signup page as a guest.
 
 ```text
 create_trial_site(subdomain) --> queued Resource Action holds the name --> warm image restores
@@ -70,7 +70,9 @@ login_site --> mint a fresh login for site.local
 - A successful claim records `claimed_at`, returns the login URL, and enqueues the rename after the database commit. The response does not wait for Pilot to accept or finish the rename.
 - `Site.apply_subdomain` submits a Pilot rename from `site.local` to the requested hostname with `make_primary=True`. Pilot moves the directory, makes the requested hostname primary, and keeps the old hostname by default. The `rename_task` field stores the accepted task and `rename_status` starts at `queued`. Signup does not wait for submission or completion.
 - Every five minutes, `poll_site_renames` checks pending renames on running servers. Each check has its own exception handler. A failed check leaves the status pending and does not stop the other checks. Central reads the bench task endpoint, which still works after the site directory moves. It stores Pilot's task status and records `rename_completed_at` only after `success`. Failed or killed tasks keep their failure details on the Site for an operator to inspect in Pilot. Existing sites with a recorded task and no tracking status are left unchanged.
+- Pilot answers 401 for a short time after boot, before it trusts Central. A 401 does nothing on the server, so it is safe to send the rename again. `Site.apply_subdomain` sets `rename_status` to `refused` and writes no Error Log. Every five minutes, `retry_refused_renames` queues each refused rename again when its last try is more than one minute old. When the site was claimed more than one hour ago, the job stops the retries: it clears `rename_status`, keeps the error, and writes the Error Log. Central does not retry other failures, because Pilot can accept a rename and still fail to answer.
 - A rename failure stays on the Site with a safe reason and an operator diagnostic. A System Manager can use **Retry Site Rename** until Pilot accepts a task.
+- Every rename failure also writes the Error Log "Pilot site rename failed" with the Site as its reference: when Pilot refuses the rename with an error other than 401, when the 401 retries stop, and when the Pilot task fails or is killed. Central sends Error Logs to Datum, and the Beacon rule `central/beacon/rules/central-site-rename-failed.sql` makes a Medium alert from them that names the sites.
 - Terminating the machine terminates the site, with nothing to write: the site reads its state from the machine.
 
 ## Readiness

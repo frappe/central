@@ -2,6 +2,7 @@
 import { Badge, Button, Dropdown, Tooltip } from 'frappe-ui'
 import { computed } from 'vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
+import ServerStatusBadge from '@/components/servers/ServerStatusBadge.vue'
 import type {
 	ConsoleMode,
 	ServerCommand,
@@ -13,6 +14,7 @@ import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
 import { getServerMenu, type ServerMenuVerb } from '@/lib/serverMenu'
 import { isSettingUp } from '@/lib/status'
+import { __ } from '@/lib/translate'
 import type { ServerOverview } from '@/types/servers'
 
 interface Props {
@@ -40,6 +42,16 @@ const emit = defineEmits<{
 }>()
 
 const visual = computed(() => statusVisual(props.server))
+const sleepHelp = computed(() => {
+	if (visual.value.key !== 'sleeping') return ''
+	return props.server.sleep_state === 'Sleeping'
+		? __(
+				'The server got no requests, so it saved its memory and stopped. The next request wakes it, and so does opening the server.',
+			)
+		: __(
+				'The server got no requests, so it saved its memory to storage and stopped. The next request wakes it, and so does opening the server. Waking takes longer.',
+			)
+})
 const isLocked = computed(() => !!props.server.pending_action)
 const isRunning = computed(() => props.server.status === 'Running')
 const isUbuntu = computed(() => props.server.image_offering === 'ubuntu')
@@ -179,7 +191,8 @@ const menu = computed(() => {
 			<ProviderAvatar
 				:provider="details?.region_details.provider"
 				:size="40"
-				class="shrink-0"
+				class="shrink-0 transition-opacity"
+				:class="{ 'opacity-50': visual.isDimmed }"
 			/>
 
 			<div class="min-w-0 space-y-2">
@@ -188,11 +201,12 @@ const menu = computed(() => {
 						{{ server.title || server.resource_id }}
 					</h1>
 
-					<Badge
-						:label="visual.label"
-						:theme="visual.badgeTheme"
-						:class="{ 'animate-pulse': visual.motion !== 'none' }"
-					/>
+					<Tooltip :text="sleepHelp" :disabled="!sleepHelp">
+						<ServerStatusBadge
+							:visual="visual"
+							:class="{ 'animate-pulse': visual.motion !== 'none' }"
+						/>
+					</Tooltip>
 
 					<Tooltip
 						v-if="details?.has_wireguard_access"

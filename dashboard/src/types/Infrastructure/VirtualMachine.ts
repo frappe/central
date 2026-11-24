@@ -35,6 +35,8 @@ export interface VirtualMachine {
 		| 'Stopped'
 		| 'Failed'
 		| 'Terminated'
+	/**	Sleep State : Select - Where the region keeps the saved memory of a sleeping server, as Atlas reports it. Empty while the server is awake.	*/
+	sleep_state?: '' | 'Sleeping' | 'Deep Sleeping' | 'Coma'
 	/**	vCPUs : Float	*/
 	vcpus?: number
 	/**	Memory (MB) : Int	*/

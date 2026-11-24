@@ -19,6 +19,7 @@ from central.billing.gateways.base import (
 	RefundResult,
 	VerifiedPayment,
 	WebhookNotFound,
+	event_time,
 	header_value,
 	token_check,
 )
@@ -270,7 +271,8 @@ class RazorpayAdapter(RazorpaySetup, GatewayAdapter):
 
 	def parse_webhook_event(self, payload: dict, headers: dict | None = None) -> NormalisedEvent:
 		"""The dedupe id is built from the signed body. Razorpay's X-Razorpay-Event-Id
-		header is outside the signature, so a replayed body could carry a new one."""
+		header is outside the signature, so a replayed body could carry a new one; it is
+		kept only to find the delivery in Razorpay's webhook logs."""
 		entities = payload.get("payload") or {}
 		entity_ids = ":".join(
 			f"{kind}={(entities[kind].get('entity') or {}).get('id')}" for kind in sorted(entities)
@@ -279,6 +281,8 @@ class RazorpayAdapter(RazorpaySetup, GatewayAdapter):
 			gateway_event_id=f"{payload.get('event')}:{payload.get('created_at')}:{entity_ids}"[:140],
 			event_type=payload.get("event"),
 			payload=payload,
+			occurred_at=event_time(payload.get("created_at")),
+			delivery_id=header_value(headers, "X-Razorpay-Event-Id"),
 		)
 
 	def get_transaction_status(self, gateway_txn_id: str) -> str:

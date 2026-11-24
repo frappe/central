@@ -1,4 +1,4 @@
-# Central webhooks failing
+# Central cannot deliver webhooks
 
 Central sends events to other services with Frappe webhooks, for example the VM state of a site to its region. Frappe retries a failed request. After the last retry, the request is **Exhausted**, and the receiver never gets the event. The alert key is the name of the webhook.
 

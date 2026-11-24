@@ -5,7 +5,9 @@ import { useSession } from '@/composables/useSession'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
+import { __ } from '@/lib/translate'
 import type {
+	BucketAllowedOrigins,
 	BucketCredentials,
 	BucketUsage,
 	ObjectStorage,
@@ -41,6 +43,25 @@ const usageName = ref('')
 const usageCall = useCall<BucketUsage, { team: string; name: string }>({
 	url: method(API.bucketUsage),
 	params: () => ({ team: activeTeam.value!, name: usageName.value }),
+	immediate: false,
+})
+
+const originsName = ref('')
+const originsCall = useCall<
+	BucketAllowedOrigins,
+	{ team: string; name: string }
+>({
+	url: method(API.bucketAllowedOrigins),
+	params: () => ({ team: activeTeam.value!, name: originsName.value }),
+	immediate: false,
+})
+
+const setOriginsCall = useCall<
+	BucketAllowedOrigins,
+	{ team: string; name: string; origins: string[] }
+>({
+	url: method(API.setBucketAllowedOrigins),
+	method: 'POST',
 	immediate: false,
 })
 
@@ -85,6 +106,14 @@ export const useObjectStorage = () => ({
 		return usageCall.reload()
 	},
 
+	origins: computed(() => originsCall.data?.allowed_origins),
+	originsLoading: computed(() => originsCall.loading),
+	originsError: computed(() => originsCall.error),
+	loadOrigins: (name: string) => {
+		originsName.value = name
+		return originsCall.reload()
+	},
+
 	createBucket: async (
 		bucketName: string,
 		region: string,
@@ -117,6 +146,16 @@ export const useObjectStorage = () => ({
 		})
 		successToast('Quota saved')
 		await usageCall.reload()
+	},
+
+	setOrigins: async (name: string, origins: string[]): Promise<void> => {
+		await submitOrThrow(setOriginsCall, {
+			team: activeTeam.value!,
+			name,
+			origins,
+		})
+		successToast(__('Allowed origins saved'))
+		await originsCall.reload()
 	},
 
 	deleteBucket: async (name: string): Promise<void> => {

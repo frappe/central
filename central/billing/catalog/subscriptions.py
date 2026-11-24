@@ -446,7 +446,7 @@ def begin_resize(
 	if not _is_resizable(doc):
 		return {"queued": False, "resized": False}
 	server = _locked_server(doc.server_id)
-	if server and (pending := ResourceAction.get_pending(doc.server_id, "resize")):
+	if server and (pending := frappe.get_doc("Virtual Machine", doc.server_id).get_pending_action("resize")):
 		return {"queued": True, "resized": True, **pending.customer_status()}
 
 	is_live = _is_live_for_resize(server)
@@ -544,15 +544,8 @@ def _queue_resize(doc, server, target: frappe._dict, shape: dict, changed_by: st
 		}
 	)
 	# Billing validated the target and the route already checked server:resize.
-	return ResourceAction.queue(
-		"resize",
-		doc.team,
-		server.region,
-		server.title or doc.server_id,
-		server=doc.server_id,
-		remote_vm_id=server.atlas_vm_id,
-		requested_by=changed_by,
-		request_payload=configuration.model_dump(),
+	return frappe.get_doc("Virtual Machine", doc.server_id).queue_action(
+		"resize", requested_by=changed_by, request_payload=configuration.model_dump()
 	)
 
 

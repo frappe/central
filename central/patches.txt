@@ -110,3 +110,15 @@ central.patches.v0_0.keep_only_custom_resource_action_copy
 central.patches.v0_0.mark_old_setups_released
 # A UPI mandate covers a bill at the spend limit with GST. Ask teams with a lower one to re-authorise it.
 central.patches.v0_0.flag_upi_mandates_below_the_gst_ceiling
+# Start the Usage Day ledger: register storage, name subjects, carry this month's storage into days.
+central.patches.v0_0.start_usage_day_ledger
+# Bill AI from Grove's cost per model and landing day; subscribe the teams that use it.
+central.patches.v0_0.start_ai_billing
+# Read the month's USD rate from the rate API; fill its URL on sites that had Billing Settings.
+central.patches.v0_0.seed_exchange_rate_url
+# Fill the plan and size on resize events recorded before the feed showed them.
+central.patches.v0_0.fill_resize_activity_details
+# Support needs support:view now, so custom roles keep the support their members had.
+central.patches.v0_0.grant_support_view_to_custom_roles
+# A Team is a Helpdesk customer now, so every team and its earlier tickets need their customer.
+central.patches.v0_0.sync_helpdesk_customers

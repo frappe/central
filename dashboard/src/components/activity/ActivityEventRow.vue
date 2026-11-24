@@ -31,9 +31,6 @@ const isOpen = ref(false)
 const runLimit = ref(RUN_PAGE)
 const event = computed(() => props.events[0])
 const isRun = computed(() => props.events.length > 1)
-const repeatCount = computed(() =>
-	props.events.length === 2 ? 'twice' : `${props.events.length} times`,
-)
 const detailId = computed(() => `activity-detail-${event.value.id}`)
 const parts = computed(() => getSentenceParts(event.value))
 const summary = computed(() => getEventSummary(event.value))
@@ -70,11 +67,8 @@ function toggle() {
 <template>
 	<li class="relative">
 		<div
-			class="group flex items-start gap-3.5 rounded-6 px-3.5 py-3 transition-colors duration-150 sm:py-3.5"
-			:class="{
-				'cursor-pointer hover:bg-surface-gray-1/40': canExpand,
-				'bg-surface-gray-1/40': isOpen,
-			}"
+			class="group flex items-start gap-3 rounded-6 px-2 py-2.5 transition-colors duration-150"
+			:class="{ 'cursor-pointer hover:bg-surface-gray-1/40': canExpand }"
 			@click="toggle"
 		>
 			<div class="shrink-0 pt-0.5">
@@ -86,11 +80,11 @@ function toggle() {
 			</div>
 
 			<div class="min-w-0 flex-1">
-				<p class="text-base text-ink-gray-6">
+				<p class="text-sm text-ink-gray-6">
 					<template v-for="(part, index) in parts" :key="index">
 						<span
 							v-if="part.role === 'actor'"
-							class="text-base-medium text-ink-gray-9"
+							class="text-sm-medium text-ink-gray-9"
 						>
 							{{ part.text }}
 						</span>
@@ -101,16 +95,17 @@ function toggle() {
 						/>
 						<template v-else>{{ part.text }}</template>
 					</template>
-					<span v-if="event.initiator" class="text-ink-gray-5">
-						{{ __('· initiated by') }}
-						<span class="text-ink-gray-7">{{ event.initiator.label }}</span>
-					</span>
-					<template v-if="isRun">
-						<span class="text-ink-gray-5"> · {{ repeatCount }}</span>
-					</template>
-					<template v-else-if="hasMultipleChanges">
+					<template v-if="event.initiator">
+						<span class="text-ink-gray-4" aria-hidden="true"> · </span>
 						<span class="text-ink-gray-5">
-							{{ __('· {0} changes', [changeCount]) }}</span
+							{{ __('initiated by') }}
+							<span class="text-ink-gray-7">{{ event.initiator.label }}</span>
+						</span>
+					</template>
+					<template v-if="isRun || hasMultipleChanges">
+						<span class="text-ink-gray-4" aria-hidden="true"> · </span>
+						<span class="text-ink-gray-5"
+							>{{ __('{0} changes', [isRun ? events.length : changeCount]) }}</span
 						>
 					</template>
 					<template v-else-if="summary.length">
@@ -167,7 +162,7 @@ function toggle() {
 			v-if="canExpand"
 			v-show="isOpen"
 			:id="detailId"
-			class="mb-3 ml-11 mt-1 rounded-6 border border-outline-gray-1 p-2 text-p-sm sm:p-2.5"
+			class="mb-3 ml-9 mt-1 rounded-6 border border-outline-gray-1 p-2 text-p-sm sm:p-2.5"
 		>
 			<!-- One event: each change on its own line -->
 			<ul v-if="!isRun && filteredDetails.length" class="space-y-0.5">

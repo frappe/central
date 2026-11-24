@@ -109,6 +109,8 @@ export interface NextPayment {
 	method: ChargingMethod | null
 	/** Empty blockers is not a promise of success — only that nothing decides otherwise. */
 	will_auto_charge: boolean
+	/** The team pays by hand or is asked to choose: nothing is charged automatically. */
+	debit_held: boolean
 	blockers: PaymentBlocker[]
 	/**
 	 * Set once the open invoice is charged or its payment date has passed. At most one is set,
@@ -503,6 +505,12 @@ export interface CollectionStatus {
 	/** Networks no rail will auto-charge — shown before the customer picks how to pay. */
 	mandate_gap_note?: string | null
 	action_required: boolean
+	/** "Automatic" (Prepaid or Auto Charge) or "Manual"; null while Action Required. */
+	choice: 'Automatic' | 'Manual' | null
+	/** The method charged first when the wallet is short; null when none is saved. */
+	charged_method: string | null
+	/** Whether the team may pick "Pay each invoice yourself" (INR only). */
+	manual_offered: boolean
 	reason: string | null
 	/** Most the team's card or UPI may be charged automatically; null when nothing caps it. */
 	threshold: number | null
@@ -586,13 +594,13 @@ export interface NotificationCatalogEvent {
 	title: string
 	severity: NotificationSeverity
 	is_critical: 0 | 1
-	can_receive: 0 | 1
 }
 
 /** get_user_preferences: saved rows plus the events each category holds. */
 export interface UserNotificationPreferences {
 	time_zone: string
 	digest_hour: number
+	is_team_owner: boolean
 	preferences: NotificationPreference[]
 	catalog: {
 		category: NotificationCategory

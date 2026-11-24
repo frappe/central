@@ -1,4 +1,4 @@
-# Central API errors
+# Central API returns 5xx errors
 
 The Central API or dashboard returns 5xx for many requests. Customers cannot sign in, create sites or manage servers. The alert key names `all` (10 minutes, pages), `hourly` (1 hour) or `group:<group>`, the API module that fails.
 

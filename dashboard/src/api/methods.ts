@@ -68,6 +68,8 @@ export const API = {
 	renameServer: 'central.api.servers.rename_server',
 	getRescueState: 'central.api.servers.get_rescue_state',
 	setRescueMode: 'central.api.servers.set_rescue_mode',
+	getIdleSleep: 'central.api.servers.get_idle_sleep',
+	setIdleSleep: 'central.api.servers.set_idle_sleep',
 	setTerminationProtection: 'central.api.servers.set_termination_protection',
 	updateServerFirewall: 'central.api.servers.update_server_firewall',
 	listFirewallRulesets: 'central.api.firewall_rulesets.list_firewall_rulesets',
@@ -127,6 +129,10 @@ export const API = {
 	createBucket: 'central.services.api.storage.create_bucket',
 	rotateBucketCredentials: 'central.services.api.storage.rotate_credentials',
 	setBucketQuota: 'central.services.api.storage.set_bucket_quota',
+	bucketAllowedOrigins:
+		'central.services.api.storage.get_bucket_allowed_origins',
+	setBucketAllowedOrigins:
+		'central.services.api.storage.set_bucket_allowed_origins',
 	deleteBucket: 'central.services.api.storage.delete_bucket',
 	listBucketObjects: 'central.services.api.storage.list_objects',
 	bucketObjectUrl: 'central.services.api.storage.get_object_url',

@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "hash",
  "creation": "2026-06-03 00:00:00.000000",
- "description": "Central's stored metered rollup (NOT raw samples) \u2014 one per (resource_id, meter_type, period). A re-push replaces the quantity; the locked allowance + rate are stamped once at first receipt (grandfathered).",
+ "description": "Central's stored metered rollup (NOT raw samples) \u2014 one per (resource_id, meter_type, period). A re-push replaces the quantity; the locked allowance + rate are stamped once at first receipt (grandfathered), except that a converted rollup is re-rated until its rate date is set.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
@@ -12,6 +12,7 @@
   "team",
   "cluster",
   "resource_type",
+  "dimension",
   "meter_type",
   "column_break_period",
   "period_start",
@@ -22,10 +23,12 @@
   "currency",
   "locked_allowance",
   "locked_rate",
+  "rate_date",
   "column_break_key",
   "idempotency_key",
   "superseded_by",
-  "sequence"
+  "sequence",
+  "invoice"
  ],
  "fields": [
   {
@@ -51,6 +54,12 @@
    "fieldname": "resource_type",
    "fieldtype": "Data",
    "label": "Resource Type"
+  },
+  {
+   "fieldname": "dimension",
+   "fieldtype": "Data",
+   "label": "Dimension",
+   "description": "The part of the subject's usage this month counts, such as the AI model."
   },
   {
    "fieldname": "meter_type",
@@ -106,7 +115,14 @@
    "fieldname": "locked_rate",
    "fieldtype": "Currency",
    "label": "Locked Rate",
-   "description": "Per-unit overage rate, locked at first receipt"
+   "description": "Per-unit overage rate, locked at first receipt. A converted rollup is re-rated until its rate date is set."
+  },
+  {
+   "fieldname": "rate_date",
+   "fieldtype": "Date",
+   "label": "Rate Date",
+   "read_only": 1,
+   "description": "For usage counted in another currency: the date of the exchange rate the locked rate was fixed at. Blank while the rate can still change."
   },
   {
    "fieldname": "column_break_key",
@@ -134,11 +150,19 @@
    "fieldtype": "Int",
    "label": "Sequence",
    "description": "Incremental reporting only (ADR 0015): last applied batch sequence; a batch accumulates only if it exceeds this."
+  },
+  {
+   "description": "The invoice that billed this month. A billed month is never recounted; days that arrive later go to the next month.",
+   "fieldname": "invoice",
+   "fieldtype": "Link",
+   "label": "Invoice",
+   "options": "Invoice",
+   "search_index": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-25 13:00:00.000000",
+ "modified": "2026-11-19 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Rollup",

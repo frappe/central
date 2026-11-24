@@ -57,7 +57,7 @@ class PublicIPTestCase(IntegrationTestCase):
 		)
 
 	def observe(self, **state) -> None:
-		VirtualMachine.record_observed_state(self.server, now_datetime(), state)
+		frappe.get_doc("Virtual Machine", self.server).record_observed_state(state, now_datetime())
 
 	def ipv4_subscription(self, enabled: int = 1) -> str | None:
 		return frappe.db.get_value("Subscription", {"public_ip_server": self.server, "enabled": enabled})

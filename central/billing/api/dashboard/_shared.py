@@ -265,28 +265,35 @@ def _describe_line(team: str, li) -> dict:
 		title = frappe.db.get_value("Plan", metered_plan.name, "title") if metered_plan else None
 		row["item"] = title or f"{li.resource_type.title()} overage"
 		row["kind"] = "Overage"
-		# Surface the included allowance the usage ran past, so the bill is legible.
-		allowance = frappe.db.get_value(
-			"Usage Rollup",
-			{"team": team, "resource_id": li.subscription_resource, "resource_type": li.resource_type},
-			"locked_allowance",
-		)
-		# li.quantity is the BILLABLE overage (usage already minus the allowance). Spell
-		# out the metered story so the charge is legible: total used, what was included,
-		# and the units actually billed (used − included). Unit is a plain label (Nos, GB).
-		unit = li.unit or "units"
-		billed = frappe.utils.flt(li.quantity)
-		allowance = frappe.utils.flt(allowance)
-		if allowance > 0:
-			# Legacy plans that still carry a free tier: show used vs included vs billed.
-			row["detail"] = (
-				f"Metered · {_qty(billed + allowance)} {unit} used · "
-				f"{_qty(billed)} billed over {_qty(allowance)} included"
-			)
-		else:
-			# No free tier — every used unit is billed at the per-unit rate.
-			row["detail"] = f"Metered · {_qty(billed)} {unit} used"
+		row["detail"] = _metered_detail(team, li)
+		# Such as the AI model and the rate it was converted at, which tell its lines apart.
+		if li.get("description"):
+			row["detail"] += f" · {li.description}"
 	return row
+
+
+def _metered_detail(team: str, li) -> str:
+	"""How much a metered line used, and how much of it was included."""
+	# Surface the included allowance the usage ran past, so the bill is legible.
+	allowance = frappe.db.get_value(
+		"Usage Rollup",
+		{"team": team, "resource_id": li.subscription_resource, "resource_type": li.resource_type},
+		"locked_allowance",
+	)
+	# li.quantity is the BILLABLE overage (usage already minus the allowance). Spell
+	# out the metered story so the charge is legible: total used, what was included,
+	# and the units actually billed (used − included). Unit is a plain label (Nos, GB).
+	unit = li.unit or "units"
+	billed = frappe.utils.flt(li.quantity)
+	allowance = frappe.utils.flt(allowance)
+	if allowance > 0:
+		# Legacy plans that still carry a free tier: show used vs included vs billed.
+		return (
+			f"Metered · {_qty(billed + allowance)} {unit} used · "
+			f"{_qty(billed)} billed over {_qty(allowance)} included"
+		)
+	# No free tier — every used unit is billed at the per-unit rate.
+	return f"Metered · {_qty(billed)} {unit} used"
 
 
 def _server_name(resource_id: str | None) -> str | None:

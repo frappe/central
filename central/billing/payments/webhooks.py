@@ -11,6 +11,7 @@ stored and a background job is enqueued.
 
 import frappe
 from frappe import _
+from frappe.query_builder.functions import Coalesce
 
 from central.billing.platform import metrics
 from central.billing.platform.records import save_billing_record
@@ -120,14 +121,15 @@ def _resolve_gateway(adapter_key: str):
 
 
 def _store_and_enqueue(gateway, event, payload: bytes):
-	"""Idempotent store keyed on gateway_event_id; replays no-op (no second job).
+	"""Idempotent store keyed on gateway_event_id; a replay only counts the delivery (no second job).
 
 	The unique constraint on gateway_event_id is the real guard: under a
 	concurrent flood two requests can both pass the exists() check, so the losing
-	insert is caught (DuplicateEntryError) and treated as an already-stored
+	insert is caught (a unique-key error) and treated as an already-stored
 	replay — exactly one row, exactly one enqueued job.
 	"""
 	if frappe.db.exists("Webhook Event", {"gateway_event_id": event.gateway_event_id}):
+		_enqueue_repeat_count(event.gateway_event_id)
 		return
 
 	try:
@@ -137,14 +139,36 @@ def _store_and_enqueue(gateway, event, payload: bytes):
 				"gateway": gateway.name,
 				"gateway_event_id": event.gateway_event_id,
 				"event_type": event.event_type,
+				"occurred_at": event.occurred_at,
+				"delivery_id": event.delivery_id,
+				"deliveries": 1,
 				"raw_payload": payload.decode() if isinstance(payload, bytes) else payload,
 				"status": "Received",
 			}
 		).insert(ignore_permissions=True)
-	except frappe.DuplicateEntryError:
+	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
+		_enqueue_repeat_count(event.gateway_event_id)
 		return  # lost the race — another request stored it first
 
 	_enqueue_event(doc.name)
+
+
+def _enqueue_repeat_count(gateway_event_id: str) -> None:
+	"""Count a repeat in a job: the event's own job may hold its row lock for a while.
+	There is no job id, so every repeat is counted."""
+	frappe.enqueue(
+		"central.billing.payments.webhooks.count_repeat_delivery",
+		gateway_event_id=gateway_event_id,
+		enqueue_after_commit=True,
+	)
+
+
+def count_repeat_delivery(gateway_event_id: str) -> None:
+	"""A gateway retries an event it thinks we missed, so repeats show a delivery problem."""
+	event = frappe.qb.DocType("Webhook Event")
+	frappe.qb.update(event).set(event.deliveries, Coalesce(event.deliveries, 1) + 1).where(
+		event.gateway_event_id == gateway_event_id
+	).run()
 
 
 def _enqueue_event(event_name: str) -> None:

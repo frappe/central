@@ -12,7 +12,9 @@ import {
 } from 'frappe-ui'
 import { computed, reactive, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import { useChannelOffConfirm } from '@/composables/useChannelOffConfirm'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, successToast } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
@@ -142,8 +144,11 @@ const dirty = computed(
 const digestTime = computed(() =>
 	digestHour.value == null ? '' : formatHour(digestHour.value),
 )
+const visibleCategories = computed(() =>
+	CATEGORIES.filter(({ key }) => eventsOf(key).length),
+)
 const usesDigest = computed(() =>
-	CATEGORIES.some(
+	visibleCategories.value.some(
 		({ key }) => state[key].email && state[key].frequency !== 'Instant',
 	),
 )
@@ -151,6 +156,24 @@ const usesDigest = computed(() =>
 function eventsOf(category: Category) {
 	return load.data?.catalog.find((c) => c.category === category)?.events ?? []
 }
+
+const isTeamOwner = computed(() => Boolean(load.data?.is_team_owner))
+const {
+	offTarget,
+	offCriticalEvents,
+	offTitle,
+	isLastChannel,
+	offMessage,
+	offNote,
+	setChannel,
+	confirmOff,
+} = useChannelOffConfirm({
+	state,
+	eventsOf,
+	labelOf: (category) =>
+		CATEGORIES.find(({ key }) => key === category)?.label ?? '',
+	isTeamOwner,
+})
 
 function toggleEvent(category: Category, eventType: string, on: boolean) {
 	const muted = state[category].muted.filter((name) => name !== eventType)
@@ -166,17 +189,19 @@ function setDigestHour(value: string) {
 
 async function onSave(): Promise<void> {
 	try {
-		const preferences: Preference[] = CATEGORIES.map(({ key }) => ({
-			category: key,
-			email_enabled: state[key].email ? 1 : 0,
-			in_app_enabled: state[key].in_app ? 1 : 0,
-			frequency: state[key].frequency,
-			events: state[key].muted
-				.filter((name) =>
-					eventsOf(key).some((event) => event.event_type === name),
-				)
-				.map((event_type) => ({ event_type, email_enabled: 0 })),
-		}))
+		const preferences: Preference[] = visibleCategories.value.map(
+			({ key }) => ({
+				category: key,
+				email_enabled: state[key].email ? 1 : 0,
+				in_app_enabled: state[key].in_app ? 1 : 0,
+				frequency: state[key].frequency,
+				events: state[key].muted
+					.filter((name) =>
+						eventsOf(key).some((event) => event.event_type === name),
+					)
+					.map((event_type) => ({ event_type, email_enabled: 0 })),
+			}),
+		)
 		await submitOrThrow(save, {
 			...teamParams(),
 			preferences,
@@ -236,19 +261,21 @@ const notificationSettingsLoadErrorTitle = __(
 			<div
 				class="divide-y divide-outline-gray-1 border-t border-outline-gray-1"
 			>
-				<div v-for="cat in CATEGORIES" :key="cat.key">
+				<div v-for="cat in visibleCategories" :key="cat.key">
 					<SettingsRow :title="cat.label" :description="cat.hint">
 						<div class="flex items-center gap-6">
 							<span class="flex w-12 justify-center">
 								<Switch
-									v-model="state[cat.key].email"
+									:model-value="state[cat.key].email"
 									:aria-label="__('Email notifications for {0}', [cat.label])"
+									@update:model-value="setChannel(cat.key, 'email', $event)"
 								/>
 							</span>
 							<span class="flex w-12 justify-center">
 								<Switch
-									v-model="state[cat.key].in_app"
+									:model-value="state[cat.key].in_app"
 									:aria-label="__('In-app notifications for {0}', [cat.label])"
+									@update:model-value="setChannel(cat.key, 'in_app', $event)"
 								/>
 							</span>
 						</div>
@@ -300,10 +327,7 @@ const notificationSettingsLoadErrorTitle = __(
 									Boolean(event.is_critical) ||
 									!state[cat.key].muted.includes(event.event_type)
 								"
-								:disabled="
-									Boolean(event.is_critical) ||
-									!event.can_receive
-								"
+								:disabled="Boolean(event.is_critical)"
 								:aria-label="__('Email for {0}', [event.title])"
 								@update:model-value="
 									toggleEvent(cat.key, event.event_type, $event)
@@ -329,7 +353,9 @@ const notificationSettingsLoadErrorTitle = __(
 			</div>
 
 			<p class="mt-3 text-p-sm text-ink-gray-5">
-				{{ __("Critical events, such as a failed payment or a server that is down, are always emailed, even when a category's email is off.") }}
+				{{ isTeamOwner
+						? __("As the team owner, you always get critical events, such as a failed payment or a server that is down, by email and in the app.")
+						: __("Critical events, such as a failed payment or a server that is down, reach you on each channel you keep on.") }}
 			</p>
 
 			<div class="mt-4 flex justify-end">
@@ -341,6 +367,56 @@ const notificationSettingsLoadErrorTitle = __(
 					@click="onSave"
 				/>
 			</div>
+
+			<ConfirmDialog
+				v-model:target="offTarget"
+				:title="offTitle"
+				:confirm-label="__('Turn off')"
+				size="md"
+				@confirm="confirmOff"
+			>
+				<div class="space-y-3 text-p-base text-ink-gray-7">
+					<p class="flex items-start gap-1.5">
+						<span
+							:class="[
+								isTeamOwner
+									? 'lucide-info text-ink-gray-5'
+									: 'lucide-triangle-alert text-ink-amber-6',
+								'mt-0.5 size-4 shrink-0',
+							]"
+							aria-hidden="true"
+						/>
+						{{ offMessage }}
+					</p>
+					<ul
+						class="divide-y divide-outline-gray-1 rounded-6 border border-outline-gray-2"
+					>
+						<li
+							v-for="event in offCriticalEvents"
+							:key="event.event_type"
+							class="flex items-center gap-2 px-3 py-2 text-sm text-ink-gray-8"
+						>
+							<span
+								:class="[
+									offTarget?.channel === 'email' ? 'lucide-mail' : 'lucide-bell',
+									'size-3.5 shrink-0 text-ink-gray-5',
+								]"
+								aria-hidden="true"
+							/>
+							{{ event.title }}
+						</li>
+					</ul>
+					<p v-if="offNote" class="text-p-sm text-ink-gray-5">
+						{{ offNote }}
+					</p>
+					<div
+						v-if="isLastChannel"
+						class="rounded-6 border border-outline-amber-2 bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-7"
+					>
+						{{ __("Email and in-app are both off, so you get no notice of these events.") }}
+					</div>
+				</div>
+			</ConfirmDialog>
 		</template>
 	</div>
 </template>

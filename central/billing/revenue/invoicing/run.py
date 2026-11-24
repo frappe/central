@@ -7,10 +7,13 @@ owns everything that spans them: which teams to visit, in what order, and how th
 work is spread over workers.
 """
 
+import datetime
 import random
 import time
 
 import frappe
+from croniter import croniter
+from frappe import _
 from frappe.query_builder.functions import Count
 
 from central.billing.doctype.billing_event import billing_event
@@ -43,6 +46,8 @@ COLLECT_PAGE_SIZE = 100
 # and give the queue a worker (`bench worker --queue billing`).
 BILLING_QUEUE = "billing"
 
+
+DRAFT_TICK = "central.billing.revenue.invoicing.draft_monthly_invoices"
 
 # Every unit failure is logged under this one title, so an operator (and
 # `billing_run_status`) can count a run's casualties with a single filter.
@@ -494,7 +499,7 @@ def billing_period(today=None) -> tuple:
 
 
 def draft_monthly_invoices(today=None) -> dict:
-	"""Tick 1 (1st, off-peak): draft the just-closed month, one job per team.
+	"""Tick 1 (1st, 08:00 IST, after the UTC month closes): draft the just-closed month, one job per team.
 
 	Drafting and collection are separate ticks, not one job that does both: rating is
 	heavy and local, collection is slow and external, and a run that interleaves them
@@ -540,14 +545,37 @@ def collect_due_invoices(today=None) -> dict:
 	metrics.emit("billing.run_status", **status)
 	# Only claim to be collecting when something is owed, so a period that finished
 	# does not flip Complete -> Collecting -> Complete on every later sweep.
-	snapshot(status, "Collecting" if status["pending_collection"] else None)
+	_snapshot_started(status, "Collecting" if status["pending_collection"] else None)
 	fanned = open_drafts(period_end, enqueue=True)
 	metrics.emit("billing.collect_tick", period_end=str(period_end), pages=len(fanned))
 	# Re-derived after the sweep has been handed out: nothing owed means the period is done.
 	done = billing_run_status(today)
 	is_done = not done["pending_collection"] and not done["failures"]
-	snapshot(done, "Complete" if is_done else None)
+	_snapshot_started(done, "Complete" if is_done else None)
 	return {"period_end": str(period_end), "pages": len(fanned)}
+
+
+def _snapshot_started(status: dict, to_state: str | None) -> None:
+	"""Update the period's run only once the draft tick has started it."""
+	# A sweep before the draft tick would complete an empty run, and the draft could not reopen it.
+	if frappe.db.exists("Billing Run", status["period_end"]):
+		snapshot(status, to_state)
+
+
+def has_draft_tick_passed(now=None) -> bool:
+	"""Whether this month's draft tick has fired."""
+	now = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
+	# The schedule is read from hooks, so the tick's time is set in one place.
+	last_tick = croniter(_draft_tick_schedule(), now).get_prev(datetime.datetime)
+	return last_tick >= frappe.utils.get_datetime(frappe.utils.get_first_day(now))
+
+
+def _draft_tick_schedule() -> str:
+	crons = frappe.get_hooks("scheduler_events").get("cron", {})
+	schedule = next((cron for cron, methods in crons.items() if DRAFT_TICK in methods), None)
+	if not schedule:
+		frappe.throw(_("{0} has no cron in hooks").format(DRAFT_TICK))
+	return schedule
 
 
 def billing_run_status(today=None) -> dict:
@@ -592,14 +620,11 @@ def billing_run_status(today=None) -> dict:
 
 
 def run_monthly_billing(today=None) -> dict:
-	"""Bill the just-closed month end-to-end, inline.
-
-	The monthly scheduler event runs this. The two fan-out ticks above are not
-	scheduled; an operator runs them by hand to spread a large run over the billing
-	queue. Same work, same idempotency.
-	"""
+	"""Bill the just-closed month end-to-end in one job, for a small site or a test."""
 	settle_internal_teams()
 	period_start, period_end = billing_period(today)
+	# A new run starts as Drafting; a rerun after collection keeps the state it reached.
+	snapshot(billing_run_status(today))
 	drafted = generate_draft_invoices(period_start, period_end)
 	opened = open_drafts(period_end)
 	return {

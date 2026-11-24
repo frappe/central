@@ -1,6 +1,6 @@
 ---
 title: Object Storage
-description: Create a bucket, connect an S3 client, manage files, set a quota, and rotate the key.
+description: Create a bucket, connect an S3 client, manage files, set a quota, allow a website, and rotate the key.
 ---
 
 # Object Storage
@@ -80,6 +80,21 @@ A quota stops a bucket from growing past a limit. A bucket without a quota grows
 <Screenshot name="services/bucket-settings" alt="The Settings tab of the media bucket with the Quota section, the Connection section with the endpoint, bucket, and access key, and the Delete bucket section." />
 
 The bucket refuses an upload that passes a limit.
+
+## Allow a website to use the bucket
+
+A web page can upload to and read from the bucket in the browser, with a presigned URL, only when the bucket allows the website of that page. For example, a site at `https://erp.example.com` that keeps its files in the bucket must be allowed. The console itself is always allowed.
+
+1. Click the bucket. Click the **Settings** tab.
+2. Under **Browser access**, click **Edit origins**.
+3. Type each website on its own line, as `https://` and the host name, such as `https://erp.example.com`. Add `:port` for a port that is not the default. Do not add a path or a `*`.
+4. Click **Save origins**.
+
+A site that answers on more than one domain needs each of its domains on the list. To remove a website, delete its line and save. Leave the list empty to allow no website except the console.
+
+::: info
+The region must run a storage version that supports browser access. If it does not, **Save origins** shows an error and the list stays as it was.
+:::
 
 ## Rotate the key
 

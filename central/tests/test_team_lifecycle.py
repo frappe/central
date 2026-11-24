@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -166,22 +166,15 @@ class TestTeamLifecycle(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Team", self.team.name, "status"), "Active")
 		self.assertTrue(can(self.admin, self.team.name, "team:edit"))
 
-	def test_archive_stops_and_revokes_every_live_ai_key(self):
-		keys = [
-			{"name": "old-key", "status": "active"},
-			{"name": "new-key", "status": "active"},
-			{"name": "gone-key", "status": "revoked"},
-		]
+	def test_archive_tells_grove_the_team_is_closing_and_nothing_else(self):
 		client = MagicMock()
-		client.get_figures.return_value = {"keys": keys}
 		with (
 			patch("central.services.ai.get_ai_service", return_value="AI-SERVICE"),
 			patch("central.services.ai.GroveClient.from_settings", return_value=client),
 		):
 			stop_team_keys(self.team.name)
 
-		client.update_caps.assert_called_once_with(self.team.name, {"old-key": 0, "new-key": 0})
-		client.revoke_keys.assert_called_once_with(self.team.name, ["old-key", "new-key"])
+		self.assertEqual(client.method_calls, [call.archive_team(self.team.name)])
 
 	def test_a_member_cannot_change_the_status_by_saving_the_team(self):
 		frappe.set_user(self.owner)

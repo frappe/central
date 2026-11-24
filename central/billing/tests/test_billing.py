@@ -636,6 +636,24 @@ class TestMonthlyBillingRun(BillingTestBase):
 
 		self.assertEqual(frappe.db.count("Invoice", {"team": TEAM, "period_end": "2026-06-30"}), 1)
 
+	def test_run_records_the_billing_run_of_the_month(self):
+		frappe.db.delete("Billing Run", {"period_end": "2026-06-30"})
+		invoicing.run_monthly_billing(today="2026-07-01")
+		self.assertTrue(frappe.db.exists("Billing Run", "2026-06-30"))
+
+	def test_a_rerun_after_collection_keeps_the_run_state(self):
+		from central.billing.tests.utils import run_enqueued_inline
+
+		frappe.db.delete("Billing Run", {"period_end": "2026-06-30"})
+		invoicing.run_monthly_billing(today="2026-07-01")
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.collect_due_invoices(today="2026-07-01")
+		collected = frappe.db.get_value("Billing Run", "2026-06-30", "status")
+		self.assertNotEqual(collected, "Drafting")
+
+		invoicing.run_monthly_billing(today="2026-07-01")
+		self.assertEqual(frappe.db.get_value("Billing Run", "2026-06-30", "status"), collected)
+
 
 class TestFanOutRun(IntegrationTestCase):
 	"""The monthly run as an orchestrator: paged, fanned out, failure-isolated."""
@@ -758,6 +776,17 @@ class TestFanOutRun(IntegrationTestCase):
 		for team in self.TEAMS:
 			inv = frappe.get_doc("Invoice", {"team": team, "period_end": "2026-06-30"})
 			self.assertTrue(inv.due_date or inv.status != "Outstanding")
+
+	def test_a_sweep_before_the_draft_tick_does_not_stop_the_draft(self):
+		from central.billing.tests.utils import run_enqueued_inline
+
+		frappe.db.delete("Billing Run", {"period_end": "2026-06-30"})
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.collect_due_invoices(today="2026-07-01")
+			run.draft_monthly_invoices(today="2026-07-01")
+
+		for team in self.TEAMS:
+			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
 
 	def test_collection_tick_alone_settles_nothing(self):
 		# Order matters: the collect tick only ever touches drafts that already exist,

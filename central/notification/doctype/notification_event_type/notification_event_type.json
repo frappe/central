@@ -32,7 +32,7 @@
   {"fieldname": "column_break_meta", "fieldtype": "Column Break"},
   {"default": "None", "fieldname": "direct_recipients", "fieldtype": "Select", "in_list_view": 1, "label": "Direct Recipients", "options": "None\nAffected User"},
   {"default": "1", "fieldname": "create_in_app", "fieldtype": "Check", "label": "Create In-App Notification", "description": "When enabled, a Team Notification is created for this event. Disable for events that only send email (e.g. member_invited)."},
-  {"default": "0", "fieldname": "is_critical", "fieldtype": "Check", "in_list_view": 1, "label": "Is Critical", "description": "Send this event by email at once and ignore the user's frequency and per-event choices."},
+  {"default": "0", "fieldname": "is_critical", "fieldtype": "Check", "in_list_view": 1, "label": "Is Critical", "description": "Send this event by email at once and ignore the user's frequency and per-event choices. With the category email off, only the team owner gets it."},
   {"default": "None", "fieldname": "reportable_by", "fieldtype": "Select", "in_list_view": 1, "label": "Reportable By", "options": "None\nPilot", "description": "Pilot may report this event from a bench."},
   {"fieldname": "section_break_template", "fieldtype": "Section Break"},
   {"fieldname": "in_app_title", "fieldtype": "Code", "label": "In-App Title", "options": "Jinja", "reqd": 1},

@@ -10,9 +10,17 @@ from pydantic import ValidationError
 
 from central.errors import handle_resource_operation
 from central.iam import can, get_server_capabilities, user_has_operator_bypass
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
+from central.infrastructure.doctype.resource_action.resource_action import (
+	get_creators,
+	get_open_creations,
+	get_pending_labels,
+)
 from central.infrastructure.doctype.site.site import Site
-from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.infrastructure.doctype.virtual_machine.virtual_machine import (
+	VirtualMachine,
+	get_team_server,
+	get_team_server_name,
+)
 from central.integrations.atlas import ConsoleMode
 from central.integrations.servers import get_cached_metrics, get_console_url, reconcile
 from central.server_models import FirewallChange
@@ -52,6 +60,7 @@ def registry(team: str | None = None) -> dict:
 			"title",
 			"region",
 			"status",
+			"sleep_state",
 			"plan",
 			"frappe_version",
 			"vcpus",
@@ -64,6 +73,7 @@ def registry(team: str | None = None) -> dict:
 			"gateway_url",
 			"state_observed_at",
 			"has_wireguard_access",
+			"creation",
 		],
 		order_by="region asc, resource_id asc",
 		limit_page_length=0,
@@ -71,10 +81,12 @@ def registry(team: str | None = None) -> dict:
 	# Overlay the transitional label of any in-flight action, so a just-clicked
 	# start/stop/terminate (or a still-provisioning create) reads as "…ing" until the
 	# mirror catches up — instead of looking like nothing happened.
-	pending = ResourceAction.pending_labels(team)
+	pending = get_pending_labels(team)
 	audiences = _pilot_audiences(team)
 	locked = get_locked_servers(team)
+	is_idle_sleep_available = VirtualMachine.is_idle_sleep_available(team)
 	plan_titles = _plan_titles({server["plan"] for server in servers if server["plan"]})
+	creators = get_creators(team)
 	images = {
 		image.name: image
 		for image in frappe.get_all("Image Offering", fields=["name", "title", "description"])
@@ -84,16 +96,18 @@ def registry(team: str | None = None) -> dict:
 		server["plan_title"] = plan_titles.get(server["plan"])
 		server["image_title"] = image.get("title")
 		server["image_description"] = image.get("description")
+		server.update(creators.get(server["name"], {"created_by": None, "created_by_name": None}))
 		server["pending_action"] = pending.get(server["resource_id"])
 		server["pilot_audience"] = audiences.get(server["name"])
 		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
 		# A free trial gives the site, not the server: the console hides SSH, the console and Pilot.
 		server["is_access_locked"] = server["name"] in locked
+		server["is_idle_sleep_available"] = is_idle_sleep_available
 
 	# A creation has no server row until the region accepts it, so it cannot be overlaid
 	# like the pending actions above. It rides here as its own list: the console picks its
 	# own request back up after a reload, and the fleet can show what is still building.
-	creations = ResourceAction.open_creations(team)
+	creations = get_open_creations(team)
 
 	rows = frappe.get_list(
 		"Site",
@@ -293,7 +307,7 @@ def _metrics_window(period: str, start: str | None, end: str | None) -> tuple[da
 def server_hostnames(team: str | None = None, resource_id: str | None = None) -> list[dict]:
 	"""The site and custom-domain hostnames a server answers. They stop working when the
 	server is terminated, so the console lists them before it asks. Gated on `server:view`."""
-	server = VirtualMachine.get_team_server_name(team, resource_id)
+	server = get_team_server_name(team, resource_id)
 	sites = frappe.get_list(
 		"Site",
 		filters={"team": team, "server": server},
@@ -563,7 +577,7 @@ def resize_server(
 	if not resource_id:
 		frappe.throw(_("A server is required."))
 
-	server = VirtualMachine.get_team_server_name(team, resource_id)
+	server = get_team_server_name(team, resource_id)
 	subscription = frappe.db.get_value("Subscription", {"team": team, "server_id": server}, "name")
 	if not subscription and (trial := Trial.find_open(server)):
 		# The chosen plan is what the team pays once the trial converts.
@@ -601,7 +615,7 @@ def resize_server(
 )
 def rename_server(team: str | None = None, resource_id: str | None = None, title: str = "") -> dict:
 	"""Rename one server. Gated on `server:resize`, the capability to change a server."""
-	server = frappe.get_doc("Virtual Machine", {"team": team, "resource_id": resource_id}, for_update=True)
+	server = get_team_server(team, resource_id, for_update=True)
 	server.title = title
 	# Customers cannot write a Virtual Machine; this route checks server:resize.
 	server.save(ignore_permissions=True)
@@ -620,7 +634,7 @@ def set_termination_protection(
 	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = False
 ) -> None:
 	"""Turn termination protection on or off. Gated on `server:terminate`."""
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	server.set_termination_protection(bool(frappe.utils.cint(enabled)))
 
 
@@ -655,7 +669,7 @@ def set_server_public_ip(
 	if version not in (4, 6):
 		frappe.throw(_("Choose IPv4 or IPv6."))
 
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	is_done = server.set_public_ip(version, bool(frappe.utils.cint(is_attached)))
 	return {"is_pending": not is_done}
 
@@ -671,7 +685,7 @@ def set_server_ipv4_internet(
 	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = True
 ) -> None:
 	"""Turn IPv4 internet access on or off. Gated on `server:network`."""
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	server.set_ipv4_internet(bool(frappe.utils.cint(enabled)))
 
 
@@ -686,7 +700,7 @@ def set_server_wireguard_access(
 	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = True
 ) -> None:
 	"""Turn WireGuard device access on or off. Gated on `server:network`."""
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	server.set_wireguard_access(bool(frappe.utils.cint(enabled)))
 
 
@@ -730,7 +744,7 @@ def _update_one_firewall(team: str, resource_id: str, change: FirewallChange) ->
 		return _("You can't change the network of this server. Ask a team admin to review your access.")
 
 	try:
-		server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+		server = get_team_server(team, resource_id)
 		server.update_firewall(change)
 	except (frappe.ValidationError, frappe.DoesNotExistError) as error:
 		# The error goes back in this server's result, not as a page-wide message.
@@ -748,7 +762,7 @@ def keep_trial_site(team: str | None = None, resource_id: str | None = None) -> 
 	"""Keep the ended trial on a server: it moves to its paid plan and starts again."""
 	from central.signups.trial import Trial
 
-	server = VirtualMachine.get_team_server_name(team, resource_id)
+	server = get_team_server_name(team, resource_id)
 	site = frappe.db.get_value("Site", {"team": team, "server": server, "trial_state": "Ended"})
 	if not site:
 		frappe.throw(_("This server has no ended trial to keep."))
@@ -884,7 +898,7 @@ def get_rescue_state(team: str | None = None, resource_id: str | None = None) ->
 	"""Read the region's boot selection and last boot mode for this server."""
 	from central.integrations.servers import get_rescue_state
 
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	server.require_live()
 	return get_rescue_state(server)
 
@@ -894,5 +908,27 @@ def get_rescue_state(team: str | None = None, resource_id: str | None = None) ->
 @require_capability("server:power", _lt("You cannot change this server's boot mode."), server="resource_id")
 def set_rescue_mode(enabled: bool, team: str | None = None, resource_id: str | None = None) -> None:
 	"""Select the next boot mode without starting or restarting the server."""
-	server = frappe.get_doc("Virtual Machine", VirtualMachine.get_team_server_name(team, resource_id))
+	server = get_team_server(team, resource_id)
 	server.set_rescue_mode(enabled)
+
+
+@frappe.whitelist(methods=["GET"])
+@handle_resource_operation
+@require_capability("server:view", _lt("You cannot view this server."), server="resource_id")
+def get_idle_sleep(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Read how long this server stays idle before it sleeps. Zero means it never sleeps."""
+	server = get_team_server(team, resource_id)
+	return {"sleep_after_idle_seconds": server.get_idle_sleep_seconds()}
+
+
+@frappe.whitelist(methods=["POST"])
+@handle_resource_operation
+@require_capability(
+	"server:resize",
+	_lt("You can't change when this server sleeps. Ask a team admin to review your access."),
+	server="resource_id",
+)
+def set_idle_sleep(seconds: int, team: str | None = None, resource_id: str | None = None) -> None:
+	"""Turn sleep when idle on or off. Gated on `server:resize`, the capability to change a server."""
+	server = get_team_server(team, resource_id)
+	server.set_idle_sleep_seconds(seconds)

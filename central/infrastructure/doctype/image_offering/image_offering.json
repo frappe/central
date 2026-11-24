@@ -20,7 +20,8 @@
   "column_break_plans",
   "minimum_memory_mib",
   "selection_section",
-  "required_tags"
+  "required_tags",
+  "hidden_tags"
  ],
  "fields": [
   {
@@ -117,12 +118,19 @@
    "label": "Required Image Tags",
    "options": "Image Offering Tag",
    "reqd": 1
+  },
+  {
+   "description": "The Server picker hides an image that matches any row, for example frappe_version = version-16. Signup is not affected.",
+   "fieldname": "hidden_tags",
+   "fieldtype": "Table",
+   "label": "Hidden Image Tags",
+   "options": "Image Offering Tag"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-02 12:00:00.000000",
+ "modified": "2026-11-16 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Image Offering",

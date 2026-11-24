@@ -47,8 +47,7 @@ class TestWelcomeCredit(IntegrationTestCase):
 		return method
 
 	def add_trial(self, team: str, state: str):
-		"""A trial site record. Its conversion is not under test, so it is patched out."""
-		self.enterContext(patch("central.signups.credit.convert_team"))
+		"""A trial site record. Its conversion runs in a job after commit, which a test never reaches."""
 		name = f"trial-{frappe.generate_hash(length=6)}.example.test"
 		frappe.get_doc(
 			{

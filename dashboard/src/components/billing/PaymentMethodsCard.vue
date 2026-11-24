@@ -13,6 +13,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { getErrorMessage, reportError, successToast } from '@/lib/feedback'
 import { money } from '@/lib/format'
+import { __ } from '@/lib/translate'
 import type { PaymentMethod } from '@/types/billing'
 
 // Payment methods — one ordered list of the ways an invoice gets settled. Each row
@@ -117,7 +118,9 @@ async function makeDefault(pm: PaymentMethod): Promise<void> {
 	try {
 		await setDefault.submit({ payment_method: pm.name })
 		if (setDefault.error) throw setDefault.error
-		successToast(`${pm.display_label || pm.method_type} is charged first`)
+		successToast(
+			__('{0} is now first in the order', [pm.display_label || pm.method_type]),
+		)
 		reloadMethods()
 	} catch (e) {
 		reportError(e)
@@ -173,7 +176,11 @@ const showTopup = ref(false)
 <template>
 	<BillingCard
 		title="Payment methods"
-		description="Invoices use credits first, then payment methods in the order shown."
+		:description="
+			__(
+				'Invoices use credits first. When you pay automatically, payment methods are charged in the order shown.',
+			)
+		"
 		flat
 	>
 		<div v-if="loading" class="flex flex-col gap-2.5">

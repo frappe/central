@@ -6,17 +6,23 @@ from itertools import pairwise
 
 import frappe
 from frappe import _
+from pydantic import ValidationError
 
 from central.central.doctype.activity_event.activity_event import ActivityEvent
 from central.central.doctype.activity_event.tracked import CONSOLE
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasResourceGone, build_envelope
 from central.iam import can_on_any_server
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.virtual_machine import firewall
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.integrations.atlas import AtlasClient, ConsoleMode
-from central.server_models import FirewallChange
+from central.integrations.atlas import (
+	OFFLOAD_OFF_SETTINGS,
+	SLEEP_OFF_SETTINGS,
+	AtlasClient,
+	ConsoleMode,
+)
+from central.integrations.state_delivery import SLEEP_STATE_FROM_REPORT
+from central.server_models import ComputeSettings, FirewallChange
 from central.utils.units import (
 	gigabytes_to_mebibytes,
 	mebibytes_to_gigabytes,
@@ -40,8 +46,8 @@ def observe_server(server: VirtualMachine) -> str:
 	try:
 		remote = client.get_vm(server.atlas_vm_id)
 	except AtlasResourceGone:
-		mark_terminated(server)
-		ResourceAction.confirm_observed_status(server.name, "Terminated")
+		server.record_terminated()
+		server.settle_pending_action("Terminated")
 		return "Terminated"
 
 	if remote.get("id") != server.atlas_vm_id or remote.get("tenant_id") != client.tenant_id:
@@ -76,11 +82,10 @@ def observe_server(server: VirtualMachine) -> str:
 	if frappe.db.exists("Pilot Credential", {"server": server.name, "team": server.team, "status": "Active"}):
 		gateway = frappe.get_cached_doc("Region", server.region).get_vm_gateway_url(network.get("mesh_ipv6"))
 
-	VirtualMachine.record_observed_state(
-		server.name,
-		frappe.utils.now_datetime(),
+	server.record_observed_state(
 		{
 			"status": status,
+			"sleep_state": SLEEP_STATE_FROM_REPORT.get(remote.get("sleep_state"), ""),
 			"vcpus": millicores_to_vcpus(compute["cpu_millicores"]),
 			"memory_megabytes": compute["memory_mib"],
 			"disk_gigabytes": mebibytes_to_gigabytes(disk["size_mib"]),
@@ -93,11 +98,12 @@ def observe_server(server: VirtualMachine) -> str:
 			"has_wireguard_access": bool(network.get("wireguard_gateway_access")),
 			**firewall.get_observed_firewall(network),
 		},
+		frappe.utils.now_datetime(),
 	)
 
 	# A Pilot machine carries a site, and this report is where its address arrives.
 	Site.create_once_addressable(server.name)
-	ResourceAction.confirm_observed_status(server.name, status)
+	server.settle_pending_action(status)
 	if status == "Running" and gateway and not server.admin_domain_task:
 		frappe.enqueue_doc(
 			"Virtual Machine",
@@ -112,13 +118,46 @@ def observe_server(server: VirtualMachine) -> str:
 	return status
 
 
-def get_rescue_state(server: VirtualMachine) -> dict:
-	"""Read rescue state without changing Central's mirror or contacting the guest."""
+def get_remote_server(server: VirtualMachine) -> dict:
+	"""Read the server from its region, and refuse an answer about another server or Team."""
 	client = get_client(server)
 	remote = client.get_vm(server.atlas_vm_id)
 	if remote.get("id") != server.atlas_vm_id or remote.get("tenant_id") != client.tenant_id:
 		raise AtlasConnectionError(_("Atlas returned a different server or Team."))
 
+	return remote
+
+
+def get_compute_settings(server: VirtualMachine) -> ComputeSettings:
+	"""Read the sleep and CPU burst settings, which only the region stores."""
+	compute = get_remote_server(server).get("compute") or {}
+	try:
+		return ComputeSettings.model_validate(
+			{field: compute.get(field) for field in ComputeSettings.model_fields}
+		)
+	except ValidationError as error:
+		raise AtlasConnectionError(_("Atlas returned invalid compute settings.")) from error
+
+
+def set_compute_settings(server: VirtualMachine, settings: ComputeSettings) -> dict[str, int | bool]:
+	"""Send only the changed settings to the region, and return them. Safe to repeat."""
+	current = get_compute_settings(server).model_dump()
+	changes = {field: value for field, value in settings.model_dump().items() if value != current[field]}
+	if changes:
+		get_client(server).set_compute_settings(server.atlas_vm_id, changes)
+
+	return changes
+
+
+def is_offload_allowed(memory_mib: int, disk_mib: int) -> bool:
+	"""Whether Atlas accepts deep sleep and coma for a server of this size: 4 GiB memory and
+	50 GiB disk at most, because a larger VM takes too long to upload and wake."""
+	return memory_mib <= 4096 and disk_mib <= 51200
+
+
+def get_rescue_state(server: VirtualMachine) -> dict:
+	"""Read rescue state without changing Central's mirror or contacting the guest."""
+	remote = get_remote_server(server)
 	fields = ("is_rescue_mode_enabled", "is_in_rescue_mode")
 	if any(
 		field not in remote or (remote[field] is not None and type(remote[field]) is not bool)
@@ -145,7 +184,10 @@ def set_rescue_mode(server: VirtualMachine, enabled: bool) -> None:
 def resize_server(server: VirtualMachine, shape: dict) -> None:
 	"""Apply a new size on Atlas, then start the server. Safe to repeat: every call sets
 	absolute values. A CPU or memory change stops the server first; a disk-only grow does not.
-	Either path turns off the trial idle shutdown."""
+	Sleep stays as the owner set it, and ends when the server leaves its trial plan. Deep sleep
+	and coma go off when the new size is too large."""
+	from central.billing.catalog.trials import is_trial_plan
+
 	client = get_client(server)
 	remote = client.get_vm(server.atlas_vm_id)
 	compute, disk = remote.get("compute") or {}, remote.get("disk") or {}
@@ -155,11 +197,10 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 	disk_mib = gigabytes_to_mebibytes(shape["disk_gigabytes"])
 
 	is_reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
+	is_sleepy = any(compute.get(field) for field in SLEEP_OFF_SETTINGS)
 	rescue_selected = remote.get("is_rescue_mode_enabled") is True
 	in_rescue = remote.get("is_in_rescue_mode") is True
-	if (is_reshaping and (rescue_selected or in_rescue)) or (
-		in_rescue and compute.get("sleep_after_idle_seconds")
-	):
+	if (is_reshaping and (rescue_selected or in_rescue)) or (in_rescue and is_sleepy):
 		error = AtlasRejected(_("This resize cannot complete in rescue mode."))
 		error.envelope = build_envelope(
 			"ATLAS_REJECTED",
@@ -167,6 +208,15 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 			remediation=_("Disable rescue mode and boot normally before making this resize."),
 		)
 		raise error
+
+	# The server keeps its trial plan until billing confirms the resize, so a resize from a trial plan
+	# is the move off the trial, and the server stops sleeping. Otherwise sleep stays, but Atlas checks
+	# the deep sleep and coma size limit against the new size, so those go off first when it is too large.
+	is_offloading = any(compute.get(field) for field in OFFLOAD_OFF_SETTINGS)
+	if is_trial_plan(server.plan) and is_sleepy:
+		client.set_compute_settings(server.atlas_vm_id, SLEEP_OFF_SETTINGS)
+	elif is_offloading and not is_offload_allowed(memory_mib, disk_mib):
+		client.set_compute_settings(server.atlas_vm_id, OFFLOAD_OFF_SETTINGS)
 
 	if is_reshaping:
 		# Atlas refuses to stop a sleeping VM, so wake it first.
@@ -181,12 +231,12 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 			if remote.get("current_state") != "stopped":
 				wait_for_power_state(client, server.atlas_vm_id, "start", "running")
 			raise
-	else:
-		if disk_mib > (disk.get("size_mib") or 0):
-			client.update_disk(server.atlas_vm_id, disk_mib)
+	elif disk_mib > (disk.get("size_mib") or 0):
+		# A sleeping VM reports stopped while Atlas still wants it running. Wake it before the online grow.
+		if remote.get("current_state") == "stopped" and remote.get("desired_state") == "running":
+			wait_for_power_state(client, server.atlas_vm_id, "start", "running")
 
-		if compute.get("sleep_after_idle_seconds"):
-			client.disable_idle_shutdown(server.atlas_vm_id)
+		client.update_disk(server.atlas_vm_id, disk_mib)
 
 	wait_for_power_state(client, server.atlas_vm_id, "start", "running")
 	observe_server(server)
@@ -202,11 +252,11 @@ def hold_server_stopped(server: VirtualMachine) -> None:
 
 
 def convert_trial_server(server: str, start: bool) -> None:
-	"""Background job: turn idle sleep off on a converted trial server, and start it when the
+	"""Background job: turn sleep off on a converted trial server, and start it when the
 	trial had stopped it. Safe to repeat."""
 	document = frappe.get_doc("Virtual Machine", server)
 	client = get_client(document)
-	client.disable_idle_shutdown(document.atlas_vm_id)
+	client.set_compute_settings(document.atlas_vm_id, SLEEP_OFF_SETTINGS)
 	if start:
 		wait_for_power_state(client, document.atlas_vm_id, "start", "running")
 
@@ -378,19 +428,13 @@ def set_wireguard_access(server: VirtualMachine, enabled: bool) -> None:
 	observe_server(server)
 
 
-def set_termination_protection(server: VirtualMachine, enabled: bool) -> None:
-	"""Change termination protection on Atlas, then record the state Atlas reports."""
+def set_termination_protection(server: VirtualMachine, enabled: bool) -> bool:
+	"""Change termination protection on Atlas and return the state Atlas reports."""
 	remote = get_client(server).set_termination_protection(server.atlas_vm_id, enabled)
 	if type(remote.get("is_termination_protected")) is not bool:
 		raise AtlasConnectionError(_("Atlas returned an invalid termination protection state."))
 
-	server.db_set("is_termination_protected", remote["is_termination_protected"])
-
-
-def mark_terminated(server: VirtualMachine) -> None:
-	"""Record a server as gone. Its on_update revokes its Pilot and removes its mailbox."""
-	server.status = "Terminated"
-	VirtualMachine.mark_terminated(server.name)
+	return remote["is_termination_protected"]
 
 
 def get_cached_metrics(server: VirtualMachine, start: datetime, end: datetime | None = None) -> dict:
@@ -431,6 +475,16 @@ def get_metric_point(previous: dict, sample: dict, vcpus: float) -> dict:
 	is_up = previous["up"] and sample["up"]
 	compute, disk = sample["compute"], sample["disk"]
 
+	guest = sample.get("guest") or {}
+	if guest.get("system_state", "unreachable") != "unreachable":
+		# The guest's own view leaves out page cache that the host charges to the VM.
+		memory, filesystem = guest["memory"], guest["root_filesystem"]
+		memory_bytes = memory["total_bytes"] - memory["available_bytes"]
+		disk_used_bytes, disk_total_bytes = filesystem["used_bytes"], filesystem["size_bytes"]
+	else:
+		memory_bytes = compute["memory_bytes"]
+		disk_used_bytes, disk_total_bytes = disk["used_mib"] * MIB, disk["size_mib"] * MIB
+
 	def rate(section: str, key: str) -> float | None:
 		change = sample[section][key] - previous[section][key]
 		return change / seconds if is_up and change >= 0 else None
@@ -443,9 +497,9 @@ def get_metric_point(previous: dict, sample: dict, vcpus: float) -> dict:
 		"cpu_percent": None
 		if cpu_microseconds_per_second is None
 		else min(100, cpu_microseconds_per_second / 10_000 / (vcpus or 1)),
-		"memory_bytes": compute["memory_bytes"],
-		"disk_used_bytes": disk["used_mib"] * MIB,
-		"disk_total_bytes": disk["size_mib"] * MIB,
+		"memory_bytes": memory_bytes,
+		"disk_used_bytes": disk_used_bytes,
+		"disk_total_bytes": disk_total_bytes,
 		"disk_read_bytes_per_second": disk["read_bytes_per_second"],
 		"disk_write_bytes_per_second": disk["write_bytes_per_second"],
 		"received_bytes_per_second": rate("network", "received_bytes"),

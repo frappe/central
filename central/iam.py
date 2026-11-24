@@ -26,6 +26,7 @@ CAP_IMPLICATIONS = {
 	"server:wireguard": ("server:view",),
 	"server:console": ("server:view",),
 	"service:manage": ("service:view",),
+	"support:manage": ("support:view",),
 }
 
 # The capabilities a grant can scope to one server. Every other capability is team-wide,
@@ -144,11 +145,14 @@ def get_team_names_with_role(role: str, teams: list[str]) -> list[str]:
 	)
 
 
-def get_active_team_member_users(team: str) -> list[str]:
-	"""The users with an Active membership in `team`."""
+def get_active_team_member_users(team: str, role: str | None = None) -> list[str]:
+	"""The users with an Active membership in `team`, only those holding `role` when it is given."""
+	filters = {"parenttype": "Team", "parentfield": "members", "parent": team, "status": "Active"}
+	if role:
+		filters["role"] = role
 	return frappe.get_all(
 		"Team Member",
-		filters={"parenttype": "Team", "parentfield": "members", "parent": team, "status": "Active"},
+		filters=filters,
 		pluck="user",
 		distinct=True,
 	)

@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 import frappe
 from frappe.utils import add_days, getdate, now_datetime, nowdate
 
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
+from central.billing.catalog.trials import is_trial_plan
 from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.resource_actions import process_resize
@@ -24,17 +24,20 @@ class TrialOnAMachine(SiteOnAMachine):
 				"Central Settings", trial_days=14, trial_deletion_days=7, trial_notice_days=3
 			)
 		)
-		ResourceAction.queue(
-			"create",
-			self.team.name,
-			self.region.name,
-			self.server.name,
-			server=self.server.name,
-			resource_type="Site",
-			is_free_trial=1,
-			request_key="request-" + frappe.generate_hash(length=8),
-			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
-		)
+		frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "create",
+				"team": self.team.name,
+				"region": self.region.name,
+				"title": self.server.name,
+				"server": self.server.name,
+				"resource_type": "Site",
+				"is_free_trial": 1,
+				"request_key": "request-" + frappe.generate_hash(length=8),
+				"request_payload": {"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
+			}
+		).insert(ignore_permissions=True)
 		self.enroll()
 		self.enterContext(
 			patch("central.integrations.pilot.rename_admin_domain", return_value={"task_id": "task-1"})
@@ -195,15 +198,18 @@ class TestTrialLifecycle(TrialOnAMachine):
 	def test_the_patch_marks_a_pending_creation_that_has_no_server_yet(self):
 		from central.patches.v0_0 import set_free_trial_on_creations
 
-		pending = ResourceAction.queue(
-			"create",
-			self.team.name,
-			self.region.name,
-			"pending-" + frappe.generate_hash(length=8),
-			resource_type="Site",
-			request_key="request-" + frappe.generate_hash(length=8),
-			request_payload={"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
-		)
+		pending = frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"action": "create",
+				"team": self.team.name,
+				"region": self.region.name,
+				"title": "pending-" + frappe.generate_hash(length=8),
+				"resource_type": "Site",
+				"request_key": "request-" + frappe.generate_hash(length=8),
+				"request_payload": {"image_tags": {"purpose": "pilot"}, "site": {"product": None}},
+			}
+		).insert(ignore_permissions=True)
 		set_free_trial_on_creations.execute()
 
 		self.assertEqual(frappe.db.get_value("Resource Action", pending.name, "is_free_trial"), 1)
@@ -336,17 +342,43 @@ class TestTrialLifecycle(TrialOnAMachine):
 
 		self.assertFalse(trial.is_billing_deferred(self.server.name))
 
+	def activate_payment_method(self) -> None:
+		"""Activate a payment method for the team, then run the conversion job it queues."""
+		method = Mock(team=self.team.name, status="Active")
+		method.get_doc_before_save.return_value = Mock(status="Pending Validation")
+
+		with patch("central.signups.credit.grant_welcome_credits"):
+			credit.on_payment_method_update(method)
+
+		frappe.enqueue.assert_any_call(
+			"central.signups.trial.convert_team",
+			team=self.team.name,
+			enqueue_after_commit=True,
+			job_id=f"trial-convert-team:{self.team.name}",
+			deduplicate=True,
+		)
+		trial.convert_team(self.team.name)
+
+	def test_a_failed_conversion_cannot_undo_the_payment_method(self):
+		method = Mock(team=self.team.name, status="Active")
+		method.get_doc_before_save.return_value = Mock(status="Pending Validation")
+
+		with (
+			patch("central.signups.credit.grant_welcome_credits"),
+			patch.object(trial, "convert_team", side_effect=frappe.ValidationError("catalog unavailable")),
+		):
+			credit.on_payment_method_update(method)
+
+		self.assertEqual(self.site().trial_state, "Active")
+
 	def test_an_active_payment_method_converts_the_team_trials(self):
 		self.price_trial(30)
 		frappe.db.set_value(
 			"Site", self.site().name, "creation", add_days(now_datetime(), -3), update_modified=False
 		)
 		self.server.db_set("status", "Running")
-		method = Mock(team=self.team.name, status="Active")
-		method.get_doc_before_save.return_value = Mock(status="Pending Validation")
 
-		with patch("central.signups.credit.grant_welcome_credits"):
-			credit.on_payment_method_update(method)
+		self.activate_payment_method()
 
 		site = self.site()
 		self.assertEqual(site.trial_state, "Converted")
@@ -382,12 +414,18 @@ class TestTrialLifecycle(TrialOnAMachine):
 		self.assertEqual((configuration.plan, configuration.subscription), (large, None))
 
 		# A shape that already matches still runs the resize, which starts the server and ends idle sleep.
+		# The server keeps its trial plan until billing confirms the move, so the resize sees it as a trial.
 		self.server.db_set(configuration.shape.model_dump())
 		VirtualMachine.ensure_subscription_enabled.reset_mock()
-		with patch("central.integrations.servers.resize_server") as resize_server:
+		plans_at_resize = []
+		with patch(
+			"central.integrations.servers.resize_server",
+			side_effect=lambda server, _shape: plans_at_resize.append(server.plan),
+		):
 			process_resize(move)
 
-		resize_server.assert_called_once()
+		self.assertEqual(len(plans_at_resize), 1)
+		self.assertTrue(is_trial_plan(plans_at_resize[0]))
 		VirtualMachine.ensure_subscription_enabled.assert_called_once()
 		self.assertEqual(frappe.db.get_value("Virtual Machine", self.server.name, "plan"), large)
 		self.assertFalse(trial.is_billing_deferred(self.server.name))
@@ -455,11 +493,8 @@ class TestTrialLifecycle(TrialOnAMachine):
 
 	def test_a_payment_method_leaves_an_ended_trial_stopped(self):
 		self.site().db_set("trial_state", "Ended")
-		method = Mock(team=self.team.name, status="Active")
-		method.get_doc_before_save.return_value = Mock(status="Pending Validation")
 
-		with patch("central.signups.credit.grant_welcome_credits"):
-			credit.on_payment_method_update(method)
+		self.activate_payment_method()
 
 		self.assertEqual(self.site().trial_state, "Ended")
 		with patch("central.signups.trial.has_active_payment_method", return_value=True):
@@ -588,9 +623,17 @@ class TestTrialLifecycle(TrialOnAMachine):
 		"""Any pending action on the server, not only a resize, defers it with a reason to retry."""
 		self.site().db_set("trial_state", "Converted")
 		for action in ("resize", "restart"):
-			pending = ResourceAction.queue(
-				action, self.team.name, self.region.name, "pending", server=self.server.name
-			)
+			pending = frappe.get_doc(
+				{
+					"doctype": "Resource Action",
+					"action": action,
+					"team": self.team.name,
+					"region": self.region.name,
+					"title": "pending",
+					"resource_type": "Server",
+					"server": self.server.name,
+				}
+			).insert(ignore_permissions=True)
 			with patch("central.integrations.servers.convert_trial_server") as convert_trial_server:
 				trial.finish_conversion(self.site().name)
 

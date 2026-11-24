@@ -9,9 +9,6 @@ import frappe
 from frappe import _
 from frappe.utils.password import get_decrypted_password
 
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
-from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
-from central.integrations import servers
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 
 # Webhooks are ordered by the region's own `observed_at` (stored as `last_reported_at`):
@@ -21,6 +18,9 @@ from central.services.doctype.service_detail.service_detail import ServiceDetail
 # What a region calls a state, and what Central records for it. A report carrying
 # anything else is ignored: Central never invents a status it was not told.
 STATUS_FROM_REPORT = {"running": "Running", "stopped": "Stopped", "paused": "Paused"}
+
+# A sleeping server reports `stopped`. Anything else, including an empty value, means it is awake.
+SLEEP_STATE_FROM_REPORT = {"sleeping": "Sleeping", "deep-sleeping": "Deep Sleeping", "coma": "Coma"}
 
 STATE_REPORTED = "vm.state"
 STATE_DELETED = "vm.state.deleted"
@@ -98,20 +98,26 @@ def _apply_deletion(name: str) -> None:
 	if server.status == "Terminated":
 		return
 
-	servers.mark_terminated(server)
-	ResourceAction.confirm_observed_status(server.name, "Terminated")
+	server.record_terminated()
+	server.settle_pending_action("Terminated")
 
 
 def _apply_state(name: str, report: dict) -> None:
 	status = STATUS_FROM_REPORT.get(report.get("status"))
 	if not status or not _reported_at(report):
 		return
-	if not VirtualMachine.record_observed_state(
-		name, frappe.utils.now_datetime(), _observed(report, status), reported_at=report.get("observed_at")
+	try:
+		server = frappe.get_doc("Virtual Machine", name)
+	except frappe.DoesNotExistError:
+		return
+
+	observed_at = frappe.utils.now_datetime()
+	if not server.record_observed_state(
+		_observed(report, status), observed_at, reported_at=report.get("observed_at")
 	):
 		return
 
-	ResourceAction.confirm_observed_status(name, status)
+	server.settle_pending_action(status)
 	if status == "Running":
 		frappe.enqueue(
 			"central.integrations.servers.refresh_server",
@@ -124,10 +130,14 @@ def _apply_state(name: str, report: dict) -> None:
 
 def _observed(report: dict, status: str) -> dict:
 	"""The state a report sets. A report without a host keeps the one Central knows."""
-	observed = {"status": status}
+	observed = {"status": status, "sleep_state": _reported_sleep_state(report)}
 	if _reported_host(report):
 		observed["atlas_host_id"] = _reported_host(report)
 	return observed
+
+
+def _reported_sleep_state(report: dict) -> str:
+	return SLEEP_STATE_FROM_REPORT.get(report.get("sleep_state"), "")
 
 
 def _has_moved_host(report: dict, server: frappe._dict) -> bool:
@@ -154,15 +164,13 @@ def _decide(report: dict, server: frappe._dict) -> dict | None:
 	reported_at = _reported_at(report)
 	if not reported_at:
 		return _ignored("invalid observed_at")
-	if server.status == status and not _has_moved_host(report, server):
+	is_same_sleep_state = _reported_sleep_state(report) == (server.sleep_state or "")
+	if server.status == status and is_same_sleep_state and not _has_moved_host(report, server):
 		# A same-state report still advances the regional watermark. This prevents an
 		# older state change arriving later from regressing the server.
 		if not server.last_reported_at or reported_at > frappe.utils.get_datetime(server.last_reported_at):
-			VirtualMachine.record_observed_state(
-				server.name,
-				frappe.utils.now_datetime(),
-				{"status": status},
-				reported_at=reported_at,
+			frappe.get_doc("Virtual Machine", server.name).record_observed_state(
+				{"status": status}, frappe.utils.now_datetime(), reported_at=reported_at
 			)
 		return _ignored("no change")
 	if server.last_reported_at and reported_at <= frappe.utils.get_datetime(server.last_reported_at):
@@ -201,7 +209,7 @@ def _atlas_server_for(region: str, virtual_machine: str | None) -> frappe._dict 
 	return frappe.db.get_value(
 		"Virtual Machine",
 		{"region": region, "atlas_vm_id": virtual_machine},
-		["name", "status", "last_reported_at", "atlas_host_id"],
+		["name", "status", "sleep_state", "last_reported_at", "atlas_host_id"],
 		as_dict=True,
 	)
 

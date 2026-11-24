@@ -7,7 +7,7 @@ test('A new team has no billing history', async ({ page, users }) => {
 	await page.goto('/dashboard/billing')
 
 	await expect(
-		page.getByText('Your spend, payments and tax show up here after your first invoice.'),
+		page.getByText('Your spend, payments and tax show here after your first invoice.'),
 	).toBeVisible()
 })
 

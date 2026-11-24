@@ -7,10 +7,8 @@ from frappe.model.document import Document
 
 from central.billing.catalog.subscriptions import end_subscription, provision_service_subscription
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
+from central.services.doctype.service.service import AI_SERVICE, STORAGE_SERVICE
 from central.services.doctype.service_detail.service_detail import ServiceDetail
-
-STORAGE_SERVICE = "storage"
-AI_SERVICE = "ai"
 
 
 class TeamService(Document):
@@ -26,6 +24,7 @@ class TeamService(Document):
 		add_on_service: DF.Literal["storage", "ai"]
 		bucket_name: DF.Data | None
 		endpoint_url: DF.Data | None
+		external_id: DF.Data | None
 		region: DF.Link | None
 		secret_access_key: DF.Password | None
 		status: DF.Literal["Active", "Suspended"]
@@ -50,6 +49,7 @@ class TeamService(Document):
 
 			self.validate_one_ai_service()
 			register_team(self.team)
+			self.subscribe_ai()
 			return
 
 		if not self.is_bucket:
@@ -107,6 +107,17 @@ class TeamService(Document):
 		"""Cap the bucket in Cargo, which owns and enforces the quota. Zero lifts a cap."""
 		ObjectStorageClient.from_region(self.region).set_quota(self.bucket_name, size_gib, max_objects)
 
+	def get_allowed_origins(self) -> list[str]:
+		"""The websites that may call the bucket from a browser. Cargo owns the list."""
+		receipt = ObjectStorageClient.from_region(self.region).get_allowed_origins(self.bucket_name)
+		return receipt["allowed_origins"]
+
+	def set_allowed_origins(self, origins: list[str]) -> list[str]:
+		"""Replace the websites that may call the bucket from a browser. Returns the list as
+		Cargo stored it: each origin once, lowercase, without a default port."""
+		receipt = ObjectStorageClient.from_region(self.region).set_allowed_origins(self.bucket_name, origins)
+		return receipt["allowed_origins"]
+
 	def rotate_credentials(self) -> None:
 		"""Replace the bucket's key. The old key stops working at once."""
 		receipt = ObjectStorageClient.from_region(self.region).rotate_credentials(
@@ -119,14 +130,27 @@ class TeamService(Document):
 		self.access_key = credentials["access_key"]
 		self.secret_access_key = credentials["secret_access_key"]
 
+	def subscribe_ai(self) -> None:
+		"""Bill the team's AI on the AI plan, once the team has a billing currency."""
+		if self.subscription or not has_billing_currency(self.team):
+			return
+		from central.billing.catalog.plan_setup import AI_PLAN
+
+		subscription = provision_service_subscription(
+			self.team, AI_PLAN, changed_by=self.flags.requested_by or frappe.session.user
+		)
+		self.subscription = subscription["subscription"]
+
 	def validate(self) -> None:
-		# AI is prepaid at Grove, so it has no subscription here.
-		if self.status == "Active" and not self.subscription and not self.is_ai:
+		# AI can be turned on before the team has a billing currency; it is subscribed once it has one.
+		waits_for_currency = self.is_ai and not has_billing_currency(self.team)
+		if self.status == "Active" and not self.subscription and not waits_for_currency:
 			frappe.throw(_("An active service must have a subscription."))
 
 		self.validate_bucket_region()
 		self.validate_bucket_is_unclaimed()
 		self.validate_one_ai_service()
+		self.external_id = self.bucket_name if self.is_bucket else self.team
 
 	def validate_bucket_region(self) -> None:
 		"""The form asks for it through mandatory_depends_on, which the server does not check."""
@@ -198,7 +222,25 @@ def get_storage_plan() -> str:
 	return plan
 
 
+def has_billing_currency(team: str) -> bool:
+	return bool(frappe.db.get_value("Billing Profile", team, "currency"))
+
+
 def on_doctype_update():
 	frappe.db.add_unique(
 		"Team Service", ["team", "bucket_name"], constraint_name="unique_team_service_bucket"
 	)
+
+
+def billed_subjects(service: str, external_ids: list[str] | None = None) -> dict:
+	"""The Team Services that bill a subscription for `service`, by subject, suspended ones included."""
+	filters = {"add_on_service": service, "subscription": ["is", "set"]}
+	if external_ids is not None:
+		filters["external_id"] = ["in", external_ids]
+	rows = frappe.get_all(
+		"Team Service",
+		filters=filters,
+		fields=["name", "external_id", "team", "subscription", "region", "creation", "usage_read_until"],
+		order_by="name asc",
+	)
+	return {row.external_id: row for row in rows}

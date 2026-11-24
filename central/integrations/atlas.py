@@ -28,6 +28,8 @@ MAXIMUM_METADATA_KEY_BYTES = 128
 MAXIMUM_METADATA_BYTES = 48 * 1024
 # The largest page that the Atlas list routes return.
 HOST_PAGE_SIZE = 100
+OFFLOAD_OFF_SETTINGS = {"deep_sleep_after_idle_seconds": 0, "coma_after_idle_seconds": 0}
+SLEEP_OFF_SETTINGS = {"sleep_after_idle_seconds": 0, **OFFLOAD_OFF_SETTINGS}
 
 ConsoleMode = Literal["ssh", "tty"]
 
@@ -169,26 +171,19 @@ class AtlasClient:
 		return self._request("POST", f"virtual-machines/{quote(name, safe='')}/actions/{action}")
 
 	def resize(self, name: str, cpu_millicores: int, memory_mib: int, disk_mib: int) -> dict:
-		"""Set CPU, memory and disk in one call, and turn idle shutdown off. Atlas takes a
-		resource change only on a stopped VM, resizes it in place or moves it to a host that
-		fits (reporting a `migrating` state meanwhile), and never shrinks the disk."""
-		payload = {
-			"cpu_millicores": cpu_millicores,
-			"memory_mib": memory_mib,
-			"disk_mib": disk_mib,
-			"sleep_after_idle_seconds": 0,
-		}
+		"""Set CPU, memory and disk in one call. Atlas takes a resource change only on a stopped
+		VM, resizes it in place or moves it to a host that fits (reporting a `migrating` state
+		meanwhile), never shrinks the disk, and keeps the sleep and CPU burst settings."""
+		payload = {"cpu_millicores": cpu_millicores, "memory_mib": memory_mib, "disk_mib": disk_mib}
 		return self._request(
 			"POST", f"virtual-machines/{quote(name, safe='')}/actions/resize", payload=payload
 		)
 
-	def disable_idle_shutdown(self, name: str) -> dict:
-		"""Turn idle shutdown off. Atlas keeps every omitted resize field, so this works in any
-		VM state."""
+	def set_compute_settings(self, name: str, settings: dict[str, int | bool]) -> dict:
+		"""Change sleep and CPU burst without resources. Atlas keeps every omitted resize field,
+		so this works in any VM state."""
 		return self._request(
-			"POST",
-			f"virtual-machines/{quote(name, safe='')}/actions/resize",
-			payload={"sleep_after_idle_seconds": 0},
+			"POST", f"virtual-machines/{quote(name, safe='')}/actions/resize", payload=settings
 		)
 
 	def update_disk(self, name: str, disk_mib: int) -> dict:
