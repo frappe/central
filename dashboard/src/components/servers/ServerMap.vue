@@ -217,7 +217,11 @@ function clickNode(node: MapNode): void {
 								class="relative block rounded-full transition-transform duration-150 ease-out group-active:scale-95"
 								:class="isHot(node) && 'scale-110'"
 							>
-								<ProviderAvatar :provider="node.pin.provider" :size="36" />
+								<ProviderAvatar
+									:provider="node.pin.provider"
+									:size="36"
+									:class="{ 'opacity-50': node.pin.visual.isDimmed }"
+								/>
 							</span>
 							<span
 								class="absolute bottom-0 right-0 size-3 rounded-full border-2 border-[var(--surface-base)]"

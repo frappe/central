@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'vue'
 import type { VirtualMachineRow } from '@/composables/useServers'
-import { displayStatus } from '@/lib/status'
+import { displayStatus, isSleeping } from '@/lib/status'
+import { __ } from '@/lib/translate'
 import { formatMemory, gigabytesToMegabytes } from '@/lib/units'
 import type { Region } from '@/types/Region'
 
@@ -19,6 +20,7 @@ export interface ServerVisual {
 		| 'active'
 		| 'settingUp'
 		| 'paused'
+		| 'sleeping'
 		| 'stopped'
 		| 'broken'
 		| 'resizing'
@@ -27,6 +29,10 @@ export interface ServerVisual {
 	badgeTheme: BadgeTheme
 	/** CSS variable for the status dot, and for the motion ring around a pin. */
 	dot: string
+	/** Icon class shown in place of the status dot where there is room for it. */
+	icon?: string
+	/** The server rests, so its avatar fades. */
+	isDimmed?: boolean
 	motion: ServerMotion
 }
 
@@ -50,6 +56,15 @@ const VISUALS: Record<ServerVisual['key'], ServerVisual> = {
 		label: 'Paused',
 		badgeTheme: 'gray',
 		dot: 'var(--ink-gray-5)',
+		motion: 'none',
+	},
+	sleeping: {
+		key: 'sleeping',
+		label: __('Sleeping'),
+		badgeTheme: 'gray',
+		dot: 'var(--ink-gray-5)',
+		icon: 'lucide-moon',
+		isDimmed: true,
 		motion: 'none',
 	},
 	stopped: {
@@ -119,11 +134,15 @@ const STATUS_VISUAL: Record<string, ServerVisual> = {
 	Provisioning: VISUALS.settingUp,
 	Deploying: VISUALS.settingUp,
 	Paused: VISUALS.paused,
+	Sleeping: VISUALS.sleeping,
 	Stopped: VISUALS.stopped,
 	Failed: VISUALS.broken,
 }
 
 export function statusVisual(server: VirtualMachineRow): ServerVisual {
+	// A start restores a sleeping server's saved memory instead of booting it.
+	if (server.pending_action === 'Starting' && isSleeping(server))
+		return { ...VISUALS.settingUp, label: __('Waking') }
 	// A live action wins, so the row never looks like nothing happened.
 	if (server.pending_action) return pendingVisual(server.pending_action)
 	return STATUS_VISUAL[displayStatus(server)] ?? VISUALS.settingUp
@@ -135,6 +154,7 @@ export const STATUS_FILTERS: ServerVisual[] = [
 	VISUALS.settingUp,
 	VISUALS.resizing,
 	VISUALS.paused,
+	VISUALS.sleeping,
 	VISUALS.stopped,
 	VISUALS.broken,
 ]

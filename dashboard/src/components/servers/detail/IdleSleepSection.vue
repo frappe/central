@@ -102,7 +102,7 @@ async function change(value: number): Promise<void> {
 				</li>
 				<li>
 					{{ __(
-							'A sleeping server shows as Stopped. Cron jobs and background workers do not run until it wakes.',
+							'A sleeping server shows as Sleeping. Cron jobs and background workers do not run until it wakes.',
 						) }}
 				</li>
 			</ul>

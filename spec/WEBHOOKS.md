@@ -61,9 +61,12 @@ Atlas reports one virtual machine per delivery.
 | `event` | Yes | `vm.state` or `vm.state.deleted` |
 | `virtual_machine` | Yes | The Atlas VM ID. Central matches it to a Virtual Machine in the signing region. |
 | `status` | For `vm.state` | `running`, `stopped`, or `paused` |
+| `sleep_state` | No | `sleeping`, `deep-sleeping`, or `coma` while the server sleeps. Empty while it is awake. |
 | `observed_at` | For `vm.state` | The region's own timestamp. Central orders reports by it and drops one that is not newer. |
 
 For `vm.state`, Central records `running` as `Running`, `stopped` as `Stopped`, and `paused` as `Paused`. Central never records a status it was not told.
+
+A sleeping server reports `stopped`. Central records `sleep_state` as `Sleeping`, `Deep Sleeping`, or `Coma` in **Sleep State**, and the console shows the server as Sleeping. Any other value clears the field. A report that changes only the sleep state is not `no change`. An existing region sends `sleep_state` only after an operator runs **Enroll Atlas** on its Region again.
 
 Atlas sends `vm.state.deleted` after Metal confirms that the machine is absent. Central records the server as `Terminated`, closes its billing, revokes its Pilot credentials, and completes a waiting terminate action. Termination is final, so Central ignores `status` and `observed_at` on this event and does no ordering check. A lost deletion is corrected by a scoped read that answers not found. See [resource actions](../central/infrastructure/doctype/resource_action/SPEC.md).
 
