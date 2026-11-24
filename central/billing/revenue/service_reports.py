@@ -60,8 +60,9 @@ def _record_report(service_name: str, as_of: datetime.datetime) -> None:
 def _refused(line, reason: str, retry: bool) -> dict:
 	"""A refused line, named so the service can find it in its outbox; `retry` says whether to resend."""
 	values = line if isinstance(line, dict) else {}
-	named = {key: _text(values.get(key)) for key in ("subject", "meter", "day", "dimension")}
-	return {**named, "reason": reason, "retry": retry}
+	named = {key: _text(values.get(key)) for key in ("subject", "meter", "day")}
+	# The ledger keeps a line with no dimension as "", so every refusal names it that way.
+	return {**named, "dimension": _text(values.get("dimension")) or "", "reason": reason, "retry": retry}
 
 
 def _text(value) -> str | None:

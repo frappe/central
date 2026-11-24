@@ -129,7 +129,7 @@ class TestServiceReports(IntegrationTestCase):
 					"subject": "someone-elses-bucket",
 					"meter": "bytes_stored",
 					"day": "2026-06-20",
-					"dimension": None,
+					"dimension": "",
 					"reason": "unknown subject",
 					"retry": False,
 				}
@@ -179,10 +179,12 @@ class TestServiceReports(IntegrationTestCase):
 		self.assertEqual([q for _d, q in self.days()], [10])
 
 	def test_a_refused_line_names_itself_even_when_malformed(self):
-		answer = self.send([{"subject": ["a-list"], "meter": 7, "day": "2026-06-20", "value": 1}])
+		answer = self.send(
+			[{"subject": ["a-list"], "meter": 7, "day": "2026-06-20", "dimension": 5, "value": 1}]
+		)
 		self.assertEqual(
-			{key: answer["rejected"][0][key] for key in ("subject", "meter", "day", "retry")},
-			{"subject": None, "meter": None, "day": "2026-06-20", "retry": False},
+			{key: answer["rejected"][0][key] for key in ("subject", "meter", "day", "dimension", "retry")},
+			{"subject": None, "meter": None, "day": "2026-06-20", "dimension": "", "retry": False},
 		)
 
 	def test_a_signed_report_records_when_the_service_last_reported(self):
