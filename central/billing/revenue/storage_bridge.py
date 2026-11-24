@@ -3,7 +3,9 @@
 
 import frappe
 
+from central.billing.revenue.bundled_buckets import bundled_buckets
 from central.billing.revenue.usage_ledger import utc_today, write_days
+from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
 from central.services.doctype.service.service import STORAGE_METER, STORAGE_SERVICE
 from central.services.doctype.team_service.team_service import billed_subjects
 
@@ -15,34 +17,44 @@ LOGGED_FAILURES = 50
 
 def read_storage_usage() -> int:
 	"""Hourly, until Cargo reports usage itself: read every bucket and keep each day's peak."""
-	from central.billing.revenue.invoicing.run import billing_queue
-
 	if not frappe.db.get_value("Service", STORAGE_SERVICE, "central_reads"):
 		return 0
 	run = frappe.generate_hash(length=12)
-	regions = billed_buckets()
-	for region, names in regions.items():
-		pages = [names[start : start + PAGE_SIZE] for start in range(0, len(names), PAGE_SIZE)]
-		RegionRead(run, region).start(len(pages))
-		for page in pages:
-			frappe.enqueue(
-				"central.billing.revenue.storage_bridge.read_page",
-				queue=billing_queue(),
-				run=run,
-				region=region,
-				names=page,
-			)
-	return sum(len(names) for names in regions.values())
+	# Team buckets and servers' backup buckets are read by their own page jobs.
+	jobs = {"read_page": _pages(billed_buckets()), "read_bundled_page": _pages(_bundled_buckets_by_region())}
+	_start_regions(run, jobs)
+	return _enqueue_pages(run, jobs)
 
 
 def read_page(run: str, region: str, names: list[str]) -> int:
-	"""Read one page of a region's buckets and write their days."""
+	"""Read one page of a region's team buckets and write their days."""
 	meter = frappe.get_doc("Service", STORAGE_SERVICE).get_meter(STORAGE_METER)
+	return _read_and_write(run, region, names, lambda name: _reading(name, meter))
+
+
+def read_bundled_page(run: str, region: str, names: list[str], day=None) -> int:
+	"""Read one page of a region's servers' backup buckets and write their days."""
+	meter = frappe.get_doc("Service", STORAGE_SERVICE).get_meter(STORAGE_METER)
+	# The reading is what the bucket holds now, so it belongs to the day it is read, even for a
+	# page queued before midnight; `day` is kept only for jobs queued with it.
+	day = utc_today()
+	# That day bills a bucket whose server billed at any point of it, even one paused or resized
+	# off storage before the page ran.
+	buckets = bundled_buckets(names, day)
+	return _read_and_write(
+		run,
+		region,
+		[name for name in names if name in buckets],
+		lambda name: _bundled_reading(buckets[name], meter, day),
+	)
+
+
+def _read_and_write(run: str, region: str, names: list[str], read) -> int:
 	readings, failed = {}, []
 	for name in names:
 		# One bucket's failure, of any kind, must not stop the page's other buckets.
 		try:
-			readings[name] = _reading(name, meter)
+			readings[name] = read(name)
 		except Exception as error:
 			failed.append(f"{name}: {error!r}")
 	try:
@@ -55,6 +67,50 @@ def read_page(run: str, region: str, names: list[str]) -> int:
 		raise
 	RegionRead(run, region).finish_page(failed)
 	return written
+
+
+def _pages(buckets: dict[str, list[str]]) -> dict[str, list[list[str]]]:
+	"""Each region's bucket names, in pages."""
+	return {
+		region: [names[start : start + PAGE_SIZE] for start in range(0, len(names), PAGE_SIZE)]
+		for region, names in buckets.items()
+	}
+
+
+def _start_regions(run: str, jobs: dict) -> None:
+	"""Count each region's pages of every kind on one counter, so its last page logs once."""
+	counts: dict[str, int] = {}
+	for pages in jobs.values():
+		for region, region_pages in pages.items():
+			counts[region] = counts.get(region, 0) + len(region_pages)
+	for region, count in counts.items():
+		RegionRead(run, region).start(count)
+
+
+def _enqueue_pages(run: str, jobs: dict) -> int:
+	from central.billing.revenue.invoicing.run import billing_queue
+
+	queued = 0
+	for method, pages in jobs.items():
+		for region, region_pages in pages.items():
+			for page in region_pages:
+				frappe.enqueue(
+					f"central.billing.revenue.storage_bridge.{method}",
+					queue=billing_queue(),
+					run=run,
+					region=region,
+					names=page,
+				)
+				queued += len(page)
+	return queued
+
+
+def _bundled_buckets_by_region() -> dict[str, list[str]]:
+	"""Every server's backup bucket that bills, by region."""
+	regions: dict[str, list[str]] = {}
+	for name, bucket in bundled_buckets().items():
+		regions.setdefault(bucket.region, []).append(name)
+	return regions
 
 
 def billed_buckets() -> dict[str, list[str]]:
@@ -111,3 +167,14 @@ def _reading(name: str, meter) -> dict:
 	bucket = frappe.get_doc("Team Service", name)
 	used = frappe.utils.flt(bucket.get_usage().get("used_bytes"))
 	return meter.get_day_row(bucket, utc_today(), used, as_of=frappe.utils.now_datetime())
+
+
+def _bundled_reading(bucket, meter, day) -> dict:
+	"""What the bucket holds, and what its server's plan includes that day."""
+	try:
+		usage = ObjectStorageClient.from_region(bucket.region).get_usage(bucket.external_id)["usage"]
+	except ObjectStorageNotFound:
+		# The bucket was never attached, so it holds nothing.
+		usage = {}
+	used = frappe.utils.flt(usage.get("used_bytes"))
+	return meter.get_day_row(bucket, day, used, included=bucket.included, as_of=frappe.utils.now_datetime())

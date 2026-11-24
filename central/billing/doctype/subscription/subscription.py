@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import json
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -146,6 +148,7 @@ class Subscription(Document):
 				"subscription": self.name,
 				"change_type": "Created",
 				"new_value": self.segment_label(),
+				"included_resources": self.included_resources(),
 				"locked_rate": rate,
 				"currency": currency,
 				"effective_at": effective_at,
@@ -218,12 +221,22 @@ class Subscription(Document):
 				"change_type": "Plan Changed",
 				"old_value": self._segment_label(previous) if previous else None,
 				"new_value": self.segment_label(),
+				"included_resources": self.included_resources(),
 				"locked_rate": rate,
 				"currency": currency,
 				"effective_at": frappe.utils.now_datetime(),
 				"changed_by": self.flags.changed_by or frappe.session.user,
 			}
 		).insert(ignore_permissions=True)
+
+	def included_resources(self) -> str | None:
+		"""What a composed segment includes, kept on its change row; None on a preset plan."""
+		if self.plan:
+			return None
+		rows = [
+			{"resource_type": r.resource_type, "quantity": r.quantity, "unit": r.unit} for r in self.includes
+		]
+		return json.dumps(rows)
 
 	def segment_label(self) -> str | None:
 		"""What this subscription's current billed segment shows (see `_segment_label`)."""

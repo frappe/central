@@ -94,7 +94,7 @@ def get_forecast(team: str | None = None) -> dict:
 		# Warn when the projected bill outruns the wallet (a top-up may be due).
 		"credit_alert": shortfall > 0,
 		# Spell out each service/plan + metered overage driving the projection.
-		"line_items": [_describe_line(team, frappe._dict(li)) for li in line_items],
+		"line_items": [_describe_line(team, frappe._dict(li), (month_start, month_end)) for li in line_items],
 	}
 
 
@@ -413,7 +413,7 @@ def get_invoice(name: str) -> dict:
 		"has_pdf": bool(doc.erpnext_invoice),
 		"payment_in_progress": payment_in_progress,
 		"paid_with": paid_with,
-		"items": [_describe_line(doc.team, li) for li in doc.items],
+		"items": [_describe_line(doc.team, li, (doc.period_start, doc.period_end)) for li in doc.items],
 		"activity": _invoice_activity(doc),
 	}
 
