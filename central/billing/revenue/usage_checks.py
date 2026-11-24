@@ -11,9 +11,8 @@ import datetime
 import frappe
 
 from central.billing.revenue.bundled_buckets import billed_storage_subjects
-from central.billing.revenue.grove_bridge import landing_rows
+from central.billing.revenue.grove_bridge import read_days
 from central.billing.revenue.usage_ledger import utc_today
-from central.integrations.grove import GroveClient
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
 from central.services.doctype.service.service import (
 	AI_METER,
@@ -111,23 +110,15 @@ def check_ai(day: datetime.date) -> int:
 def check_ai_page(teams: list[str], day: str) -> int:
 	"""Compare each team's stored AI days with what Grove recorded that landing day, per model."""
 	subjects = billed_subjects(AI_SERVICE, teams)
-	client = GroveClient.from_settings()
-	meter = frappe.get_doc("Service", AI_SERVICE).get_meter(AI_METER)
+	read = read_days(subjects, {team: [day] for team in subjects})
+	grove: dict = {}
+	for row in read.rows:
+		key = (row["subject"], row["dimension"])
+		grove[key] = grove.get(key, 0.0) + row["quantity"]
 	stored = _stored(AI_SERVICE, day, list(subjects))
 	now = frappe.utils.now_datetime()
-	rows, failed = [], []
-	for team, team_service in subjects.items():
-		# One team's failure, of any kind, must not stop the page's other teams.
-		try:
-			read = {
-				row["dimension"]: row["quantity"] for row in landing_rows(client, team_service, meter, day)
-			}
-		except Exception as error:
-			failed.append(f"{team}: {error!r}")
-			continue
-		rows += _ai_checks(team, day, read, stored, now)
-	_log_failures(f"Usage check: {len(failed)} AI team(s) not read", failed)
-	return _insert(rows)
+	# A team Grove could not answer for is logged by the read and left unchecked.
+	return _insert([row for team in read.teams for row in _ai_checks(team, day, grove, stored, now)])
 
 
 def prune_checks(today=None) -> int:
@@ -225,14 +216,14 @@ def _meter_units(services: list[str]) -> dict:
 	return {(meter.parent, meter.meter_key): meter.unit for meter in meters}
 
 
-def _ai_checks(team: str, day: str, read: dict, stored: dict, now) -> list[dict]:
+def _ai_checks(team: str, day: str, grove: dict, stored: dict, now) -> list[dict]:
 	"""One check per model Grove or the ledger has for the team that day."""
-	models = set(read) | {model for subject, model in stored if subject == team}
+	models = {model for subject, model in grove.keys() | stored.keys() if subject == team}
 	rows = []
 	for model in sorted(models):
-		grove, kept = read.get(model, 0.0), stored.get((team, model), 0.0)
-		row = _check(AI_SERVICE, AI_METER, team, model, day, grove, now)
-		row.update(stored_value=kept, checked_at=now, is_mismatch=abs(grove - kept) > AI_TOLERANCE_USD)
+		read, kept = grove.get((team, model), 0.0), stored.get((team, model), 0.0)
+		row = _check(AI_SERVICE, AI_METER, team, model, day, read, now)
+		row.update(stored_value=kept, checked_at=now, is_mismatch=abs(read - kept) > AI_TOLERANCE_USD)
 		rows.append(row)
 	return rows
 
