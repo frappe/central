@@ -440,8 +440,20 @@ class TestStoragePrice(IntegrationTestCase):
 
 	def test_the_patch_prices_storage_and_keeps_a_rate_already_set(self):
 		from central.billing.catalog.pricing import set_catalog_rates
-		from central.patches.v0_0 import price_object_storage
+		from central.patches.v0_0 import set_object_storage_rates
 
 		set_catalog_rates("Plan", self.plan, [{"currency": "USD", "rate": 0.03}])
-		price_object_storage.execute()
+		set_object_storage_rates.execute()
 		self.assertEqual(self.rates(), {"USD": 0.03, "INR": 2.5})
+
+	def test_the_patch_replaces_a_rate_of_zero(self):
+		from central.billing.catalog.pricing import set_catalog_rates
+		from central.patches.v0_0 import set_object_storage_rates
+
+		region = frappe.get_all("Region", pluck="name", limit=1)
+		set_catalog_rates(
+			"Plan", self.plan, [{"currency": "INR", "rate": 0, "cluster": region[0] if region else None}]
+		)
+		set_object_storage_rates.execute()
+		inr = frappe.get_all("Catalog Rate", {"priced_for": self.plan, "currency": "INR"}, pluck="rate")
+		self.assertEqual((inr, self.rates()["USD"]), ([2.5], 0.025))
