@@ -4,7 +4,13 @@ import { useSupport } from '@/composables/useSupport'
 import { ACCESS_LOCKED_REASON, type ServerActions } from '@/lib/capabilities'
 import { copyToClipboard } from '@/lib/clipboard'
 import { reportError, successToast } from '@/lib/feedback'
-import { canChange, canStart, canStop, isSettingUp } from '@/lib/status'
+import {
+	canChange,
+	canStart,
+	canStop,
+	isSettingUp,
+	isSleeping,
+} from '@/lib/status'
 
 export type ServerMenuVerb =
 	| 'overview'
@@ -203,6 +209,7 @@ function getPowerItems(
 ): DropdownOption[] {
 	if (!allowed.power) return []
 
+	if (isSleeping(server)) return [entry('start', 'Wake', 'lucide-sunrise')]
 	if (canStart(server.status)) return [entry('start', 'Start', 'lucide-play')]
 
 	// Only a running server can stop or restart; the API refuses both otherwise.
