@@ -44,7 +44,7 @@ class TestReportSecret(IntegrationTestCase):
 	def configure(self, client, webhook_secret, report_secret=None):
 		if client.instance.name in self.failing:
 			# A host that echoes what it was sent must not put the secret in the log.
-			frappe.throw(f"Cargo refused {report_secret}", CargoConnectionError)
+			raise CargoConnectionError(f"Cargo refused {report_secret}")
 		self.configured.append((client.instance.name, webhook_secret, report_secret))
 
 	def set_secret(self, service: str, secret: str = SECRET) -> None:
