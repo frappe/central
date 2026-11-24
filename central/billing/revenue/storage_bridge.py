@@ -6,7 +6,7 @@ import frappe
 from central.billing.revenue.bundled_buckets import bundled_buckets
 from central.billing.revenue.usage_ledger import utc_today, write_days
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
-from central.services.doctype.service.service import STORAGE_METER, STORAGE_SERVICE
+from central.services.doctype.service.service import STORAGE_METER, STORAGE_SERVICE, is_read_by_central
 from central.services.doctype.team_service.team_service import billed_subjects
 
 PAGE_SIZE = 100
@@ -17,7 +17,7 @@ LOGGED_FAILURES = 50
 
 def read_storage_usage() -> int:
 	"""Hourly, until Cargo reports usage itself: read every bucket and keep each day's peak."""
-	if not frappe.db.get_value("Service", STORAGE_SERVICE, "central_reads"):
+	if not is_read_by_central(STORAGE_SERVICE):
 		return 0
 	run = frappe.generate_hash(length=12)
 	# Team buckets and servers' backup buckets are read by their own page jobs.
