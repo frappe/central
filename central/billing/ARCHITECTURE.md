@@ -745,16 +745,21 @@ Server bundles (#188): a server plan's Plan Includes row is the server's bundle 
   → storage: storage_bridge reads each server's backup bucket (bundled_buckets: tenant, region and
     server name it) beside the team buckets; a paused or ended server's bucket is not read
 Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
+  → while the service's central_reads is on, Central's own reading still bills it: every line is
+    refused with retry true ("Central still reads this service; send it again after the switch")
+    and no Usage Day is written, so the service holds its lines until the switch
   → service_reports.accept_report stores each line as a Usage Day; a refused line comes back
     with its subject, meter, day, dimension ("" when it has none) and `retry`. It is true for an
     unknown subject (the team may subscribe later), a day in the future (the service's clock may
     be ahead) and a day written by another worker at the same time; the service sends these
     again. It is false for a malformed line, an unknown meter and a bad value, dimension, amount,
     currency or day format; the service never sends these again
-  → report_subjects.subjects_by_day resolves the subjects once per distinct day in the report:
-    the service's Team Services with a subscription; for storage, a server's backup bucket on
-    a day its server billed (bundled_buckets), with that day's bundle set as Usage Day.included,
-    as storage_bridge._bundled_reading sets it; and a subject Central no longer has (a deleted
+  → report_subjects.subjects_by_day resolves the subjects once per distinct day in the report
+    with bundled_buckets.billed_subjects_of(service, day, names): the service's Team Services
+    with a subscription; for storage, a server's backup bucket on a day its server billed, with
+    that day's bundle set as Usage Day.included, as storage_bridge._bundled_reading sets it (a
+    backup bucket wins a name it shares with a Team Service, as in Central's own reading; only
+    the servers whose name ends a reported name are looked up); and a subject Central no longer has (a deleted
     bucket) from its newest Usage Day of the last 2 UTC days on a subscription that is not a
     server's, on that day's team and subscription. Any other subject is "unknown subject"
   → every signed report sets Service.last_report_at and last_report_as_of
