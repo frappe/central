@@ -12,6 +12,7 @@ import requests
 from central.billing import settings
 from central.billing.payments import decline
 from central.billing.platform import invariants, kinds, metrics
+from central.billing.revenue import usage_checks
 
 # A webhook we failed to process is a settlement we have not applied. An hour is long
 # enough to rule out a retry that is still in flight.
@@ -303,6 +304,8 @@ SOURCES = (
 	failed_accounting_syncs,
 	suspended_servers_running,
 	termination_due,
+	usage_checks.silent_services,
+	usage_checks.usage_mismatches,
 )
 
 
