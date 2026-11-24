@@ -3,14 +3,17 @@ from unittest.mock import MagicMock, patch
 import frappe
 import requests
 from frappe.tests import IntegrationTestCase
+from frappe.utils.password import set_encrypted_password
 
 from central.billing.tests.utils import run_enqueued_inline
 from central.errors import CargoConnectionError
 from central.integrations.cargo import CargoClient
 from central.integrations.grove import GroveClient
 from central.integrations.report_secret import send_to_cargo, send_to_grove
+from central.services.doctype.service.service import get_report_secret
 
 SECRET = "a-new-report-secret"
+NEWER_SECRET = "a-newer-report-secret"
 
 
 class TestReportSecret(IntegrationTestCase):
@@ -24,9 +27,12 @@ class TestReportSecret(IntegrationTestCase):
 		self.regions = [self.make_region(), self.make_region()]
 		self.configured = []
 		self.failing = set()
+		self.rotate_on_send = None
 		self.enterContext(
 			patch.object(CargoClient, "configure_webhooks", autospec=True, side_effect=self.configure)
 		)
+		# A job ends its transaction to see a newer secret. Here that would drop this test's records.
+		self.enterContext(patch("central.integrations.report_secret.frappe.db.rollback"))
 
 	def make_region(self) -> str:
 		region = frappe.get_doc(
@@ -46,6 +52,13 @@ class TestReportSecret(IntegrationTestCase):
 			# A host that echoes what it was sent must not put the secret in the log.
 			raise CargoConnectionError(f"Cargo refused {report_secret}")
 		self.configured.append((client.instance.name, webhook_secret, report_secret))
+		self.rotate("storage")
+
+	def rotate(self, service: str) -> None:
+		# Stored directly, as a rotation that commits while a send is in flight.
+		if self.rotate_on_send:
+			set_encrypted_password("Service", service, self.rotate_on_send, "report_secret")
+			self.rotate_on_send = None
 
 	def set_secret(self, service: str, secret: str = SECRET) -> None:
 		doc = frappe.get_doc("Service", service)
@@ -125,6 +138,45 @@ class TestReportSecret(IntegrationTestCase):
 
 		[error] = [row for row in self.errors() if row.method == "Report secret not sent to Grove"]
 		self.assertNotIn(SECRET, error.error)
+
+	def test_a_secret_rotated_during_a_cargo_send_is_sent_again(self):
+		with patch("central.integrations.report_secret.frappe.enqueue"):
+			self.set_secret("storage")
+		self.rotate_on_send = NEWER_SECRET
+
+		send_to_cargo(self.regions[0])
+
+		sent = [report for _region, _webhook, report in self.configured]
+		self.assertEqual(sent, [SECRET, NEWER_SECRET])
+		self.assertEqual(sent[-1], get_report_secret("storage"))
+
+	def test_a_secret_rotated_during_a_grove_send_is_sent_again(self):
+		with patch("central.integrations.report_secret.frappe.enqueue"):
+			self.set_secret("ai")
+		self.rotate_on_send = NEWER_SECRET
+		grove = MagicMock()
+		grove.set_report_secret.side_effect = lambda secret: self.rotate("ai")
+
+		with patch.object(GroveClient, "from_settings", return_value=grove):
+			send_to_grove()
+
+		sent = [call.args[0] for call in grove.set_report_secret.call_args_list]
+		self.assertEqual(sent, [SECRET, NEWER_SECRET])
+		self.assertEqual(sent[-1], get_report_secret("ai"))
+
+	def test_a_secret_that_changes_on_every_send_is_logged(self):
+		with patch("central.integrations.report_secret.frappe.enqueue"):
+			self.set_secret("ai")
+		grove = MagicMock()
+		grove.set_report_secret.side_effect = lambda secret: set_encrypted_password(
+			"Service", "ai", frappe.generate_hash(length=12), "report_secret"
+		)
+
+		with patch.object(GroveClient, "from_settings", return_value=grove):
+			send_to_grove()
+
+		self.assertEqual(grove.set_report_secret.call_count, 3)
+		self.assertTrue([row for row in self.errors() if row.method == "Report secret not sent to Grove"])
 
 	def test_the_grove_client_calls_the_control_endpoint(self):
 		client = GroveClient("https://grove.example.test", "key", "secret")
