@@ -96,9 +96,22 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 		staging.db_set("virtual_machine", "server-2")
 
 		DeployApp.disable_for_server("server-1")
-		self.assertEqual(frappe.db.get_value("Deploy App", main.name, "status"), "Disabled")
-		self.assertEqual(frappe.db.get_value("Deploy App", staging.name, "status"), "Active")
+		fields = ["status", "virtual_machine", "domain"]
+		self.assertEqual(frappe.db.get_value("Deploy App", main.name, fields), ("Disabled", None, None))
+		self.assertEqual(
+			frappe.db.get_value("Deploy App", staging.name, fields), ("Active", "server-2", staging.domain)
+		)
 		self.assertEqual(DeployApp.get_for_push("101", "11", "main"), [])
+
+	def test_connecting_a_disabled_app_again_gives_it_a_new_domain(self):
+		app = DeployApp.add(self.installation, REPOSITORY, self.region)
+		app.db_set("virtual_machine", "server-1")
+		DeployApp.disable_for_server("server-1")
+
+		again = DeployApp.add(self.installation, REPOSITORY, self.region)
+		self.assertEqual((again.name, again.status, again.virtual_machine), (app.name, "Active", None))
+		self.assertNotEqual(again.domain, app.domain)
+		self.assertEqual(DeployApp.get_for_push("101", "11", "main"), [app.name])
 
 	def test_a_branch_missing_on_github_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):

@@ -143,9 +143,12 @@ class DeployApp(Document):
 
 	@staticmethod
 	def disable_for_server(server: str) -> None:
-		"""Stop deploying the apps of a terminated server, so a push no longer queues a deploy for it."""
+		"""Stop deploying the apps of a terminated server, so a push no longer queues a deploy for it. The VM and
+		domain are cleared, so connecting the app again gets a new VM and a new URL."""
 		frappe.db.set_value(
-			"Deploy App", {"virtual_machine": server, "status": "Active"}, "status", "Disabled"
+			"Deploy App",
+			{"virtual_machine": server, "status": "Active"},
+			{"status": "Disabled", "virtual_machine": None, "domain": None},
 		)
 
 
