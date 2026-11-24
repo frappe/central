@@ -170,9 +170,11 @@ class TestUsageChecks(IntegrationTestCase):
 			),
 			patch.object(grove_bridge.GroveClient, "from_settings"),
 			patch.object(grove_bridge, "landing_rows", side_effect=RuntimeError("grove down")),
+			patch("frappe.log_error") as log_error,
 		):
 			self.assertEqual(usage_checks.check_ai_page([TEAM], str(DAY)), 0)
 		self.assertFalse(self.check(AI_SERVICE))
+		self.assertEqual(log_error.call_args.kwargs["title"], "Usage check: 1 AI team(s) not read")
 
 	def test_nothing_runs_while_central_reads_the_service(self):
 		self.sample(100)

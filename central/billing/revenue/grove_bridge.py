@@ -55,7 +55,9 @@ def read_page(teams: list[str]) -> int:
 	return written
 
 
-def read_days(subjects: dict, days: dict) -> frappe._dict:
+def read_days(
+	subjects: dict, days: dict, failure_title: str = "AI usage: {n} team(s) not read"
+) -> frappe._dict:
 	"""Grove's landing days for each team, as Usage Day rows, and the teams read in full."""
 	client = GroveClient.from_settings()
 	meter = frappe.get_doc("Service", AI_SERVICE).get_meter(AI_METER)
@@ -71,7 +73,7 @@ def read_days(subjects: dict, days: dict) -> frappe._dict:
 		read.append(team)
 	if failed:
 		frappe.log_error(
-			title=f"AI usage: {len(failed)} team(s) not read",
+			title=failure_title.format(n=len(failed)),
 			message="\n".join(failed[:LOGGED_FAILURES]),
 		)
 	return frappe._dict(rows=rows, teams=read)
