@@ -60,12 +60,18 @@
    },
    {
     "capability": "support:manage"
+   },
+   {
+"capability": "app:deploy"
+   },
+   {
+    "capability": "app:view"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-11-17 17:40:22",
+  "modified": "2026-11-24 15:00:00.000000",
   "name": "Owner",
   "role_name": "Owner",
   "team": null
@@ -128,12 +134,18 @@
    },
    {
     "capability": "support:manage"
+   },
+   {
+"capability": "app:deploy"
+   },
+   {
+    "capability": "app:view"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-11-17 17:40:22",
+  "modified": "2026-11-24 15:00:00.000000",
   "name": "Admin",
   "role_name": "Admin",
   "team": null
@@ -184,12 +196,18 @@
    },
    {
     "capability": "support:manage"
+   },
+   {
+"capability": "app:deploy"
+   },
+   {
+    "capability": "app:view"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-11-17 17:40:22",
+  "modified": "2026-11-24 15:00:00.000000",
   "name": "Developer",
   "role_name": "Developer",
   "team": null
@@ -207,12 +225,15 @@
    },
    {
     "capability": "support:view"
+   },
+   {
+"capability": "app:view"
    }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
   "is_system": 1,
-  "modified": "2026-11-17 17:40:22",
+  "modified": "2026-11-24 15:00:00.000000",
   "name": "Viewer",
   "role_name": "Viewer",
   "team": null

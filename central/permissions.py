@@ -246,6 +246,36 @@ def site_domain_has_permission(doc, user: str | None = None, ptype: str | None =
 	return _server_scoped_has_permission(doc, "server", user, ptype)
 
 
+def deploy_app_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every app.
+	2. A user sees the apps of each team where the user holds app:view.
+	3. A user without it sees no app."""
+	return _team_field_query_conditions("Deploy App", "app:view", user)
+
+
+def deploy_app_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. A System Manager has every permission.
+	2. An app without a team is denied.
+	3. Read needs app:view on the app's team.
+	4. Create, write, and delete are denied, because only the deploy API and its pipeline change an app."""
+	return _team_field_has_permission(doc, ("app:view",), (), user, ptype)
+
+
+def deploy_request_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every deploy.
+	2. A user sees the deploys of each team where the user holds app:view.
+	3. A user without it sees no deploy."""
+	return _team_field_query_conditions("Deploy Request", "app:view", user)
+
+
+def deploy_request_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. A System Manager has every permission.
+	2. A deploy without a team is denied.
+	3. Read needs app:view on the deploy's team.
+	4. Create, write, and delete are denied, because only a push and the deploy pipeline change a deploy."""
+	return _team_field_has_permission(doc, ("app:view",), (), user, ptype)
+
+
 def vm_snapshot_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every snapshot.
 	2. A user sees the snapshots of each team where the user holds server:view team-wide.
