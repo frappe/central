@@ -6,11 +6,13 @@ import AuthShell from '@/components/auth/AuthShell.vue'
 import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useJoinTeam } from '@/composables/useJoinTeam'
+import { useMyProfile } from '@/composables/useMyProfile'
 import { requiredError } from '@/lib/auth'
 import { formatDate } from '@/lib/format'
 
 const route = useRoute()
 const { currentUser } = useAuth()
+const { profile } = useMyProfile()
 const {
 	invitation,
 	step,
@@ -109,7 +111,7 @@ function submitSignUp() {
 
 				<template v-else-if="step === 'wrong-account'">
 					<p class="text-p-base text-ink-gray-7">
-						You are signed in as {{ currentUser }}. Sign in as
+						You are signed in as {{ profile?.email ?? currentUser }}. Sign in as
 						{{ invitation.email }}
 						to accept this invitation.
 					</p>

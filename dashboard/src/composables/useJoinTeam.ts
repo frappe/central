@@ -2,6 +2,7 @@ import { useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useAuth } from '@/composables/useAuth'
+import { useMyProfile } from '@/composables/useMyProfile'
 import { useSession } from '@/composables/useSession'
 import { getErrorMessage } from '@/lib/feedback'
 import { submitOrThrow } from '@/lib/frappeCall'
@@ -22,6 +23,7 @@ const DASHBOARD_HOME = '/dashboard/servers'
 /** The invitation behind an emailed join link, and the actions that answer it. */
 export function useJoinTeam(token: string) {
 	const { currentUser, logout } = useAuth()
+	const { profile, loading: profileLoading } = useMyProfile()
 	const { setActiveTeam } = useSession()
 	const busy = ref(false)
 	const error = ref('')
@@ -55,10 +57,13 @@ export function useJoinTeam(token: string) {
 		if (invitationCall.loading && !invitation.value) return 'loading'
 		if (!invitation.value) return 'invalid'
 		if (invitation.value.status !== 'Pending') return 'closed'
-		if (currentUser.value)
-			return currentUser.value === invitation.value.email
+		if (currentUser.value) {
+			if (!profile.value && profileLoading.value) return 'loading'
+			const email = profile.value?.email ?? currentUser.value
+			return email.toLowerCase() === invitation.value.email.toLowerCase()
 				? 'accept'
 				: 'wrong-account'
+		}
 		return invitation.value.has_account ? 'sign-in' : 'sign-up'
 	})
 
