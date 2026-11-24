@@ -760,9 +760,11 @@ Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
     that day's bundle set as Usage Day.included, as storage_bridge._bundled_reading sets it (a
     backup bucket wins a name it shares with a Team Service, as in Central's own reading; only
     the servers whose name ends a reported name are looked up); and a subject Central no longer
-    has (a deleted bucket) from its newest Usage Day of the last 2 UTC days on a subscription
-    that is not a server's, on that day's team and subscription. Any other subject is "unknown
-    subject"
+    bills (a deleted bucket). Central accepts it only when its own most recent Usage Day, on a
+    subscription that is not a server's, is within the last 2 UTC days (today or the 2 days
+    before). Then the lines for any of its days in the report, older days from a backlog too,
+    go on the team and subscription of that Usage Day. A real reading replaces an estimated
+    day that is not invoiced. Any other subject is "unknown subject"
   → every signed report sets Service.last_report_at and last_report_as_of
   → the report secret: saving a new Service.report_secret queues it after commit
     (integrations.report_secret). storage: one job per Registered region calls
