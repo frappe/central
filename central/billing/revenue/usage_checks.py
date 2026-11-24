@@ -15,7 +15,13 @@ from central.billing.revenue.grove_bridge import landing_rows
 from central.billing.revenue.usage_ledger import utc_today
 from central.integrations.grove import GroveClient
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
-from central.services.doctype.service.service import AI_METER, AI_SERVICE, STORAGE_METER, STORAGE_SERVICE
+from central.services.doctype.service.service import (
+	AI_METER,
+	AI_SERVICE,
+	STORAGE_METER,
+	STORAGE_SERVICE,
+	is_read_by_central,
+)
 from central.services.doctype.team_service.team_service import billed_subjects
 
 DOCTYPE = "Usage Check"
@@ -181,10 +187,6 @@ def usage_mismatches() -> list[dict]:
 		}
 		for check in checks
 	]
-
-
-def is_read_by_central(service: str) -> bool:
-	return bool(frappe.db.get_value("Service", service, "central_reads"))
 
 
 def _is_silent(service, now: datetime.datetime) -> bool:
