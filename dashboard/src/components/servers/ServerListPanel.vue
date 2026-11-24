@@ -4,6 +4,7 @@ import { onBeforeUnmount, ref, watch } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
+import ServerStatusBadge from '@/components/servers/ServerStatusBadge.vue'
 import StatusRing from '@/components/servers/StatusRing.vue'
 import type { ConsoleMode, VirtualMachineRow } from '@/composables/useServers'
 import type { ResourceRow } from '@/lib/serverMap'
@@ -135,7 +136,8 @@ onBeforeUnmount(() => window.clearTimeout(cascadeTimer))
 						:is-settled="settledIds.has(row.id)"
 					/>
 					<ProviderAvatar
-						class="relative"
+						class="relative transition-opacity"
+						:class="{ 'opacity-50': row.visual.isDimmed }"
 						:provider="row.provider"
 						:size="32"
 					/>
@@ -149,10 +151,9 @@ onBeforeUnmount(() => window.clearTimeout(cascadeTimer))
 						<span class="truncate text-sm-medium text-ink-gray-9"
 							>{{ row.name }}</span
 						>
-						<Badge
+						<ServerStatusBadge
 							v-if="row.visual.key !== 'active'"
-							:label="row.visual.label"
-							:theme="row.visual.badgeTheme"
+							:visual="row.visual"
 							size="sm"
 							class="shrink-0"
 						/>

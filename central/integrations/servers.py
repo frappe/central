@@ -21,6 +21,7 @@ from central.integrations.atlas import (
 	AtlasClient,
 	ConsoleMode,
 )
+from central.integrations.state_delivery import SLEEP_STATE_FROM_REPORT
 from central.server_models import ComputeSettings, FirewallChange
 from central.utils.units import (
 	gigabytes_to_mebibytes,
@@ -84,6 +85,7 @@ def observe_server(server: VirtualMachine) -> str:
 	server.record_observed_state(
 		{
 			"status": status,
+			"sleep_state": SLEEP_STATE_FROM_REPORT.get(remote.get("sleep_state"), ""),
 			"vcpus": millicores_to_vcpus(compute["cpu_millicores"]),
 			"memory_megabytes": compute["memory_mib"],
 			"disk_gigabytes": mebibytes_to_gigabytes(disk["size_mib"]),

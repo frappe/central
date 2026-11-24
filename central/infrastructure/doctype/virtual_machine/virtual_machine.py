@@ -91,6 +91,7 @@ class VirtualMachine(SystemRecord):
 		region: DF.Link
 		resource_id: DF.Data
 		skip_automatic_snapshot: DF.Check
+		sleep_state: DF.Literal["", "Sleeping", "Deep Sleeping", "Coma"]
 		ssh_keys: DF.Table[ServerSSHKey]
 		state_observed_at: DF.Datetime | None
 		status: DF.Literal[
@@ -451,6 +452,7 @@ class VirtualMachine(SystemRecord):
 	# Central's, and no report may touch them.
 	OBSERVED_FIELDS = (
 		"status",
+		"sleep_state",
 		"vcpus",
 		"memory_megabytes",
 		"disk_gigabytes",

@@ -60,6 +60,7 @@ def registry(team: str | None = None) -> dict:
 			"title",
 			"region",
 			"status",
+			"sleep_state",
 			"plan",
 			"frappe_version",
 			"vcpus",

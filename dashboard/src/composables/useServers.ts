@@ -35,6 +35,7 @@ export type VirtualMachineRow = Pick<
 	| 'title'
 	| 'region'
 	| 'status'
+	| 'sleep_state'
 	| 'plan'
 	| 'frappe_version'
 	| 'vcpus'
