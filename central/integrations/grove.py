@@ -56,7 +56,8 @@ class GroveClient:
 
 	def set_report_secret(self, secret: str) -> None:
 		"""The secret Grove signs its AI usage reports to Central with."""
-		self.call("grove.api.control.set_report_secret", secret=secret)
+		# Redacted, so a Grove error that echoes the request does not store the secret in a log.
+		self.call("grove.api.control.set_report_secret", redact=secret, secret=secret)
 
 	def provision_team(self, team: str) -> dict:
 		"""Register `team` by its id; Grove keeps nothing else about who it is. Grove upserts
@@ -181,14 +182,16 @@ class GroveClient:
 			pulled_until=pulled_until,
 		)
 
-	def call(self, method: str, timeout: tuple[int, int] = TIMEOUT, **body) -> dict | list:
+	def call(
+		self, method: str, timeout: tuple[int, int] = TIMEOUT, redact: str | None = None, **body
+	) -> dict | list:
 		try:
 			response = requests.post(
 				f"{self.base_url}/api/method/{method}", json=body, headers=self.headers, timeout=timeout
 			)
 		except (requests.ConnectionError, requests.Timeout) as e:
 			raise GroveUnavailable(_("Grove can't be reached right now.")) from e
-		return read(response)
+		return read(response, redact)
 
 
 def get_key_balance(gateway_url: str, api_key: str) -> dict:
@@ -204,14 +207,17 @@ def get_key_balance(gateway_url: str, api_key: str) -> dict:
 	return response.json()
 
 
-def read(response: requests.Response) -> dict | list:
+def read(response: requests.Response, redact: str | None = None) -> dict | list:
+	"""Grove's answer, or a refusal. `redact` is a value replaced by *** in anything this logs."""
 	if response.status_code in UNAVAILABLE:
 		raise GroveUnavailable(_("Grove is unavailable ({0}).").format(response.status_code))
 	if response.status_code >= 400:
 		message = refusal_message(response)
 		if message:
 			frappe.throw(message)
-		detail = f"{response.status_code}: {response.text[:2000]}"
+		# Redacted before cutting, so a secret straddling the cut cannot leave a part behind.
+		text = response.text.replace(redact, "***") if redact else response.text
+		detail = f"{response.status_code}: {text[:2000]}"
 		frappe.log_error(title="Grove request failed", message=detail)
 		if user_has_operator_bypass():
 			frappe.throw(_("Grove request failed ({0})").format(detail[:200]))
