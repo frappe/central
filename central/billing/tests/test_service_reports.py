@@ -283,6 +283,24 @@ class TestServiceReports(IntegrationTestCase):
 		self.assertIn("Central still reads this service", answer["rejected"][0]["reason"])
 		self.assertFalse(self.days())
 
+	def test_nothing_is_stored_when_central_reads_is_switched_on_after_verification(self):
+		verify = service_reports.verified_service
+
+		def switch_on_after_verifying(*args):
+			service = verify(*args)
+			frappe.db.set_value("Service", "storage", "central_reads", 1)
+			return service
+
+		with (
+			patch.object(service_reports, "verified_service", side_effect=switch_on_after_verifying),
+			patch.object(frappe.db, "get_value", wraps=frappe.db.get_value) as get_value,
+		):
+			answer = self.send([line("2026-06-19", 10)])
+
+		self.assertEqual(answer["accepted"], 0)
+		self.assertFalse(self.days())
+		get_value.assert_any_call("Service", "storage", "central_reads", for_update=True)
+
 	def test_a_report_refused_while_central_reads_still_shows_the_service_alive(self):
 		frappe.db.set_value("Service", "storage", "central_reads", 1)
 
