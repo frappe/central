@@ -10,7 +10,8 @@ from frappe.query_builder import Order
 from central.billing.revenue.bundled_buckets import billed_subjects_of
 from central.billing.revenue.usage_ledger import utc_today
 
-# A service sends a deleted subject's last day after the delete, so Central keeps taking it this long.
+# A service sends a deleted subject's last day after the delete, so Central takes a subject it no
+# longer bills while its most recent Usage Day is within this many UTC days of today.
 DELETED_SUBJECT_DAYS = 2
 
 
@@ -19,12 +20,13 @@ def subjects_by_day(service: str, names: list[str], days: set[str]) -> dict[str,
 	billed = {day: billed_subjects_of(service, day, names) for day in days}
 	known = {name for subjects in billed.values() for name in subjects}
 	deleted = _recently_deleted(service, [name for name in names if name not in known])
-	# A subject billed that day wins over a deleted one of the same name.
+	# A deleted subject's lines go on its last subscription for every reported day, a backlog too;
+	# a subject billed that day wins over a deleted one of the same name.
 	return {day: {**deleted, **subjects} for day, subjects in billed.items()}
 
 
 def _recently_deleted(service: str, names: list[str]) -> dict:
-	"""Subjects Central no longer has that billed a day in the last few days, by subject."""
+	"""Subjects Central no longer bills whose most recent Usage Day is within the last 2 UTC days."""
 	if not names:
 		return {}
 	day = frappe.qb.DocType("Usage Day")
