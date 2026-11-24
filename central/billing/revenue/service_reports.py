@@ -29,7 +29,6 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 	service = verified_service(service_name, signature, raw_body)
 	report = _parsed(raw_body)
 	as_of = reported_at(report.get("as_of"))
-	_record_report(service.name, as_of)
 	subjects = billed_subjects(service.name, _subject_names(report["lines"]))
 
 	rows, rejected = [], []
@@ -44,6 +43,8 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 	rejected += [
 		_refused(row, _("the day changed at the same time; send it again"), retry=True) for row in conflicts
 	]
+	# Last, so the Service row is locked only for the end of the transaction, not the whole write.
+	_record_report(service.name, as_of)
 	return {"accepted": len(rows) - len(conflicts), "rejected": rejected}
 
 
