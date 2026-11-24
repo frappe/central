@@ -11,8 +11,8 @@ import frappe
 from frappe import _
 from frappe.utils.password import get_decrypted_password
 
+from central.billing.revenue.report_subjects import subjects_by_day
 from central.billing.revenue.usage_ledger import utc_today, write_days
-from central.services.doctype.team_service.team_service import billed_subjects
 
 MAXIMUM_LINES = 1000
 # Far above any one subject's daily value in raw units, and low enough to divide safely.
@@ -29,16 +29,18 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 	service = verified_service(service_name, signature, raw_body)
 	report = _parsed(raw_body)
 	as_of = reported_at(report.get("as_of"))
-	subjects = billed_subjects(service.name, _subject_names(report["lines"]))
+	# A server's backup bucket bills only on the days its server billed, so subjects are per day.
+	subjects = subjects_by_day(service.name, _subject_names(report["lines"]), _days(report["lines"]))
 
 	rows, rejected = [], []
 	for line in report["lines"]:
-		problem = line_problem(service, line, subjects)
+		day_subjects = subjects.get(_day_of(line), {})
+		problem = line_problem(service, line, day_subjects)
 		if problem:
 			reason, retry = problem
 			rejected.append(_refused(line, reason, retry=retry))
 		else:
-			rows.append(_row(service, line, subjects[line["subject"]], as_of))
+			rows.append(_row(service, line, day_subjects[line["subject"]], as_of))
 	conflicts = write_days(rows).conflicts
 	# A day another worker wrote at the same moment is not confirmed, so the service sends it again.
 	rejected += [
@@ -184,15 +186,26 @@ def _subject_names(lines: list) -> list[str]:
 	return list({subject for line in lines if (subject := _subject_of(line))})
 
 
-def _row(service, line: dict, team_service, as_of: datetime.datetime) -> dict:
+def _day_of(line) -> str | None:
+	return _text(line.get("day")) if isinstance(line, dict) else None
+
+
+def _days(lines: list) -> set[str]:
+	return {day for line in lines if (day := _day_of(line)) and _day_problem(day) is None}
+
+
+def _row(service, line: dict, subject, as_of: datetime.datetime) -> dict:
+	# A server's backup bucket carries the storage its server's plan included that day.
+	bundle = {"included": subject.included} if "included" in subject else {}
 	return service.get_meter(line["meter"]).get_day_row(
-		team_service,
+		subject,
 		line["day"],
 		line["value"],
 		dimension=line.get("dimension"),
 		source_amount=line.get("amount"),
 		source_currency=line.get("currency"),
 		as_of=as_of,
+		**bundle,
 	)
 
 

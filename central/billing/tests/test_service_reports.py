@@ -11,7 +11,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.catalog.subscriptions import provision_service_subscription
-from central.billing.revenue import service_reports, usage_ledger
+from central.billing.revenue import report_subjects, service_reports, usage_ledger
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	_clear_metered_plans,
@@ -202,3 +202,30 @@ class TestServiceReports(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			self.send([line("2026-06-20", 10)], secret="not-the-secret")
 		self.assertEqual(frappe.db.get_value("Service", "storage", "last_report_at"), before)
+
+	def send_on(self, today: str, lines):
+		with patch.object(report_subjects, "utc_today", return_value=frappe.utils.getdate(today)):
+			return self.send(lines)
+
+	def test_a_deleted_buckets_last_day_bills_the_subscription_it_billed(self):
+		self.send([line("2026-06-19", 10)])
+		billed = frappe.db.get_value("Usage Day", {"subject": BUCKET}, "subscription")
+		frappe.db.delete("Team Service", {"team": TEAM})
+
+		answer = self.send_on("2026-06-21", [line("2026-06-20", 12)])
+
+		self.assertEqual(answer, {"accepted": 1, "rejected": []})
+		self.assertEqual(
+			frappe.db.get_value("Usage Day", {"subject": BUCKET, "day": "2026-06-20"}, "subscription"),
+			billed,
+		)
+
+	def test_a_bucket_deleted_more_than_two_days_ago_is_an_unknown_subject(self):
+		self.send([line("2026-06-17", 10)])
+		frappe.db.delete("Team Service", {"team": TEAM})
+
+		answer = self.send_on("2026-06-21", [line("2026-06-20", 12)])
+
+		self.assertEqual(answer["accepted"], 0)
+		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
+		self.assertTrue(answer["rejected"][0]["retry"])
