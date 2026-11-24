@@ -68,6 +68,25 @@ class IntegrationTestGitHubDeploy(IntegrationTestCase):
 			GitHubDeployApp.callback_url().endswith("/api/method/central.deploy.api.oauth_callback")
 		)
 
+	def test_a_commit_status_is_posted_with_a_token_that_only_writes_statuses(self):
+		app = GitHubDeployApp()
+		with (
+			patch.object(GitHubDeployApp, "_app_jwt", return_value="jwt"),
+			patch.object(
+				GitHubDeployApp, "_request", return_value={"token": "t", "expires_at": "x"}
+			) as request,
+		):
+			app.set_commit_status("101", "11", "octo/app", "a" * 40, "failure", "x" * 200)
+		token_call, status_call = request.call_args_list
+		self.assertEqual(
+			token_call.kwargs["json"], {"repository_ids": [11], "permissions": {"statuses": "write"}}
+		)
+		self.assertTrue(status_call.args[1].endswith("/repos/octo/app/statuses/" + "a" * 40))
+		self.assertEqual(
+			status_call.kwargs["json"],
+			{"state": "failure", "description": "x" * 140, "context": "Deploy", "target_url": None},
+		)
+
 	def test_a_delivery_is_handled_once(self):
 		self.make_app()
 		delivery = frappe.generate_hash()

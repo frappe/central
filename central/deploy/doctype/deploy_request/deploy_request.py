@@ -52,6 +52,18 @@ BUILD_REPORT_TIMEOUT_SECONDS = 5 * 60
 RELEASE_TIMEOUT_SECONDS = 15 * 60
 # The VM size in Atlas units, copied from the plan when the deploy reads the commit's config.
 SPEC_FIELDS = ("cpu_millicores", "memory_mib", "disk_mib")
+# What GitHub shows on the commit for each status; a status not listed is pending.
+COMMIT_STATES = {"Succeeded": "success", "Failed": "failure", "Superseded": "error"}
+COMMIT_DESCRIPTIONS = {
+	"Queued": "Waiting to deploy",
+	"Validating": "Checking the commit",
+	"Provisioning": "Preparing the virtual machine",
+	"Building": "Building the image",
+	"Releasing": "Releasing the new container",
+	"Succeeded": "Live",
+	"Failed": "The deploy failed",
+	"Superseded": "A newer push replaced this deploy",
+}
 
 
 class DeploySupersededError(frappe.ValidationError):
@@ -284,6 +296,29 @@ class DeployRequest(PipelineBuilder):
 				"region": app.region,
 			}
 		).insert(ignore_permissions=True)
+
+	def on_update(self):
+		if self.has_value_changed("status"):
+			# After commit, so the job reads this status; a GitHub outage never fails the deploy.
+			frappe.enqueue_doc(
+				self.doctype, self.name, "update_github_commit_status", enqueue_after_commit=True
+			)
+
+	def update_github_commit_status(self) -> None:
+		"""Show this deploy's current status on its commit in GitHub."""
+		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
+		installation_id = frappe.db.get_value(
+			"GitHub Deploy App Installation", app.installation, "installation_id"
+		)
+		GitHubDeployApp().set_commit_status(
+			installation_id,
+			app.repository_id,
+			app.repository,
+			self.commit,
+			state=COMMIT_STATES.get(self.status, "pending"),
+			description=(self.status == "Failed" and self.error) or COMMIT_DESCRIPTIONS[self.status],
+			target_url=f"https://{app.domain}" if self.status == "Succeeded" and app.domain else None,
+		)
 
 	def is_silent(self, last_reported: datetime | None) -> bool:
 		"""No report since the last one, or since the current step started, for too long."""

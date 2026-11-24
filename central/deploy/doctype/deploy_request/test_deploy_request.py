@@ -93,6 +93,37 @@ class IntegrationTestDeployRequest(IntegrationTestCase):
 		request.on_pipeline_failure(MagicMock(pipeline_traceback="DeploySupersededError: superseded"))
 		self.assertEqual(self.get_status(request), "Superseded")
 
+	def test_each_status_change_updates_the_commit_on_github(self):
+		with patch("frappe.enqueue_doc") as enqueue:
+			request = DeployRequest.queue(self.app.name, "a" * 40)
+			request.save()
+			self.set_status(request, "Building")
+		self.assertEqual(enqueue.call_count, 2)
+		enqueue.assert_called_with(
+			"Deploy Request", request.name, "update_github_commit_status", enqueue_after_commit=True
+		)
+
+	def test_the_commit_status_on_github_follows_the_deploy(self):
+		self.app.db_set("domain", "app.example.test")
+		request = DeployRequest.queue(self.app.name, "a" * 40)
+		github = patch("central.deploy.doctype.deploy_request.deploy_request.GitHubDeployApp").start()
+		set_commit_status = github.return_value.set_commit_status
+		for status, error, expected in (
+			("Building", None, ("pending", "Building the image", None)),
+			("Succeeded", None, ("success", "Live", "https://app.example.test")),
+			(
+				"Failed",
+				"DeployBuildError: The build failed.",
+				("failure", "DeployBuildError: The build failed.", None),
+			),
+			("Superseded", None, ("error", "A newer push replaced this deploy", None)),
+		):
+			request.status, request.error = status, error
+			request.update_github_commit_status()
+			kwargs = set_commit_status.call_args.kwargs
+			self.assertEqual((kwargs["state"], kwargs["description"], kwargs["target_url"]), expected)
+		self.assertEqual(set_commit_status.call_args.args, ("101", "11", "octo/app", "a" * 40))
+
 
 class IntegrationTestDeployPipeline(IntegrationTestCase):
 	"""A push runs as a pipeline: VM, then a build and a release the deploy agent reports on."""

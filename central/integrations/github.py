@@ -131,11 +131,17 @@ class GitHubApp:
 			)
 		return True
 
-	def create_installation_token(self, installation_id: str, repository_id: str | None = None) -> dict:
-		"""An installation token, limited to one repository and `contents: read` when one is given."""
+	def create_installation_token(
+		self, installation_id: str, repository_id: str | None = None, permissions: dict | None = None
+	) -> dict:
+		"""An installation token, limited to one repository and `permissions` (`contents: read` unless given)
+		when one is given."""
 		payload = {}
 		if repository_id:
-			payload = {"repository_ids": [int(repository_id)], "permissions": {"contents": "read"}}
+			payload = {
+				"repository_ids": [int(repository_id)],
+				"permissions": permissions or {"contents": "read"},
+			}
 
 		body = self._request(
 			"POST",

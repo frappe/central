@@ -8,6 +8,10 @@ from central.integrations.github import API_HEADERS, API_URL, TIMEOUT, GitHubApp
 
 # A deploy config is a few lines; anything larger is refused before it is parsed.
 MAX_FILE_BYTES = 64 * 1024
+# The name GitHub shows the deploy under on each commit.
+COMMIT_STATUS_CONTEXT = "Deploy"
+# GitHub refuses a longer status description.
+MAX_STATUS_DESCRIPTION = 140
 
 
 class GitHubDeployApp(GitHubApp):
@@ -48,3 +52,23 @@ class GitHubDeployApp(GitHubApp):
 		token = self.create_installation_token(installation_id, repository_id)["token"]
 		url = f"{API_URL}/repos/{full_name}/contents?{urllib.parse.urlencode({'ref': ref})}"
 		return self._request("GET", url, token=token)
+
+	def set_commit_status(
+		self,
+		installation_id: str,
+		repository_id: str,
+		full_name: str,
+		commit: str,
+		state: str,
+		description: str,
+		target_url: str | None = None,
+	) -> None:
+		"""Show the deploy's `state` (pending, success, failure or error) on `commit`."""
+		token = self.create_installation_token(installation_id, repository_id, {"statuses": "write"})["token"]
+		payload = {
+			"state": state,
+			"description": description[:MAX_STATUS_DESCRIPTION],
+			"context": COMMIT_STATUS_CONTEXT,
+			"target_url": target_url,
+		}
+		self._request("POST", f"{API_URL}/repos/{full_name}/statuses/{commit}", token=token, json=payload)
