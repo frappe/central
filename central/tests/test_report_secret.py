@@ -92,6 +92,15 @@ class TestReportSecret(IntegrationTestCase):
 		self.assertNotIn(SECRET, error.error)
 		self.assertNotIn(SECRET, error.method)
 
+	def test_a_cargo_with_no_webhook_secret_is_skipped_and_logged(self):
+		frappe.db.delete("__Auth", {"doctype": "Region", "name": self.regions[0]})
+		with patch("central.integrations.report_secret.frappe.enqueue", side_effect=run_enqueued_inline):
+			self.set_secret("storage")
+
+		self.assertNotIn(self.regions[0], [region for region, _webhook, _report in self.configured])
+		self.assertIn(self.regions[1], [region for region, _webhook, _report in self.configured])
+		self.assertTrue([row for row in self.errors() if row.reference_name == self.regions[0]])
+
 	def test_a_new_ai_secret_is_sent_to_grove(self):
 		grove = MagicMock()
 		with (
