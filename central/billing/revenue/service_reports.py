@@ -33,9 +33,10 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 
 	rows, rejected = [], []
 	for line in report["lines"]:
-		reason = line_problem(service, line, subjects)
-		if reason:
-			rejected.append(_refused(line, reason, retry=False))
+		problem = line_problem(service, line, subjects)
+		if problem:
+			reason, retry = problem
+			rejected.append(_refused(line, reason, retry=retry))
 		else:
 			rows.append(_row(service, line, subjects[line["subject"]], as_of))
 	conflicts = write_days(rows).conflicts
@@ -107,14 +108,27 @@ def reported_at(value) -> datetime.datetime:
 	return moment
 
 
-def line_problem(service, line, subjects: dict) -> str | None:
-	"""Why a line cannot be stored, or None."""
+def line_problem(service, line, subjects: dict) -> tuple[str, bool] | None:
+	"""Why a line cannot be stored and whether sending it again later can help, or None."""
+	malformed = _format_problem(service, line)
+	if malformed:
+		return malformed, False
+	# Both can clear later: a team may subscribe after it used the service, and a service's clock
+	# may run a little ahead of Central's.
+	if _subject_of(line) not in subjects:
+		return _("unknown subject"), True
+	if datetime.date.fromisoformat(line["day"]) > utc_today():
+		return _("day is in the future"), True
+	return None
+
+
+def _format_problem(service, line) -> str | None:
 	if not isinstance(line, dict):
 		return _("a line is an object")
 	if not isinstance(line.get("meter"), str) or not service.get_meter(line["meter"]):
 		return _("unknown meter")
-	if _subject_of(line) not in subjects:
-		return _("unknown subject")
+	if _subject_of(line) is None:
+		return _("subject must be text")
 	return (
 		_value_problem(service, line)
 		or _dimension_problem(line.get("dimension"))
@@ -155,11 +169,9 @@ def _source_problem(line: dict) -> str | None:
 
 def _day_problem(value) -> str | None:
 	try:
-		day = datetime.date.fromisoformat(value)
+		datetime.date.fromisoformat(value)
 	except (TypeError, ValueError):
 		return _("day must be a UTC date like 2026-11-17")
-	if day > utc_today():
-		return _("day is in the future")
 	return None
 
 
