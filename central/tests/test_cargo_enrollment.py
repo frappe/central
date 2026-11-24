@@ -52,10 +52,11 @@ class TestCargoEnrollment(IntegrationTestCase):
 		self.assertEqual(self.post.call_args.kwargs["json"]["webhook_secret"], secret)
 
 	def test_enroll_sends_the_storage_report_secret(self):
-		with patch(
-			"central.services.doctype.service.service.get_decrypted_password", return_value="report-secret"
-		):
-			self.instance.enroll_cargo()
+		storage = frappe.get_doc("Service", "storage")
+		storage.report_secret = "report-secret"
+		storage.save()
+
+		self.instance.enroll_cargo()
 
 		self.assertEqual(self.post.call_args.kwargs["json"]["report_secret"], "report-secret")
 

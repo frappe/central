@@ -22,14 +22,25 @@ def registered_cargo_regions() -> list[str]:
 
 def send_to_cargo(region: str) -> None:
 	"""Give one region's Cargo the storage report secret, with the webhook secret it already has."""
+	# An older Cargo ignores report_secret without an error, so a send can succeed and change nothing.
 	from central.integrations.cargo import CargoClient
 
 	secret = get_report_secret(STORAGE_SERVICE)
 	if not secret:
 		return
-	instance = frappe.get_doc("Region", region)
+	# Locked, so a registration writing a new webhook secret meanwhile cannot be undone by this send.
+	instance = frappe.get_doc("Region", region, for_update=True)
+	webhook_secret = instance.get_password("cargo_webhook_secret", raise_exception=False)
+	if not webhook_secret:
+		# Configuring without it would clear the secret Cargo signs its webhooks with.
+		frappe.log_error(
+			title="Report secret not sent to Cargo",
+			message="The region has no Cargo webhook secret.",
+			reference_doctype="Region",
+			reference_name=region,
+		)
+		return
 	try:
-		webhook_secret = instance.get_password("cargo_webhook_secret", raise_exception=False)
 		CargoClient(instance).configure_webhooks(webhook_secret, secret)
 	except frappe.ValidationError as error:
 		_log_failure("Cargo", error, secret, region)
