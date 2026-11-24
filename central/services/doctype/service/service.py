@@ -4,6 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils.password import get_decrypted_password
 
 STORAGE_SERVICE = "storage"
 AI_SERVICE = "ai"
@@ -61,6 +62,16 @@ class Service(Document):
 			if frappe.utils.flt(meter.unit_divisor) <= 0:
 				frappe.throw(_("Meter {0} needs a unit divisor above zero.").format(meter.meter_key))
 			seen.add(meter.meter_key)
+		# Frappe masks a stored password before `on_update`, so only a newly typed one is unmasked here.
+		self.flags.has_new_report_secret = bool(self.report_secret) and not self.is_dummy_password(
+			self.report_secret
+		)
+
+	def on_update(self) -> None:
+		if self.flags.has_new_report_secret:
+			from central.integrations.report_secret import send_report_secret
+
+			send_report_secret(self.name)
 
 	def get_meter(self, meter_key: str):
 		"""The meter row named `meter_key`, or None."""
@@ -70,6 +81,11 @@ class Service(Document):
 def is_read_by_central(service: str) -> bool:
 	"""Central still reads the service's usage itself, rather than taking its reports."""
 	return bool(frappe.db.get_value("Service", service, "central_reads"))
+
+
+def get_report_secret(service: str) -> str | None:
+	"""The secret `service` signs its reports with, or None while it has none."""
+	return get_decrypted_password("Service", service, "report_secret", raise_exception=False) or None
 
 
 def ensure_services() -> None:

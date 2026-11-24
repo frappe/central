@@ -42,15 +42,18 @@ class CargoClient:
 
 		return response.status_code == 200 and body.get("message") == "pong"
 
-	def configure_webhooks(self, webhook_secret: str) -> None:
+	def configure_webhooks(self, webhook_secret: str, report_secret: str | None = None) -> None:
 		"""Hand Cargo the secret it will sign its own service reports with, and where to
-		send them. Cargo authenticates the call itself, against Central's JWKS."""
+		send them, and the storage `report_secret` it signs its usage reports with when one is
+		set. Cargo authenticates the call itself, against Central's JWKS."""
 		region_id = self.instance.get_atlas_region_id()
 		payload = {
 			"request_url": f"{central_url()}/api/method/central.api.state_delivery.receive",
 			"webhook_secret": webhook_secret,
 			"enabled": True,
 		}
+		if report_secret:
+			payload["report_secret"] = report_secret
 		headers = {TOKEN_HEADER: mint_cargo_token(region_id), "Accept": "application/json"}
 
 		try:

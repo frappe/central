@@ -389,7 +389,7 @@ Routine synchronization must not call the guest. Signup readiness and user-reque
 
 ## How does Central register Cargo?
 
-Central registers each region's Cargo after a health check. `cargo_connection.register_cargo` calls `CargoClient.configure_webhooks`, which sends Central's receiver URL and a fresh secret. Central stores the secret in `Region.cargo_webhook_secret` and sets `cargo_status` to `Registered`. **Enroll Cargo** on the Region form runs this on demand. `register_pending_cargo` retries Draft regions every 10 minutes.
+Central registers each region's Cargo after a health check. `cargo_connection.register_cargo` calls `CargoClient.configure_webhooks`, which sends Central's receiver URL, a fresh secret and the storage Service's `report_secret` when it is set. Central stores the secret in `Region.cargo_webhook_secret` and sets `cargo_status` to `Registered`. **Enroll Cargo** on the Region form runs this on demand. `register_pending_cargo` retries Draft regions every 10 minutes.
 
 Cargo reports `service`, `status`, and `service_endpoint`. Central records availability in Service Detail. Do not label a service healthy from a provisioning event.
 
