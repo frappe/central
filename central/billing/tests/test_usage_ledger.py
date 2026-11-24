@@ -397,7 +397,7 @@ class TestUsageLedger(IntegrationTestCase):
 		with (
 			patch.object(storage_bridge, "PAGE_SIZE", 1),
 			patch.object(storage_bridge, "billed_buckets", return_value={CLUSTER: names}),
-			patch.object(storage_bridge, "_bundled_buckets_by_region", return_value={}),
+			patch.object(storage_bridge, "bundled_buckets_by_region", return_value={}),
 			patch("frappe.enqueue", side_effect=enqueue),
 		):
 			storage_bridge.read_storage_usage()

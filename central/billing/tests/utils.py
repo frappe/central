@@ -78,6 +78,7 @@ class BillingTestCase(IntegrationTestCase):
 		"Usage Day",
 		"Monthly Exchange Rate",
 		"Usage Rollup",
+		"Usage Check",
 		"Payment Method",
 		"Tax Profile",
 		"Billing Profile",

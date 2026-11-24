@@ -141,7 +141,12 @@ class TestOperatorAlerts(BillingTestCase):
 
 	def test_every_alert_kind_has_a_category(self):
 		# Read the kinds from the sources, so a new source cannot be left out of the list.
-		sent = set(re.findall(r'"alert": "([a-z_]+)"', inspect.getsource(alerts)))
+		modules = {inspect.getmodule(source) for source in alerts.SOURCES}
+		sent = {
+			kind
+			for module in modules
+			for kind in re.findall(r'"alert": "([a-z_]+)"', inspect.getsource(module))
+		}
 		categorised = {kind for group in kinds.CATEGORIES.values() for kind in group}
 		self.assertEqual(sent, categorised)
 

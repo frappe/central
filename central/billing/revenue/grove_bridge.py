@@ -11,7 +11,7 @@ from central.billing.revenue.service_reports import MAXIMUM_DIMENSION
 from central.billing.revenue.usage_ledger import utc_today, write_days
 from central.billing.revenue.usage_recount import dimension_room
 from central.integrations.grove import GroveClient
-from central.services.doctype.service.service import AI_METER, AI_SERVICE, NANO_PER_UNIT
+from central.services.doctype.service.service import AI_METER, AI_SERVICE, NANO_PER_UNIT, is_read_by_central
 from central.services.doctype.team_service.team_service import billed_subjects
 
 # One Grove call per team and day, so a page of this many teams is a few minutes of work.
@@ -27,7 +27,7 @@ def read_ai_usage() -> int:
 	"""Hourly, until Grove reports usage itself: read each AI team's cost per model and landing day."""
 	from central.billing.revenue.invoicing.run import billing_queue
 
-	if not frappe.db.get_value("Service", AI_SERVICE, "central_reads"):
+	if not is_read_by_central(AI_SERVICE):
 		return 0
 	if not frappe.get_cached_doc("AI Settings").is_enrolled:
 		return 0
@@ -55,7 +55,9 @@ def read_page(teams: list[str]) -> int:
 	return written
 
 
-def read_days(subjects: dict, days: dict) -> frappe._dict:
+def read_days(
+	subjects: dict, days: dict, failure_title: str = "AI usage: {n} team(s) not read"
+) -> frappe._dict:
 	"""Grove's landing days for each team, as Usage Day rows, and the teams read in full."""
 	client = GroveClient.from_settings()
 	meter = frappe.get_doc("Service", AI_SERVICE).get_meter(AI_METER)
@@ -71,7 +73,7 @@ def read_days(subjects: dict, days: dict) -> frappe._dict:
 		read.append(team)
 	if failed:
 		frappe.log_error(
-			title=f"AI usage: {len(failed)} team(s) not read",
+			title=failure_title.format(n=len(failed)),
 			message="\n".join(failed[:LOGGED_FAILURES]),
 		)
 	return frappe._dict(rows=rows, teams=read)
