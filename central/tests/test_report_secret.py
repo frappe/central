@@ -1,12 +1,14 @@
 from unittest.mock import MagicMock, patch
 
 import frappe
+import requests
 from frappe.tests import IntegrationTestCase
 
 from central.billing.tests.utils import run_enqueued_inline
 from central.errors import CargoConnectionError
 from central.integrations.cargo import CargoClient
 from central.integrations.grove import GroveClient
+from central.integrations.report_secret import send_to_cargo, send_to_grove
 
 SECRET = "a-new-report-secret"
 
@@ -129,4 +131,65 @@ class TestReportSecret(IntegrationTestCase):
 		with patch.object(client, "call") as call:
 			client.set_report_secret(SECRET)
 
-		call.assert_called_once_with("grove.api.control.set_report_secret", secret=SECRET)
+		call.assert_called_once_with("grove.api.control.set_report_secret", redact=SECRET, secret=SECRET)
+
+
+class TestReportSecretNeverLogged(IntegrationTestCase):
+	"""A host whose error echoes the request leaves no Error Log holding the secret."""
+
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+		self.addCleanup(frappe.db.rollback)
+		self.started = frappe.utils.now_datetime()
+
+	def echo(self, *args, json=None, **kwargs) -> requests.Response:
+		# Plain text, not a Frappe refusal, so the client logs the body itself.
+		response = requests.Response()
+		response.status_code = 500
+		response._content = f"Internal error handling {json}".encode()
+		return response
+
+	def logs(self) -> list:
+		return frappe.get_all(
+			"Error Log", filters={"creation": [">=", self.started]}, fields=["method", "error"]
+		)
+
+	def assert_logged_without_secret(self) -> None:
+		logs = self.logs()
+		self.assertTrue(logs)
+		for log in logs:
+			self.assertNotIn(SECRET, f"{log.method} {log.error}")
+
+	def test_a_grove_500_echoing_the_secret_logs_no_secret(self):
+		grove = GroveClient("https://grove.example.test", "key", "secret")
+		with (
+			patch.object(GroveClient, "from_settings", return_value=grove),
+			patch("central.integrations.grove.requests.post", side_effect=self.echo),
+			patch("central.integrations.report_secret.get_report_secret", return_value=SECRET),
+		):
+			send_to_grove()
+
+		self.assertIn("Grove request failed", [log.method for log in self.logs()])
+		self.assert_logged_without_secret()
+
+	def test_a_cargo_500_echoing_the_secret_logs_no_secret(self):
+		region = frappe.get_doc(
+			{
+				"doctype": "Region",
+				"region": frappe.generate_hash(length=8),
+				"atlas_region_id": "7",
+				"cargo_base_url": "http://cargo.example.test:8000",
+				"status": "Active",
+				"cargo_status": "Registered",
+				"cargo_webhook_secret": "webhook-secret",
+			}
+		).insert()
+		with (
+			patch("central.integrations.cargo.mint_cargo_token", return_value="cargo-token"),
+			patch("central.integrations.cargo.requests.post", side_effect=self.echo),
+			patch("central.integrations.report_secret.get_report_secret", return_value=SECRET),
+		):
+			send_to_cargo(region.name)
+
+		self.assert_logged_without_secret()
