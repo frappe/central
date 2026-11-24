@@ -7,9 +7,8 @@ import datetime
 import frappe
 from frappe.query_builder import Order
 
-from central.billing.revenue.bundled_buckets import bundled_buckets
+from central.billing.revenue.bundled_buckets import billed_subjects_of
 from central.billing.revenue.usage_ledger import utc_today
-from central.services.doctype.service.service import STORAGE_SERVICE
 from central.services.doctype.team_service.team_service import billed_subjects
 
 # A service sends a deleted subject's last day after the delete, so Central keeps taking it this long.
@@ -20,14 +19,7 @@ def subjects_by_day(service: str, names: list[str], days: set[str]) -> dict[str,
 	"""The subjects among `names` that `service` bills on each of `days`, by day then subject."""
 	known = billed_subjects(service, names)
 	deleted = _recently_deleted(service, [name for name in names if name not in known])
-	return {day: {**deleted, **_bundled_on(service, names, day), **known} for day in days}
-
-
-def _bundled_on(service: str, names: list[str], day: str) -> dict:
-	# A server's backup bucket bills only on a day its server billed, with that day's bundle.
-	if service != STORAGE_SERVICE or not names:
-		return {}
-	return bundled_buckets(names, day)
+	return {day: {**deleted, **billed_subjects_of(service, day, names)} for day in days}
 
 
 def _recently_deleted(service: str, names: list[str]) -> dict:
