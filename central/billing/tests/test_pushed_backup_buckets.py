@@ -16,19 +16,26 @@ SECRET = "storage-report-secret"
 PAUSED_AT = "2026-06-02 12:00:00"
 
 
-class TestPushedBackupBuckets(IntegrationTestCase):
+class TestPushedBackupBuckets(base.BundledServerFixture, IntegrationTestCase):
 	def setUp(self):
-		base.TestBundledBuckets.setUp(self)
+		self.set_up_bundled_server()
 		storage = frappe.get_doc("Service", "storage")
-		before = (storage.enabled, storage.get_password("report_secret", raise_exception=False))
+		before = (
+			storage.enabled,
+			storage.central_reads,
+			storage.get_password("report_secret", raise_exception=False),
+		)
 		storage.enabled = 1
+		# Cargo pushes storage, so Central stores what it sends.
+		storage.central_reads = 0
 		storage.report_secret = SECRET
 		storage.save()
 		self.addCleanup(self.restore_storage, before)
 
 	def restore_storage(self, before):
 		storage = frappe.get_doc("Service", "storage")
-		storage.enabled, storage.report_secret = before[0], before[1] or ""
+		storage.enabled, storage.central_reads = before[0], before[1]
+		storage.report_secret = before[2] or ""
 		storage.save()
 
 	def send(self, days: list[str], gb: float = 100, today: str = "2026-06-30") -> dict:
