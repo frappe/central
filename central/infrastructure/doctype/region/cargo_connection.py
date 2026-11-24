@@ -44,9 +44,9 @@ class CargoConnectionMixin:
 			frappe.throw(_("Cargo has not answered a health check yet."), CargoConnectionError)
 
 	def register_cargo(self) -> bool:
-		"""Once Cargo answers, send it Central's receiver, a fresh secret and the storage report
-		secret, and return whether it is Registered. Atlas installs Cargo with a placeholder Central, so it reports nothing
-		until this runs. A repeat only replaces the secret, so it is safe to retry."""
+		"""Once Cargo answers, send it Central's receiver and secrets; return whether it is Registered."""
+		# Atlas installs Cargo with a placeholder Central, so it reports nothing until this runs. A
+		# repeat only replaces the webhook secret, so it is safe to retry.
 		from central.integrations.cargo import CargoClient
 		from central.services.doctype.service.service import STORAGE_SERVICE, get_report_secret
 
