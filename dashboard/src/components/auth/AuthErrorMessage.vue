@@ -20,9 +20,9 @@ const hasSupport = !!useSupport().getTicketUrl()
 	<div class="space-y-1">
 		<ErrorMessage :message="message" />
 		<p v-if="hasSupport" class="text-p-sm text-ink-gray-6">
-			Still stuck?
+			If you think this is a mistake,
 			<ContactSupportLink :context="{ Page: page, ...context }"
-				>Contact support</ContactSupportLink
+				>contact support</ContactSupportLink
 			>.
 		</p>
 	</div>

@@ -60,6 +60,7 @@
   "invitation_resend_cooldown_minutes",
   "sign_in_section",
   "sign_in_code_attempts",
+  "block_disposable_emails",
   "column_break_sign_in",
   "sign_in_codes_per_email",
   "trials_tab",
@@ -426,6 +427,13 @@
    "non_negative": 1
   },
   {
+   "default": "1",
+   "description": "Refuse a new account from a temporary email provider. Existing accounts still sign in.",
+   "fieldname": "block_disposable_emails",
+   "fieldtype": "Check",
+   "label": "Block Disposable Emails"
+  },
+  {
    "fieldname": "column_break_sign_in",
    "fieldtype": "Column Break"
   },
@@ -625,7 +633,11 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
+<<<<<<< HEAD
  "modified": "2026-11-24 16:00:00.000000",
+=======
+ "modified": "2026-11-24 00:00:00.000000",
+>>>>>>> 001146f (feat(identity): block signups from disposable email domains)
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",
