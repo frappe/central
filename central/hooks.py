@@ -191,6 +191,8 @@ after_install = [
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }
 
+persistent_cache_keys = ["deploy-log:*"]
+
 # Document Events
 # ---------------
 # Hook on document methods and events

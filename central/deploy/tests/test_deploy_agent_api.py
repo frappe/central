@@ -1,10 +1,15 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.deploy import api
-from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
+from central.deploy.doctype.deploy_request.deploy_request import (
+	LOG_HEAD_CHARACTERS,
+	MAX_LOG_CHARACTERS,
+	DeployRequest,
+	get_log_key,
+)
 from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
 	make_installation,
 )
@@ -26,6 +31,8 @@ class IntegrationTestDeployAgentAPI(IntegrationTestCase):
 		self.request.set_status("Building")
 		patch.object(DeployRequest, "get_build_payload", return_value={"commit": "a" * 40}).start()
 		self.addCleanup(patch.stopall)
+		for field in ("build_log", "release_log"):
+			self.addCleanup(frappe.cache.delete_value, get_log_key(self.request.name, field))
 
 	def make_app(self, team: str, installation: str, repository_id: str):
 		return frappe.get_doc(
@@ -65,16 +72,45 @@ class IntegrationTestDeployAgentAPI(IntegrationTestCase):
 		):
 			api.get_build()
 
-	def test_a_report_saves_the_status_and_the_end_of_the_log(self):
-		reply = self.call_as(
-			self.app, api.report_build, deploy_request=self.request.name, status="Failed", log="x" * 30_000
+	def report_build(self, status: str, log: str) -> dict:
+		return self.call_as(
+			self.app, api.report_build, deploy_request=self.request.name, status=status, log=log
 		)
+
+	def get_saved_log(self, field: str) -> str | None:
+		return frappe.db.get_value("Deploy Request", self.request.name, field)
+
+	def test_build_reports_collect_in_redis_until_the_deploy_finishes(self):
+		self.report_build("Running", "one\n")
+		reply = self.report_build("Failed", "two\n")
 		self.assertEqual(reply, {"cancel": False})
-		status, log, reported_at = frappe.db.get_value(
-			"Deploy Request", self.request.name, ["build_status", "build_log", "build_reported_at"]
+		self.assertIsNone(self.get_saved_log("build_log"))
+		self.assertEqual(
+			frappe.get_doc("Deploy Request", self.request.name).get_log("build_log"), "one\ntwo\n"
 		)
-		self.assertEqual((status, len(log)), ("Failed", api.BUILD_LOG_CHARACTERS))
-		self.assertIsNotNone(reported_at)
+
+		self.request.set_status("Failed")
+		self.assertEqual(self.get_saved_log("build_log"), "one\ntwo\n")
+
+	def test_a_deploy_central_fails_saves_the_log_the_agent_never_finished(self):
+		self.report_build("Running", "one\n")
+		with patch("central.deploy.doctype.deploy_request.deploy_request.notify"):
+			self.request.on_pipeline_failure(MagicMock(pipeline_traceback="DeployTimeoutError: silent"))
+		self.assertEqual(self.get_saved_log("build_log"), "one\n")
+
+	def test_clearing_the_cache_keeps_a_running_log(self):
+		self.report_build("Running", "one\n")
+		frappe.clear_cache()
+		self.assertEqual(frappe.cache.llen(get_log_key(self.request.name, "build_log")), 1)
+
+	def test_a_long_build_log_keeps_its_start_and_its_newest_lines(self):
+		self.report_build("Running", "h" * LOG_HEAD_CHARACTERS + "m" * MAX_LOG_CHARACTERS)
+		self.report_build("Failed", "error")
+		self.request.set_status("Failed")
+		log = self.get_saved_log("build_log")
+		self.assertEqual(len(log), MAX_LOG_CHARACTERS)
+		self.assertTrue(log.startswith("h" * LOG_HEAD_CHARACTERS + "\n... earlier output skipped ...\n"))
+		self.assertTrue(log.endswith("m" + "error"))
 
 	def test_a_superseded_build_tells_the_agent_to_cancel(self):
 		with patch.object(DeployRequest, "after_insert"):
@@ -92,13 +128,14 @@ class IntegrationTestDeployAgentAPI(IntegrationTestCase):
 			app, api.report_deployment_status, deploy_request=self.request.name, status=status, logs=logs
 		)
 
-	def test_a_release_report_saves_the_status_and_the_end_of_the_log(self):
-		self.report_release(self.app, "Releasing")
-		self.report_release(self.app, "Failed", logs="x" * 30_000)
+	def test_release_reports_are_saved_when_the_deploy_finishes(self):
+		self.report_release(self.app, "Releasing", "started\n")
+		self.report_release(self.app, "Failed", "unhealthy\n")
+		self.request.set_status("Failed")
 		status, log, reported_at = frappe.db.get_value(
 			"Deploy Request", self.request.name, ["release_status", "release_log", "release_reported_at"]
 		)
-		self.assertEqual((status, len(log)), ("Failed", api.BUILD_LOG_CHARACTERS))
+		self.assertEqual((status, log), ("Failed", "started\nunhealthy\n"))
 		self.assertIsNotNone(reported_at)
 
 	def test_another_apps_agent_cannot_report_a_release(self):

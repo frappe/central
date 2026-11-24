@@ -122,14 +122,14 @@
    "read_only": 1
   },
   {
-   "description": "The end of the build's output, as the deploy agent last sent it.",
+   "description": "The build's output as the deploy agent sent it. Past 1 MiB, it keeps the start and the newest lines.",
    "fieldname": "build_log",
    "fieldtype": "Code",
    "label": "Build Log",
    "read_only": 1
   },
   {
-   "description": "The end of the release's output: the health check, and the new container's log when it failed.",
+   "description": "The release's output: the health check, and the new container's log when it failed. Past 1 MiB, it keeps the start and the newest lines.",
    "fieldname": "release_log",
    "fieldtype": "Code",
    "label": "Release Log",
@@ -193,7 +193,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-23 20:00:00.000000",
+ "modified": "2026-11-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Deploy",
  "name": "Deploy Request",

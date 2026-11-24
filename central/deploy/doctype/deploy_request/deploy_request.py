@@ -52,6 +52,15 @@ BUILD_REPORT_TIMEOUT_SECONDS = 5 * 60
 RELEASE_TIMEOUT_SECONDS = 15 * 60
 # The VM size in Atlas units, copied from the plan when the deploy reads the commit's config.
 SPEC_FIELDS = ("cpu_millicores", "memory_mib", "disk_mib")
+# A log past this keeps its first part and its newest lines, so a runaway build can't fill the row.
+MAX_LOG_CHARACTERS = 1024 * 1024
+LOG_HEAD_CHARACTERS = 256 * 1024
+SKIPPED_LOG_MARKER = "\n... earlier output skipped ...\n"
+# The agent's chunks collect in Redis while the deploy runs and are copied to the row once it finishes. Each append
+# renews the TTL, which outlasts the build and the release, so a log stays until its deploy finishes.
+LOG_FIELDS = ("build_log", "release_log")
+LOG_BUFFER_TTL_SECONDS = 2 * (BUILD_TIMEOUT_SECONDS + RELEASE_TIMEOUT_SECONDS)
+FINISHED_STATES = ("Succeeded", "Failed", "Superseded")
 # What GitHub shows on the commit for each status; a status not listed is pending.
 COMMIT_STATES = {"Succeeded": "success", "Failed": "failure", "Superseded": "error"}
 COMMIT_DESCRIPTIONS = {
@@ -320,6 +329,31 @@ class DeployRequest(PipelineBuilder):
 			target_url=f"https://{app.domain}" if self.status == "Succeeded" and app.domain else None,
 		)
 
+	def validate(self):
+		if self.has_value_changed("status") and self.status in FINISHED_STATES:
+			self.flush_logs()
+
+	def append_log(self, field: str, chunk: str) -> None:
+		"""Add the lines the agent sent since its last report to the Redis log of `field`."""
+		if chunk:
+			key = get_log_key(self.name, field)
+			frappe.cache.rpush(key, chunk)
+			frappe.cache.expire_key(key, LOG_BUFFER_TTL_SECONDS)
+
+	def flush_logs(self) -> None:
+		"""Replace the saved logs with the Redis ones; the save that finishes the deploy writes them."""
+		for field in LOG_FIELDS:
+			if chunks := frappe.cache.lrange(get_log_key(self.name, field), 0, -1):
+				self.set(field, cap_log(get_text(chunks)))
+
+	def get_log(self, field: str) -> str:
+		"""While the deploy runs, the buffer in Redis, or the saved log when Redis has none; after, the saved log."""
+		if self.status not in FINISHED_STATES:
+			chunks = frappe.cache.lrange(get_log_key(self.name, field), 0, -1)
+			if chunks:
+				return cap_log(get_text(chunks))
+		return self.get(field) or ""
+
 	def is_silent(self, last_reported: datetime | None) -> bool:
 		"""No report since the last one, or since the current step started, for too long."""
 		last_heard = last_reported or self.step_started
@@ -446,6 +480,23 @@ class DeployRequest(PipelineBuilder):
 		self.error = error
 		# Central moves the team's deploy through its steps; no Desk user owns it.
 		self.save(ignore_permissions=True)
+
+
+def cap_log(log: str) -> str:
+	"""`log`, or its start and its newest lines once it is longer than MAX_LOG_CHARACTERS."""
+	if len(log) <= MAX_LOG_CHARACTERS:
+		return log
+
+	tail = log[LOG_HEAD_CHARACTERS:][-(MAX_LOG_CHARACTERS - LOG_HEAD_CHARACTERS - len(SKIPPED_LOG_MARKER)) :]
+	return log[:LOG_HEAD_CHARACTERS] + SKIPPED_LOG_MARKER + tail
+
+
+def get_log_key(deploy_request: str, field: str) -> str:
+	return f"deploy-log:{deploy_request}:{field}"
+
+
+def get_text(chunks: list[bytes]) -> str:
+	return "".join(chunk.decode() for chunk in chunks)
 
 
 def on_doctype_update() -> None:

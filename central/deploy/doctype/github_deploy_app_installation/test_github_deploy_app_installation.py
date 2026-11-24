@@ -7,6 +7,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.tests import IntegrationTestCase
 
+from central.deploy import api
 from central.deploy.doctype.github_deploy_app_installation.github_deploy_app_installation import (
 	GitHubDeployAppInstallation,
 	state_key,
@@ -53,6 +54,21 @@ class IntegrationTestGitHubDeployAppInstallation(IntegrationTestCase):
 
 	def start(self) -> str:
 		return GitHubDeployAppInstallation.start(self.team, self.owner, "Octo/App", self.region)
+
+	def test_the_signed_in_user_connects_a_repository_through_the_api(self):
+		patch("central.deploy.api.GitHubDeployApp").start().return_value.get_install_url.return_value = "url"
+		frappe.set_user(self.owner)
+		started = api.connect_repository(self.team, "octo/app", self.region)
+		self.assertEqual(started["install_url"], "url")
+
+		GitHubDeployAppInstallation.verify(started["state"], "code", "101", self.owner)
+		frappe.set_user(self.outsider)
+		with self.assertRaises(frappe.PermissionError):
+			api.complete_repository_connection(started["state"])
+
+		frappe.set_user(self.owner)
+		app = api.complete_repository_connection(started["state"])
+		self.assertEqual((app["repository"], app["branch"]), ("octo/app", "main"))
 
 	def test_a_team_links_an_installation_once(self):
 		make_installation(self.team)

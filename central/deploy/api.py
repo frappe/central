@@ -16,8 +16,21 @@ BRANCH_REF_PREFIX = "refs/heads/"
 AGENT_TOKEN_HEADER = "X-Deploy-Agent-Token"
 BUILD_REPORT_STATES = ("Running", "Succeeded", "Failed")
 RELEASE_REPORT_STATES = ("Releasing", "Live", "Failed")
-# The end of the build output Central keeps; the full log stays on the VM.
-BUILD_LOG_CHARACTERS = 20_000
+
+
+@frappe.whitelist(methods=["POST"])
+def connect_repository(team: str, repository: str, region: str, branch: str | None = None) -> dict:
+	"""Start deploying `repository` (owner/name) for `team`. The user installs the GitHub App from `install_url`,
+	then finishes with complete_repository_connection and the same `state`."""
+	state = GitHubDeployAppInstallation.start(team, frappe.session.user, repository, region, branch)
+	return {"state": state, "install_url": GitHubDeployApp().get_install_url(state)}
+
+
+@frappe.whitelist(methods=["POST"])
+def complete_repository_connection(state: str) -> dict:
+	"""Create the Deploy App once GitHub returned from the install; pushes to its branch deploy from then on."""
+	app = GitHubDeployAppInstallation.complete(state, frappe.session.user)
+	return {"name": app.name, "repository": app.repository, "branch": app.branch, "domain": app.domain}
 
 
 # nosemgrep: guest-whitelisted-method -- the state binds the callback to the user who started it.
@@ -97,7 +110,8 @@ def get_build() -> dict | None:
 # nosemgrep: guest-whitelisted-method -- the app's agent token authenticates the deploy agent.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def report_build(deploy_request: str, status: str, log: str = "") -> dict:
-	"""Save what the agent says about a build it got from get_build. `cancel` tells it a newer push replaced the build."""
+	"""Save what the agent says about a build it got from get_build, and add the log lines it sent since its last
+	report. `cancel` tells it a newer push replaced the build."""
 	app = DeployApp.get_for_agent(frappe.get_request_header(AGENT_TOKEN_HEADER) or "")
 	if status not in BUILD_REPORT_STATES:
 		frappe.throw(_("Unknown build status {0}.").format(status))
@@ -110,7 +124,7 @@ def report_build(deploy_request: str, status: str, log: str = "") -> dict:
 
 	request.build_status = status
 	request.build_reported_at = now_datetime()
-	request.build_log = log[-BUILD_LOG_CHARACTERS:]
+	request.append_log("build_log", log)
 	# The agent reports on the team's build; no Desk user owns it.
 	request.save(ignore_permissions=True)
 	return {"cancel": False}
@@ -118,7 +132,7 @@ def report_build(deploy_request: str, status: str, log: str = "") -> dict:
 
 # nosemgrep: guest-whitelisted-method -- the app's agent token authenticates the deploy agent.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def report_deployment_status(deploy_request: str, status: str, logs: str) -> None:
+def report_deployment_status(deploy_request: str, status: str, logs: str = "") -> None:
 	"""Save what the agent says about a release it started after the build. Nothing cancels a release; when the new
 	container fails its health check, the agent removes it, keeps its logs, and the old one keeps serving."""
 	app = DeployApp.get_for_agent(frappe.get_request_header(AGENT_TOKEN_HEADER) or "")
@@ -131,6 +145,6 @@ def report_deployment_status(deploy_request: str, status: str, logs: str) -> Non
 
 	request.release_status = status
 	request.release_reported_at = now_datetime()
-	request.release_log = logs[-BUILD_LOG_CHARACTERS:]
+	request.append_log("release_log", logs)
 	# The agent reports on the team's release; no Desk user owns it.
 	request.save(ignore_permissions=True)
