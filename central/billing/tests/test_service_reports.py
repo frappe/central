@@ -237,6 +237,41 @@ class TestServiceReports(IntegrationTestCase):
 		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
 		self.assertTrue(answer["rejected"][0]["retry"])
 
+	def copy_usage_day(self, day: str, subscription: str | None = None):
+		"""A copy of the bucket's only Usage Day, moved to `day` and, if given, `subscription`."""
+		copy = frappe.copy_doc(frappe.get_doc("Usage Day", {"subject": BUCKET}))
+		copy.day = day
+		copy.subscription = subscription or copy.subscription
+		copy.db_insert()  # Skips validation, as a row written by an older Central would.
+
+	def server_subscription(self) -> str:
+		"""A copy of the bucket's subscription that bills a server instead."""
+		billed = frappe.db.get_value("Usage Day", {"subject": BUCKET}, "subscription")
+		server = frappe.copy_doc(frappe.get_doc("Subscription", billed))
+		server.server_id = "service-reports-server"
+		server.db_insert()  # Skips validation; only server_id matters here.
+		return server.name
+
+	def test_a_deleted_subject_whose_latest_day_is_on_a_server_is_an_unknown_subject(self):
+		self.send([line("2026-06-19", 10)])
+		self.copy_usage_day("2026-06-20", self.server_subscription())
+		frappe.db.delete("Team Service", {"team": TEAM})
+
+		answer = self.send_on("2026-06-21", [line("2026-06-20", 12)])
+
+		self.assertEqual(answer["accepted"], 0)
+		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
+
+	def test_a_deleted_subject_whose_latest_day_is_after_today_is_an_unknown_subject(self):
+		self.send([line("2026-06-19", 10)])
+		self.copy_usage_day("2026-06-25")
+		frappe.db.delete("Team Service", {"team": TEAM})
+
+		answer = self.send_on("2026-06-21", [line("2026-06-20", 12)])
+
+		self.assertEqual(answer["accepted"], 0)
+		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
+
 	def test_nothing_is_stored_while_central_still_reads_the_service(self):
 		frappe.db.set_value("Service", "storage", "central_reads", 1)
 
