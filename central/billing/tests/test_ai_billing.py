@@ -305,7 +305,7 @@ class TestAIBilling(AIBillingCase):
 		self.assertTrue(service_reports.line_problem(ai_service, {**line, "dimension": "x" * 141}, subjects))
 		storage = frappe.get_doc("Service", STORAGE_SERVICE)
 		bucket_line = {**line, "meter": "bytes_stored", "dimension": None}
-		self.assertIn("from 0", service_reports.line_problem(storage, bucket_line, subjects))
+		self.assertIn("from 0", service_reports.line_problem(storage, bucket_line, subjects)[0])
 
 	def test_the_overview_shows_an_inr_team_the_months_rate_without_storing_it(self):
 		self.assertIsNone(ai.get_billing_rate(TEAM_USD))

@@ -726,8 +726,11 @@ Server bundles (#188): a server plan's Plan Includes row is the server's bundle 
     server name it) beside the team buckets; a paused or ended server's bucket is not read
 Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
   → service_reports.accept_report stores each line as a Usage Day; a refused line comes back
-    with its subject, meter, day, dimension ("" when it has none) and `retry` (true: send it
-    again, false: never)
+    with its subject, meter, day, dimension ("" when it has none) and `retry`. It is true for an
+    unknown subject (the team may subscribe later), a day in the future (the service's clock may
+    be ahead) and a day written by another worker at the same time; the service sends these
+    again. It is false for a malformed line, an unknown meter and a bad value, dimension, amount,
+    currency or day format; the service never sends these again
   → every signed report sets Service.last_report_at and last_report_as_of
   → once Central stops reading a service (central_reads off): alert `silent_service` after
     twice its expected_cadence with no report; usage_checks compares Central's own reading with
