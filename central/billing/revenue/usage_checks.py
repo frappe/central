@@ -166,20 +166,18 @@ def usage_mismatches() -> list[dict]:
 	checks = frappe.get_all(
 		DOCTYPE,
 		filters={"is_mismatch": 1, "day": [">=", cutoff], "service": ["in", pushed]},
-		fields=["name", "service", "subject", "dimension", "day", "read_value", "stored_value"],
+		fields=["name", "service", "meter", "subject", "dimension", "day", "read_value", "stored_value"],
 		order_by="day desc",
 		limit=100,
 	)
+	units = _meter_units(pushed)
 	return [
 		{
 			"alert": "usage_mismatch",
 			"doctype": DOCTYPE,
 			"subject": check.name,
 			"team": None,
-			"detail": (
-				f"{check.service} {check.subject} {check.dimension or ''} on {check.day} (UTC): "
-				f"Central read {check.read_value:g}, the day holds {check.stored_value:g}"
-			),
+			"detail": _mismatch_detail(check, units.get((check.service, check.meter))),
 		}
 		for check in checks
 	]
@@ -197,7 +195,32 @@ def _is_silent(service, now: datetime.datetime) -> bool:
 def _silence_detail(service) -> str:
 	if not service.last_report_at:
 		return f"No report since Central stopped reading it (expected {service.expected_cadence or 'Hourly'})"
-	return f"Last report {service.last_report_at} (expected {service.expected_cadence or 'Hourly'})"
+	return (
+		f"Last report {service.last_report_at} ({frappe.utils.get_system_timezone()}) "
+		f"(expected {service.expected_cadence or 'Hourly'})"
+	)
+
+
+def _mismatch_detail(check, unit: str | None) -> str:
+	named = " ".join(part for part in (check.service, check.subject, check.dimension) if part)
+	return (
+		f"{named} on {check.day} (UTC): Central read {_amount(check.read_value, unit)}, "
+		f"the day holds {_amount(check.stored_value, unit)}"
+	)
+
+
+def _amount(value: float, unit: str | None) -> str:
+	return f"{value:g} {unit}" if unit else f"{value:g}"
+
+
+def _meter_units(services: list[str]) -> dict:
+	"""The unit of each meter of the services, by service and meter."""
+	meters = frappe.get_all(
+		"Service Meter",
+		filters={"parenttype": "Service", "parent": ["in", services]},
+		fields=["parent", "meter_key", "unit"],
+	)
+	return {(meter.parent, meter.meter_key): meter.unit for meter in meters}
 
 
 def _ai_checks(team: str, day: str, read: dict, stored: dict, now) -> list[dict]:
