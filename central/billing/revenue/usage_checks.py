@@ -10,10 +10,15 @@ import datetime
 
 import frappe
 
-from central.billing.revenue.bundled_buckets import billed_storage_subjects
 from central.billing.revenue.grove_bridge import read_days
+from central.billing.revenue.storage_bridge import (
+	billed_buckets,
+	bundled_bucket_reader,
+	bundled_buckets_by_region,
+	pages,
+	team_bucket_reader,
+)
 from central.billing.revenue.usage_ledger import utc_today
-from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
 from central.services.doctype.service.service import (
 	AI_METER,
 	AI_SERVICE,
@@ -38,29 +43,30 @@ def sample_storage() -> int:
 	"""Daily at 12:00 UTC: read every billed bucket once, to check the day's pushed peak tomorrow."""
 	if is_read_by_central(STORAGE_SERVICE):
 		return 0
-	regions: dict[str, list[str]] = {}
-	for name, bucket in billed_storage_subjects(day=utc_today()).items():
-		regions.setdefault(bucket.region, []).append(name)
-	for region, names in regions.items():
-		for start in range(0, len(names), PAGE_SIZE):
-			_enqueue("sample_storage_page", region=region, names=names[start : start + PAGE_SIZE])
-	return sum(len(names) for names in regions.values())
+	queued = 0
+	for bundled, buckets in ((False, billed_buckets()), (True, bundled_buckets_by_region())):
+		for region, region_pages in pages(buckets).items():
+			for page in region_pages:
+				_enqueue("sample_storage_page", region=region, names=page, bundled=bundled)
+				queued += len(page)
+	return queued
 
 
-def sample_storage_page(region: str, names: list[str]) -> int:
-	"""Read one page of a region's buckets and keep each reading for today's check."""
-	client = ObjectStorageClient.from_region(region)
-	divisor = _divisor(STORAGE_SERVICE, STORAGE_METER)
-	now, today = frappe.utils.now_datetime(), utc_today()
+def sample_storage_page(region: str, names: list[str], bundled: bool = False) -> int:
+	"""Read one page of a region's buckets as billing would, and keep each reading for the check."""
+	names, read = (bundled_bucket_reader if bundled else team_bucket_reader)(names)
+	now = frappe.utils.now_datetime()
 	rows, failed = [], []
 	for name in names:
 		# One bucket's failure, of any kind, must not stop the page's other buckets.
 		try:
-			used = _used_bytes(client, name)
+			day = read(name)
 		except Exception as error:
 			failed.append(f"{name}: {error!r}")
 			continue
-		rows.append(_check(STORAGE_SERVICE, STORAGE_METER, name, "", today, used / divisor, now))
+		rows.append(
+			_check(STORAGE_SERVICE, STORAGE_METER, day["subject"], "", day["day"], day["quantity"], now)
+		)
 	_log_failures(f"Usage check: {len(failed)} bucket(s) not sampled in {region}", failed)
 	return _insert(rows)
 
@@ -264,18 +270,6 @@ def _insert(rows: list[dict]) -> int:
 	values = [(frappe.generate_hash(length=12), now, now, user, user, *row.values()) for row in rows]
 	frappe.db.bulk_insert(DOCTYPE, _FIELDS + columns, values, ignore_duplicates=True)
 	return len(rows)
-
-
-def _used_bytes(client, name: str) -> float:
-	try:
-		return frappe.utils.flt(client.get_usage(name)["usage"].get("used_bytes"))
-	except ObjectStorageNotFound:
-		# A server's backup bucket that was never attached holds nothing.
-		return 0.0
-
-
-def _divisor(service: str, meter: str) -> float:
-	return frappe.utils.flt(frappe.get_doc("Service", service).get_meter(meter).unit_divisor)
 
 
 def _enqueue(method: str, **kwargs) -> None:

@@ -7,9 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
-from central.billing.revenue import grove_bridge, usage_checks
+from central.billing.revenue import grove_bridge, storage_bridge, usage_checks
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.services.doctype.service.service import AI_SERVICE, STORAGE_SERVICE
+from central.services.doctype.team_service.team_service import TeamService
 
 DAY = datetime.date(2026, 6, 19)
 TODAY = datetime.date(2026, 6, 20)
@@ -17,12 +18,6 @@ NOW = datetime.datetime(2026, 6, 20, 8, 0)
 BUCKET = "t-checks-bom-media"
 TEAM = "team-usage-checks"
 GB = 1_000_000_000
-
-
-def cargo(gb: float):
-	client = MagicMock()
-	client.get_usage.return_value = {"usage": {"used_bytes": gb * GB}}
-	return client
 
 
 class TestUsageChecks(IntegrationTestCase):
@@ -35,6 +30,20 @@ class TestUsageChecks(IntegrationTestCase):
 			frappe.db.set_value("Service", name, {"enabled": 1, "central_reads": 0, "last_report_at": None})
 		self.enterContext(patch.object(usage_checks, "utc_today", return_value=TODAY))
 		self.enterContext(patch("frappe.utils.now_datetime", return_value=NOW))
+		frappe.db.delete("Team Service", {"external_id": BUCKET})
+		self.bucket = frappe.get_doc(
+			{
+				"doctype": "Team Service",
+				"team": TEAM,
+				"add_on_service": STORAGE_SERVICE,
+				"region": "ap-south-1",
+				"bucket_name": BUCKET,
+				"external_id": BUCKET,
+				"status": "Active",
+			}
+		)
+		self.bucket.db_insert()  # Skips before_insert, which would create the bucket in Cargo.
+		self.addCleanup(frappe.db.delete, "Team Service", {"external_id": BUCKET})
 
 	def stored_day(self, service, subject, quantity, dimension=""):
 		frappe.get_doc(
@@ -50,12 +59,12 @@ class TestUsageChecks(IntegrationTestCase):
 			}
 		).db_insert()
 
-	def sample(self, gb: float, day=DAY):
+	def sample(self, gb: float, day=DAY, names=None):
 		with (
-			patch.object(usage_checks.ObjectStorageClient, "from_region", return_value=cargo(gb)),
-			patch.object(usage_checks, "utc_today", return_value=day),
+			patch.object(TeamService, "get_usage", return_value={"used_bytes": gb * GB}),
+			patch.object(storage_bridge, "utc_today", return_value=day),
 		):
-			usage_checks.sample_storage_page("ap-south-1", [BUCKET])
+			return usage_checks.sample_storage_page("ap-south-1", names or [self.bucket.name])
 
 	def check(self, service=STORAGE_SERVICE):
 		return frappe.get_all(
@@ -97,15 +106,20 @@ class TestUsageChecks(IntegrationTestCase):
 		self.assertEqual([c.read_value for c in self.check()], [100])
 
 	def test_a_bucket_that_fails_is_logged_and_the_page_goes_on(self):
-		client = cargo(10)
-		client.get_usage.side_effect = [RuntimeError("cargo down"), {"usage": {"used_bytes": 10 * GB}}]
-		with (
-			patch.object(usage_checks.ObjectStorageClient, "from_region", return_value=client),
-			patch.object(usage_checks, "utc_today", return_value=DAY),
-		):
-			written = usage_checks.sample_storage_page("ap-south-1", ["broken-bucket", BUCKET])
-		self.assertEqual(written, 1)
+		self.assertEqual(self.sample(10, names=["no-such-bucket", self.bucket.name]), 1)
 		self.assertEqual([c.subject for c in self.check()], [BUCKET])
+
+	def test_a_backup_bucket_is_sampled_with_the_bundled_reader(self):
+		bucket = frappe._dict(external_id=BUCKET, team=TEAM, region="ap-south-1", included=50)
+		client = MagicMock()
+		client.get_usage.return_value = {"usage": {"used_bytes": 70 * GB}}
+		with (
+			patch.object(storage_bridge, "bundled_buckets", return_value={BUCKET: bucket}),
+			patch.object(storage_bridge.ObjectStorageClient, "from_region", return_value=client),
+			patch.object(storage_bridge, "utc_today", return_value=DAY),
+		):
+			usage_checks.sample_storage_page("ap-south-1", [BUCKET], bundled=True)
+		self.assertEqual([(c.subject, c.read_value) for c in self.check()], [(BUCKET, 70)])
 
 	def check_ai(self, models: dict):
 		grove = [
@@ -162,14 +176,15 @@ class TestUsageChecks(IntegrationTestCase):
 		self.assertFalse(usage_checks.usage_mismatches())
 
 	def test_buckets_are_sampled_in_pages_by_region(self):
-		buckets = {f"b{n}": frappe._dict(region="ap-south-1" if n % 2 else "eu-west-1") for n in range(250)}
+		names = [f"b{n}" for n in range(250)]
 		with (
-			patch.object(usage_checks, "billed_storage_subjects", return_value=buckets),
+			patch.object(usage_checks, "billed_buckets", return_value={"ap-south-1": names[:125]}),
+			patch.object(usage_checks, "bundled_buckets_by_region", return_value={"eu-west-1": names[125:]}),
 			patch("frappe.enqueue") as enqueue,
 		):
 			self.assertEqual(usage_checks.sample_storage(), 250)
-		pages = [call.kwargs["names"] for call in enqueue.call_args_list]
-		self.assertEqual(sorted(len(page) for page in pages), [25, 25, 100, 100])
+		pages = [(call.kwargs["bundled"], len(call.kwargs["names"])) for call in enqueue.call_args_list]
+		self.assertEqual(sorted(pages), [(False, 25), (False, 100), (True, 25), (True, 100)])
 
 	def test_a_service_silent_for_twice_its_cadence_raises_an_alert(self):
 		frappe.db.set_value("Service", STORAGE_SERVICE, "last_report_at", NOW - datetime.timedelta(hours=3))

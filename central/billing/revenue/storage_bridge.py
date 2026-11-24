@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+from collections.abc import Callable
+
 import frappe
 
 from central.billing.revenue.bundled_buckets import bundled_buckets
@@ -21,32 +23,39 @@ def read_storage_usage() -> int:
 		return 0
 	run = frappe.generate_hash(length=12)
 	# Team buckets and servers' backup buckets are read by their own page jobs.
-	jobs = {"read_page": _pages(billed_buckets()), "read_bundled_page": _pages(_bundled_buckets_by_region())}
+	jobs = {"read_page": pages(billed_buckets()), "read_bundled_page": pages(bundled_buckets_by_region())}
 	_start_regions(run, jobs)
 	return _enqueue_pages(run, jobs)
 
 
 def read_page(run: str, region: str, names: list[str]) -> int:
 	"""Read one page of a region's team buckets and write their days."""
-	meter = frappe.get_doc("Service", STORAGE_SERVICE).get_meter(STORAGE_METER)
-	return _read_and_write(run, region, names, lambda name: _reading(name, meter))
+	return _read_and_write(run, region, *team_bucket_reader(names))
 
 
 def read_bundled_page(run: str, region: str, names: list[str], day=None) -> int:
 	"""Read one page of a region's servers' backup buckets and write their days."""
+	# `day` is kept only for jobs queued with it; the reader takes the day it reads.
+	return _read_and_write(run, region, *bundled_bucket_reader(names))
+
+
+def team_bucket_reader(names: list[str]) -> tuple[list[str], Callable[[str], dict]]:
+	"""A page's team buckets, and the reader of one into today's Usage Day row."""
+	meter = frappe.get_doc("Service", STORAGE_SERVICE).get_meter(STORAGE_METER)
+	return names, lambda name: _reading(name, meter)
+
+
+def bundled_bucket_reader(names: list[str]) -> tuple[list[str], Callable[[str], dict]]:
+	"""A page's backup buckets that bill today, and the reader of one into today's Usage Day row."""
 	meter = frappe.get_doc("Service", STORAGE_SERVICE).get_meter(STORAGE_METER)
 	# The reading is what the bucket holds now, so it belongs to the day it is read, even for a
-	# page queued before midnight; `day` is kept only for jobs queued with it.
+	# page queued before midnight.
 	day = utc_today()
 	# That day bills a bucket whose server billed at any point of it, even one paused or resized
 	# off storage before the page ran.
 	buckets = bundled_buckets(names, day)
-	return _read_and_write(
-		run,
-		region,
-		[name for name in names if name in buckets],
-		lambda name: _bundled_reading(buckets[name], meter, day),
-	)
+	billed = [name for name in names if name in buckets]
+	return billed, lambda name: _bundled_reading(buckets[name], meter, day)
 
 
 def _read_and_write(run: str, region: str, names: list[str], read) -> int:
@@ -69,7 +78,7 @@ def _read_and_write(run: str, region: str, names: list[str], read) -> int:
 	return written
 
 
-def _pages(buckets: dict[str, list[str]]) -> dict[str, list[list[str]]]:
+def pages(buckets: dict[str, list[str]]) -> dict[str, list[list[str]]]:
 	"""Each region's bucket names, in pages."""
 	return {
 		region: [names[start : start + PAGE_SIZE] for start in range(0, len(names), PAGE_SIZE)]
@@ -105,7 +114,7 @@ def _enqueue_pages(run: str, jobs: dict) -> int:
 	return queued
 
 
-def _bundled_buckets_by_region() -> dict[str, list[str]]:
+def bundled_buckets_by_region() -> dict[str, list[str]]:
 	"""Every server's backup bucket that bills, by region."""
 	regions: dict[str, list[str]] = {}
 	for name, bucket in bundled_buckets().items():
