@@ -52,7 +52,7 @@ type StatusTab = 'all' | 'running' | 'stopped' | 'attention'
 const STATUS_TABS: Record<StatusTab, (row: ResourceRow) => boolean> = {
 	all: () => true,
 	running: (row) => row.visual.key === 'active',
-	stopped: (row) => row.visual.key === 'stopped',
+	stopped: (row) => ['stopped', 'sleeping'].includes(row.visual.key),
 	attention: (row) => ['broken', 'paused'].includes(row.visual.key),
 }
 
@@ -273,6 +273,12 @@ const filters = computed<ListViewFilter[]>(() => [
 						:style="{ background: row.visual.dot }"
 					/>
 					<span
+						v-if="row.visual.icon"
+						:class="[row.visual.icon, 'relative size-3 -m-0.5 text-ink-gray-5']"
+						aria-hidden="true"
+					/>
+					<span
+						v-else
 						class="relative size-2 rounded-full"
 						:style="{ background: row.visual.dot }"
 					/>

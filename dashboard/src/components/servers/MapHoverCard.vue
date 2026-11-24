@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Badge, Button, ScrollArea } from 'frappe-ui'
+import { Button, ScrollArea } from 'frappe-ui'
 import { computed } from 'vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
+import ServerStatusBadge from '@/components/servers/ServerStatusBadge.vue'
 import type { MapNode, MapPin } from '@/lib/serverMap'
 
 // The map's hover card, split out of ServerMap so the map component keeps just
@@ -45,11 +46,7 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 					<span class="truncate text-base-semibold text-ink-gray-9"
 						>{{ node.pin.name }}</span
 					>
-					<Badge
-						:theme="node.pin.visual.badgeTheme"
-						size="sm"
-						:label="node.pin.visual.label"
-					/>
+					<ServerStatusBadge :visual="node.pin.visual" size="sm" />
 				</div>
 				<div
 					v-if="node.pin.specs"
@@ -123,7 +120,11 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 					@click="emit('open', m.id)"
 				>
 					<span class="relative shrink-0">
-						<ProviderAvatar :provider="m.provider" :size="28" />
+						<ProviderAvatar
+							:provider="m.provider"
+							:size="28"
+							:class="{ 'opacity-50': m.visual.isDimmed }"
+						/>
 						<span
 							class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
 							:style="{ background: m.visual.dot }"
