@@ -71,7 +71,11 @@ class TestUsageChecks(IntegrationTestCase):
 		usage_checks.compare_storage(DAY)
 		[check] = self.check()
 		self.assertEqual((check.read_value, check.stored_value, check.is_mismatch), (100, 90, 1))
-		self.assertEqual(len(usage_checks.usage_mismatches()), 1)
+		[alert] = usage_checks.usage_mismatches()
+		self.assertEqual(
+			alert["detail"],
+			f"storage {BUCKET} on 2026-06-19 (UTC): Central read 100 GB, the day holds 90 GB",
+		)
 
 	def test_a_peak_at_or_above_the_sample_passes(self):
 		self.sample(100)
@@ -160,7 +164,9 @@ class TestUsageChecks(IntegrationTestCase):
 	def test_a_service_silent_for_twice_its_cadence_raises_an_alert(self):
 		frappe.db.set_value("Service", STORAGE_SERVICE, "last_report_at", NOW - datetime.timedelta(hours=3))
 		frappe.db.set_value("Service", AI_SERVICE, "last_report_at", NOW - datetime.timedelta(minutes=90))
-		self.assertEqual([a["subject"] for a in usage_checks.silent_services()], [STORAGE_SERVICE])
+		[alert] = usage_checks.silent_services()
+		self.assertEqual(alert["subject"], STORAGE_SERVICE)
+		self.assertIn(f"({frappe.utils.get_system_timezone()})", alert["detail"])
 
 	def test_a_service_that_never_reported_is_silent(self):
 		alerts = {a["subject"]: a for a in usage_checks.silent_services()}
