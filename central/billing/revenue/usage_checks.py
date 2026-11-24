@@ -9,6 +9,7 @@ nothing to check. A check writes no Usage Day: a difference is an operator alert
 import datetime
 
 import frappe
+from frappe.query_builder import Case
 
 from central.billing.revenue.grove_bridge import read_days
 from central.billing.revenue.storage_bridge import (
@@ -34,6 +35,8 @@ STORAGE_TOLERANCE = 0.01
 AI_TOLERANCE_USD = 0.01
 KEPT_DAYS = 7
 PAGE_SIZE = 100
+# Checks updated per statement, so the statement stays small.
+UPDATE_SIZE = 500
 LOGGED_FAILURES = 50
 CADENCE_HOURS = {"Hourly": 1, "Daily": 24}
 _FIELDS = ["name", "creation", "modified", "owner", "modified_by"]
@@ -89,17 +92,8 @@ def compare_storage(day: datetime.date) -> int:
 		fields=["name", "subject", "read_value"],
 	)
 	peaks = _stored(STORAGE_SERVICE, day, [check.subject for check in checks])
-	now = frappe.utils.now_datetime()
-	for check in checks:
-		# A day with no row is readiness M1's to flag; here it is only compared when it exists.
-		stored = peaks.get((check.subject, ""))
-		mismatch = stored is not None and stored < check.read_value * (1 - STORAGE_TOLERANCE)
-		frappe.db.set_value(
-			DOCTYPE,
-			check.name,
-			{"stored_value": stored or 0, "checked_at": now, "is_mismatch": mismatch},
-			update_modified=False,
-		)
+	for start in range(0, len(checks), UPDATE_SIZE):
+		_mark_checked(checks[start : start + UPDATE_SIZE], peaks)
 	return len(checks)
 
 
@@ -232,6 +226,25 @@ def _ai_checks(team: str, day: str, grove: dict, stored: dict, now) -> list[dict
 		row.update(stored_value=kept, checked_at=now, is_mismatch=abs(read - kept) > AI_TOLERANCE_USD)
 		rows.append(row)
 	return rows
+
+
+def _mark_checked(checks: list, peaks: dict) -> None:
+	"""Store each check's peak and outcome in one statement."""
+	table = frappe.qb.DocType(DOCTYPE)
+	stored_value, is_mismatch = Case(), Case()
+	for check in checks:
+		# A day with no row is readiness M1's to flag; here it is only compared when it exists.
+		stored = peaks.get((check.subject, ""))
+		is_low = stored is not None and stored < check.read_value * (1 - STORAGE_TOLERANCE)
+		stored_value = stored_value.when(table.name == check.name, stored or 0)
+		is_mismatch = is_mismatch.when(table.name == check.name, int(is_low))
+	(
+		frappe.qb.update(table)
+		.set(table.stored_value, stored_value)
+		.set(table.is_mismatch, is_mismatch)
+		.set(table.checked_at, frappe.utils.now_datetime())
+		.where(table.name.isin([check.name for check in checks]))
+	).run()
 
 
 def _stored(service: str, day, subjects: list[str]) -> dict:
