@@ -70,6 +70,8 @@ def check_yesterday() -> None:
 
 def compare_storage(day: datetime.date) -> int:
 	"""Mark each of the day's storage samples whose stored peak is below it."""
+	if is_read_by_central(STORAGE_SERVICE):
+		return 0
 	checks = frappe.get_all(
 		DOCTYPE,
 		filters={"service": STORAGE_SERVICE, "day": day, "checked_at": ["is", "not set"]},
@@ -156,10 +158,14 @@ def silent_services() -> list[dict]:
 def usage_mismatches() -> list[dict]:
 	"""A pushed day differs from Central's own reading of the service by more than the tolerance.
 	The invoice bills the pushed day; turn the service's Central Reads Usage on to read it again."""
+	# A check left from before Central read the service again is not a difference any more.
+	pushed = frappe.get_all("Service", filters={"central_reads": 0}, pluck="name")
+	if not pushed:
+		return []
 	cutoff = utc_today() - datetime.timedelta(days=KEPT_DAYS)
 	checks = frappe.get_all(
 		DOCTYPE,
-		filters={"is_mismatch": 1, "day": [">=", cutoff]},
+		filters={"is_mismatch": 1, "day": [">=", cutoff], "service": ["in", pushed]},
 		fields=["name", "service", "subject", "dimension", "day", "read_value", "stored_value"],
 		order_by="day desc",
 		limit=100,

@@ -132,13 +132,20 @@ class TestUsageChecks(IntegrationTestCase):
 		self.assertEqual((check.read_value, check.stored_value, check.is_mismatch), (0, 2.0, 1))
 
 	def test_nothing_runs_while_central_reads_the_service(self):
+		self.sample(100)
+		self.stored_day(STORAGE_SERVICE, BUCKET, 90)
+		usage_checks.compare_storage(DAY)
+		self.sample(100, day=TODAY)
 		frappe.db.set_value("Service", STORAGE_SERVICE, "central_reads", 1)
 		frappe.db.set_value("Service", AI_SERVICE, "central_reads", 1)
 		with patch("frappe.enqueue") as enqueue:
 			self.assertEqual(usage_checks.sample_storage(), 0)
 			self.assertEqual(usage_checks.check_ai(DAY), 0)
 		enqueue.assert_not_called()
+		self.assertEqual(usage_checks.compare_storage(TODAY), 0)
+		self.assertFalse(frappe.db.get_value("Usage Check", {"day": TODAY}, "checked_at"))
 		self.assertFalse(usage_checks.silent_services())
+		self.assertFalse(usage_checks.usage_mismatches())
 
 	def test_buckets_are_sampled_in_pages_by_region(self):
 		buckets = {f"b{n}": frappe._dict(region="ap-south-1" if n % 2 else "eu-west-1") for n in range(250)}
