@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 """Cancelling a paid invoice: a credit note, and each part of the payment given back."""
 
+import json
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -308,6 +309,8 @@ class TestRefundPart(CorrectionsTestCase):
 		self.assertEqual((note["return_against"], note["naming_series"]), (SALES_INVOICE, "CN/.TFY./.#####"))
 		self.assertEqual([(i["qty"], i["rate"]) for i in note["items"]], [(-1, 1000)])
 		self.assertTrue(note["taxes"])
+		printed = json.loads(note["frappe_cloud_invoice"])
+		self.assertEqual((printed["type"], printed["items"][0]["amount"]), ("Refund", 1000))
 		self.assertEqual(refund.credit_note_id, self.remote.posted[0][1])
 
 		out = next(p for p in self.remote.posts("Payment Entry") if p.get("reference_no") == refund.name)

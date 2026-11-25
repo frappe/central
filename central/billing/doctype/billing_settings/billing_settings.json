@@ -87,6 +87,7 @@
   "section_print",
   "invoice_print_format",
   "invoice_letter_head",
+  "invoice_terms",
   "column_break_print",
   "receipt_voucher_print_format"
  ],
@@ -582,6 +583,12 @@
    "label": "Invoice Letter Head"
   },
   {
+   "fieldname": "invoice_terms",
+   "fieldtype": "Data",
+   "label": "Invoice Terms",
+   "description": "The Terms and Conditions record in the accounting system that the invoice and credit note print."
+  },
+  {
    "fieldname": "column_break_print",
    "fieldtype": "Column Break"
   },
@@ -607,7 +614,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-25 13:00:00.000000",
+ "modified": "2026-11-25 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

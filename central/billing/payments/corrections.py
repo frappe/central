@@ -397,7 +397,7 @@ def _finish(refund, status: str) -> None:
 
 def _credit_note(doc) -> None:
 	"""The credit note against the Sales Invoice: found if it exists, else made."""
-	from central.billing.ingester import connection
+	from central.billing.ingester import connection, invoice_snapshot
 	from central.billing.ingester.settings import accounting_settings
 
 	existing = connection.find(
@@ -412,12 +412,15 @@ def _credit_note(doc) -> None:
 		"api/method/erpnext.accounts.doctype.sales_invoice.mapper.make_sales_return",
 		{"source_name": doc.erpnext_invoice},
 	)
+	reason = _reason(doc.name)
+	refunded = abs(frappe.utils.flt(note.get("grand_total")))
 	note.update(
 		{
 			"naming_series": accounting_settings().series_credit_note,
 			"advances": [],
 			"docstatus": 1,
-			"remarks": f"Credit note for Central invoice {doc.name}: {_reason(doc.name)}",
+			"remarks": f"Credit note for Central invoice {doc.name}: {reason}",
+			**invoice_snapshot.refund_fields(doc, doc.name, f"Refund: {reason}", refunded),
 		}
 	)
 	for key in ("name", "__islocal", "__unsaved"):
@@ -427,7 +430,8 @@ def _credit_note(doc) -> None:
 
 def _partial_credit_note(doc, refund) -> None:
 	"""A credit note for this refund's amount only: found if it exists, else made."""
-	from central.billing.ingester import connection
+	from central.billing.ingester import connection, invoice_snapshot
+	from central.billing.ingester.erpnext_sync import print_fields
 	from central.billing.ingester.settings import accounting_settings, income_account
 
 	existing = connection.find(
@@ -498,6 +502,8 @@ def _partial_credit_note(doc, refund) -> None:
 		"disable_rounded_total": 1,
 		"ignore_pricing_rule": 1,
 		"remarks": f"Credit note for refund {refund.name} of Central invoice {doc.name}: {reason}",
+		**print_fields(settings),
+		**invoice_snapshot.refund_fields(doc, refund.name, f"Refund: {reason}", refund.net_amount),
 	}
 	frappe.db.set_value(
 		"Refund", refund.name, "credit_note_id", connection.post("api/resource/Sales Invoice", note).name
