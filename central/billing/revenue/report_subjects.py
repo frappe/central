@@ -28,30 +28,33 @@ def subjects_by_day(service: str, names: list[str], days: set[str]) -> dict[str,
 
 
 def _deleted_on(deleted: dict, day: str) -> dict:
-	"""The deleted buckets that still existed at some moment of the UTC day `day`."""
+	"""The deleted bucket of each name that was alive at some moment of the UTC day `day`."""
 	start = utc_day_start(day)
-	return {name: row for name, row in deleted.items() if row.deleted_at >= start}
+	alive = {}
+	for name, rows in deleted.items():
+		# Rows run oldest first, so the first one deleted on or after the day began owned the name that day.
+		row = next((row for row in rows if row.deleted_at >= start), None)
+		if row:
+			alive[name] = row
+	return alive
 
 
 def _recently_deleted(service: str, names: list[str]) -> dict:
-	"""The latest recorded deletion of each of `names` in the last few UTC days, in one query."""
+	"""Each of `names`' recorded deletions in the last few UTC days, oldest first, in one query."""
 	# Only a team's own bucket is recorded when deleted; a server's backup bucket never is.
 	if service != STORAGE_SERVICE or not names:
 		return {}
-	today = utc_today()
-	since = utc_day_start(today - datetime.timedelta(days=DELETED_SUBJECT_DAYS))
-	until = utc_day_start(today + datetime.timedelta(days=1))
+	since = utc_day_start(utc_today() - datetime.timedelta(days=DELETED_SUBJECT_DAYS))
 	table = frappe.qb.DocType("Deleted Bucket")
 	rows = (
 		frappe.qb.from_(table)
 		.select(table.external_id, table.team, table.subscription, table.deleted_at)
 		.where(table.external_id.isin(names))
 		.where(table.deleted_at >= since)
-		.orderby(table.deleted_at, order=Order.desc)
-		.orderby(table.creation, order=Order.desc)
+		.orderby(table.deleted_at, order=Order.asc)
+		.orderby(table.creation, order=Order.asc)
 	).run(as_dict=True)
-	latest: dict = {}
+	deleted: dict = {}
 	for row in rows:
-		latest.setdefault(row.external_id, row)
-	# A deletion stamped after today is a clock error, not a bucket that still bills.
-	return {name: row for name, row in latest.items() if row.deleted_at < until}
+		deleted.setdefault(row.external_id, []).append(row)
+	return deleted

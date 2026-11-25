@@ -3,6 +3,7 @@
 """A service pushes each day's value so far, signed with its own secret, only for its subjects."""
 
 import base64
+import datetime
 import hashlib
 import hmac
 import json
@@ -273,7 +274,7 @@ class TestServiceReports(IntegrationTestCase):
 		self.assertEqual(answer["accepted"], 0)
 		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
 
-	def test_the_latest_deletion_of_a_reused_name_wins(self):
+	def test_a_reused_name_bills_the_deletion_day_on_the_later_bucket(self):
 		self.delete_bucket("2026-06-18 12:00:00")
 		self.make_bucket()
 		later = self.delete_bucket()
@@ -282,6 +283,43 @@ class TestServiceReports(IntegrationTestCase):
 
 		self.assertEqual(answer, {"accepted": 1, "rejected": []})
 		self.assertEqual(self.billed_on("2026-06-20"), later)
+
+	def test_a_reused_name_bills_each_day_on_the_bucket_alive_that_day(self):
+		first = self.delete_bucket("2026-06-18 12:00:00")
+		self.make_bucket()
+		second = self.delete_bucket()
+		self.assertNotEqual(first, second)
+
+		days = ["2026-06-17", "2026-06-18", "2026-06-19", "2026-06-20", "2026-06-21"]
+		answer = self.send_on("2026-06-20", [line(day, 12) for day in days])
+
+		self.assertEqual(answer["accepted"], 4)
+		self.assertEqual(
+			[(r["day"], r["reason"]) for r in answer["rejected"]], [("2026-06-21", "unknown subject")]
+		)
+		self.assertEqual([self.billed_on(day) for day in days[:4]], [first, first, second, second])
+
+	def test_a_deletion_late_in_the_system_day_bills_up_to_its_utc_day(self):
+		# 03:00 in Asia/Kolkata is 21:30 UTC the day before; pinned so the test holds on any site zone.
+		self.enterContext(patch("frappe.utils.data.get_system_timezone", return_value="Asia/Kolkata"))
+		billed = self.delete_bucket("2026-06-20 03:00:00")
+
+		answer = self.send_on("2026-06-20", [line("2026-06-19", 8), line("2026-06-20", 12)])
+
+		self.assertEqual(answer["accepted"], 1)
+		self.assertEqual(
+			[(r["day"], r["reason"]) for r in answer["rejected"]], [("2026-06-20", "unknown subject")]
+		)
+		self.assertEqual(self.billed_on("2026-06-19"), billed)
+
+	def test_a_deletion_just_before_the_window_is_an_unknown_subject(self):
+		since = usage_ledger.utc_day_start("2026-06-18")
+		self.delete_bucket(str(since - datetime.timedelta(seconds=1)))
+
+		answer = self.send_on("2026-06-20", [line("2026-06-17", 8)])
+
+		self.assertEqual(answer["accepted"], 0)
+		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
 
 	def test_nothing_is_stored_while_central_still_reads_the_service(self):
 		frappe.db.set_value("Service", "storage", "central_reads", 1)
