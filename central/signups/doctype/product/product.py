@@ -196,16 +196,18 @@ class Product(Document):
 		return render_notification_email(event, context, extras)
 
 	@frappe.whitelist(methods=["POST"])
-	def send_test_email(self, event_type: str) -> None:
-		"""Operator action: send the previewed email to the operator's own address."""
+	def send_test_email(self, event_type: str) -> str:
+		"""Operator action: send the previewed email to the operator's own address, and return that address."""
 		email = self.preview_email(event_type)
+		recipient = get_email_address()
 		frappe.sendmail(
-			recipients=[get_email_address()],
+			recipients=[recipient],
 			subject=_("[Test] {0}").format(email["subject"]),
 			message=email["html"],
 			reply_to=self.reply_to,
 			now=True,
 		)
+		return recipient
 
 	def get_preview_context(self) -> dict:
 		address = (

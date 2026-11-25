@@ -75,8 +75,8 @@ async function preview_email(frm, event_type) {
 }
 
 async function send_test_email(frm, event_type) {
-	await frm.call({ doc: frm.doc, method: "send_test_email", args: { event_type }, freeze: true });
-	frappe.show_alert({ message: __("Test email sent to {0}", [frappe.session.user]), indicator: "green" });
+	const { message } = await frm.call({ doc: frm.doc, method: "send_test_email", args: { event_type }, freeze: true });
+	frappe.show_alert({ message: __("Test email sent to {0}", [message]), indicator: "green" });
 }
 
 function choose_region(frm) {
