@@ -449,6 +449,7 @@ class DeployRequest(PipelineBuilder):
 		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
 		installation_id = app.get_installation_id()
 		token = GitHubApp().create_installation_token(installation_id, app.repository_id)["token"]
+		secrets = {secret.key: secret.get_password("value") for secret in app.secrets}
 		return {
 			"deploy_request": self.name,
 			"repository": app.repository,
@@ -457,6 +458,7 @@ class DeployRequest(PipelineBuilder):
 			"health_path": self.health_path or "",
 			# Requests queued before the commit's config was read have none.
 			"health_timeout": self.health_timeout or DEFAULT_HEALTH_TIMEOUT_SECONDS,
+			"secrets": secrets,
 		}
 
 	def wait(self, message: str, for_: int) -> None:

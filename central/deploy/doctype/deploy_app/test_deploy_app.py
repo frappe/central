@@ -8,6 +8,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.deploy.doctype.deploy_app.deploy_app import DeployApp, get_new_domain
+from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
 from central.infrastructure.doctype.github_connection.test_github_connection import make_team
 from central.infrastructure.doctype.github_installation.test_github_installation import (
 	make_installation,
@@ -34,6 +35,32 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 		app = patch("central.deploy.doctype.deploy_app.deploy_app.GitHubApp").start()
 		self.addCleanup(patch.stopall)
 		app.return_value.has_branch.side_effect = lambda *args: args[-1] in ("main", "staging")
+
+	def test_a_secret_the_deploy_agent_would_refuse_is_refused_on_save(self):
+		app = DeployApp.add(self.installation, REPOSITORY, self.region)
+		for secrets in (
+			[("PORT", "1")],
+			[("1KEY", "v")],
+			[("MY-KEY", "v")],
+			[("KEY", "a\nIMAGE=evil")],
+			[("KEY", "a"), ("KEY", "b")],
+		):
+			with self.subTest(secrets), self.assertRaises(frappe.ValidationError):
+				app.reload()
+				for key, value in secrets:
+					app.append("secrets", {"key": key, "value": value})
+				app.save()
+
+	def test_a_build_payload_carries_the_apps_secrets(self):
+		app = DeployApp.add(self.installation, REPOSITORY, self.region)
+		app.append("secrets", {"key": "DATABASE_URL", "value": "postgres://db"})
+		app.save()
+		with patch.object(DeployRequest, "after_insert"):
+			request = DeployRequest.queue(app.name, "a" * 40)
+		github = patch("central.deploy.doctype.deploy_request.deploy_request.GitHubApp").start()
+		github.return_value.create_installation_token.return_value = {"token": "token"}
+
+		self.assertEqual(request.get_build_payload()["secrets"], {"DATABASE_URL": "postgres://db"})
 
 	def test_a_repository_deploys_from_its_default_branch(self):
 		app = DeployApp.add(self.installation, REPOSITORY, self.region)
