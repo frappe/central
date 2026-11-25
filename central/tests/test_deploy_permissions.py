@@ -89,6 +89,37 @@ class TestDeployPermissions(IntegrationTestCase):
 			api.disable_app(self.their_app)
 		self.assertEqual(frappe.db.get_value("Deploy App", self.their_app, "status"), "Active")
 
+	def test_a_member_with_app_deploy_sets_and_removes_the_teams_secrets(self):
+		frappe.set_user(self.owner)
+		names = api.update_app_secrets(self.my_app, {"DATABASE_URL": "postgres://db", "TOKEN": "a"})
+		self.assertEqual(names, ["DATABASE_URL", "TOKEN"])
+		self.assertEqual(api.update_app_secrets(self.my_app, {"TOKEN": "b"}, ["DATABASE_URL"]), ["TOKEN"])
+
+		frappe.set_user("Administrator")
+		secrets = frappe.get_doc("Deploy App", self.my_app).secrets
+		self.assertEqual([(row.key, row.get_password("value")) for row in secrets], [("TOKEN", "b")])
+
+	def test_a_viewer_reads_secret_names_but_cannot_change_them(self):
+		frappe.set_user(self.owner)
+		api.update_app_secrets(self.my_app, {"TOKEN": "a"})
+
+		frappe.set_user(self.viewer)
+		self.assertEqual(api.get_app_secrets(self.my_app), ["TOKEN"])
+		with self.assertRaises(frappe.PermissionError):
+			api.update_app_secrets(self.my_app, {"TOKEN": "b"})
+		with self.assertRaises(frappe.PermissionError):
+			api.get_app_secrets(self.their_app)
+
+	def test_another_teams_secrets_cannot_be_changed(self):
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			api.update_app_secrets(self.their_app, {"TOKEN": "a"})
+
+	def test_removing_a_secret_the_app_does_not_have_is_refused(self):
+		frappe.set_user(self.owner)
+		with self.assertRaises(frappe.ValidationError):
+			api.update_app_secrets(self.my_app, unset=["MISSING"])
+
 	def test_a_running_deploy_is_left_to_finish_when_its_app_is_disabled(self):
 		frappe.set_user(self.owner)
 		api.disable_app(self.my_app)

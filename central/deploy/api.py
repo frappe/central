@@ -58,6 +58,27 @@ def disable_app(name: str) -> None:
 
 
 @frappe.whitelist(methods=["GET"])
+def get_app_secrets(name: str) -> list[str]:
+	"""The names of the app's secrets. Their values never leave Central except to the app's deploy agent."""
+	app: DeployApp = frappe.get_doc("Deploy App", name)
+	app.check_permission("read")
+	return [secret.key for secret in app.secrets]
+
+
+@frappe.whitelist(methods=["POST"])
+def update_app_secrets(name: str, secrets: dict | None = None, unset: list | None = None) -> list[str]:
+	"""Set `secrets` (name to value) and remove the names in `unset`; the container gets them on the next push.
+	Returns the app's secret names."""
+	app: DeployApp = frappe.get_doc("Deploy App", name)
+	app.check_permission("read")
+	# Who can deploy the app's code can already read its secrets at runtime, so app:deploy is enough.
+	if not can(frappe.session.user, app.team, "app:deploy"):
+		frappe.throw(_("You can't change the apps of this team."), frappe.PermissionError)
+	app.update_secrets(secrets or {}, unset or [])
+	return [secret.key for secret in app.secrets]
+
+
+@frappe.whitelist(methods=["GET"])
 def get_deploy_request(name: str) -> dict:
 	"""One deploy with its pipeline tasks, and the build and release output. The console polls it while the
 	deploy runs; a failed task's message is the deploy's `error`."""
