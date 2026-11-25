@@ -1,21 +1,48 @@
 """Hands a service's report secret to the hosts that sign their usage reports with it."""
 
-import frappe
+from dataclasses import dataclass
 
-from central.services.doctype.service.service import AI_SERVICE, STORAGE_SERVICE, get_report_secret
+import frappe
+from frappe.query_builder import DocType
+from frappe.query_builder.functions import Coalesce
+
+from central.services.doctype.service.service import (
+	AI_SERVICE,
+	STORAGE_SERVICE,
+	get_report_secret,
+	get_secret_delivery_status,
+)
 
 # A secret that changes on every send means an operator is still rotating; a fresh job sends it later.
 MAXIMUM_SENDS = 3
 
 
+@dataclass
+class Delivery:
+	"""One send: the secret sent, the save it came from, and the reason the host refused it."""
+
+	secret: str
+	run: str | None
+	error: str | None = None
+
+
 def send_report_secret(service: str) -> None:
 	"""Queue the secret of `service` to each host that reports its usage, once this save commits."""
 	# Each job reads the secret itself, so it is never stored in the queue.
-	if service == STORAGE_SERVICE:
-		for region in registered_cargo_regions():
+	for host, region in delivery_targets(service):
+		if host == "Cargo":
 			_enqueue("send_to_cargo", region=region)
-	elif service == AI_SERVICE:
-		_enqueue("send_to_grove")
+		else:
+			_enqueue("send_to_grove")
+
+
+def delivery_targets(service: str) -> list[tuple[str, str | None]]:
+	"""The hosts, with the Cargo region, that sign the reports of `service`."""
+	if service == STORAGE_SERVICE:
+		return [("Cargo", region) for region in registered_cargo_regions()]
+	if service == AI_SERVICE:
+		return [("Grove", None)]
+	return []
 
 
 def registered_cargo_regions() -> list[str]:
@@ -25,7 +52,7 @@ def registered_cargo_regions() -> list[str]:
 
 def send_to_cargo(region: str) -> None:
 	"""Give one region's Cargo the storage report secret, with the webhook secret it already has."""
-	_send_until_current(STORAGE_SERVICE, "Cargo", lambda sent: _send_to_cargo_once(region, sent), region)
+	_send_until_current(STORAGE_SERVICE, lambda sent: _send_to_cargo_once(region, sent), region)
 
 
 def send_to_grove() -> None:
@@ -35,34 +62,49 @@ def send_to_grove() -> None:
 	try:
 		client = GroveClient.from_settings()
 	except frappe.ValidationError as error:
-		# AI Settings without control credentials; logged like a refusal, so the job does not fail.
-		_report_failure(AI_SERVICE, "Grove is not set up", error, get_report_secret(AI_SERVICE))
+		# AI Settings without control credentials; recorded like a refusal, so the job does not fail.
+		problem = _log_failure(AI_SERVICE, "Grove is not set up", error, get_report_secret(AI_SERVICE))
+		_record_delivery(AI_SERVICE, None, _get_secret_run(AI_SERVICE), problem)
 		return
-	_send_until_current(AI_SERVICE, "Grove", lambda sent: _send_to_grove_once(client, sent))
+	_send_until_current(AI_SERVICE, lambda sent: _send_to_grove_once(client, sent))
 
 
-def _send_until_current(service: str, host: str, send_once, region: str | None = None) -> None:
+def _send_until_current(service: str, send_once, region: str | None = None) -> None:
 	"""Send the stored secret again while it changes during a send, so the host ends with the latest."""
 	# Two rotations can deliver out of order. The job that sends last checks the stored secret again,
 	# so an older secret never stays on the host.
-	sent = None
-	for _attempt in range(MAXIMUM_SENDS):
-		if sent:
-			_see_latest_commits()
-		latest = send_once(sent)
-		if not latest:
+	last, is_settled = _send_latest(send_once)
+	if not is_settled:
+		_see_latest_commits()
+		if get_report_secret(service) != last.secret:
+			_send_later(service, region)
 			return
-		sent = latest
-	_see_latest_commits()
-	if get_report_secret(service) != sent:
-		_send_later(service, host, region)
+	if last:
+		_record_delivery(service, region, last.run, last.error)
 
 
-def _send_later(service: str, host: str, region: str | None) -> None:
-	"""Queue one fresh send of the newest secret, after logging that this job gave up."""
+def _send_latest(send_once) -> tuple[Delivery | None, bool]:
+	"""Send until the stored secret stops changing. Returns the last send and if the secret settled."""
+	last = None
+	for _attempt in range(MAXIMUM_SENDS):
+		if last:
+			_see_latest_commits()
+		delivery = send_once(last.secret if last else None)
+		if not delivery:
+			return last, True
+		last = delivery
+		if delivery.error:
+			return last, True
+	return last, False
+
+
+def _send_later(service: str, region: str | None) -> None:
+	"""Queue one fresh send of the newest secret, after recording that this job gave up."""
+	host = "Cargo" if service == STORAGE_SERVICE else "Grove"
+	problem = f"The secret changed during each of {MAXIMUM_SENDS} sends; a new job sends the newest."
 	frappe.log_error(
 		title=f"Report secret not sent to {host}",
-		message=f"The secret changed during each of {MAXIMUM_SENDS} sends; a new job sends the newest.",
+		message=problem,
 		reference_doctype="Region" if region else None,
 		reference_name=region,
 	)
@@ -71,6 +113,9 @@ def _send_later(service: str, host: str, region: str | None) -> None:
 	job = "send_to_cargo" if service == STORAGE_SERVICE else "send_to_grove"
 	kwargs = {"region": region} if region else {}
 	_enqueue(job, job_id=f"report-secret-{service}-{region or 'all'}", deduplicate=True, **kwargs)
+	# The resend clears this when it delivers. If it also gives up, the operator saves the secret again.
+	problem += " If this stays Failed, enter the secret again and save."
+	_record_delivery(service, region, _get_secret_run(service), problem)
 
 
 def _see_latest_commits() -> None:
@@ -79,8 +124,13 @@ def _see_latest_commits() -> None:
 	frappe.db.rollback()
 
 
-def _send_to_cargo_once(region: str, sent: str | None) -> str | None:
-	"""Send the stored secret to one region's Cargo unless it was just sent. Returns the sent secret."""
+def _get_secret_run(service: str) -> str | None:
+	"""The run of the secret stored now."""
+	return frappe.db.get_value("Service", service, "secret_run")
+
+
+def _send_to_cargo_once(region: str, sent: str | None) -> Delivery | None:
+	"""Send the stored secret to one region's Cargo unless it was just sent."""
 	# An older Cargo ignores report_secret without an error, so a send can succeed and change nothing.
 	from central.integrations.cargo import CargoClient
 
@@ -90,38 +140,38 @@ def _send_to_cargo_once(region: str, sent: str | None) -> str | None:
 	secret = get_report_secret(STORAGE_SERVICE)
 	if not secret or secret == sent:
 		return None
+	run = _get_secret_run(STORAGE_SERVICE)
 	webhook_secret = instance.get_password("cargo_webhook_secret", raise_exception=False)
 	if not webhook_secret:
 		# Configuring without it would clear the secret Cargo signs its webhooks with.
+		problem = "The region has no Cargo webhook secret. Register the region's Cargo again."
 		frappe.log_error(
 			title="Report secret not sent to Cargo",
-			message="The region has no Cargo webhook secret.",
+			message=problem,
 			reference_doctype="Region",
 			reference_name=region,
 		)
-		_record_failure(STORAGE_SERVICE, f"Cargo in region {region}: the region has no Cargo webhook secret.")
-		return None
+		return Delivery(secret, run, problem)
 	try:
 		CargoClient(instance).configure_webhooks(webhook_secret, secret)
 	except frappe.ValidationError as error:
-		_report_failure(STORAGE_SERVICE, "Cargo refused the secret", error, secret, region)
-		return None
-	_record_delivered(STORAGE_SERVICE, region)
-	return secret
+		return Delivery(
+			secret, run, _log_failure(STORAGE_SERVICE, "Cargo refused the secret", error, secret, region)
+		)
+	return Delivery(secret, run)
 
 
-def _send_to_grove_once(client, sent: str | None) -> str | None:
-	"""Send the stored AI secret to Grove unless it was just sent. Returns the sent secret."""
+def _send_to_grove_once(client, sent: str | None) -> Delivery | None:
+	"""Send the stored AI secret to Grove unless it was just sent."""
 	secret = get_report_secret(AI_SERVICE)
 	if not secret or secret == sent:
 		return None
+	run = _get_secret_run(AI_SERVICE)
 	try:
 		client.set_report_secret(secret)
 	except frappe.ValidationError as error:
-		_report_failure(AI_SERVICE, "Grove refused the secret", error, secret)
-		return None
-	_record_delivered(AI_SERVICE)
-	return secret
+		return Delivery(secret, run, _log_failure(AI_SERVICE, "Grove refused the secret", error, secret))
+	return Delivery(secret, run)
 
 
 def _enqueue(job: str, **kwargs) -> None:
@@ -133,10 +183,10 @@ def _enqueue(job: str, **kwargs) -> None:
 	)
 
 
-def _report_failure(
+def _log_failure(
 	service: str, problem: str, error: Exception, secret: str | None, region: str | None = None
-) -> None:
-	"""Log a failed send and show it on the Service, with the secret masked in both."""
+) -> str:
+	"""Log a failed send with the secret masked. Returns the readable reason for the delivery row."""
 	# An explicit message, so the log holds no traceback whose frames could show the secret, and a
 	# host that echoes the secret in its refusal does not put it in the log either.
 	message = f"{type(error).__name__}: {error}"
@@ -149,47 +199,39 @@ def _report_failure(
 		reference_doctype="Region" if region else None,
 		reference_name=region,
 	)
-	where = f"Cargo in region {region}" if region else host
-	_record_failure(service, f"{where}: {problem}. {message}")
+	return f"{problem}. {message}"
 
 
-def _record_failure(service: str, message: str) -> None:
-	"""Show on the Service that a host did not get its secret, beside the run's earlier failures."""
-	# Locked, so two regions failing at once both stay listed.
-	current = frappe.db.get_value(
-		"Service", service, ["secret_delivery_status", "secret_delivery_error"], as_dict=True, for_update=True
-	)
-	earlier = current.secret_delivery_error if current.secret_delivery_status == "Failed" else ""
-	lines = (earlier or "").splitlines()
-	if message in lines:
-		return
+def _record_delivery(service: str, region: str | None, run: str | None, error: str | None) -> None:
+	"""Record one host's result on its row of `run` and update the Service's summary."""
+	# The job ends its transaction to see a newer secret, so this runs only after its last send.
+	# The job commits the result when it ends.
+	row = DocType("Report Secret Delivery")
+	# Locked, so two regions that end at once each see the other's row when they sum up.
+	frappe.db.get_value("Service", service, "name", for_update=True)
+	(
+		frappe.qb.update(row)
+		.set(row.status, "Failed" if error else "Delivered")
+		.set(row.error, error)
+		.set(row.updated_at, frappe.utils.now_datetime())
+		.where(row.parenttype == "Service")
+		.where(row.parent == service)
+		.where(row.run == run)
+		.where(Coalesce(row.region, "") == (region or ""))
+	).run()
+	# A locking read, as a plain read in this transaction can return rows older than another job's commit.
+	statuses = (
+		frappe.qb.from_(row)
+		.select(row.status)
+		.where(row.parenttype == "Service")
+		.where(row.parent == service)
+		.for_update()
+	).run(pluck=True)
 	# Not modified, so an operator with the form open can still save it.
 	frappe.db.set_value(
 		"Service",
 		service,
-		{
-			"secret_delivery_status": "Failed",
-			"secret_delivery_error": "\n".join([*lines, message]),
-		},
-		update_modified=False,
-	)
-
-
-def _record_delivered(service: str, region: str | None = None) -> None:
-	"""Show on the Service that its secret reached the host."""
-	# Each storage region sends in its own job. A region that failed keeps the Service Failed until the
-	# next save, so it reads Delivered only when every region of that run took the secret. A region
-	# still queued has not failed yet: the status can read Delivered until its job fails.
-	status = frappe.db.get_value("Service", service, "secret_delivery_status", for_update=True)
-	if region and status == "Failed":
-		return
-	frappe.db.set_value(
-		"Service",
-		service,
-		{
-			"secret_delivery_status": "Delivered",
-			"secret_delivery_error": None,
-			"secret_delivered_at": frappe.utils.now_datetime(),
-		},
+		"secret_delivery_status",
+		get_secret_delivery_status(statuses),
 		update_modified=False,
 	)

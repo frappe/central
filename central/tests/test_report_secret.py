@@ -7,6 +7,7 @@ from frappe.utils.password import set_encrypted_password
 
 from central.billing.tests.utils import run_enqueued_inline
 from central.errors import CargoConnectionError
+from central.integrations import report_secret
 from central.integrations.cargo import CargoClient
 from central.integrations.grove import GroveClient
 from central.integrations.report_secret import send_to_cargo, send_to_grove
@@ -32,7 +33,13 @@ class TestReportSecret(IntegrationTestCase):
 			patch.object(CargoClient, "configure_webhooks", autospec=True, side_effect=self.configure)
 		)
 		# A job ends its transaction to see a newer secret. Here that would drop this test's records.
-		self.enterContext(patch("central.integrations.report_secret.frappe.db.rollback"))
+		self.calls = []
+		self.enterContext(
+			patch(
+				"central.integrations.report_secret.frappe.db.rollback",
+				side_effect=lambda: self.calls.append("rollback"),
+			)
+		)
 
 	def make_region(self) -> str:
 		region = frappe.get_doc(
@@ -240,13 +247,23 @@ class TestReportSecret(IntegrationTestCase):
 		self.assertNotIn(SECRET, error.error)
 		self.assertNotIn("Traceback", error.error)
 
-	def delivery(self, service: str):
-		return frappe.db.get_value(
-			"Service",
-			service,
-			["secret_delivery_status", "secret_delivery_error", "secret_delivered_at"],
-			as_dict=True,
-		)
+	def status(self, service: str) -> str:
+		return frappe.db.get_value("Service", service, "secret_delivery_status")
+
+	def rows(self, service: str) -> dict:
+		return {row.region or row.host: row for row in frappe.get_doc("Service", service).secret_deliveries}
+
+	def test_a_new_secret_starts_a_pending_row_for_each_host(self):
+		with patch("central.integrations.report_secret.frappe.enqueue"):
+			self.set_secret("storage")
+			self.set_secret("ai")
+
+		rows = self.rows("storage")
+		self.assertTrue(set(self.regions) <= set(rows))
+		self.assertEqual({rows[region].status for region in self.regions}, {"Pending"})
+		self.assertEqual(self.status("storage"), "Pending")
+		self.assertEqual([row.host for row in self.rows("ai").values()], ["Grove"])
+		self.assertEqual(self.status("ai"), "Pending")
 
 	def test_grove_not_set_up_shows_failed_on_the_service_without_the_secret(self):
 		refusal = frappe.ValidationError(f"AI Settings has no Grove control credentials. {SECRET}")
@@ -256,31 +273,54 @@ class TestReportSecret(IntegrationTestCase):
 		):
 			self.set_secret("ai")
 
-		delivery = self.delivery("ai")
-		self.assertEqual(delivery.secret_delivery_status, "Failed")
-		self.assertIn("Grove is not set up", delivery.secret_delivery_error)
-		self.assertIn("no Grove control credentials", delivery.secret_delivery_error)
-		self.assertNotIn(SECRET, delivery.secret_delivery_error)
+		grove = self.rows("ai")["Grove"]
+		self.assertEqual(self.status("ai"), "Failed")
+		self.assertEqual(grove.status, "Failed")
+		self.assertIn("Grove is not set up", grove.error)
+		self.assertIn("no Grove control credentials", grove.error)
+		self.assertNotIn(SECRET, grove.error)
 
-	def test_a_successful_cargo_send_shows_delivered(self):
+	def test_a_successful_send_to_every_cargo_shows_delivered(self):
 		with patch("central.integrations.report_secret.frappe.enqueue", side_effect=run_enqueued_inline):
 			self.set_secret("storage")
 
-		delivery = self.delivery("storage")
-		self.assertEqual(delivery.secret_delivery_status, "Delivered")
-		self.assertFalse(delivery.secret_delivery_error)
-		self.assertGreaterEqual(delivery.secret_delivered_at, self.started.replace(microsecond=0))
+		rows = self.rows("storage")
+		self.assertEqual(self.status("storage"), "Delivered")
+		for region in self.regions:
+			self.assertEqual(rows[region].status, "Delivered")
+			self.assertFalse(rows[region].error)
+			self.assertGreaterEqual(rows[region].updated_at, self.started.replace(microsecond=0))
 
-	def test_one_failing_region_shows_failed_naming_only_that_region(self):
+	def test_one_cargo_delivered_and_one_still_queued_shows_pending(self):
+		with patch("central.integrations.report_secret.frappe.enqueue"):
+			self.set_secret("storage")
+
+		send_to_cargo(self.regions[0])
+
+		rows = self.rows("storage")
+		self.assertEqual(rows[self.regions[0]].status, "Delivered")
+		self.assertEqual(rows[self.regions[1]].status, "Pending")
+		self.assertEqual(self.status("storage"), "Pending")
+
+	def test_one_failing_region_shows_failed_on_that_region_only(self):
 		self.failing = {self.regions[0]}
 		with patch("central.integrations.report_secret.frappe.enqueue", side_effect=run_enqueued_inline):
 			self.set_secret("storage")
 
-		delivery = self.delivery("storage")
-		self.assertEqual(delivery.secret_delivery_status, "Failed")
-		self.assertIn(f"Cargo in region {self.regions[0]}", delivery.secret_delivery_error)
-		self.assertNotIn(self.regions[1], delivery.secret_delivery_error)
-		self.assertNotIn(SECRET, delivery.secret_delivery_error)
+		rows = self.rows("storage")
+		self.assertEqual(self.status("storage"), "Failed")
+		self.assertEqual(rows[self.regions[0]].status, "Failed")
+		self.assertIn("Cargo refused the secret", rows[self.regions[0]].error)
+		self.assertNotIn(SECRET, rows[self.regions[0]].error)
+		self.assertEqual(rows[self.regions[1]].status, "Delivered")
+
+	def test_a_cargo_with_no_webhook_secret_shows_failed_with_the_reason(self):
+		frappe.db.delete("__Auth", {"doctype": "Region", "name": self.regions[0]})
+		with patch("central.integrations.report_secret.frappe.enqueue", side_effect=run_enqueued_inline):
+			self.set_secret("storage")
+
+		self.assertEqual(self.status("storage"), "Failed")
+		self.assertIn("no Cargo webhook secret", self.rows("storage")[self.regions[0]].error)
 
 	def test_a_new_secret_clears_the_last_failure(self):
 		self.failing = {self.regions[0]}
@@ -291,7 +331,66 @@ class TestReportSecret(IntegrationTestCase):
 		with patch("central.integrations.report_secret.frappe.enqueue", side_effect=run_enqueued_inline):
 			self.set_secret("storage", NEWER_SECRET)
 
-		self.assertEqual(self.delivery("storage").secret_delivery_status, "Delivered")
+		self.assertEqual(self.status("storage"), "Delivered")
+
+	def test_the_result_is_recorded_after_the_last_rollback(self):
+		with patch("central.integrations.report_secret.frappe.enqueue"):
+			self.set_secret("storage")
+		self.rotate_on_send = NEWER_SECRET
+		record = report_secret._record_delivery
+
+		def record_in_order(*args):
+			self.calls.append("record")
+			record(*args)
+
+		with patch.object(report_secret, "_record_delivery", side_effect=record_in_order):
+			send_to_cargo(self.regions[0])
+
+		self.assertIn("rollback", self.calls)
+		self.assertEqual(self.calls[-1], "record")
+		self.assertEqual(self.rows("storage")[self.regions[0]].status, "Delivered")
+
+	def test_a_late_send_of_an_older_secret_does_not_change_the_new_rows(self):
+		with patch("central.integrations.report_secret.frappe.enqueue"):
+			self.set_secret("storage")
+		old_run = frappe.db.get_value("Service", "storage", "secret_run")
+		with patch("central.integrations.report_secret.frappe.enqueue"):
+			self.set_secret("storage", NEWER_SECRET)
+		self.failing = {self.regions[0]}
+
+		with patch("central.integrations.report_secret._get_secret_run", return_value=old_run):
+			send_to_cargo(self.regions[0])
+
+		self.assertEqual(self.rows("storage")[self.regions[0]].status, "Pending")
+		self.assertEqual(self.status("storage"), "Pending")
+
+	def test_a_secret_that_changes_on_every_send_shows_failed_until_the_resend(self):
+		with patch("central.integrations.report_secret.frappe.enqueue"):
+			self.set_secret("ai")
+		grove = MagicMock()
+		grove.set_report_secret.side_effect = lambda secret: set_encrypted_password(
+			"Service", "ai", frappe.generate_hash(length=12), "report_secret"
+		)
+
+		with (
+			patch.object(GroveClient, "from_settings", return_value=grove),
+			patch("central.integrations.report_secret.frappe.enqueue"),
+		):
+			send_to_grove()
+
+		self.assertEqual(self.status("ai"), "Failed")
+		self.assertIn("changed during each of 3 sends", self.rows("ai")["Grove"].error)
+
+	def test_an_operator_save_keeps_the_rows_the_jobs_wrote(self):
+		with patch("central.integrations.report_secret.frappe.enqueue"):
+			self.set_secret("storage")
+		stale = frappe.get_doc("Service", "storage")
+		send_to_cargo(self.regions[0])
+
+		stale.title = stale.title
+		stale.save()
+
+		self.assertEqual(self.rows("storage")[self.regions[0]].status, "Delivered")
 
 	def test_the_grove_client_calls_the_control_endpoint(self):
 		client = GroveClient("https://grove.example.test", "key", "secret")
