@@ -62,7 +62,38 @@ class IntegrationTestGitHubInstallation(IntegrationTestCase):
 
 		self.assertEqual(GitHubConnection.get_active(credential), [])
 		self.assertFalse(connection.is_current(connection.version))
+		self.assertEqual(frappe.db.get_value("Deploy App", app.name, "status"), "Disabled")
+
+	def test_a_suspension_pauses_deploys_until_github_unsuspends_but_grants_must_connect_again(self):
+		credential = self.make_credential()
+		connection = GitHubConnection.grant(credential, INSTALLATION, [REPOSITORY])
+		app = self.make_app(connection.installation)
+
+		GitHubInstallation.suspend_installation("101")
 		self.assertNotIn(app.name, DeployApp.get_for_push("101", "11", "main"))
+		self.assertEqual(frappe.db.get_value("Deploy App", app.name, "status"), "Active")
+
+		GitHubInstallation.unsuspend_installation("101")
+		self.assertIn(app.name, DeployApp.get_for_push("101", "11", "main"))
+		self.assertEqual(GitHubConnection.get_active(credential), [])
+
+	def test_a_suspended_installation_cannot_be_linked(self):
+		with self.assertRaisesRegex(frappe.PermissionError, "suspended on octo"):
+			GitHubInstallation.link(self.team, {**INSTALLATION, "is_suspended": True})
+
+	def test_reconnecting_one_server_after_a_suspension_does_not_restore_another_servers_grant(self):
+		first = GitHubConnection.grant(self.make_credential(), INSTALLATION, [REPOSITORY])
+		PilotCredential.mint(team=self.team, pilot_credential_id="pilot-github-installation-other")
+		other_credential = frappe.get_doc("Pilot Credential", "pilot-github-installation-other")
+		other = GitHubConnection.grant(other_credential, INSTALLATION, [REPOSITORY])
+
+		GitHubInstallation.suspend_installation("101")
+		GitHubConnection.grant(
+			frappe.get_doc("Pilot Credential", first.pilot_credential), INSTALLATION, [REPOSITORY]
+		)
+
+		self.assertEqual(GitHubConnection.get_active(other_credential), [])
+		self.assertFalse(other.is_current(other.version))
 
 	def test_linking_again_makes_a_disabled_installation_active(self):
 		installation = make_installation(self.team)

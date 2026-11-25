@@ -149,6 +149,21 @@ class DeployApp(Document):
 			{"status": "Disabled", "virtual_machine": None, "domain": None},
 		)
 
+	@staticmethod
+	def disable_for_installation(installation: str) -> None:
+		"""Stop deploying the apps of an installation removed on GitHub. They keep their VM and domain, and
+		connecting the repository again through a new installation makes them active."""
+		names = frappe.get_all(
+			"Deploy App", filters={"installation": installation, "status": "Active"}, pluck="name"
+		)
+		for name in names:
+			frappe.get_doc("Deploy App", name, for_update=True).disable()
+
+	def disable(self) -> None:
+		self.status = "Disabled"
+		# A GitHub webhook disables the app; no Desk user owns it.
+		self.save(ignore_permissions=True)
+
 
 def on_doctype_update() -> None:
 	frappe.db.add_unique("Deploy App", ["team", "repository_id", "branch"])

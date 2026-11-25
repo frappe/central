@@ -17,6 +17,12 @@ from central.integrations.github import WEB_URL, GitHubApp, convert_manifest
 from central.sso import central_url
 
 MANIFEST_TTL_SECONDS = 15 * 60
+# What a webhook for the installation does to its GitHub Installation rows.
+INSTALLATION_ACTIONS = {
+	"deleted": GitHubInstallation.disable_installation,
+	"suspend": GitHubInstallation.suspend_installation,
+	"unsuspend": GitHubInstallation.unsuspend_installation,
+}
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
@@ -178,8 +184,8 @@ def webhook() -> None:
 	payload = json.loads(frappe.request.get_data())
 	installation_id = str(payload.get("installation", {}).get("id", ""))
 
-	if event == "installation" and payload.get("action") in ("deleted", "suspend"):
-		GitHubInstallation.disable_installation(installation_id)
+	if event == "installation" and payload.get("action") in INSTALLATION_ACTIONS:
+		INSTALLATION_ACTIONS[payload["action"]](installation_id)
 	elif event == "installation_repositories" and payload.get("action") == "removed":
 		removed = {str(repository["id"]) for repository in payload.get("repositories_removed", [])}
 		GitHubConnection.remove_repositories(installation_id, removed)

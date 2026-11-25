@@ -113,6 +113,7 @@ class GitHubApp:
 				"avatar_url": installation["account"].get("avatar_url", ""),
 				"permissions": installation.get("permissions", {}),
 				"events": installation.get("events", []),
+				"is_suspended": bool(installation.get("suspended_at")),
 			}
 			for installation in self._paginate(f"{API_URL}/user/installations", user_token, "installations")
 			if installation.get("app_id") == int(self.app_id)

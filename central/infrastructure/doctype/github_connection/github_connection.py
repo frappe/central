@@ -143,6 +143,15 @@ class GitHubConnection(Document):
 		self.save(ignore_permissions=True)
 
 	@staticmethod
+	def disable_for_installation(installation: str) -> None:
+		"""Disable the active grants of a disabled GitHub Installation, so tokens minted for them are refused."""
+		names = frappe.get_all(
+			"GitHub Connection", filters={"installation": installation, "status": "Active"}, pluck="name"
+		)
+		for name in names:
+			frappe.get_doc("GitHub Connection", name, for_update=True).disable()
+
+	@staticmethod
 	def remove_repositories(installation_id: str, repository_ids: set[str]) -> None:
 		for connection in GitHubConnection._lock_active(installation_id):
 			kept = [row for row in connection.repositories if row.repository_id not in repository_ids]
