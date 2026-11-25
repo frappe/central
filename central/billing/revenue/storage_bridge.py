@@ -8,7 +8,12 @@ import frappe
 from central.billing.revenue.bundled_buckets import bundled_buckets
 from central.billing.revenue.usage_ledger import utc_today, write_days
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
-from central.services.doctype.service.service import STORAGE_METER, STORAGE_SERVICE, is_read_by_central
+from central.services.doctype.service.service import (
+	STORAGE_METER,
+	STORAGE_SERVICE,
+	is_read_by_central,
+	is_read_by_central_locked,
+)
 from central.services.doctype.team_service.team_service import billed_subjects
 
 PAGE_SIZE = 100
@@ -68,7 +73,7 @@ def _read_and_write(run: str, region: str, names: list[str], read) -> int:
 			failed.append(f"{name}: {error!r}")
 	try:
 		# A day another worker wrote meanwhile is written again by the next hour's reading.
-		written = write_days(list(readings.values())).count
+		written = _write_readings(list(readings.values()))
 	except Exception as error:
 		# The page still counts down, so the region's summary is written; the job itself still fails.
 		failed += [f"{name}: page failed: {type(error).__name__}" for name in readings]
@@ -76,6 +81,16 @@ def _read_and_write(run: str, region: str, names: list[str], read) -> int:
 		raise
 	RegionRead(run, region).finish_page(failed)
 	return written
+
+
+def _write_readings(rows: list[dict]) -> int:
+	"""Write a page's readings, unless Cargo's own reports have taken over since it was queued."""
+	# The page may have been queued while Central still read storage; checked under the lock a
+	# pushed report takes, so the two never both write a day.
+	if not is_read_by_central_locked(STORAGE_SERVICE):
+		frappe.logger("billing").debug("storage page skipped: Cargo reports its usage now")
+		return 0
+	return write_days(rows).count
 
 
 def pages(buckets: dict[str, list[str]]) -> dict[str, list[list[str]]]:

@@ -23,6 +23,7 @@ from central.billing.tests.test_ai_billing import (
 	rate_on,
 	run_inline,
 )
+from central.billing.tests.utils import central_reads
 from central.services.doctype.service.service import AI_SERVICE
 
 JULY = ("2026-07-01", "2026-07-31")
@@ -136,6 +137,17 @@ class TestAIBillingMonths(AIBillingCase):
 		self.read_page("2026-06-12", TEAM_USD)
 		self.assertEqual([d.quantity for d in self.days(TEAM_USD)], [1.0, 2.0, 4.0])
 		self.assertEqual(str(frappe.db.get_value("Team Service", service, "usage_read_until")), "2026-06-12")
+
+	def test_a_page_queued_before_grove_took_over_writes_nothing(self):
+		service = self.services[TEAM_USD].name
+		frappe.db.set_value("Team Service", service, "usage_read_until", "2026-06-11")
+		self.land(TEAM_USD, "2026-06-12", {"gpt-4o": 1.0})
+		# The operator switches AI usage to Grove's own reports while the page waits in the queue.
+		central_reads(self, AI_SERVICE, is_on=False)
+		self.read_page("2026-06-12", TEAM_USD)
+		self.assertEqual(self.days(TEAM_USD), [])
+		# Not marked read, so Grove's reports or a later page still own the day.
+		self.assertEqual(str(frappe.db.get_value("Team Service", service, "usage_read_until")), "2026-06-11")
 
 	def test_a_team_never_read_starts_at_bill_from_and_catches_up_a_week_a_run(self):
 		frappe.db.set_value("Service", AI_SERVICE, "bill_from", "2026-06-01")

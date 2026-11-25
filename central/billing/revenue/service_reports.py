@@ -12,7 +12,7 @@ from frappe import _
 
 from central.billing.revenue.report_subjects import subjects_by_day
 from central.billing.revenue.usage_ledger import utc_today, write_days
-from central.services.doctype.service.service import get_report_secret
+from central.services.doctype.service.service import get_report_secret, is_read_by_central_locked
 
 MAXIMUM_LINES = 1000
 # Far above any one subject's daily value in raw units, and low enough to divide safely.
@@ -29,7 +29,7 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 	service = verified_service(service_name, signature, raw_body)
 	report = _parsed(raw_body)
 	as_of = reported_at(report.get("as_of"))
-	if _is_read_by_central_locked(service.name):
+	if is_read_by_central_locked(service.name):
 		# Central's own reading still bills this service, so a pushed day would bill its usage twice.
 		reason = _("Central still reads this service; send it again after the switch")
 		answer = {"accepted": 0, "rejected": [_refused(line, reason, retry=True) for line in report["lines"]]}
@@ -37,13 +37,6 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 		answer = _stored(service, report["lines"], as_of)
 	_record_report(service.name, as_of)
 	return answer
-
-
-def _is_read_by_central_locked(service_name: str) -> bool:
-	"""Whether Central reads the service itself, read under the Service row lock."""
-	# Held until the report commits, so an operator switching Central's reads on waits for this
-	# report, and no pushed day is stored once the switch has saved.
-	return bool(frappe.db.get_value("Service", service_name, "central_reads", for_update=True))
 
 
 def _stored(service, lines: list, as_of: datetime.datetime) -> dict:

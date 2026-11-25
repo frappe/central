@@ -12,7 +12,7 @@ from central.billing.revenue import exchange_rates, grove_bridge, service_report
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.usage_ledger import write_days
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import complete_billing_profile, ensure_team
+from central.billing.tests.utils import central_reads, complete_billing_profile, ensure_team
 from central.services import ai
 from central.services.doctype.service.service import AI_SERVICE, STORAGE_SERVICE, ensure_services
 
@@ -66,6 +66,8 @@ class AIBillingCase(IntegrationTestCase):
 		bill_from = frappe.db.get_value("Service", AI_SERVICE, "bill_from")
 		frappe.db.set_value("Service", AI_SERVICE, "bill_from", None)
 		self.addCleanup(frappe.db.set_value, "Service", AI_SERVICE, "bill_from", bill_from)
+		# Central's own page jobs write only while Central reads AI usage.
+		central_reads(self, AI_SERVICE)
 		self.grove = FakeGrove()
 		self.services = {TEAM_USD: self.ai_team(TEAM_USD, "USD"), TEAM_INR: self.ai_team(TEAM_INR, "INR")}
 		forget_rate_readings()

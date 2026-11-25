@@ -17,6 +17,7 @@ from central.billing.tests.test_credits import run_workers
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	_clear_metered_plans,
+	central_reads,
 	complete_billing_profile,
 	ensure_team,
 	give_team_a_card,
@@ -51,6 +52,8 @@ class TestUsageLedger(IntegrationTestCase):
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM)
 		give_team_a_card(TEAM)
+		# Central's own page jobs write only while Central reads storage.
+		central_reads(self, STORAGE_SERVICE)
 		_clear_metered_plans("Storage", keep=PLAN)
 		make_plan(
 			PLAN,
@@ -429,6 +432,32 @@ class TestUsageLedger(IntegrationTestCase):
 		self.assertEqual(
 			[log["title"] for log in logs], [f"Storage usage: 2 bucket(s) not read in {CLUSTER}"]
 		)
+
+	def queued_page(self) -> dict:
+		"""The page job an hourly run queues for the test's bucket, not yet run."""
+		pages = []
+		self.read_whole_run([self.bucket.name], lambda method, queue, **page: pages.append(page))
+		return pages[0]
+
+	def run_page(self, page: dict) -> int:
+		with patch(
+			"central.services.doctype.team_service.team_service.TeamService.get_usage",
+			return_value={"used_bytes": 30 * GB},
+		):
+			return storage_bridge.read_page(**page)
+
+	def test_a_page_queued_before_cargo_took_over_writes_nothing(self):
+		page = self.queued_page()
+		# The operator switches storage to Cargo's own reports while the page waits in the queue.
+		central_reads(self, STORAGE_SERVICE, is_on=False)
+		with patch.object(storage_bridge.frappe.db, "get_value", wraps=frappe.db.get_value) as get_value:
+			self.assertEqual(self.run_page(page), 0)
+		self.assertEqual(self.days(), [])
+		get_value.assert_any_call("Service", STORAGE_SERVICE, "central_reads", for_update=True)
+
+	def test_a_page_queued_while_central_reads_still_writes(self):
+		self.assertEqual(self.run_page(self.queued_page()), 1)
+		self.assertEqual([d.quantity for d in self.days()], [30])
 
 	def test_a_page_that_fails_to_write_still_logs_its_region_once(self):
 		def crash():
