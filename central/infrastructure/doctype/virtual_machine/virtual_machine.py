@@ -240,6 +240,11 @@ class VirtualMachine(SystemRecord):
 		if trial := Trial.find_open(self.name):
 			trial.delete()
 
+	@property
+	def is_sleeping(self) -> bool:
+		"""A sleeping server reports Stopped, and the next request through its gateway wakes it."""
+		return self.status == "Stopped" and bool(self.sleep_state)
+
 	def is_access_locked(self) -> bool:
 		"""Whether the server runs an open free trial. Its owner then gets the site, not the server."""
 		from central.signups.access import is_server_locked
@@ -563,13 +568,14 @@ class VirtualMachine(SystemRecord):
 
 	@requires_server_access
 	def get_bench_login_url(self, user: str) -> str:
-		"""A login URL for a Running server in an active region, gated on `server:console`.
+		"""A login URL for a Running or sleeping server in an active region, gated on `server:console`.
 
-		The SID is single-use and its audience is this bench's own, so it opens no other bench."""
+		The SID is single-use and its audience is this bench's own, so it opens no other bench.
+		The Pilot health check below is traffic, so it wakes a sleeping server."""
 		if not can(user, self.team, "server:console", server=self.name):
 			frappe.throw(_("You can't open servers for this team."), frappe.PermissionError)
 
-		if self.status != "Running":
+		if self.status != "Running" and not self.is_sleeping:
 			frappe.throw(_("Server is {0}, not running.").format(self.status.lower()), frappe.ValidationError)
 		if frappe.db.get_value("Region", self.region, "status") != "Active":
 			frappe.throw(

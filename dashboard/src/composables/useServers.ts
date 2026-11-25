@@ -13,7 +13,11 @@ import type { RefreshResponse } from '@/types/api'
 import type { VirtualMachine } from '@/types/Infrastructure/VirtualMachine'
 
 type BenchLinkResponse = { url: string }
-type SiteLinkResponse = { url: string | null; login_url: string | null }
+type SiteLinkResponse = {
+	url: string | null
+	login_url: string | null
+	login_pending: boolean
+}
 type TeamParams = { team: string }
 type CommandParams = {
 	team: string
@@ -172,33 +176,84 @@ function withColorScheme(url: string | undefined): string | undefined {
 	return link.href
 }
 
-/** The bench's login link. Central refuses one while Pilot is still starting after a create,
- *  boot, or resize, so this asks again until Pilot answers, for up to 5 minutes. */
+type LinkAttempt = { url?: string | null; isWaking: boolean }
+type WaitingCopy = { hold: string; toast: string; timeout: string }
+
+/** Ask `attempt` for a link every 3 seconds, for up to 5 minutes, while it says the server is
+ *  waking. Pilot starts some time after a boot, and a sleeping server wakes on a request. */
+async function retryWhileWaking(
+	tab: LoadingTab | null,
+	attempt: () => Promise<LinkAttempt>,
+	copy: WaitingCopy,
+): Promise<string | null | undefined> {
+	const deadline = Date.now() + 5 * 60 * 1000
+	let hasToldWaiting = false
+	for (;;) {
+		const { url, isWaking } = await attempt()
+		if (!isWaking) return url
+		if (Date.now() > deadline) throw new Error(copy.timeout)
+		// The person closed the waiting tab, so they no longer want the link.
+		if (tab?.isClosed) return undefined
+
+		tab?.hold(copy.hold)
+		// Without a waiting tab, the page itself must say why nothing opens yet.
+		if (!tab && !hasToldWaiting) {
+			infoToast(copy.toast)
+			hasToldWaiting = true
+		}
+		await new Promise((resolve) => setTimeout(resolve, 3000))
+	}
+}
+
+/** The bench's login link. Central refuses one while Pilot starts after a create, boot,
+ *  resize, or wake. */
 async function getBenchLink(
 	server: VirtualMachineRow,
 	tab: LoadingTab | null,
 ): Promise<string | undefined> {
-	const deadline = Date.now() + 5 * 60 * 1000
-	let hasToldWaiting = false
-	for (;;) {
-		try {
-			await submitOrThrow(benchLinkCall, { server: server.resource_id })
-			return withColorScheme(benchLinkCall.data?.url)
-		} catch (error) {
-			const isStarting = frappeErrorType(error) === 'PilotStarting'
-			if (!isStarting || Date.now() > deadline) throw error
-			// The person closed the waiting tab, so they no longer want the bench.
-			if (tab?.isClosed) return undefined
-
-			tab?.hold()
-			// Without a waiting tab, the page itself must say why nothing opens yet.
-			if (!tab && !hasToldWaiting) {
-				infoToast(__("Pilot is starting. It opens here when it's ready."))
-				hasToldWaiting = true
+	const url = await retryWhileWaking(
+		tab,
+		async () => {
+			try {
+				await submitOrThrow(benchLinkCall, { server: server.resource_id })
+				return { url: benchLinkCall.data?.url, isWaking: false }
+			} catch (error) {
+				if (frappeErrorType(error) === 'PilotStarting')
+					return { isWaking: true }
+				throw error
 			}
-			await new Promise((resolve) => setTimeout(resolve, 3000))
-		}
-	}
+		},
+		{
+			hold: __('Holding short. Pilot is starting up.'),
+			toast: __("Pilot is starting. It opens here when it's ready."),
+			timeout: __("Pilot isn't answering yet. Try again in a minute."),
+		},
+	)
+	return withColorScheme(url ?? undefined)
+}
+
+/** The site's login link. Central has none while the site does not answer, such as while
+ *  its sleeping server wakes. */
+async function getSiteLink(
+	name: string,
+	tab: LoadingTab | null,
+): Promise<string | null | undefined> {
+	return retryWhileWaking(
+		tab,
+		async () => {
+			await submitOrThrow(siteLinkCall, { name })
+			const site = siteLinkCall.data
+			return {
+				url: site?.login_url || site?.url,
+				isWaking: !!site?.login_pending,
+			}
+		},
+		{
+			hold: __('Holding short. The server is waking up.'),
+			toast: __("The server is waking up. The site opens when it's ready."),
+			timeout: __("The site didn't wake up. Try again in a minute."),
+		},
+	)
 }
 
 /** `inPlace` replaces this page, for a link that opens the bench without a click. */
@@ -257,8 +312,8 @@ async function openSite(name: string): Promise<void> {
 	opening.value = name
 	const tab = LoadingTab.open(name)
 	try {
-		await submitOrThrow(siteLinkCall, { name })
-		const url = siteLinkCall.data?.login_url || siteLinkCall.data?.url
+		const url = await getSiteLink(name, tab)
+		if (tab?.isClosed) return
 		openResolvedUrl(url, tab, 'site')
 	} catch (error) {
 		reportOpenFailure(tab, error, { title: "Couldn't open this site" })
