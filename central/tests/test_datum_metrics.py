@@ -130,6 +130,8 @@ class TestCentralMetrics(IntegrationTestCase):
 		self.assertIn("central_billing_run_oldest_open_seconds", metrics)
 		self.assertIn("central_job_queue_length", metrics)
 		self.assertIn("central_email_oldest_unsent_seconds", metrics)
+		self.assertIn("central_signup_steps_last_hour", metrics)
+		self.assertIn("central_trial_conversions_unmoved", metrics)
 
 	def test_metrics_go_to_the_telemetry_region(self) -> None:
 		with (
