@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}" dir="{{ 'rtl' if is_rtl() else 'ltr' }}">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Central API</title>
+		<style>
+			body {
+				margin: 0;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="app"></div>
+
+		<script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@latest/dist/browser/standalone.js"></script>
+		<script>
+			fetch("{{ spec_url }}")
+				.then((response) => response.json())
+				.then((payload) => {
+					if (!payload.openapi) {
+						throw new Error("not an OpenAPI document");
+					}
+					Scalar.createApiReference("#app", {
+						content: payload,
+						hideClientButton: true,
+						hideTestRequestButton: true,
+						showDeveloperTools: "never",
+						documentDownloadType: "json",
+						agent: { disabled: true },
+						mcp: { disabled: true },
+						telemetry: false,
+					});
+				})
+				.catch(() => {
+					document.getElementById("app").textContent = "The API document could not be loaded.";
+				});
+		</script>
+	</body>
+</html>
