@@ -18,7 +18,12 @@ import frappe
 from central.billing.ingester import connection, gst, payment_records
 from central.billing.ingester.gst_state_backfill import state_at_issue
 from central.billing.ingester.locks import hold_until_transaction_ends
-from central.billing.ingester.settings import accounting_settings, invoice_series, receivable_account
+from central.billing.ingester.settings import (
+	accounting_settings,
+	income_account,
+	invoice_series,
+	receivable_account,
+)
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue.tax import has_gst_charged
 
@@ -228,7 +233,8 @@ def build_sales_invoice(inv, customer: str) -> dict:
 	settings = accounting_settings()
 	tax = gst.treatment(inv.team, charged_tax=inv.output_tax_amount, invoice=inv)
 	template = tax.template
-	items = [_item(li, settings) for li in inv.items]
+	income = income_account(inv.currency)
+	items = [_item(li, settings, income) for li in inv.items]
 	taxes = gst.tax_rows(template)
 	promotional = _promotional_part(inv)
 	if promotional > 0:
@@ -273,7 +279,7 @@ def _keep_the_paid_share(items: list[dict], taxes: list[dict], paid: float) -> N
 		row["included_in_print_rate"] = 1
 
 
-def _item(line, settings) -> dict:
+def _item(line, settings, income: str) -> dict:
 	label = " · ".join(
 		x for x in (line.plan or line.resource_type, line.description, line.subscription_resource) if x
 	)
@@ -283,7 +289,7 @@ def _item(line, settings) -> dict:
 		"description": " · ".join(x for x in (label or "Usage", period) if x),
 		"qty": 1,
 		"rate": frappe.utils.flt(line.amount),
-		"income_account": settings.income_account,
+		"income_account": income,
 		"cost_center": settings.cost_center,
 	}
 
