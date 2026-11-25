@@ -25,7 +25,7 @@ DOCUMENTED_MODULES = {
 _DESCRIPTION = (
 	"Central is the control plane for Frappe Cloud v2. It owns identity, teams, servers, "
 	"sites and billing. Send the header `Authorization: token <api key>:<api secret>`. "
-	"The capabilities of the token's user decide access."
+	"The capabilities of the token's user decide access. AI agents read `/assets/central/agents.md` first."
 )
 
 _SCHEMA_TYPES = {str: "string", int: "integer", float: "number", bool: "boolean"}

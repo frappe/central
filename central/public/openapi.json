@@ -10,7 +10,7 @@
   }
  },
  "info": {
-  "description": "Central is the control plane for Frappe Cloud v2. It owns identity, teams, servers, sites and billing. Send the header `Authorization: token <api key>:<api secret>`. The capabilities of the token's user decide access.",
+  "description": "Central is the control plane for Frappe Cloud v2. It owns identity, teams, servers, sites and billing. Send the header `Authorization: token <api key>:<api secret>`. The capabilities of the token's user decide access. AI agents read `/assets/central/agents.md` first.",
   "title": "Central API",
   "version": "0.2.0"
  },
