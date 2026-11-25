@@ -62,6 +62,14 @@ class IntegrationTestDeployRequest(IntegrationTestCase):
 		again = DeployRequest.queue(self.app.name, "abcdef1234" + "0" * 30)
 		self.assertEqual((first.name, again.name), (f"{self.app.name}-abcdef", f"{self.app.name}-abcdef-1"))
 
+	def test_a_deploy_whose_build_succeeded_is_not_superseded(self):
+		built = DeployRequest.queue(self.app.name, "a" * 40)
+		self.set_status(built, "Building")
+		built.db_set("build_status", "Succeeded")
+
+		newest = DeployRequest.queue(self.app.name, "b" * 40)
+		self.assertEqual((self.get_status(built), newest.status), ("Building", "Queued"))
+
 	def test_a_release_is_never_superseded(self):
 		releasing = DeployRequest.queue(self.app.name, "a" * 40)
 		self.set_status(releasing, "Releasing")

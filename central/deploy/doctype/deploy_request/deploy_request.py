@@ -10,6 +10,7 @@ from cloudtoolkit.pipeline.doctype.pipeline.decorators import flow, task
 from cloudtoolkit.pipeline.doctype.pipeline.pipeline_builder import PipelineBuilder
 from frappe import _
 from frappe.model.naming import append_number_if_name_exists, make_autoname
+from frappe.query_builder.functions import IfNull
 from frappe.utils import now_datetime, time_diff_in_seconds
 from redis.exceptions import LockError
 
@@ -42,7 +43,8 @@ if TYPE_CHECKING:
 	from central.deploy.doctype.deploy_app.deploy_app import DeployApp
 	from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 
-# A newer push replaces a request in these states. A release is never interrupted.
+# A newer push replaces a request in these states, unless its build succeeded: the agent then starts the release at
+# once, and a release is never interrupted.
 SUPERSEDABLE_STATES = ("Queued", "Validating", "Provisioning", "Building")
 # Long enough for Atlas to answer one create; another worker skips the app meanwhile.
 VM_LOCK_SECONDS = 5 * 60
@@ -138,15 +140,23 @@ class DeployRequest(PipelineBuilder):
 		"""Queue `commit` for the app, superseding the requests a newer push replaces."""
 		# The app's row lock makes two pushes to one app queue one after the other.
 		team = frappe.db.get_value("Deploy App", deploy_app, "team", for_update=True)
-		for name in frappe.get_all(
-			"Deploy Request",
-			filters={"deploy_app": deploy_app, "status": ["in", SUPERSEDABLE_STATES]},
-			pluck="name",
-		):
-			request = frappe.get_doc("Deploy Request", name, for_update=True)
-			request.status = "Superseded"
+		request_table = frappe.qb.DocType("Deploy Request")
+		# A locking read waits for report_build and sees its result, so the agent and Central agree whether a deploy
+		# releases.
+		supersedable_requests = (
+			frappe.qb.from_(request_table)
+			.select(request_table.name)
+			.where(request_table.deploy_app == deploy_app)
+			.where(request_table.status.isin(SUPERSEDABLE_STATES))
+			.where(IfNull(request_table.build_status, "") != "Succeeded")
+			.for_update()
+			.run(pluck=True)
+		)
+		for request in supersedable_requests:
+			request_doc: DeployRequest = frappe.get_doc("Deploy Request", request, for_update=True)
+			request_doc.status = "Superseded"
 			# Central supersedes the team's older deploy; no Desk user owns it.
-			request.save(ignore_permissions=True)
+			request_doc.save(ignore_permissions=True)
 
 		# Central queues the deploy for the team's app; no Desk user owns it.
 		return frappe.get_doc(
