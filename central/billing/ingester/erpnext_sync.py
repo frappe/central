@@ -15,7 +15,7 @@ nothing is ever read back from ERPNext into billing.
 
 import frappe
 
-from central.billing.ingester import connection, gst, payment_records
+from central.billing.ingester import connection, gst, invoice_snapshot, payment_records
 from central.billing.ingester.gst_state_backfill import state_at_issue
 from central.billing.ingester.locks import hold_until_transaction_ends
 from central.billing.ingester.settings import (
@@ -216,7 +216,7 @@ def _issue(inv, customer: str) -> str:
 	"""The submitted Sales Invoice for this invoice: found if it exists, else created."""
 	existing = connection.find(
 		"Sales Invoice",
-		[["remarks", "like", f"%{payment_records.marker(inv)}%"], ["docstatus", "=", 1]],
+		[["frappe_cloud_invoice_id", "=", inv.name], ["is_return", "=", 0], ["docstatus", "=", 1]],
 		["name"],
 	)
 	if existing:
@@ -262,6 +262,18 @@ def build_sales_invoice(inv, customer: str) -> dict:
 		"disable_rounded_total": 1,
 		"ignore_pricing_rule": 1,
 		"remarks": payment_records.marker(inv),
+		**print_fields(settings),
+		**invoice_snapshot.invoice_fields(inv, promotional),
+	}
+
+
+def print_fields(settings) -> dict:
+	"""The letter head and terms an invoice or credit note prints with."""
+	terms = connection.fetch("Terms and Conditions", settings.invoice_terms) or {}
+	return {
+		"letter_head": settings.invoice_letter_head,
+		"tc_name": settings.invoice_terms or None,
+		"terms": terms.get("terms"),  # not filled in by the accounting system on a save through the API
 	}
 
 
