@@ -428,7 +428,7 @@ def _credit_note(doc) -> None:
 def _partial_credit_note(doc, refund) -> None:
 	"""A credit note for this refund's amount only: found if it exists, else made."""
 	from central.billing.ingester import connection
-	from central.billing.ingester.settings import accounting_settings
+	from central.billing.ingester.settings import accounting_settings, income_account
 
 	existing = connection.find(
 		"Sales Invoice",
@@ -491,7 +491,7 @@ def _partial_credit_note(doc, refund) -> None:
 				"description": f"Refund: {reason}",
 				"qty": -1,
 				"rate": frappe.utils.flt(refund.net_amount),
-				"income_account": settings.income_account,
+				"income_account": income_account(doc.currency),
 				"cost_center": settings.cost_center,
 			}
 		],
@@ -584,7 +584,11 @@ def _pay_out(doc, refund, amount: float) -> str:
 def _advance_again(doc, refund, amount: float) -> str:
 	"""Book returned paid-in credit as an advance again, with its GST."""
 	from central.billing.ingester import connection, gst
-	from central.billing.ingester.settings import accounting_settings, wallet_clearing_account
+	from central.billing.ingester.settings import (
+		accounting_settings,
+		advance_account,
+		wallet_clearing_account,
+	)
 
 	existing = connection.find(
 		"Payment Entry",
@@ -608,7 +612,7 @@ def _advance_again(doc, refund, amount: float) -> str:
 				"posting_date": frappe.utils.nowdate(),
 				"party_type": "Customer",
 				"party": frappe.db.get_value("Billing Profile", doc.team, "profile_id"),
-				"paid_from": settings.advance_account,
+				"paid_from": advance_account(doc.currency),
 				"paid_to": wallet_clearing_account(doc.currency),
 				"paid_amount": amount,
 				"received_amount": amount,
