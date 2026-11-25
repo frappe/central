@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import frappe
+from disposable_email_domains import blocklist
 from frappe import _
 from frappe.utils import cint, escape_html, random_string, today
 from frappe.utils.telemetry import capture
@@ -32,11 +33,24 @@ def send_sign_in_code(email: str, full_name: str | None = None, product: str | N
 		_send_disabled_notice(email)
 		return
 
+	if (
+		not user
+		and frappe.get_cached_value("Central Settings", "Central Settings", "block_disposable_emails")
+		and is_disposable_email(email)
+	):
+		frappe.throw(_("This email cannot be used to create an account."))
+
 	subject, heading, brand = get_code_email(get_email_product(product), is_new_user=not user)
 	EmailCode(email).send(subject, heading, None if user else full_name, brand)
 	if not user:
 		capture("signup_code_sent", "central", user=email, properties={"product": product})
 		warm_country_cache()
+
+
+def is_disposable_email(email: str) -> bool:
+	"""True when the domain or a parent domain is on the disposable list."""
+	labels = email.rsplit("@", 1)[-1].lower().split(".")
+	return any(".".join(labels[index:]) in blocklist for index in range(len(labels) - 1))
 
 
 def get_code_email(

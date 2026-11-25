@@ -22,6 +22,7 @@ class CentralSettings(Document):
 		from frappe.types import DF
 
 		articles_enabled: DF.Check
+		block_disposable_emails: DF.Check
 		central_id: DF.Int
 		common_site_config: DF.JSON | None
 		disk_iops: DF.Int
