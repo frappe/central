@@ -20,6 +20,7 @@ from central.billing.tests.utils import (
 	give_team_a_card,
 	make_plan,
 )
+from central.services.doctype.team_service import team_service
 
 TEAM = "team-service-reports"
 CLUSTER = "ap-south-1"
@@ -53,19 +54,7 @@ class TestServiceReports(IntegrationTestCase):
 			includes=[{"resource_type": "Storage", "quantity": 0, "unit": "GB"}],
 			rates=[{"currency": "INR", "cluster": CLUSTER, "rate": 2}],
 		)
-		subscription = provision_service_subscription(TEAM, PLAN, cluster=CLUSTER, start_date="2026-06-01")
-		frappe.get_doc(
-			{
-				"doctype": "Team Service",
-				"team": TEAM,
-				"add_on_service": "storage",
-				"region": CLUSTER,
-				"bucket_name": BUCKET,
-				"external_id": BUCKET,
-				"status": "Active",
-				"subscription": subscription["subscription"],
-			}
-		).db_insert()  # Skips before_insert, which would create the bucket in Cargo.
+		self.make_bucket()
 
 		storage = frappe.get_doc("Service", "storage")
 		before = (
@@ -80,6 +69,22 @@ class TestServiceReports(IntegrationTestCase):
 		storage.save()
 		self.addCleanup(self.restore_storage, before)
 		self.enterContext(patch("frappe.utils.now_datetime", return_value=frappe.utils.get_datetime(NOW)))
+
+	def make_bucket(self) -> None:
+		"""The team's bucket, billed on a storage subscription from June 1."""
+		subscription = provision_service_subscription(TEAM, PLAN, cluster=CLUSTER, start_date="2026-06-01")
+		frappe.get_doc(
+			{
+				"doctype": "Team Service",
+				"team": TEAM,
+				"add_on_service": "storage",
+				"region": CLUSTER,
+				"bucket_name": BUCKET,
+				"external_id": BUCKET,
+				"status": "Active",
+				"subscription": subscription["subscription"],
+			}
+		).db_insert()  # Skips before_insert, which would create the bucket in Cargo.
 
 	def restore_storage(self, before):
 		storage = frappe.get_doc("Service", "storage")
@@ -214,63 +219,69 @@ class TestServiceReports(IntegrationTestCase):
 		with patch.object(report_subjects, "utc_today", return_value=frappe.utils.getdate(today)):
 			return self.send(lines)
 
-	def test_a_deleted_buckets_last_day_bills_the_subscription_it_billed(self):
-		self.send([line("2026-06-19", 10)])
-		billed = frappe.db.get_value("Usage Day", {"subject": BUCKET}, "subscription")
-		frappe.db.delete("Team Service", {"team": TEAM})
+	def delete_bucket(self, at: str = NOW) -> str:
+		"""Delete the team's bucket at `at` as a team would; returns the subscription it billed."""
+		name = frappe.db.get_value("Team Service", {"team": TEAM}, "name")
+		billed = frappe.db.get_value("Team Service", name, "subscription")
+		with (
+			patch.object(team_service, "ObjectStorageClient"),
+			patch("frappe.utils.now_datetime", return_value=frappe.utils.get_datetime(at)),
+		):
+			frappe.delete_doc("Team Service", name, ignore_permissions=True)
+		return billed
 
-		answer = self.send_on("2026-06-21", [line("2026-06-20", 12)])
+	def billed_on(self, day: str) -> str | None:
+		return frappe.db.get_value("Usage Day", {"subject": BUCKET, "day": day}, "subscription")
 
-		self.assertEqual(answer, {"accepted": 1, "rejected": []})
-		self.assertEqual(
-			frappe.db.get_value("Usage Day", {"subject": BUCKET, "day": "2026-06-20"}, "subscription"),
-			billed,
-		)
+	def test_a_bucket_deleted_today_bills_today_and_a_backlog_on_its_subscription(self):
+		billed = self.delete_bucket()
 
-	def test_a_bucket_deleted_more_than_two_days_ago_is_an_unknown_subject(self):
-		self.send([line("2026-06-17", 10)])
-		frappe.db.delete("Team Service", {"team": TEAM})
+		answer = self.send_on("2026-06-20", [line("2026-06-18", 8), line("2026-06-20", 12)])
 
-		answer = self.send_on("2026-06-21", [line("2026-06-20", 12)])
+		self.assertEqual(answer, {"accepted": 2, "rejected": []})
+		self.assertEqual((self.billed_on("2026-06-18"), self.billed_on("2026-06-20")), (billed, billed))
+
+	def test_a_day_after_the_bucket_was_deleted_is_an_unknown_subject(self):
+		self.delete_bucket("2026-06-19 12:00:00")
+
+		answer = self.send_on("2026-06-20", [line("2026-06-19", 8), line("2026-06-20", 12)])
+
+		self.assertEqual(answer["accepted"], 1)
+		self.assertEqual([r["day"] for r in answer["rejected"]], ["2026-06-20"])
+		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
+		self.assertTrue(answer["rejected"][0]["retry"])
+
+	def test_a_bucket_deleted_three_days_ago_is_an_unknown_subject(self):
+		self.delete_bucket("2026-06-17 12:00:00")
+
+		answer = self.send_on("2026-06-20", [line("2026-06-17", 12)])
 
 		self.assertEqual(answer["accepted"], 0)
 		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
 		self.assertTrue(answer["rejected"][0]["retry"])
 
-	def copy_usage_day(self, day: str, subscription: str | None = None):
-		"""A copy of the bucket's only Usage Day, moved to `day` and, if given, `subscription`."""
+	def test_accepted_lines_for_a_deleted_bucket_do_not_extend_its_window(self):
+		self.delete_bucket("2026-06-18 12:00:00")
+		self.assertEqual(self.send_on("2026-06-20", [line("2026-06-18", 12)])["accepted"], 1)
+		# A later day stored for the name, as an estimate or a stray write might leave one.
 		copy = frappe.copy_doc(frappe.get_doc("Usage Day", {"subject": BUCKET}))
-		copy.day = day
-		copy.subscription = subscription or copy.subscription
-		copy.db_insert()  # Skips validation, as a row written by an older Central would.
+		copy.day = "2026-06-20"
+		copy.db_insert()
 
-	def server_subscription(self) -> str:
-		"""A copy of the bucket's subscription that bills a server instead."""
-		billed = frappe.db.get_value("Usage Day", {"subject": BUCKET}, "subscription")
-		server = frappe.copy_doc(frappe.get_doc("Subscription", billed))
-		server.server_id = "service-reports-server"
-		server.db_insert()  # Skips validation; only server_id matters here.
-		return server.name
-
-	def test_a_deleted_subject_whose_latest_day_is_on_a_server_is_an_unknown_subject(self):
-		self.send([line("2026-06-19", 10)])
-		self.copy_usage_day("2026-06-20", self.server_subscription())
-		frappe.db.delete("Team Service", {"team": TEAM})
-
-		answer = self.send_on("2026-06-21", [line("2026-06-20", 12)])
+		answer = self.send_on("2026-06-21", [line("2026-06-18", 13)])
 
 		self.assertEqual(answer["accepted"], 0)
 		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
 
-	def test_a_deleted_subject_whose_latest_day_is_after_today_is_an_unknown_subject(self):
-		self.send([line("2026-06-19", 10)])
-		self.copy_usage_day("2026-06-25")
-		frappe.db.delete("Team Service", {"team": TEAM})
+	def test_the_latest_deletion_of_a_reused_name_wins(self):
+		self.delete_bucket("2026-06-18 12:00:00")
+		self.make_bucket()
+		later = self.delete_bucket()
 
-		answer = self.send_on("2026-06-21", [line("2026-06-20", 12)])
+		answer = self.send_on("2026-06-20", [line("2026-06-20", 12)])
 
-		self.assertEqual(answer["accepted"], 0)
-		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
+		self.assertEqual(answer, {"accepted": 1, "rejected": []})
+		self.assertEqual(self.billed_on("2026-06-20"), later)
 
 	def test_nothing_is_stored_while_central_still_reads_the_service(self):
 		frappe.db.set_value("Service", "storage", "central_reads", 1)

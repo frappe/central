@@ -77,6 +77,7 @@ class BillingTestCase(IntegrationTestCase):
 		"Entitlement Token",
 		"Commitment",
 		"Usage Day",
+		"Deleted Bucket",
 		"Monthly Exchange Rate",
 		"Usage Rollup",
 		"Usage Check",

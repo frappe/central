@@ -1,0 +1,90 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-25 10:00:00.000000",
+ "description": "A bucket a team deleted, kept for a month so its last pushed usage still bills its old subscription.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "bucket_name",
+  "external_id",
+  "deleted_at",
+  "column_break_owner",
+  "team",
+  "subscription",
+  "region"
+ ],
+ "fields": [
+  {
+   "fieldname": "bucket_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Bucket Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "external_id",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "External ID",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "deleted_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Deleted At",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_owner",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "read_only": 1
+  },
+  {
+   "fieldname": "subscription",
+   "fieldtype": "Link",
+   "label": "Subscription",
+   "options": "Subscription",
+   "read_only": 1
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "label": "Region",
+   "options": "Region",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-11-25 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Services",
+ "name": "Deleted Bucket",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "deleted_at",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "bucket_name"
+}
