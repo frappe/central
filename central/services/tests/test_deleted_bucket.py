@@ -24,7 +24,7 @@ class TestDeletedBucket(ObjectStorageTestCase):
 		return frappe.get_all(
 			"Deleted Bucket",
 			filters={"external_id": bucket},
-			fields=["bucket_name", "team", "subscription", "region", "deleted_at"],
+			fields=["external_id", "team", "subscription", "region", "deleted_at"],
 		)
 
 	def test_deleting_a_bucket_records_it_then_deletes_and_releases_as_before(self):
@@ -35,7 +35,7 @@ class TestDeletedBucket(ObjectStorageTestCase):
 
 		[row] = self.recorded(name)
 		self.assertEqual(
-			(row.bucket_name, row.team, row.subscription, row.region),
+			(row.external_id, row.team, row.subscription, row.region),
 			(name, self.team, self.subscription, self.region),
 		)
 		self.assertTrue(row.deleted_at)
@@ -81,7 +81,7 @@ class TestDeletedBucket(ObjectStorageTestCase):
 		):
 			with patch("frappe.utils.now_datetime", return_value=frappe.utils.get_datetime(deleted_at)):
 				deleted_bucket.record_deleted_bucket(
-					frappe._dict(bucket_name=bucket, external_id=bucket, team=self.team, region=self.region)
+					frappe._dict(external_id=bucket, team=self.team, region=self.region)
 				)
 
 		prune_deleted_buckets(now="2026-06-10 10:00:00")

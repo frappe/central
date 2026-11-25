@@ -6,28 +6,22 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "bucket_name",
   "external_id",
   "deleted_at",
-  "column_break_owner",
+  "column_break_billed",
   "team",
   "subscription",
   "region"
  ],
  "fields": [
   {
-   "fieldname": "bucket_name",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Bucket Name",
-   "read_only": 1
-  },
-  {
    "fieldname": "external_id",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "External ID",
+   "label": "Bucket",
    "read_only": 1,
+   "reqd": 1,
    "search_index": 1
   },
   {
@@ -36,10 +30,11 @@
    "in_list_view": 1,
    "label": "Deleted At",
    "read_only": 1,
+   "reqd": 1,
    "search_index": 1
   },
   {
-   "fieldname": "column_break_owner",
+   "fieldname": "column_break_billed",
    "fieldtype": "Column Break"
   },
   {
@@ -49,7 +44,9 @@
    "in_standard_filter": 1,
    "label": "Team",
    "options": "Team",
-   "read_only": 1
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "subscription",
@@ -68,7 +65,7 @@
  ],
  "in_create": 1,
  "links": [],
- "modified": "2026-11-25 10:00:00.000000",
+ "modified": "2026-11-25 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Deleted Bucket",
@@ -86,5 +83,5 @@
  "sort_field": "deleted_at",
  "sort_order": "DESC",
  "states": [],
- "title_field": "bucket_name"
+ "title_field": "external_id"
 }

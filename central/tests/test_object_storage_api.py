@@ -16,6 +16,7 @@ from central.integrations.object_storage import (
 	ObjectStorageRequestUncertain,
 )
 from central.services.api import storage as api
+from central.services.doctype.deleted_bucket.deleted_bucket import DeletedBucket
 from central.services.doctype.team_service.team_service import STORAGE_SERVICE, TeamService
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_region
@@ -52,6 +53,7 @@ class ObjectStorageTestCase(IntegrationTestCase):
 		self.end_subscription = self.enterContext(patch(f"{CONTROLLER}.end_subscription"))
 		# The plan and subscription are billing fixtures this suite does not need.
 		self.enterContext(patch.object(TeamService, "_validate_links"))
+		self.enterContext(patch.object(DeletedBucket, "_validate_links"))
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
