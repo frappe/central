@@ -9,7 +9,8 @@ import frappe
 from cloudtoolkit.pipeline.doctype.pipeline.decorators import flow, task
 from cloudtoolkit.pipeline.doctype.pipeline.pipeline_builder import PipelineBuilder
 from frappe import _
-from frappe.model.naming import append_number_if_name_exists
+from frappe.model.naming import append_number_if_name_exists, make_autoname
+from frappe.query_builder.functions import IfNull
 from frappe.utils import now_datetime, time_diff_in_seconds
 from redis.exceptions import LockError
 
@@ -28,10 +29,10 @@ from central.deploy.config import (
 	get_deploy_config,
 	get_machine_size,
 )
-from central.deploy.github import GitHubDeployApp
 from central.deploy.notifications import notify
 from central.deploy.virtual_machine import DeployMachine
 from central.integrations import servers
+from central.integrations.github import GitHubApp
 from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
 
 if TYPE_CHECKING:
@@ -42,7 +43,8 @@ if TYPE_CHECKING:
 	from central.deploy.doctype.deploy_app.deploy_app import DeployApp
 	from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 
-# A newer push replaces a request in these states. A release is never interrupted.
+# A newer push replaces a request in these states, unless its build succeeded: the agent then starts the release at
+# once, and a release is never interrupted.
 SUPERSEDABLE_STATES = ("Queued", "Validating", "Provisioning", "Building")
 # Long enough for Atlas to answer one create; another worker skips the app meanwhile.
 VM_LOCK_SECONDS = 5 * 60
@@ -138,15 +140,23 @@ class DeployRequest(PipelineBuilder):
 		"""Queue `commit` for the app, superseding the requests a newer push replaces."""
 		# The app's row lock makes two pushes to one app queue one after the other.
 		team = frappe.db.get_value("Deploy App", deploy_app, "team", for_update=True)
-		for name in frappe.get_all(
-			"Deploy Request",
-			filters={"deploy_app": deploy_app, "status": ["in", SUPERSEDABLE_STATES]},
-			pluck="name",
-		):
-			request = frappe.get_doc("Deploy Request", name, for_update=True)
-			request.status = "Superseded"
+		request_table = frappe.qb.DocType("Deploy Request")
+		# A locking read waits for report_build and sees its result, so the agent and Central agree whether a deploy
+		# releases.
+		supersedable_requests = (
+			frappe.qb.from_(request_table)
+			.select(request_table.name)
+			.where(request_table.deploy_app == deploy_app)
+			.where(request_table.status.isin(SUPERSEDABLE_STATES))
+			.where(IfNull(request_table.build_status, "") != "Succeeded")
+			.for_update()
+			.run(pluck=True)
+		)
+		for request in supersedable_requests:
+			request_doc: DeployRequest = frappe.get_doc("Deploy Request", request, for_update=True)
+			request_doc.status = "Superseded"
 			# Central supersedes the team's older deploy; no Desk user owns it.
-			request.save(ignore_permissions=True)
+			request_doc.save(ignore_permissions=True)
 
 		# Central queues the deploy for the team's app; no Desk user owns it.
 		return frappe.get_doc(
@@ -186,11 +196,9 @@ class DeployRequest(PipelineBuilder):
 		generate one yet. Returns its exact name."""
 		self.set_status("Validating")
 		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
-		installation_id = frappe.db.get_value(
-			"GitHub Deploy App Installation", app.installation, "installation_id"
-		)
+		installation_id = app.get_installation_id()
 		# One listing of the root, so case and the file's type are read from GitHub, not guessed.
-		root = GitHubDeployApp().list_root(installation_id, app.repository_id, app.repository, self.commit)
+		root = GitHubApp().list_root(installation_id, app.repository_id, app.repository, self.commit)
 		return find_containerfile(root)
 
 	@task
@@ -200,10 +208,8 @@ class DeployRequest(PipelineBuilder):
 		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
 		if not app.region:
 			frappe.throw(_("Choose a region for {0} first.").format(app.repository))
-		installation_id = frappe.db.get_value(
-			"GitHub Deploy App Installation", app.installation, "installation_id"
-		)
-		config = GitHubDeployApp().get_file(
+		installation_id = app.get_installation_id()
+		config = GitHubApp().get_file(
 			installation_id, app.repository_id, app.repository, CONFIG_FILE, self.commit
 		)
 		deploy_config = get_deploy_config(config)
@@ -322,10 +328,8 @@ class DeployRequest(PipelineBuilder):
 	def update_github_commit_status(self) -> None:
 		"""Show this deploy's current status on its commit in GitHub."""
 		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
-		installation_id = frappe.db.get_value(
-			"GitHub Deploy App Installation", app.installation, "installation_id"
-		)
-		GitHubDeployApp().set_commit_status(
+		installation_id = app.get_installation_id()
+		GitHubApp().set_commit_status(
 			installation_id,
 			app.repository_id,
 			app.repository,
@@ -411,10 +415,14 @@ class DeployRequest(PipelineBuilder):
 	def record_virtual_machine(
 		self, app: DeployApp, atlas_vm_id: str, image_id: str | None
 	) -> VirtualMachine:
-		"""The Virtual Machine row Central shows and observes for the app's VM."""
-		name = f"server-deploy-{app.name}"
-		if frappe.db.exists("Virtual Machine", name):
+		"""The Virtual Machine row Central shows and observes for the app's VM. Each Atlas VM gets its own row,
+		named like any other server, so a VM that replaces a terminated one does not reuse the old row."""
+		if name := frappe.db.get_value("Virtual Machine", {"region": app.region, "atlas_vm_id": atlas_vm_id}):
 			return frappe.get_doc("Virtual Machine", name)
+
+		# This is required since otherwise it's borrowed from resource action (which we don't use here)
+		# Or this comes from deploy app hash, however reconnecting a disabled app would then point to a dead vm
+		name = f"server-{make_autoname('hash')}"
 
 		server = frappe.get_doc(
 			{
@@ -439,10 +447,8 @@ class DeployRequest(PipelineBuilder):
 	def get_build_payload(self) -> dict:
 		"""What the agent needs to fetch and build the commit; the token reads only this repository."""
 		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
-		installation_id = frappe.db.get_value(
-			"GitHub Deploy App Installation", app.installation, "installation_id"
-		)
-		token = GitHubDeployApp().create_installation_token(installation_id, app.repository_id)["token"]
+		installation_id = app.get_installation_id()
+		token = GitHubApp().create_installation_token(installation_id, app.repository_id)["token"]
 		return {
 			"deploy_request": self.name,
 			"repository": app.repository,

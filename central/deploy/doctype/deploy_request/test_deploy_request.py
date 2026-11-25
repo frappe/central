@@ -13,12 +13,12 @@ from central.deploy.doctype.deploy_request.deploy_request import (
 	DeploySupersededError,
 	DeployTimeoutError,
 )
-from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
-	make_installation,
-)
 from central.deploy.tests.test_deploy_billing import catalog, make_size
 from central.deploy.virtual_machine import DeployMachine
 from central.infrastructure.doctype.github_connection.test_github_connection import make_team
+from central.infrastructure.doctype.github_installation.test_github_installation import (
+	make_installation,
+)
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_region
 
@@ -61,6 +61,14 @@ class IntegrationTestDeployRequest(IntegrationTestCase):
 		first = DeployRequest.queue(self.app.name, "abcdef1234" + "0" * 30)
 		again = DeployRequest.queue(self.app.name, "abcdef1234" + "0" * 30)
 		self.assertEqual((first.name, again.name), (f"{self.app.name}-abcdef", f"{self.app.name}-abcdef-1"))
+
+	def test_a_deploy_whose_build_succeeded_is_not_superseded(self):
+		built = DeployRequest.queue(self.app.name, "a" * 40)
+		self.set_status(built, "Building")
+		built.db_set("build_status", "Succeeded")
+
+		newest = DeployRequest.queue(self.app.name, "b" * 40)
+		self.assertEqual((self.get_status(built), newest.status), ("Building", "Queued"))
 
 	def test_a_release_is_never_superseded(self):
 		releasing = DeployRequest.queue(self.app.name, "a" * 40)
@@ -111,7 +119,7 @@ class IntegrationTestDeployRequest(IntegrationTestCase):
 	def test_the_commit_status_on_github_follows_the_deploy(self):
 		self.app.db_set("domain", "app.example.test")
 		request = DeployRequest.queue(self.app.name, "a" * 40)
-		github = patch("central.deploy.doctype.deploy_request.deploy_request.GitHubDeployApp").start()
+		github = patch("central.deploy.doctype.deploy_request.deploy_request.GitHubApp").start()
 		set_commit_status = github.return_value.set_commit_status
 		for status, error, expected in (
 			("Building", None, ("pending", "Building the image", None)),
@@ -174,7 +182,7 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		self.create_domain_mapping = patch.object(DeployRequest, "create_domain_mapping").start()
 		# The repository holds a Dockerfile and, unless a test sets one, no deploy config.
 		self.root = [{"name": "Dockerfile", "type": "file"}]
-		github = patch(f"{module}.GitHubDeployApp").start().return_value
+		github = patch(f"{module}.GitHubApp").start().return_value
 		github.list_root.side_effect = lambda *args: self.root
 		self.files = {}
 		self.get_file = github.get_file

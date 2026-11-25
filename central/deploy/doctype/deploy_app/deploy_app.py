@@ -5,21 +5,16 @@ from __future__ import annotations
 
 import hmac
 import re
-from typing import TYPE_CHECKING
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.deploy.github import GitHubDeployApp
 from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain
+from central.infrastructure.doctype.github_installation.github_installation import GitHubInstallation
 from central.infrastructure.doctype.region.atlas_connection import is_auto_routed_label
 from central.infrastructure.doctype.region.region import Region
-
-if TYPE_CHECKING:
-	from central.deploy.doctype.github_deploy_app_installation.github_deploy_app_installation import (
-		GitHubDeployAppInstallation,
-	)
+from central.integrations.github import GitHubApp
 
 DOMAIN_SUFFIX_LENGTH = 6
 DOMAIN_ATTEMPTS = 5
@@ -80,11 +75,11 @@ class DeployApp(Document):
 
 	@staticmethod
 	def add(
-		installation: GitHubDeployAppInstallation, found: dict, region: str, branch: str | None = None
+		installation: GitHubInstallation, found: dict, region: str, branch: str | None = None
 	) -> DeployApp:
 		"""Deploy a repository the installation lists in `region`, from `branch` or else its default branch.
 		The caller has checked that the user adding it is admin on the repository."""
-		app = GitHubDeployApp()
+		app = GitHubApp()
 		team = installation.team
 		branch = branch or found["default_branch"]
 		if not app.has_branch(
@@ -119,11 +114,14 @@ class DeployApp(Document):
 		doc.save(ignore_permissions=True)
 		return doc
 
+	def get_installation_id(self) -> str:
+		return GitHubInstallation.get_installation_id(self.installation)
+
 	@staticmethod
 	def get_for_push(installation_id: str, repository_id: str, branch: str) -> list[str]:
 		"""The active apps a push to `branch` deploys. Several teams, or none, can deploy one push."""
 		installations = frappe.get_all(
-			"GitHub Deploy App Installation",
+			"GitHub Installation",
 			filters={"installation_id": installation_id, "status": "Active"},
 			pluck="name",
 		)
@@ -143,10 +141,27 @@ class DeployApp(Document):
 
 	@staticmethod
 	def disable_for_server(server: str) -> None:
-		"""Stop deploying the apps of a terminated server, so a push no longer queues a deploy for it."""
+		"""Called when a server is removed cleans up the deploy app"""
 		frappe.db.set_value(
-			"Deploy App", {"virtual_machine": server, "status": "Active"}, "status", "Disabled"
+			"Deploy App",
+			{"virtual_machine": server},
+			{"status": "Disabled", "virtual_machine": None, "domain": None},
 		)
+
+	@staticmethod
+	def disable_for_installation(installation: str) -> None:
+		"""Stop deploying the apps of an installation removed on GitHub. They keep their VM and domain, and
+		connecting the repository again through a new installation makes them active."""
+		names = frappe.get_all(
+			"Deploy App", filters={"installation": installation, "status": "Active"}, pluck="name"
+		)
+		for name in names:
+			frappe.get_doc("Deploy App", name, for_update=True).disable()
+
+	def disable(self) -> None:
+		self.status = "Disabled"
+		# Central disables the app for a GitHub webhook or a team member with app:deploy; users can't write it.
+		self.save(ignore_permissions=True)
 
 
 def on_doctype_update() -> None:
