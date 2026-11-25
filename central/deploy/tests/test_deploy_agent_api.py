@@ -138,6 +138,13 @@ class IntegrationTestDeployAgentAPI(IntegrationTestCase):
 		self.assertEqual((status, log), ("Failed", "started\nunhealthy\n"))
 		self.assertIsNotNone(reported_at)
 
+	def test_a_release_report_on_a_finished_deploy_is_ignored(self):
+		self.request.set_status("Failed")
+		self.report_release(self.app, "Live", "late\n")
+
+		self.assertEqual(frappe.db.get_value("Deploy Request", self.request.name, "release_status"), "")
+		self.assertFalse(frappe.cache.lrange(get_log_key(self.request.name, "release_log"), 0, -1))
+
 	def test_another_apps_agent_cannot_report_a_release(self):
 		with self.assertRaises(frappe.PermissionError):
 			self.report_release(self.other_app, "Live")

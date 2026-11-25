@@ -4,7 +4,7 @@ from frappe.utils import now_datetime
 
 from central.deploy.connection import DeployConnectionAttempt
 from central.deploy.doctype.deploy_app.deploy_app import DeployApp
-from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
+from central.deploy.doctype.deploy_request.deploy_request import FINISHED_STATES, DeployRequest
 from central.iam import can
 
 DELIVERY_TTL_SECONDS = 24 * 60 * 60
@@ -185,6 +185,9 @@ def report_deployment_status(deploy_request: str, status: str, logs: str = "") -
 	request: DeployRequest = frappe.get_doc("Deploy Request", deploy_request, for_update=True)
 	if request.deploy_app != app.name:
 		frappe.throw(_("This release belongs to another app."), frappe.PermissionError)
+
+	if request.status in FINISHED_STATES:
+		return
 
 	request.release_status = status
 	request.release_reported_at = now_datetime()

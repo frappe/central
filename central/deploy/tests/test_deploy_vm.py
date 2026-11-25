@@ -175,6 +175,16 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 			self.request.resize_virtual_machine(name)
 		self.machine.stop.assert_not_called()
 
+	def test_a_size_billing_refuses_leaves_a_stopped_vm_at_its_size(self):
+		name = self.request.get_virtual_machine()["name"]
+		self.request.cpu_millicores, self.request.memory_mib = 4000, 8192
+		self.validate_resize.side_effect = frappe.ValidationError
+		self.machine.get.return_value = make_vm("stopped")
+
+		with self.assertRaises(frappe.ValidationError):
+			self.request.resize_virtual_machine(name)
+		self.machine.resize.assert_not_called()
+
 	def test_a_smaller_disk_is_refused(self):
 		name = self.request.get_virtual_machine()["name"]
 		self.request.disk_mib = 10240
