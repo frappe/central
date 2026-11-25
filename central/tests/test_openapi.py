@@ -86,3 +86,8 @@ class TestOpenAPI(IntegrationTestCase):
 				body = operation.get("requestBody", {}).get("content", {}).get("application/json", {})
 				schemas += body.get("schema", {}).get("properties", {}).values()
 				self.assertNotIn({}, schemas, path)
+
+	def test_operator_actions_stay_out_of_the_document(self):
+		for path, methods in build_document()["paths"].items():
+			for operation in methods.values():
+				self.assertFalse(operation["description"].startswith("Operator action"), path)

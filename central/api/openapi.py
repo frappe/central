@@ -25,7 +25,17 @@ DOCUMENTED_MODULES = {
 _DESCRIPTION = (
 	"Central is the control plane for Frappe Cloud v2. It owns identity, teams, servers, "
 	"sites and billing. Send the header `Authorization: token <api key>:<api secret>`. "
-	"The capabilities of the token's user decide access."
+	"The capabilities of the token's user decide access. AI agents read `/assets/central/agents.md` first."
+)
+
+# Staff actions on another team. Their own checks refuse customers, so the customer document leaves them out.
+OPERATOR_METHODS = frozenset(
+	{
+		"teams.impersonate_team_owner",
+		"teams.restore_team",
+		"teams.suspend_team",
+		"teams.unsuspend_team",
+	}
 )
 
 _SCHEMA_TYPES = {str: "string", int: "integer", float: "number", bool: "boolean"}
@@ -48,6 +58,8 @@ def build_document() -> dict:
 	for module_name in DOCUMENTED_MODULES:
 		module = importlib.import_module(f"central.api.{module_name}")
 		for function, hints in _documented_functions(module):
+			if f"{module_name}.{function.__name__}" in OPERATOR_METHODS:
+				continue
 			path = f"/api/method/{module.__name__}.{function.__name__}"
 			paths[path] = {_http_method(function): _operation(module_name, function, hints)}
 
