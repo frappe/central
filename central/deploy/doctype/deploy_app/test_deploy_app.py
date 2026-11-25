@@ -14,7 +14,7 @@ from central.infrastructure.doctype.github_installation.test_github_installation
 )
 from central.infrastructure.doctype.region.region import Region
 from central.tests.test_iam import ensure_user
-from central.tests.utils import ensure_region
+from central.tests.utils import ensure_region, ensure_server
 
 REPOSITORY = {"repository_id": "11", "full_name": "octo/app", "default_branch": "main"}
 
@@ -102,6 +102,21 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 			frappe.db.get_value("Deploy App", staging.name, fields), ("Active", "server-2", staging.domain)
 		)
 		self.assertEqual(DeployApp.get_for_push("101", "11", "main"), [])
+
+	def test_an_app_disabled_with_its_installation_keeps_its_vm_until_the_server_is_terminated(self):
+		app = DeployApp.add(self.installation, REPOSITORY, self.region)
+		server = ensure_server("server-deploy-app-installation", self.team, self.region)
+		app.db_set("virtual_machine", server)
+
+		DeployApp.disable_for_installation(self.installation.name)
+		fields = ["status", "virtual_machine", "domain"]
+		self.assertEqual(
+			frappe.db.get_value("Deploy App", app.name, fields), ("Disabled", server, app.domain)
+		)
+
+		DeployApp.disable_for_server(server)
+		self.assertEqual(frappe.db.get_value("Deploy App", app.name, fields), ("Disabled", None, None))
+		self.assertIsNone(DeployApp.add(self.installation, REPOSITORY, self.region).virtual_machine)
 
 	def test_connecting_a_disabled_app_again_gives_it_a_new_domain(self):
 		app = DeployApp.add(self.installation, REPOSITORY, self.region)
