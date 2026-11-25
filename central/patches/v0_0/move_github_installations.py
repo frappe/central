@@ -23,13 +23,22 @@ def move_deploy_installations() -> None:
 		.run(as_dict=True)
 	)
 	for row in rows:
-		installation = GitHubInstallation.link(row.team, row)
-		if row.status == "Disabled":
-			frappe.db.set_value("GitHub Installation", installation.name, "status", "Disabled")
-		frappe.db.set_value("Deploy App", {"installation": row.name}, "installation", installation.name)
+		move_deploy_installation(row)
 
 	frappe.delete_doc("DocType", OLD_DOCTYPE, force=True, ignore_missing=True)
 	frappe.db.sql_ddl(f"DROP TABLE IF EXISTS `tab{OLD_DOCTYPE}`")
+
+
+def move_deploy_installation(row: dict) -> None:
+	"""Link the apps of one old deploy installation to the team's GitHub Installation, disabled. The separate
+	deploy App owned the installation, and Pilot's App, which deploys use now, cannot reach it. Disabling it also
+	disables its apps, so each one connects again through Pilot's App."""
+	installation = GitHubInstallation.link(row["team"], row)
+	frappe.db.set_value("Deploy App", {"installation": row["name"]}, "installation", installation.name)
+
+	installation.status = "Disabled"
+	# A migration runs as the system; no Desk user owns the installation.
+	installation.save(ignore_permissions=True)
 
 
 def move_connection_installations() -> None:
