@@ -3,7 +3,7 @@
 Central holds Frappe Cloud's app for each provider; a site reaches `get_active_providers`, `start` and `relay_token` through its Pilot.
 """
 
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import frappe
 from frappe import _
@@ -95,7 +95,11 @@ def redirect(location: str) -> None:
 
 
 def add_query_params(url: str, **params: str | None) -> str:
-	return f"{url}{'&' if '?' in url else '?'}{urlencode({k: v for k, v in params.items() if v})}"
+	"""`url` with `params` in its query, replacing any it already has, and never in its fragment."""
+	parts = urlsplit(url)
+	added = {key: value for key, value in params.items() if value}
+	kept = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True) if key not in added]
+	return urlunsplit(parts._replace(query=urlencode([*kept, *added.items()])))
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
