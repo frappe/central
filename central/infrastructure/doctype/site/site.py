@@ -415,10 +415,6 @@ class Site(Document):
 		from central.api.email_oauth import add_query_params
 		from central.integrations.pilot import fetch_site_login_url, is_site_reachable
 
-		gateway, audience = self.get_pilot_access()
-		if not gateway or not audience:
-			return None
-
 		login_user, full_name = self.get_login_user(user)
 		path = self.get_connector_route(product, return_to) if return_to else self.get_landing_route(product)
 		# The image serves every name in its zone, so the chosen name answers once its route does.
@@ -429,6 +425,10 @@ class Site(Document):
 		if return_to and not login_user:
 			# A connector acts as the user who signs in, so it never gets an Administrator session.
 			return add_query_params(return_to, site=host)
+
+		gateway, audience = self.get_pilot_access()
+		if not gateway or not audience:
+			return None
 
 		pilot_names = self.get_pilot_site_names() if is_chosen_name_ready else [IMAGE_SITE_NAME]
 		for pilot_name in pilot_names:
