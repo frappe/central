@@ -47,6 +47,7 @@ SAMPLE_CONTEXT: dict = {
 	"member": "Ada Lovelace",
 	"domains": ["acme.frappe.cloud", "www.acme.example"],
 	"bench": "bench-01",
+	"app": "octo/app",
 	"sites": [
 		{"site": "acme.frappe.cloud", "status_code": 500, "response_ms": 1230, "error": None},
 	],

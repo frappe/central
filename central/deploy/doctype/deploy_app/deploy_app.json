@@ -1,0 +1,150 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-15 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "repository",
+  "branch",
+  "status",
+  "column_break_deploy_app",
+  "team",
+  "installation",
+  "repository_id",
+  "machine_section",
+  "region",
+  "virtual_machine",
+  "domain",
+  "agent_token"
+ ],
+ "fields": [
+  {
+   "description": "owner/name on GitHub.",
+   "fieldname": "repository",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Repository",
+   "reqd": 1
+  },
+  {
+   "description": "A push to this branch deploys the app.",
+   "fieldname": "branch",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Branch",
+   "reqd": 1
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Active\nDisabled"
+  },
+  {
+   "fieldname": "column_break_deploy_app",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "installation",
+   "fieldtype": "Link",
+   "label": "Installation",
+   "options": "GitHub Deploy App Installation",
+   "reqd": 1
+  },
+  {
+   "description": "GitHub's ID, which stays the same when the repository is renamed or transferred.",
+   "fieldname": "repository_id",
+   "fieldtype": "Data",
+   "label": "Repository ID",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "machine_section",
+   "fieldtype": "Section Break",
+   "label": "Machine"
+  },
+  {
+   "description": "Where the app's VM runs.",
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "label": "Region",
+   "options": "Region"
+  },
+  {
+   "fieldname": "virtual_machine",
+   "fieldtype": "Link",
+   "label": "Virtual Machine",
+   "options": "Virtual Machine",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The app's URL, picked once when the app is added. Every deploy keeps it.",
+   "fieldname": "domain",
+   "fieldtype": "Data",
+   "label": "Domain",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "description": "The deploy agent on the app's VM sends this to get and report builds.",
+   "fieldname": "agent_token",
+   "fieldtype": "Password",
+   "label": "Agent Token",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [
+  {
+   "link_doctype": "Deploy Request",
+   "link_fieldname": "deploy_app"
+  }
+ ],
+ "modified": "2026-11-24 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Deploy",
+ "name": "Deploy App",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Central User"
+  }
+ ],
+ "search_fields": "repository,branch",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "repository",
+ "track_changes": 1
+}

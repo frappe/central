@@ -101,7 +101,16 @@ class TestServiceReports(IntegrationTestCase):
 		self.assertEqual(answer["accepted"], 1)
 		self.assertEqual(
 			answer["rejected"],
-			[{"subject": BUCKET, "reason": "the day changed at the same time; send it again"}],
+			[
+				{
+					"subject": BUCKET,
+					"meter": "bytes_stored",
+					"day": "2026-06-20",
+					"dimension": "",
+					"reason": "the day changed at the same time; send it again",
+					"retry": True,
+				}
+			],
 		)
 		self.assertEqual([q for _d, q in self.days()], [8, 10])
 
@@ -114,12 +123,23 @@ class TestServiceReports(IntegrationTestCase):
 		answer = self.send([line("2026-06-20", 10), line("2026-06-20", 5, subject="someone-elses-bucket")])
 		self.assertEqual(answer["accepted"], 1)
 		self.assertEqual(
-			answer["rejected"], [{"subject": "someone-elses-bucket", "reason": "unknown subject"}]
+			answer["rejected"],
+			[
+				{
+					"subject": "someone-elses-bucket",
+					"meter": "bytes_stored",
+					"day": "2026-06-20",
+					"dimension": "",
+					"reason": "unknown subject",
+					"retry": True,
+				}
+			],
 		)
 
 	def test_a_day_in_the_future_is_rejected(self):
 		answer = self.send([line("2999-01-01", 10)])
 		self.assertEqual(answer["rejected"][0]["reason"], "day is in the future")
+		self.assertTrue(answer["rejected"][0]["retry"])
 
 	def test_a_report_sent_again_changes_nothing(self):
 		self.send([line("2026-06-20", 10)])
@@ -157,4 +177,28 @@ class TestServiceReports(IntegrationTestCase):
 		answer = self.send([*bad, good])
 		self.assertEqual(answer["accepted"], 1)
 		self.assertEqual(len(answer["rejected"]), len(bad))
+		self.assertEqual([refusal["retry"] for refusal in answer["rejected"]], [False] * len(bad))
 		self.assertEqual([q for _d, q in self.days()], [10])
+
+	def test_a_refused_line_names_itself_even_when_malformed(self):
+		answer = self.send(
+			[{"subject": ["a-list"], "meter": 7, "day": "2026-06-20", "dimension": 5, "value": 1}]
+		)
+		self.assertEqual(
+			{key: answer["rejected"][0][key] for key in ("subject", "meter", "day", "dimension", "retry")},
+			{"subject": None, "meter": None, "day": "2026-06-20", "dimension": "", "retry": False},
+		)
+
+	def test_a_signed_report_records_when_the_service_last_reported(self):
+		self.send([line("2026-06-20", 5, subject="someone-elses-bucket")])
+		seen = frappe.db.get_value(
+			"Service", "storage", ["last_report_at", "last_report_as_of"], as_dict=True
+		)
+		self.assertEqual(seen.last_report_at, frappe.utils.get_datetime(NOW))
+		self.assertTrue(seen.last_report_as_of)
+
+	def test_a_wrong_signature_records_nothing(self):
+		before = frappe.db.get_value("Service", "storage", "last_report_at")
+		with self.assertRaises(frappe.PermissionError):
+			self.send([line("2026-06-20", 10)], secret="not-the-secret")
+		self.assertEqual(frappe.db.get_value("Service", "storage", "last_report_at"), before)

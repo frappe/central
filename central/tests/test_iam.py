@@ -53,10 +53,10 @@ class TestCentralIAM(IntegrationTestCase):
 		return team
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
-		# 20 capabilities across two live planes: central (11) + atlas (9). v5 merges
+		# 22 capabilities across two live planes: central (13) + atlas (9). v5 merges
 		# server:open into server:view. The bench plane remains deferred.
-		self.assertEqual(frappe.db.count("Capability"), 20)
-		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 11)
+		self.assertEqual(frappe.db.count("Capability"), 22)
+		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 13)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "atlas"}), 9)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "bench"}), 0)
 		# The retired roles are gone; the five-rung ladder is all that remains.
@@ -96,8 +96,10 @@ class TestCentralIAM(IntegrationTestCase):
 			self.assertIn(cap, admin_caps)
 			self.assertIn(cap, billing_caps)
 			self.assertNotIn(cap, developer_caps)
-		# Viewer can read services; Billing can configure them as well.
-		self.assertEqual(viewer_caps, {"cluster:view", "server:view", "service:view", "support:view"})
+		# Viewer can read services, support tickets, and deploys; Billing can configure services as well.
+		self.assertEqual(
+			viewer_caps, {"app:view", "cluster:view", "server:view", "service:view", "support:view"}
+		)
 		for caps in (owner_caps, admin_caps, developer_caps, billing_caps):
 			self.assertIn("support:manage", caps)
 		self.assertNotIn("support:manage", viewer_caps)
@@ -199,7 +201,7 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertEqual(effective["user"], self.viewer)
 		self.assertEqual(
 			effective["teams"][team.name]["caps"],
-			["cluster:view", "server:view", "service:view", "support:view"],
+			["app:view", "cluster:view", "server:view", "service:view", "support:view"],
 		)
 		self.assertEqual(effective["teams"][team.name]["grants"][0]["source"], "member")
 

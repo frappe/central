@@ -142,6 +142,7 @@ Credit Wallet ──team                           (lock anchor / cached balance
 Commitment ──team, ──currency              (spend floor)
 Usage Rollup ──team                            (metered aggregation)
 Usage Day ──team, ──subscription, ──invoice    (one subject's metered value for one UTC day, per dimension such as the AI model)
+Usage Check                                    (Central's own reading of a pushed service's day, against the stored day; kept 7 days)
 Monthly Exchange Rate                          (the USD rate one month bills converted usage at: the rate API's rate for the 1st, kept from the 2nd or at the month's draft)
 ```
 
@@ -273,12 +274,14 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, setup 
 | hourly | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan and Pending refunds |
 | hourly | `payments.setup_expiry.expire_unfinished_setups` | settle card and UPI (not PayPal) setups left Pending Validation for `SETUP_EXPIRES_HOURS` (24), oldest first, at most `SETUPS_PER_RUN`: activate a Razorpay mandate the gateway proves, remove and expire a Stripe card saved but never confirmed, expire the rest, and release anything older than `SETUP_RELEASE_DAYS` (7) without a notice; one `payment_method_setup_expired` notice per team per run, at most one per team in `NOTICE_COOLDOWN_HOURS` (24) |
 | hourly | `payments.setup_expiry.retry_unfinished_releases` | queue `release_late_setup` again for released setups with no `setup_released_at` (a cancelled setup only once `CANCELLED_SETUP_RELEASE_DELAY_MINUTES` (30) old), oldest first, at most `SETUPS_PER_RUN`, for `RELEASE_RETRY_DAYS` (7); then leave one comment for an operator and stop |
-| hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
+| hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs, silent services, usage mismatches) |
 | cron `0 8 1 * *` (08:00 IST on the 1st) | `revenue.invoicing.draft_monthly_invoices` | after the UTC month closes at 05:30 IST: waive internal teams' unpaid invoices, start the month's Billing Run, then draft the just-closed month as page jobs on the `billing` queue |
 | hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run once the draft tick has started it |
-| hourly | `revenue.storage_bridge.read_storage_usage` | until Cargo reports usage itself: read every billed bucket in pages of 100, one job per page, and keep each UTC day's peak as a Usage Day; a failed bucket never stops its page, and the last page of a region writes one Error Log that names how many of the region's buckets the run could not read |
+| hourly | `revenue.storage_bridge.read_storage_usage` | until Cargo reports usage itself: read every billed bucket, and each billed server's backup bucket, in pages of 100, one job per page, and keep each UTC day's peak as a Usage Day; a failed bucket never stops its page, and the last page of a region writes one Error Log that names how many of the region's buckets the run could not read |
 | hourly | `revenue.grove_bridge.read_ai_usage` | until Grove reports usage itself: subscribe AI teams that now have a billing currency, then read each AI team's cost per model that landed at Grove from the team's `usage_read_until` day through today (UTC), at most 7 days a run, as one Usage Day per model and landing day; a team read in full moves its `usage_read_until` to the last day read, so a missed hour, an outage or a late subscription is caught up; a team never read starts at the later of `Service.bill_from` and the day AI was turned on; a correction lands as a negative day; one Error Log per page names the teams it could not read, and their day does not move |
 | hourly | `revenue.usage_recount.recount_changed` | recount the usage months whose Usage Days changed since the last run, as page jobs |
+| cron `30 17 * * *` (12:00 UTC) | `revenue.usage_checks.sample_storage` | only while Cargo pushes storage (`Service.central_reads` off): read every billed bucket and each billed server's backup bucket once, in pages of 100 queued as `sample_team_page` and `sample_bundled_page`, with the same readers `storage_bridge` bills with, and keep the reading as a Usage Check for the next day's comparison |
+| cron `30 7 * * *` (02:00 UTC) | `revenue.usage_checks.check_yesterday` | only for a service that pushes: mark a storage day whose stored peak is more than 1 % below Central's sample, read each AI team's landing day from Grove with `grove_bridge.read_days` (failures logged as "Usage check: N AI team(s) not read") and mark a model that differs by more than 0.01 USD, then delete Usage Checks older than 7 days; writes no Usage Day |
 | daily | `revenue.usage_ledger.fill_missing_days` | give a Level subject with no reading for a UTC day that ended 48 hours ago its last reading, marked estimated |
 | daily | `revenue.usage_ledger.prune_old_days` | delete billed or written-off Usage Days older than 13 months |
 | hourly | `ingester.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
@@ -415,7 +418,7 @@ Configure it in **Billing Settings → Operator Alerts**:
 | Alert Email Addresses | One address per line. Required when the channel includes Email. Central never mails the System Manager role. |
 | Raven Site URL, Raven Channel ID | The Raven site and the channel that gets the alerts. |
 | Bot API Key, Bot API Secret | The API key of a bot user that is a member of the channel. The alert is posted as this user through `raven.api.raven_message.send_message`. |
-| Muted Alerts | Billing alerts the hourly digest does not send. Choose a **Category**: Payments, Invoicing, Dunning, Money checks or Readiness checks. Leave **Alert** empty to mute the whole category, or choose one alert or one check in it. **Until** is when the alert is sent again; leave it empty to mute until the row is removed. Enter the reason, for example the ticket of the known issue. `platform/kinds.py` owns the categories. |
+| Muted Alerts | Billing alerts the hourly digest does not send. Choose a **Category**: Payments, Invoicing, Dunning, Money checks, Readiness checks or Metering. Leave **Alert** empty to mute the whole category, or choose one alert or one check in it. **Until** is when the alert is sent again; leave it empty to mute until the row is removed. Enter the reason, for example the ticket of the known issue. `platform/kinds.py` owns the categories. |
 
 When a Raven post fails, or Raven is not configured, the alert goes to the email addresses once and the failure is written to the Error Log. Use **Send Test Alert** on the form to check the saved settings. The hourly digest keeps one Error Log row for each digest it sends, and it does not send the same digest again for `REPEAT_AFTER_HOURS`. A muted alert is left out of the digest and counted as `muted` in the `billing.alerts` metric. Muting applies only to the hourly billing digest (`run_operator_alerts`). Signup alerts, the setup lockout alert and **Send Test Alert** are never muted. The message groups the alerts under a readable name, such as `B1 · Billing currency matches the country` or `Failed webhook`, and says what each group means: the first paragraph of the check's docstring, after `Expected:`, or of the alert source's docstring. Keep that first paragraph in plain words, because operators read it.
 
@@ -712,6 +715,26 @@ AI (ADR 0027): grove_bridge.read_ai_usage (hourly) → Usage Day per team, model
     (metered_lines.rollups_in); other services' blank-cluster rollups are not billed
   → readiness M2: a non-USD billing currency of an AI team with no kept rate for the month, none
     from the rate API and no earlier kept rate
+
+Server bundles (#188): a server plan's Plan Includes row is the server's bundle of that resource
+  → a meter writes the server's Usage Day on its subscription: quantity measured, `included` the
+    plan's amount that day (from the open segment, so a resize applies from that day)
+  → usage_recount: a Level day bills above its own bundle; a Sum month bills above the bundle
+    scaled to its days; the rollup keeps the measured quantity and the covered part as its
+    allowance (a Live family keeps its live rate and applies it)
+  → storage: storage_bridge reads each server's backup bucket (bundled_buckets: tenant, region and
+    server name it) beside the team buckets; a paused or ended server's bucket is not read
+Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
+  → service_reports.accept_report stores each line as a Usage Day; a refused line comes back
+    with its subject, meter, day, dimension ("" when it has none) and `retry`. It is true for an
+    unknown subject (the team may subscribe later), a day in the future (the service's clock may
+    be ahead) and a day written by another worker at the same time; the service sends these
+    again. It is false for a malformed line, an unknown meter and a bad value, dimension, amount,
+    currency or day format; the service never sends these again
+  → every signed report sets Service.last_report_at and last_report_as_of
+  → once Central stops reading a service (central_reads off): alert `silent_service` after
+    twice its expected_cadence with no report; usage_checks compares Central's own reading with
+    the pushed days and raises `usage_mismatch` (a check never writes a Usage Day)
 ```
 
 ### F. Credits waterfall & wallet gating

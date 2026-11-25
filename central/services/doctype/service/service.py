@@ -67,6 +67,11 @@ class Service(Document):
 		return next((meter for meter in self.meters if meter.meter_key == meter_key), None)
 
 
+def is_read_by_central(service: str) -> bool:
+	"""Central still reads the service's usage itself, rather than taking its reports."""
+	return bool(frappe.db.get_value("Service", service, "central_reads"))
+
+
 def ensure_services() -> None:
 	"""Seed the services Central already talks to. An existing record is left as an operator set it."""
 	for spec in SERVICES:

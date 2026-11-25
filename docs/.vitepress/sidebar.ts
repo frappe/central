@@ -34,6 +34,7 @@ export const sidebar: SidebarSection[] = [
 			{ text: 'Create a server', link: '/servers/create' },
 			{ text: 'Images', link: '/servers/images' },
 			{ text: 'Regions', link: '/servers/regions' },
+			{ text: 'How VM prices compare', link: '/servers/price-comparison' },
 			{ text: 'Monitor usage', link: '/servers/usage' },
 			{ text: 'Connect with SSH', link: '/servers/access' },
 			{ text: 'Networking and firewall', link: '/servers/networking' },

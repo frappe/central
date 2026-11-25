@@ -8,6 +8,7 @@ from frappe import _
 from pydantic import ValidationError
 from requests import RequestException
 
+from central.deploy.doctype.deploy_app.deploy_app import DeployApp
 from central.errors import PilotStarting
 from central.iam import can, user_has_operator_bypass
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
@@ -215,12 +216,13 @@ class VirtualMachine(SystemRecord):
 
 	def release_resources(self) -> None:
 		"""A terminated server ends its trial, loses its routes and Pilot access, and releases what
-		it held: its mailbox and its AI trial key."""
+		it held: its mailbox, its AI trial key, and the push-to-deploy apps it ran."""
 		self.close_trial()
 		self.enqueue_route_removal()
 		self.revoke_pilot_credentials()
 		UserMailAccount.queue_removal(server=self.name)
 		AITrialKey.queue_revoke(server=self.name)
+		DeployApp.disable_for_server(self.name)
 		self.queue_status_notification("server_terminated")
 
 	def sync_billing(self) -> None:
