@@ -15,12 +15,14 @@ from central.billing.tests.utils import (
 	DEFAULT_INCLUDES,
 	_clear_metered_plans,
 	add_segment,
+	central_reads,
 	make_metered_plan,
 	make_plan,
 	seed_running_resource,
 )
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.integrations.object_storage import ObjectStorageNotFound
+from central.services.doctype.service.service import STORAGE_SERVICE
 from central.services.doctype.team_service.team_service import bucket_name_for
 
 TEAM = "team-bundled-bucket"
@@ -37,6 +39,8 @@ class BundledServerFixture:
 	def set_up_bundled_server(self):
 		frappe.db.delete("Virtual Machine", {"team": TEAM})
 		self.addCleanup(frappe.db.delete, "Virtual Machine", {"team": TEAM})
+		# Central's own page jobs write only while Central reads storage.
+		central_reads(self, STORAGE_SERVICE)
 		_clear_metered_plans("Storage", keep=STORAGE_PLAN)
 		make_plan(
 			STORAGE_PLAN,

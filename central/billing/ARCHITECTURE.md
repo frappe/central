@@ -748,6 +748,11 @@ Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
   → while the service's central_reads is on, Central's own reading still bills it: every line is
     refused with retry true ("Central still reads this service; send it again after the switch")
     and no Usage Day is written, so the service holds its lines until the switch
+  → Central's own page jobs (storage_bridge.read_page, read_bundled_page, grove_bridge.read_page)
+    read central_reads again under the same Service row lock right before they write, and write
+    nothing once it is off: a page queued before the switch never writes a day a report owns.
+    A Usage Day is written by Central's reading only while central_reads is on, and by a pushed
+    report only while it is off
   → service_reports.accept_report stores each line as a Usage Day; a refused line comes back
     with its subject, meter, day, dimension ("" when it has none) and `retry`. It is true for an
     unknown subject (the team may subscribe later), a day in the future (the service's clock may

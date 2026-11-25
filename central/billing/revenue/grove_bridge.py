@@ -11,7 +11,13 @@ from central.billing.revenue.service_reports import MAXIMUM_DIMENSION
 from central.billing.revenue.usage_ledger import utc_today, write_days
 from central.billing.revenue.usage_recount import dimension_room
 from central.integrations.grove import GroveClient
-from central.services.doctype.service.service import AI_METER, AI_SERVICE, NANO_PER_UNIT, is_read_by_central
+from central.services.doctype.service.service import (
+	AI_METER,
+	AI_SERVICE,
+	NANO_PER_UNIT,
+	is_read_by_central,
+	is_read_by_central_locked,
+)
 from central.services.doctype.team_service.team_service import billed_subjects
 
 # One Grove call per team and day, so a page of this many teams is a few minutes of work.
@@ -49,6 +55,11 @@ def read_page(teams: list[str]) -> int:
 	today = utc_today()
 	plan = {team: _days_to_read(service, bill_from, today) for team, service in subjects.items()}
 	read = read_days(subjects, {team: days for team, days in plan.items() if days})
+	# The page may have been queued while Central still read AI usage; checked under the lock a
+	# pushed report takes, so the two never both write a day.
+	if not is_read_by_central_locked(AI_SERVICE):
+		frappe.logger("billing").debug("AI usage page skipped: Grove reports its usage now")
+		return 0
 	written = write_days(read.rows).count
 	# Only after its rows are written, so a team that failed is read again from the same day.
 	_mark_read({subjects[team].name: plan[team][-1] for team in read.teams})

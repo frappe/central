@@ -121,6 +121,13 @@ def is_read_by_central(service: str) -> bool:
 	return bool(frappe.db.get_value("Service", service, "central_reads"))
 
 
+def is_read_by_central_locked(service: str) -> bool:
+	"""Whether Central reads the service itself, read under the Service row lock."""
+	# Pushed reports and Central's own page jobs both decide under this lock and keep it until they
+	# commit, so a day is written by only one of them whichever way the switch is flipped.
+	return bool(frappe.db.get_value("Service", service, "central_reads", for_update=True))
+
+
 def get_report_secret(service: str) -> str | None:
 	"""The secret `service` signs its reports with, or None while it has none."""
 	return get_decrypted_password("Service", service, "report_secret", raise_exception=False) or None
