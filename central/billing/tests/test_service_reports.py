@@ -71,8 +71,8 @@ class TestServiceReports(IntegrationTestCase):
 		self.addCleanup(self.restore_storage, before)
 		self.enterContext(patch("frappe.utils.now_datetime", return_value=frappe.utils.get_datetime(NOW)))
 
-	def make_bucket(self) -> None:
-		"""The team's bucket, billed on a storage subscription from June 1."""
+	def make_bucket(self, created: str = "2026-06-01 00:00:00") -> None:
+		"""The team's bucket, created at `created` and billed on a storage subscription from June 1."""
 		subscription = provision_service_subscription(TEAM, PLAN, cluster=CLUSTER, start_date="2026-06-01")
 		frappe.get_doc(
 			{
@@ -84,6 +84,7 @@ class TestServiceReports(IntegrationTestCase):
 				"external_id": BUCKET,
 				"status": "Active",
 				"subscription": subscription["subscription"],
+				"creation": created,
 			}
 		).db_insert()  # Skips before_insert, which would create the bucket in Cargo.
 
@@ -276,7 +277,7 @@ class TestServiceReports(IntegrationTestCase):
 
 	def test_a_reused_name_bills_the_deletion_day_on_the_later_bucket(self):
 		self.delete_bucket("2026-06-18 12:00:00")
-		self.make_bucket()
+		self.make_bucket("2026-06-18 13:00:00")
 		later = self.delete_bucket()
 
 		answer = self.send_on("2026-06-20", [line("2026-06-20", 12)])
@@ -286,7 +287,7 @@ class TestServiceReports(IntegrationTestCase):
 
 	def test_a_reused_name_bills_each_day_on_the_bucket_alive_that_day(self):
 		first = self.delete_bucket("2026-06-18 12:00:00")
-		self.make_bucket()
+		self.make_bucket("2026-06-18 13:00:00")
 		second = self.delete_bucket()
 		self.assertNotEqual(first, second)
 
@@ -298,6 +299,34 @@ class TestServiceReports(IntegrationTestCase):
 			[(r["day"], r["reason"]) for r in answer["rejected"]], [("2026-06-21", "unknown subject")]
 		)
 		self.assertEqual([self.billed_on(day) for day in days[:4]], [first, first, second, second])
+
+	def test_a_day_between_two_buckets_of_one_name_is_an_unknown_subject(self):
+		# Deleted Monday, made again Wednesday, deleted Thursday: no bucket held the name on Tuesday.
+		self.delete_bucket("2026-06-15 12:00:00")
+		self.make_bucket("2026-06-17 09:00:00")
+		thursday = self.delete_bucket("2026-06-18 12:00:00")
+
+		answer = self.send_on("2026-06-18", [line("2026-06-16", 8), line("2026-06-18", 12)])
+
+		self.assertEqual(answer["accepted"], 1)
+		self.assertEqual(
+			[(r["day"], r["reason"]) for r in answer["rejected"]], [("2026-06-16", "unknown subject")]
+		)
+		self.assertEqual(self.billed_on("2026-06-18"), thursday)
+
+	def test_a_backlog_day_before_the_bucket_was_created_is_an_unknown_subject(self):
+		frappe.db.set_value(
+			"Team Service", {"team": TEAM}, "creation", "2026-06-19 09:00:00", update_modified=False
+		)
+		billed = self.delete_bucket()
+
+		answer = self.send_on("2026-06-20", [line("2026-06-18", 8), line("2026-06-19", 12)])
+
+		self.assertEqual(answer["accepted"], 1)
+		self.assertEqual(
+			[(r["day"], r["reason"]) for r in answer["rejected"]], [("2026-06-18", "unknown subject")]
+		)
+		self.assertEqual(self.billed_on("2026-06-19"), billed)
 
 	def test_a_deletion_late_in_the_system_day_bills_up_to_its_utc_day(self):
 		# 03:00 in Asia/Kolkata is 21:30 UTC the day before; pinned so the test holds on any site zone.

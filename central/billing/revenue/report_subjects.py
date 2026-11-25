@@ -30,10 +30,12 @@ def subjects_by_day(service: str, names: list[str], days: set[str]) -> dict[str,
 def _deleted_on(deleted: dict, day: str) -> dict:
 	"""The deleted bucket of each name that was alive at some moment of the UTC day `day`."""
 	start = utc_day_start(day)
+	end = utc_day_start(frappe.utils.getdate(day) + datetime.timedelta(days=1))
 	alive = {}
 	for name, rows in deleted.items():
-		# Rows run oldest first, so the first one deleted on or after the day began owned the name that day.
-		row = next((row for row in rows if row.deleted_at >= start), None)
+		# Created before the day ended and deleted after it began: that bucket held the name that day.
+		# Rows run oldest first, so a day two buckets shared bills the one deleted first, as before.
+		row = next((row for row in rows if row.created_at < end and row.deleted_at >= start), None)
 		if row:
 			alive[name] = row
 	return alive
@@ -48,7 +50,7 @@ def _recently_deleted(service: str, names: list[str]) -> dict:
 	table = frappe.qb.DocType("Deleted Bucket")
 	rows = (
 		frappe.qb.from_(table)
-		.select(table.external_id, table.team, table.subscription, table.deleted_at)
+		.select(table.external_id, table.team, table.subscription, table.created_at, table.deleted_at)
 		.where(table.external_id.isin(names))
 		.where(table.deleted_at >= since)
 		.orderby(table.deleted_at, order=Order.asc)
