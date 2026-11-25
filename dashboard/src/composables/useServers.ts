@@ -64,6 +64,7 @@ export type VirtualMachineRow = Pick<
 		creation?: string
 		created_by?: string | null
 		created_by_name?: string | null
+		created_by_email?: string | null
 		/** The server's Pilot audience, which a link from that Pilot names it by. */
 		pilot_audience?: string | null
 	}

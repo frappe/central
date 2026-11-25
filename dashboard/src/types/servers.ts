@@ -39,6 +39,7 @@ export interface ServerOverview {
 		/** Null for a server that Central discovered rather than created. */
 		created_by: string | null
 		created_by_name: string | null
+		created_by_email: string | null
 		plan_title: string | null
 		plan_rate: number | null
 		plan_currency: string | null

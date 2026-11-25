@@ -67,7 +67,7 @@ const createdFact = computed<Fact | null>(() => {
 		label: creator
 			? `Created ${timeAgo(details.creation)} by ${creator}`
 			: `Created ${timeAgo(details.creation)}`,
-		help: [formatCalendarDate(details.creation), details.created_by]
+		help: [formatCalendarDate(details.creation), details.created_by_email]
 			.filter(Boolean)
 			.join(' · '),
 	}

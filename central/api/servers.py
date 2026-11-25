@@ -86,7 +86,11 @@ def registry(team: str | None = None) -> dict:
 		server["plan_title"] = plan_titles.get(server["plan"])
 		server["image_title"] = image.get("title")
 		server["image_description"] = image.get("description")
-		server.update(creators.get(server["name"], {"created_by": None, "created_by_name": None}))
+		server.update(
+			creators.get(
+				server["name"], {"created_by": None, "created_by_name": None, "created_by_email": None}
+			)
+		)
 		server["pending_action"] = pending.get(server["resource_id"])
 		server["pilot_audience"] = audiences.get(server["name"])
 		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
@@ -205,6 +209,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"creation": row.creation,
 			"created_by": row.created_by,
 			"created_by_name": row.created_by_name,
+			"created_by_email": row.created_by_email,
 		}
 	)
 
@@ -396,6 +401,7 @@ def _overview_server_row(resource_id: str, team: str):
 			team_table.team_name.as_("team_name"),
 			creation_action.requested_by.as_("created_by"),
 			creator.full_name.as_("created_by_name"),
+			creator.email.as_("created_by_email"),
 		)
 		.where((server.resource_id == resource_id) & (server.team == team))
 		.limit(1)

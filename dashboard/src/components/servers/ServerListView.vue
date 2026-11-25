@@ -165,7 +165,7 @@ const columns = computed<ListViewColumn<ResourceRow>[]>(() => [
 		key: 'created',
 		label: __('Created'),
 		value: (row) =>
-			`${creatorLabel(row.server)} ${row.server?.created_by ?? ''} ${formatCalendarDate(row.server?.creation)}`,
+			`${creatorLabel(row.server)} ${row.server?.created_by_email ?? ''} ${formatCalendarDate(row.server?.creation)}`,
 		width: 'minmax(9rem,0.9fr)',
 		sortable: true,
 		compare: compareBy((server) => server?.creation),

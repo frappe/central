@@ -551,12 +551,17 @@ class ResourceAction(Document):
 			frappe.qb.from_(action)
 			.left_join(user)
 			.on(user.name == action.requested_by)
-			.select(action.server, action.requested_by, user.full_name)
+			.select(action.server, action.requested_by, user.full_name, user.email)
 			.where((action.team == team) & (action.action == "create") & action.server.isnotnull())
 			.run(as_dict=True)
 		)
 		return {
-			row.server: {"created_by": row.requested_by, "created_by_name": row.full_name} for row in rows
+			row.server: {
+				"created_by": row.requested_by,
+				"created_by_name": row.full_name,
+				"created_by_email": row.email,
+			}
+			for row in rows
 		}
 
 
