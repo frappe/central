@@ -1486,7 +1486,7 @@
   "/api/method/central.api.servers.list_instances": {
    "get": {
     "deprecated": false,
-    "description": "List the regions a team can place servers in \u2014 every Active Region.\nA pure read for the console's New Server region picker. Gated on `cluster:view`\n(same scope as `registry`); the team only resolves the gate, the region set is\nteam-agnostic.\n\nRead-only.",
+    "description": "The Active regions a team can place a new server in. It does not list servers: use\n`servers.registry` for that. Gated on `cluster:view`, the same as `registry`. The team only\nresolves the gate, because every team sees the same regions.\n\nRead-only.",
     "operationId": "servers.list_instances",
     "parameters": [
      {
@@ -1717,7 +1717,7 @@
   "/api/method/central.api.servers.registry": {
    "get": {
     "deprecated": false,
-    "description": "A team's servers and self-serve sites in one read, for the console map and panel.\nGated on `server:view`. Terminated sites are left out.\n\nRead-only.",
+    "description": "List a team's servers and self-serve sites in one read, for the console map and panel.\nGated on `server:view`. Terminated sites are left out.\n\nRead-only.",
     "operationId": "servers.registry",
     "parameters": [
      {
@@ -2173,7 +2173,7 @@
   "/api/method/central.api.servers.server_overview": {
    "get": {
     "deprecated": false,
-    "description": "Return one server's Central mirror.\n\nRead-only.",
+    "description": "One server's details and status, by its `resource_id` from `servers.registry`.\n\nRead-only.",
     "operationId": "servers.server_overview",
     "parameters": [
      {

@@ -40,7 +40,7 @@ REGION_LIST_FIELDS = (
 	"server:view", _lt("You can't view this team's servers. Ask a team admin to review your access.")
 )
 def registry(team: str | None = None) -> dict:
-	"""A team's servers and self-serve sites in one read, for the console map and panel.
+	"""List a team's servers and self-serve sites in one read, for the console map and panel.
 	Gated on `server:view`. Terminated sites are left out."""
 	servers = frappe.get_list(
 		"Virtual Machine",
@@ -151,7 +151,7 @@ def _sites(rows: list[dict], servers: list[dict], pending: dict[str, str]) -> li
 	server="resource_id",
 )
 def server_overview(team: str | None = None, resource_id: str | None = None) -> dict:
-	"""Return one server's Central mirror."""
+	"""One server's details and status, by its `resource_id` from `servers.registry`."""
 	if not resource_id:
 		frappe.throw(_("Select a server to continue."), frappe.ValidationError)
 
@@ -474,10 +474,9 @@ def _overview_plan(server: dict, team: str) -> dict:
 	"cluster:view", _lt("You can't view clusters for this team. Ask a team admin to review your access.")
 )
 def list_instances(team: str | None = None) -> list[dict]:
-	"""List the regions a team can place servers in — every Active Region.
-	A pure read for the console's New Server region picker. Gated on `cluster:view`
-	(same scope as `registry`); the team only resolves the gate, the region set is
-	team-agnostic."""
+	"""The Active regions a team can place a new server in. It does not list servers: use
+	`servers.registry` for that. Gated on `cluster:view`, the same as `registry`. The team only
+	resolves the gate, because every team sees the same regions."""
 	# Region carries Atlas's credentials (base_url, webhook_secret, atlas_region_id),
 	# so the DocType is locked to System Manager. `cluster:view` already authorizes
 	# this read, so we bypass DocType RBAC and read only the non-secret allowlist —
