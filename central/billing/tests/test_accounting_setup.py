@@ -7,14 +7,30 @@ from unittest.mock import patch
 
 import frappe
 
+from central.billing.api.admin import accounting as accounting_api
 from central.billing.api.dashboard import invoices as dashboard_invoices
-from central.billing.ingester import connection, setup
+from central.billing.ingester import connection, pdfs, setup
 from central.billing.ingester import settings as accounting
 from central.billing.tests.accounting_fake import requires_accounting_system, sync_mode
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team, make_user
 
 COMPANY = "Test Co"
+
+
+def _blank_pdf() -> bytes:
+	"""A real one-page PDF: Frappe reads a PDF's pages when it saves the file."""
+	from io import BytesIO
+
+	from pypdf import PdfWriter
+
+	writer, out = PdfWriter(), BytesIO()
+	writer.add_blank_page(width=72, height=72)
+	writer.write(out)
+	return out.getvalue()
+
+
+PDF = _blank_pdf()
 
 
 def _account(currency: str, **kind) -> dict:
@@ -276,19 +292,33 @@ class TestInvoicePdf(AccountingSetupTestCase):
 		frappe.local.response = frappe._dict()
 		with (
 			patch("central.billing.api.dashboard.invoices._require_view"),
-			patch("central.billing.ingester.connection.download", return_value=b"%PDF-1.7") as download,
+			patch("central.billing.ingester.connection.download", return_value=PDF) as download,
 		):
 			dashboard_invoices.download_invoice_pdf(self.invoice.name)
 		return download
 
 	def test_an_issued_invoice_downloads_with_the_configured_print_format(self):
 		frappe.db.set_value("Invoice", self.invoice.name, "erpnext_invoice", "B2B/26-27/00001")
+		self.addCleanup(pdfs.forget_pdf, "Invoice", self.invoice.name)
 		download = self._download()
 		self.assertEqual(download.call_args.args[0], "frappe.utils.print_format_generator.download_pdf")
 		self.assertEqual(download.call_args.args[1]["print_format"], "Cloud Tax Invoice")
 		self.assertEqual(download.call_args.args[1]["letterhead"], "No Letterhead")
-		self.assertEqual(frappe.local.response.filecontent, b"%PDF-1.7")
+		self.assertEqual(frappe.local.response.filecontent, PDF)
 		self.assertEqual(frappe.local.response.filename, "B2B-26-27-00001.pdf")
+
+	def test_the_pdf_is_rendered_once_then_served_from_central(self):
+		frappe.db.set_value("Invoice", self.invoice.name, "erpnext_invoice", "B2B/26-27/00001")
+		self.addCleanup(pdfs.forget_pdf, "Invoice", self.invoice.name)  # its file is on disk
+		self._download()
+		self.assertTrue(frappe.db.get_value("Invoice", self.invoice.name, "pdf_url"))
+
+		self._download().assert_not_called()
+		self.assertEqual(frappe.local.response.filecontent, PDF)
+
+		accounting_api.fetch_pdf_again("Invoice", self.invoice.name)
+		self.assertIsNone(frappe.db.get_value("Invoice", self.invoice.name, "pdf_url"))
+		self._download().assert_called_once()
 
 	def test_an_unissued_invoice_has_no_pdf(self):
 		with self.assertRaises(frappe.DoesNotExistError):
@@ -324,13 +354,14 @@ class TestTopUpReceipt(AccountingSetupTestCase):
 		frappe.local.response = frappe._dict()
 		with (
 			patch("central.billing.api.dashboard.invoices._require_view"),
-			patch("central.billing.ingester.connection.download", return_value=b"%PDF-1.7") as download,
+			patch("central.billing.ingester.connection.download", return_value=PDF) as download,
 		):
 			dashboard_invoices.download_topup_receipt(self.entry.name)
 		return download
 
 	def test_a_booked_top_up_downloads_its_receipt_voucher(self):
 		self.entry.db_set("advance_id", "RV/26-27/000001")
+		self.addCleanup(pdfs.forget_pdf, "Credit Ledger Entry", self.entry.name)
 		download = self._download()
 		self.assertEqual(download.call_args.args[1]["doctype"], "Payment Entry")
 		self.assertEqual(download.call_args.args[1]["print_format"], "Cloud Receipt Voucher")
