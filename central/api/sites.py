@@ -135,8 +135,9 @@ def claim_site(name: str, return_to: str | None = None) -> dict:
 	the AI app a connector sign in goes back to."""
 	site = authorized_site(name, "server:console")
 	state = site_state(site, return_to=return_to)
-
-	if state["login_url"]:
+	# A connector without a site user only gets the site's address back, which is no sign in.
+	signs_in = not return_to or site.get_login_user(frappe.session.user)[0]
+	if state["login_url"] and signs_in:
 		site.mark_claimed()
 
 	return state
