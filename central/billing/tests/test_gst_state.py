@@ -9,7 +9,7 @@ import requests
 from frappe.utils import getdate
 
 from central.billing.doctype.invoice.invoice import period_key_for
-from central.billing.ingester import erpnext_sync, payment_records
+from central.billing.ingester import erpnext_sync
 from central.billing.ingester.gst_state_backfill import CURSOR_KEY, record_missing_gst_states
 from central.billing.payments import corrections
 from central.billing.revenue import invoicing
@@ -114,9 +114,8 @@ class TestFilingFollowsTheRecordedState(SyncTestCase):
 		billing_team(TEAM, state="Karnataka")
 		inv = self._invoice(team=TEAM)
 		frappe.db.set_value("Invoice", inv, {"output_tax_type": "GST", "due_date": "2026-09-01"})
-		marker = payment_records.marker(frappe.get_doc("Invoice", inv))
 		self.remote.records[("Sales Invoice", "SINV-LOST")] = {
-			"remarks": marker,
+			"frappe_cloud_invoice_id": inv,
 			"docstatus": 1,
 			"place_of_supply": "27-Maharashtra",
 		}

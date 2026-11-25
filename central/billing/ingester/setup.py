@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import frappe
 
-from central.billing.ingester import connection
+from central.billing.ingester import connection, invoice_snapshot
 from central.billing.ingester.settings import accounting_settings
 
 OK = "OK"
@@ -56,6 +56,8 @@ def steps(s) -> list[Step]:
 		),
 		_series("Payment Entry", [s.series_receipt_voucher]),
 		_print_format(s.invoice_print_format, "Sales Invoice"),
+		Step("Frappe Cloud invoice fields", "Sales Invoice", "Sales Invoice", _snapshot_fields),
+		_exists("Invoice terms", "Terms and Conditions", s.invoice_terms),
 		_print_format(s.receipt_voucher_print_format, "Payment Entry"),
 	]
 
@@ -204,11 +206,20 @@ def _fetch(doctype: str, name: str | None):
 
 def _series_options(doctype: str) -> list[str]:
 	"""The naming series on offer for `doctype`, site changes included."""
+	field = _fields_of(doctype).get("naming_series") or {}
+	return [o.strip() for o in (field.get("options") or "").split("\n") if o.strip()]
+
+
+def _snapshot_fields() -> tuple[str, str]:
+	"""The API drops a field the doctype lacks without an error, so a missing one leaves the PDF empty."""
+	missing = [field for field in invoice_snapshot.FIELDS if field not in _fields_of("Sales Invoice")]
+	return (MISSING, "Add: " + ", ".join(missing)) if missing else (OK, "")
+
+
+def _fields_of(doctype: str) -> dict:
+	"""The fields of `doctype` by name, custom fields and site changes included."""
 	meta = connection.call("frappe.desk.form.load.getdoctype", {"doctype": doctype}) or {}
 	for doc in meta.get("docs") or []:
-		if doc.get("name") != doctype:
-			continue
-		for field in doc.get("fields") or []:
-			if field.get("fieldname") == "naming_series":
-				return [o.strip() for o in (field.get("options") or "").split("\n") if o.strip()]
-	return []
+		if doc.get("name") == doctype:
+			return {field.get("fieldname"): field for field in doc.get("fields") or []}
+	return {}
