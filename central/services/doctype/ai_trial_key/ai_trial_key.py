@@ -12,7 +12,7 @@ from frappe.query_builder.functions import Now
 from frappe.utils import add_to_date, cint, flt, now_datetime
 from frappe.utils.password import get_decrypted_password, remove_encrypted_password
 
-from central.integrations.grove import GroveClient, get_key_balance
+from central.integrations.grove import TIMEOUT, GroveClient, get_key_balance
 from central.notification.engine import queue_event
 
 if TYPE_CHECKING:
@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 TRIAL_TEAM = "Central Trial"
 # One batch per run keeps the job short.
 REFILL_BATCH_SIZE = 50
+# Connect, read. A creation that mints its own key waits on Grove, so it gives up sooner than a
+# job does.
+ASSIGNMENT_MINT_TIMEOUT_SECONDS = (10, 10)
 # A revoke or a hand-over Grove refused is tried again once the record has sat this long.
 RETRY_AFTER_MINUTES = 60
 # A hand-over that failed this many times is given up and the key revoked: the team mints its own.
@@ -37,12 +40,12 @@ RETRIED = {
 
 
 class AITrialKey(Document):
-	"""One Grove key minted ahead under Central Trial and held here with its secret, until a
-	free-trial server takes it in its boot config. The key carries no expiry at Grove. Central
-	revokes it when that creation fails, when the server is terminated or once AI Settings' Revokes
-	Automatically After days have passed since its assignment, and hands it to the team when the
-	trial converts, so the secret in the server's config keeps working; a hand-over that fails for
-	good ends in a revoke too."""
+	"""One Grove key minted under Central Trial, ahead into its product's pool or by the creation
+	that found the pool empty, and held here with its secret, until a free-trial server takes it in
+	its boot config. The key carries no expiry at Grove. Central revokes it when that creation
+	fails, when the server is terminated or once AI Settings' Revokes Automatically After days have
+	passed since its assignment, and hands it to the team when the trial converts, so the secret in
+	the server's config keeps working; a hand-over that fails for good ends in a revoke too."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -71,11 +74,11 @@ class AITrialKey(Document):
 	# end: auto-generated types
 
 	@classmethod
-	def provision(cls, settings: AISettings, row: AITrialProduct) -> Self:
+	def provision(cls, settings: AISettings, row: AITrialProduct, timeout: tuple[int, int] = TIMEOUT) -> Self:
 		"""Mint one key into `row`'s product's pool, titled at Grove by this record's id (taken from the
 		series before the mint), in the product's Model Group on top of the team's when the row names one.
-		A crash between the mint and the insert leaves a capped key under the trial team titled by an id
-		no record carries; Grove Desk shows it."""
+		A crash between the mint and the insert, or a creation that rolls back after its own mint, leaves
+		a capped key under the trial team titled by an id no record carries; Grove Desk shows it."""
 		name = make_autoname(frappe.get_meta("AI Trial Key").autoname)
 		minted = GroveClient.from_settings().provision_key(
 			team=TRIAL_TEAM,
@@ -83,8 +86,9 @@ class AITrialKey(Document):
 			geography=settings.trial_key_geography,
 			cap=cint(settings.trial_key_cap),
 			model_groups=[row.model_group] if row.model_group else None,
+			timeout=timeout,
 		)
-		return frappe.get_doc(
+		key = frappe.get_doc(
 			{
 				"doctype": "AI Trial Key",
 				"grove_key": minted["name"],
@@ -94,12 +98,16 @@ class AITrialKey(Document):
 				"cap": cint(settings.trial_key_cap),
 				"api_key": minted["api_key"],
 			}
-		).insert(set_name=name)
+		)
+
+		# A creation mints as its requester, who holds no right on the pool's records.
+		return key.insert(set_name=name, ignore_permissions=True)
 
 	@classmethod
 	def assign(cls, action: ResourceAction) -> Self | None:
-		"""The oldest ready key of the creation's product for a free trial; none for a paid one, an
-		empty pool or while assignment is paused. A retried creation keeps its key."""
+		"""The oldest ready key of the creation's product for a free trial, or one minted now when
+		the pool is empty; none for a paid one or while assignment is paused. A retried creation
+		keeps its key."""
 		if not action.is_free_trial:
 			return None
 
@@ -118,10 +126,10 @@ class AITrialKey(Document):
 			for_update=True,
 			skip_locked=True,
 		)
-		if not name:
+		key = frappe.get_doc("AI Trial Key", name) if name else cls.mint_for_assignment(action)
+		if not key:
 			return None
 
-		key = frappe.get_doc("AI Trial Key", name)
 		key.db_set(
 			{
 				"status": "Assigned",
@@ -132,6 +140,29 @@ class AITrialKey(Document):
 		)
 
 		return key
+
+	@classmethod
+	def mint_for_assignment(cls, action: ResourceAction) -> Self | None:
+		"""One key minted for a creation that found its product's pool empty; Pause Pool Refill does
+		not stop it, Pause Key Assignment does. None while Central is not enrolled or the product has
+		no sized pool row, and when Grove refuses or is slow, which is logged against the creation:
+		the trial boots without AI."""
+		settings = frappe.get_cached_doc("AI Settings")
+		row = next(
+			(row for row in settings.trial_products if row.product == action.product and row.pool_size), None
+		)
+		if not row or not settings.is_enrolled:
+			return None
+
+		try:
+			return cls.provision(settings, row, timeout=ASSIGNMENT_MINT_TIMEOUT_SECONDS)
+		except Exception:
+			frappe.log_error(
+				title="Trial key mint failed",
+				reference_doctype="Resource Action",
+				reference_name=action.name,
+			)
+			return None
 
 	def get_site_config(self) -> dict:
 		"""The common_site_config entry a site's apps read a Grove key from: the shape Pilot
@@ -202,7 +233,7 @@ class AITrialKey(Document):
 	@classmethod
 	def queue_convert(cls, server: str) -> bool:
 		"""Hand the live key of `server` to its team in the background: the trial converted. False
-		when it has none: a paid creation, a pool that was empty, or a key revoked when the trial
+		when it has none: a paid creation, a mint Grove refused, or a key revoked when the trial
 		ended."""
 		name = frappe.db.get_value("AI Trial Key", {"server": server, "status": "Assigned"})
 		if not name:
