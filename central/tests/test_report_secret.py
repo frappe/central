@@ -164,7 +164,7 @@ class TestReportSecret(IntegrationTestCase):
 		self.assertEqual(sent, [SECRET, NEWER_SECRET])
 		self.assertEqual(sent[-1], get_report_secret("ai"))
 
-	def test_a_secret_that_changes_on_every_send_is_logged(self):
+	def test_a_secret_that_changes_on_every_send_is_logged_and_sent_by_a_fresh_job(self):
 		with patch("central.integrations.report_secret.frappe.enqueue"):
 			self.set_secret("ai")
 		grove = MagicMock()
@@ -172,11 +172,73 @@ class TestReportSecret(IntegrationTestCase):
 			"Service", "ai", frappe.generate_hash(length=12), "report_secret"
 		)
 
-		with patch.object(GroveClient, "from_settings", return_value=grove):
+		with (
+			patch.object(GroveClient, "from_settings", return_value=grove),
+			patch("central.integrations.report_secret.frappe.enqueue") as enqueue,
+		):
 			send_to_grove()
 
 		self.assertEqual(grove.set_report_secret.call_count, 3)
-		self.assertTrue([row for row in self.errors() if row.method == "Report secret not sent to Grove"])
+		self.assertEqual(
+			len([row for row in self.errors() if row.method == "Report secret not sent to Grove"]), 1
+		)
+		enqueue.assert_called_once()
+		self.assertEqual(enqueue.call_args.args, ("central.integrations.report_secret.send_to_grove",))
+		self.assertEqual(
+			{
+				key: enqueue.call_args.kwargs[key]
+				for key in ("queue", "enqueue_after_commit", "job_id", "deduplicate")
+			},
+			{
+				"queue": "short",
+				"enqueue_after_commit": True,
+				"job_id": "report-secret-ai-all",
+				"deduplicate": True,
+			},
+		)
+		self.assertNotIn(get_report_secret("ai"), repr(enqueue.call_args))
+
+	def test_a_cargo_secret_that_changes_on_every_send_is_resent_for_that_region(self):
+		with patch("central.integrations.report_secret.frappe.enqueue"):
+			self.set_secret("storage")
+		region = self.regions[0]
+
+		def rotate_each_send(service):
+			set_encrypted_password("Service", service, frappe.generate_hash(length=12), "report_secret")
+
+		with (
+			patch.object(self, "rotate", side_effect=rotate_each_send),
+			patch("central.integrations.report_secret.frappe.enqueue") as enqueue,
+		):
+			send_to_cargo(region)
+
+		self.assertEqual(len(self.configured), 3)
+		self.assertEqual(enqueue.call_args.args, ("central.integrations.report_secret.send_to_cargo",))
+		self.assertEqual(enqueue.call_args.kwargs["region"], region)
+		self.assertEqual(enqueue.call_args.kwargs["job_id"], f"report-secret-storage-{region}")
+
+	def test_a_secret_sent_as_stored_queues_no_fresh_job(self):
+		with patch("central.integrations.report_secret.frappe.enqueue"):
+			self.set_secret("storage")
+		self.rotate_on_send = NEWER_SECRET
+
+		with patch("central.integrations.report_secret.frappe.enqueue") as enqueue:
+			send_to_cargo(self.regions[0])
+
+		enqueue.assert_not_called()
+
+	def test_grove_without_control_credentials_is_logged_without_failing_the_job(self):
+		with patch("central.integrations.report_secret.frappe.enqueue"):
+			self.set_secret("ai")
+		refusal = frappe.ValidationError("AI Settings has no Grove control credentials.")
+
+		with patch.object(GroveClient, "from_settings", side_effect=refusal):
+			send_to_grove()
+
+		[error] = [row for row in self.errors() if row.method == "Report secret not sent to Grove"]
+		self.assertIn("no Grove control credentials", error.error)
+		self.assertNotIn(SECRET, error.error)
+		self.assertNotIn("Traceback", error.error)
 
 	def test_the_grove_client_calls_the_control_endpoint(self):
 		client = GroveClient("https://grove.example.test", "key", "secret")

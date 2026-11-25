@@ -4,7 +4,7 @@ import frappe
 
 from central.services.doctype.service.service import AI_SERVICE, STORAGE_SERVICE, get_report_secret
 
-# A secret that changes on every send means an operator is still rotating; the next save sends it.
+# A secret that changes on every send means an operator is still rotating; a fresh job sends it later.
 MAXIMUM_SENDS = 3
 
 
@@ -32,7 +32,12 @@ def send_to_grove() -> None:
 	"""Give Grove the AI report secret."""
 	from central.integrations.grove import GroveClient
 
-	client = GroveClient.from_settings()
+	try:
+		client = GroveClient.from_settings()
+	except frappe.ValidationError as error:
+		# AI Settings without control credentials; logged like a refusal, so the job does not fail.
+		_log_failure("Grove", error, get_report_secret(AI_SERVICE))
+		return
 	_send_until_current(AI_SERVICE, "Grove", lambda sent: _send_to_grove_once(client, sent))
 
 
@@ -50,12 +55,22 @@ def _send_until_current(service: str, host: str, send_once, region: str | None =
 		sent = latest
 	_see_latest_commits()
 	if get_report_secret(service) != sent:
-		frappe.log_error(
-			title=f"Report secret not sent to {host}",
-			message=f"The secret changed during each of {MAXIMUM_SENDS} sends.",
-			reference_doctype="Region" if region else None,
-			reference_name=region,
-		)
+		_send_later(service, host, region)
+
+
+def _send_later(service: str, host: str, region: str | None) -> None:
+	"""Queue one fresh send of the newest secret, after logging that this job gave up."""
+	frappe.log_error(
+		title=f"Report secret not sent to {host}",
+		message=f"The secret changed during each of {MAXIMUM_SENDS} sends; a new job sends the newest.",
+		reference_doctype="Region" if region else None,
+		reference_name=region,
+	)
+	# One id per host, so a queued or running resend is never queued twice and a resend that gives
+	# up again cannot queue itself; a later save queues its own job.
+	job = "send_to_cargo" if service == STORAGE_SERVICE else "send_to_grove"
+	kwargs = {"region": region} if region else {}
+	_enqueue(job, job_id=f"report-secret-{service}-{region or 'all'}", deduplicate=True, **kwargs)
 
 
 def _see_latest_commits() -> None:
@@ -115,10 +130,12 @@ def _enqueue(job: str, **kwargs) -> None:
 	)
 
 
-def _log_failure(host: str, error: Exception, secret: str, region: str | None = None) -> None:
+def _log_failure(host: str, error: Exception, secret: str | None, region: str | None = None) -> None:
 	# An explicit message, so the log holds no traceback whose frames could show the secret, and a
 	# host that echoes the secret in its refusal does not put it in the log either.
-	message = f"{type(error).__name__}: {error}".replace(secret, "***")
+	message = f"{type(error).__name__}: {error}"
+	if secret:
+		message = message.replace(secret, "***")
 	frappe.log_error(
 		title=f"Report secret not sent to {host}",
 		message=message,
