@@ -8,13 +8,13 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.deploy.doctype.deploy_app.deploy_app import DeployApp, get_new_domain
-from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
+from central.infrastructure.doctype.github_connection.test_github_connection import make_team
+from central.infrastructure.doctype.github_installation.test_github_installation import (
 	make_installation,
 )
-from central.infrastructure.doctype.github_connection.test_github_connection import make_team
 from central.infrastructure.doctype.region.region import Region
 from central.tests.test_iam import ensure_user
-from central.tests.utils import ensure_region
+from central.tests.utils import ensure_region, ensure_server
 
 REPOSITORY = {"repository_id": "11", "full_name": "octo/app", "default_branch": "main"}
 
@@ -31,7 +31,7 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 		self.installation = make_installation(self.team)
 		self.region = ensure_region("deploy-app-test")
 
-		app = patch("central.deploy.doctype.deploy_app.deploy_app.GitHubDeployApp").start()
+		app = patch("central.deploy.doctype.deploy_app.deploy_app.GitHubApp").start()
 		self.addCleanup(patch.stopall)
 		app.return_value.has_branch.side_effect = lambda *args: args[-1] in ("main", "staging")
 
@@ -96,9 +96,37 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 		staging.db_set("virtual_machine", "server-2")
 
 		DeployApp.disable_for_server("server-1")
-		self.assertEqual(frappe.db.get_value("Deploy App", main.name, "status"), "Disabled")
-		self.assertEqual(frappe.db.get_value("Deploy App", staging.name, "status"), "Active")
+		fields = ["status", "virtual_machine", "domain"]
+		self.assertEqual(frappe.db.get_value("Deploy App", main.name, fields), ("Disabled", None, None))
+		self.assertEqual(
+			frappe.db.get_value("Deploy App", staging.name, fields), ("Active", "server-2", staging.domain)
+		)
 		self.assertEqual(DeployApp.get_for_push("101", "11", "main"), [])
+
+	def test_an_app_disabled_with_its_installation_keeps_its_vm_until_the_server_is_terminated(self):
+		app = DeployApp.add(self.installation, REPOSITORY, self.region)
+		server = ensure_server("server-deploy-app-installation", self.team, self.region)
+		app.db_set("virtual_machine", server)
+
+		DeployApp.disable_for_installation(self.installation.name)
+		fields = ["status", "virtual_machine", "domain"]
+		self.assertEqual(
+			frappe.db.get_value("Deploy App", app.name, fields), ("Disabled", server, app.domain)
+		)
+
+		DeployApp.disable_for_server(server)
+		self.assertEqual(frappe.db.get_value("Deploy App", app.name, fields), ("Disabled", None, None))
+		self.assertIsNone(DeployApp.add(self.installation, REPOSITORY, self.region).virtual_machine)
+
+	def test_connecting_a_disabled_app_again_gives_it_a_new_domain(self):
+		app = DeployApp.add(self.installation, REPOSITORY, self.region)
+		app.db_set("virtual_machine", "server-1")
+		DeployApp.disable_for_server("server-1")
+
+		again = DeployApp.add(self.installation, REPOSITORY, self.region)
+		self.assertEqual((again.name, again.status, again.virtual_machine), (app.name, "Active", None))
+		self.assertNotEqual(again.domain, app.domain)
+		self.assertEqual(DeployApp.get_for_push("101", "11", "main"), [app.name])
 
 	def test_a_branch_missing_on_github_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):

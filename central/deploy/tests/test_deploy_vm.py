@@ -6,12 +6,12 @@ import httpx
 from frappe.tests import IntegrationTestCase
 
 from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
-from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
-	make_installation,
-)
 from central.deploy.tests.test_deploy_billing import make_size
 from central.deploy.virtual_machine import AtlasError, DeployMachine
 from central.infrastructure.doctype.github_connection.test_github_connection import make_team
+from central.infrastructure.doctype.github_installation.test_github_installation import (
+	make_installation,
+)
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
@@ -97,6 +97,24 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		self.validate_purchase.assert_not_called()
 		# Billed at the current rate card, since the accepted rate was lost with the create reply.
 		self.assertIsNone(self.open_subscription.call_args.args[-1])
+
+	def test_a_deploy_after_termination_records_the_new_vm_as_a_new_server(self):
+		old = self.request.get_virtual_machine()["name"]
+		# What termination leaves: a Terminated row, and an app no longer linked to it.
+		frappe.db.set_value("Virtual Machine", old, "status", "Terminated")
+		frappe.db.set_value("Deploy App", self.app.name, "virtual_machine", None)
+		self.machine.create.return_value = new_atlas_vm_id = f"atlas-vm-{frappe.generate_hash(length=8)}"
+
+		new = self.request.get_virtual_machine()
+
+		self.assertTrue(new["is_new"])
+		self.assertNotEqual(new["name"], old)
+		self.assertEqual(frappe.db.get_value("Virtual Machine", new["name"], "atlas_vm_id"), new_atlas_vm_id)
+		self.assertEqual(frappe.db.get_value("Deploy App", self.app.name, "virtual_machine"), new["name"])
+		self.assertEqual(
+			frappe.db.get_value("Virtual Machine", old, ["status", "atlas_vm_id"]),
+			("Terminated", self.atlas_vm_id),
+		)
 
 	def test_two_vms_for_one_app_are_refused(self):
 		self.machine.find.return_value = [{"id": "atlas-vm-a"}, {"id": "atlas-vm-b"}]
@@ -199,6 +217,20 @@ class IntegrationTestDeployMachine(IntegrationTestCase):
 		request = self.request.call_args.kwargs
 		self.assertEqual(request["params"]["tag"], "purpose:deploy,deploy_app:deploy-app-1")
 		self.assertEqual(request["headers"]["X-Tenant-ID"], str(TENANT_ID))
+
+	def test_a_terminating_vm_is_not_found(self):
+		tags = {"purpose": "deploy", "deploy_app": "deploy-app-1"}
+		self.answer(
+			200,
+			{
+				"items": [
+					{"id": "new", "tenant_id": TENANT_ID, "tags": tags, "last_known_state": "running"},
+					{"id": "old", "tenant_id": TENANT_ID, "tags": tags, "last_known_state": "terminating"},
+				]
+			},
+		)
+
+		self.assertEqual([vm["id"] for vm in self.machine.find()], ["new"])
 
 	def test_the_metadata_gives_the_agent_central_and_its_credential(self):
 		self.machine.app = MagicMock(get_password=MagicMock(return_value="secret"))
