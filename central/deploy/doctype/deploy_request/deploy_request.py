@@ -42,7 +42,8 @@ if TYPE_CHECKING:
 	from central.deploy.doctype.deploy_app.deploy_app import DeployApp
 	from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 
-# A newer push replaces a request in these states. A release is never interrupted.
+# A newer push replaces a request in these states, unless its build succeeded: the agent then starts the release at
+# once, and a release is never interrupted.
 SUPERSEDABLE_STATES = ("Queued", "Validating", "Provisioning", "Building")
 # Long enough for Atlas to answer one create; another worker skips the app meanwhile.
 VM_LOCK_SECONDS = 5 * 60
@@ -144,6 +145,9 @@ class DeployRequest(PipelineBuilder):
 			pluck="name",
 		):
 			request = frappe.get_doc("Deploy Request", name, for_update=True)
+			# Read under the lock report_build also takes, so the agent and Central agree whether it releases.
+			if request.build_status == "Succeeded":
+				continue
 			request.status = "Superseded"
 			# Central supersedes the team's older deploy; no Desk user owns it.
 			request.save(ignore_permissions=True)
