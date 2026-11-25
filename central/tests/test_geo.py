@@ -63,11 +63,25 @@ class TestCountryLookup(IntegrationTestCase):
 		)
 
 	def test_a_hit_does_not_look_up_again(self):
-		frappe.cache.set_value(f"ip_country:{self.ip}", {"country": "India"}, expires_in_sec=60)
+		frappe.cache.set_value(
+			f"ip_country:{self.ip}", {"country": "India", "countryCode": "IN"}, expires_in_sec=60
+		)
 		with patch("central.geo._lookup_ip") as lookup:
 			self.assertEqual(get_country_from_ip(self.ip), "India")
 
 		lookup.assert_not_called()
+
+	def test_the_iso_code_finds_the_country_record(self):
+		cases = (
+			({"country": "The Netherlands", "countryCode": "NL"}, "Netherlands"),
+			({"country": "South Korea", "countryCode": "KR"}, "Korea, Republic of"),
+			({"country": "Nowhere", "countryCode": "ZZ"}, None),
+		)
+		for answer, expected in cases:
+			with self.subTest(country=answer["country"]):
+				frappe.cache.delete_value(f"ip_country:{self.ip}")
+				with patch("central.geo._lookup_ip", return_value=answer):
+					self.assertEqual(get_country_from_ip(self.ip), expected)
 
 	def test_a_failed_lookup_returns_none_and_is_not_cached(self):
 		with patch("central.geo._lookup_ip", return_value={}):
