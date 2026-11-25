@@ -19,6 +19,10 @@ from central.integrations.github import GitHubApp
 DOMAIN_SUFFIX_LENGTH = 6
 DOMAIN_ATTEMPTS = 5
 MAX_LABEL_LENGTH = 63
+# The deploy agent writes each secret as one NAME=value line of the container's environment file.
+SECRET_NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# The agent sets these in the same file, so a secret must not replace them.
+RESERVED_SECRET_NAMES = ("IMAGE", "PORT", "DEPLOY_REQUEST")
 
 
 class DeployApp(Document):
@@ -32,6 +36,8 @@ class DeployApp(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		from central.deploy.doctype.deploy_app_secret.deploy_app_secret import DeployAppSecret
+
 		agent_token: DF.Password | None
 		branch: DF.Data
 		domain: DF.Data | None
@@ -39,6 +45,7 @@ class DeployApp(Document):
 		region: DF.Link | None
 		repository: DF.Data
 		repository_id: DF.Data
+		secrets: DF.Table[DeployAppSecret]
 		status: DF.Literal["Active", "Disabled"]
 		team: DF.Link
 		virtual_machine: DF.Link | None
@@ -46,6 +53,25 @@ class DeployApp(Document):
 
 	def before_insert(self):
 		self.agent_token = frappe.generate_hash(length=32)
+
+	def validate(self):
+		self.validate_secrets()
+
+	def validate_secrets(self) -> None:
+		"""Refuse a secret the deploy agent would refuse, so the save fails instead of the next deploy."""
+		names = set()
+		for secret in self.secrets:
+			if not SECRET_NAME_PATTERN.fullmatch(secret.key or "") or secret.key in RESERVED_SECRET_NAMES:
+				frappe.throw(
+					_(
+						"{0} can't be a secret name. Use letters, digits and underscores, and don't start with a digit."
+					).format(secret.key)
+				)
+			if secret.key in names:
+				frappe.throw(_("Secret {0} is set twice.").format(secret.key))
+			if "\n" in (secret.value or "") or "\r" in (secret.value or ""):
+				frappe.throw(_("Secret {0} can't have a line break.").format(secret.key))
+			names.add(secret.key)
 
 	@staticmethod
 	def get_for_agent(credential: str) -> DeployApp:
