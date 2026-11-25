@@ -771,10 +771,14 @@ Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
     it and the subscription is released) writes a Deleted Bucket row: external_id, team,
     subscription, region, deleted_at. Central reads the rows for the name whose deleted_at is
     within the last 2 UTC days (today or the 2 days before), in one query for every name not
-    billed on some day. A line for a day goes on the team and subscription of the earliest of
-    those rows deleted on or after that UTC day began, the bucket alive that day (a name
-    deleted, made again and deleted again bills each day on its own bucket), a backlog day
-    too; a day after the UTC date of the latest deletion is unknown. No Usage Day is consulted, so lines accepted
+    billed on some day. A line for a day goes on the team and subscription of the latest of
+    those rows made before that UTC day ended and deleted on or after it began, the bucket that
+    held the name most recently that day (a name deleted, made again and deleted again bills
+    each day on its own bucket), a backlog day too; a day after the UTC date of the latest
+    deletion is unknown. Cargo keeps one daily peak per bucket name, so a day two buckets of one
+    name shared cannot be split: Central bills it to the bucket alive most recently that day, a
+    live (billed) bucket first, then the latest deletion. The old team is never charged for the
+    new bucket's data; at most the earlier bucket's last part-day goes unbilled. No Usage Day is consulted, so lines accepted
     after the delete never extend the window, and a server's backup bucket is never resolved
     this way (only a Team Service delete writes a row). A daily job deletes rows older than 30
     days. A real reading replaces an estimated day that is not invoiced. Any other subject is

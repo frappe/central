@@ -23,7 +23,9 @@ def subjects_by_day(service: str, names: list[str], days: set[str]) -> dict[str,
 	# days sent with it: a name billed on one day may still be a deleted bucket on another.
 	missing = {name for name in names for subjects in billed.values() if name not in subjects}
 	deleted = _recently_deleted(service, sorted(missing))
-	# A subject billed that day wins over a deleted bucket of the same name.
+	# Cargo keeps one daily peak per bucket name, so a day two buckets of one name shared cannot be
+	# split. It bills the bucket alive most recently that day, a live one first, so the old team is
+	# never charged for the new bucket's data; at most the earlier bucket's last part-day goes unbilled.
 	return {day: {**_deleted_on(deleted, day), **subjects} for day, subjects in billed.items()}
 
 
@@ -34,8 +36,9 @@ def _deleted_on(deleted: dict, day: str) -> dict:
 	alive = {}
 	for name, rows in deleted.items():
 		# Created before the day ended and deleted after it began: that bucket held the name that day.
-		# Rows run oldest first, so a day two buckets shared bills the one deleted first, as before.
-		row = next((row for row in rows if row.created_at < end and row.deleted_at >= start), None)
+		# Rows run oldest first, so the latest deletion is found first from the end: the bucket that
+		# held the name most recently that day.
+		row = next((row for row in reversed(rows) if row.created_at < end and row.deleted_at >= start), None)
 		if row:
 			alive[name] = row
 	return alive
