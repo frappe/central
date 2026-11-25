@@ -240,6 +240,59 @@ class TestReportSecret(IntegrationTestCase):
 		self.assertNotIn(SECRET, error.error)
 		self.assertNotIn("Traceback", error.error)
 
+	def delivery(self, service: str):
+		return frappe.db.get_value(
+			"Service",
+			service,
+			["secret_delivery_status", "secret_delivery_error", "secret_delivered_at"],
+			as_dict=True,
+		)
+
+	def test_grove_not_set_up_shows_failed_on_the_service_without_the_secret(self):
+		refusal = frappe.ValidationError(f"AI Settings has no Grove control credentials. {SECRET}")
+		with (
+			patch.object(GroveClient, "from_settings", side_effect=refusal),
+			patch("central.integrations.report_secret.frappe.enqueue", side_effect=run_enqueued_inline),
+		):
+			self.set_secret("ai")
+
+		delivery = self.delivery("ai")
+		self.assertEqual(delivery.secret_delivery_status, "Failed")
+		self.assertIn("Grove is not set up", delivery.secret_delivery_error)
+		self.assertIn("no Grove control credentials", delivery.secret_delivery_error)
+		self.assertNotIn(SECRET, delivery.secret_delivery_error)
+
+	def test_a_successful_cargo_send_shows_delivered(self):
+		with patch("central.integrations.report_secret.frappe.enqueue", side_effect=run_enqueued_inline):
+			self.set_secret("storage")
+
+		delivery = self.delivery("storage")
+		self.assertEqual(delivery.secret_delivery_status, "Delivered")
+		self.assertFalse(delivery.secret_delivery_error)
+		self.assertGreaterEqual(delivery.secret_delivered_at, self.started.replace(microsecond=0))
+
+	def test_one_failing_region_shows_failed_naming_only_that_region(self):
+		self.failing = {self.regions[0]}
+		with patch("central.integrations.report_secret.frappe.enqueue", side_effect=run_enqueued_inline):
+			self.set_secret("storage")
+
+		delivery = self.delivery("storage")
+		self.assertEqual(delivery.secret_delivery_status, "Failed")
+		self.assertIn(f"Cargo in region {self.regions[0]}", delivery.secret_delivery_error)
+		self.assertNotIn(self.regions[1], delivery.secret_delivery_error)
+		self.assertNotIn(SECRET, delivery.secret_delivery_error)
+
+	def test_a_new_secret_clears_the_last_failure(self):
+		self.failing = {self.regions[0]}
+		with patch("central.integrations.report_secret.frappe.enqueue", side_effect=run_enqueued_inline):
+			self.set_secret("storage")
+		self.failing = set()
+
+		with patch("central.integrations.report_secret.frappe.enqueue", side_effect=run_enqueued_inline):
+			self.set_secret("storage", NEWER_SECRET)
+
+		self.assertEqual(self.delivery("storage").secret_delivery_status, "Delivered")
+
 	def test_the_grove_client_calls_the_control_endpoint(self):
 		client = GroveClient("https://grove.example.test", "key", "secret")
 		with patch.object(client, "call") as call:
