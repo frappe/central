@@ -10,7 +10,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.pricing import set_catalog_rates
-from central.billing.tests.accounting_fake import SYNC_MODE
+from central.billing.tests.accounting_fake import ACCOUNTING_URL, SYNC_MODE
 
 _SWEEP_DEADLOCK_RETRIES = 3
 
@@ -117,8 +117,12 @@ class BillingTestCase(IntegrationTestCase):
 		before["Comment"] = set(_payment_method_comments())
 		gateways = self._snapshot_gateways()
 		try:
-			# The bench config may point at a real accounting site; a test opts in.
-			with patch(SYNC_MODE, return_value="Off"):
+			# Billing Settings may point at a real accounting site. A test opts into the sync
+			# and fakes the transport; a request that is not faked fails instead of leaving.
+			with (
+				patch(SYNC_MODE, return_value="Off"),
+				patch(ACCOUNTING_URL, side_effect=RuntimeError("tests never call the accounting system")),
+			):
 				return super().run(result)
 		finally:
 			self._sweep(before)

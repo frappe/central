@@ -24,6 +24,7 @@ GST_ROWS = {
 
 
 SYNC_MODE = "central.billing.ingester.connection.sync_mode"
+ACCOUNTING_URL = "central.billing.ingester.connection._url"
 
 
 def sync_mode(mode: str = "Automatic"):
@@ -57,6 +58,8 @@ class FakeAccountingSystem:
 		return frappe._dict(record, name=name) if record is not None else None
 
 	def find(self, doctype, filters, fields=None):
+		if any(len(condition) == 4 for condition in filters):
+			return []  # a child table filter, such as a contact by email: nothing made by hand here
 		return [
 			frappe._dict(name=name)
 			for (dt, name), record in self.records.items()
