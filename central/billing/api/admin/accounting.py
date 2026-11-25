@@ -40,3 +40,15 @@ def send_to_accounting(doctype: str, name: str) -> dict:
 
 	authz.require_operator()
 	return push.push(doctype, name)
+
+
+@frappe.whitelist(methods=["POST"])
+def use_existing_customer(team: str, customer: str) -> dict:
+	"""Use this customer of the accounting system for a team that has none yet."""
+	from central.billing.ingester import customer as customer_sync
+
+	authz.require_operator()
+	customer_sync.use_customer(team, customer)
+	return frappe.db.get_value(
+		"Billing Profile", team, ["profile_id", "address_id", "contact_id"], as_dict=True
+	)

@@ -30,6 +30,7 @@ from central.patches.v0_0 import (
 	mark_waived_invoices_as_not_synced,
 	merge_invoice_draft_and_open_into_outstanding,
 	move_accounting_sync_to_billing_settings,
+	move_advance_and_income_accounts_to_currency_rows,
 	move_internal_flag_to_billing_profile,
 	remove_webhook_events_of_another_product,
 	repoint_billing_records_to_renamed_region,
@@ -624,3 +625,55 @@ class TestMoveAccountingSyncToBillingSettings(IntegrationTestCase):
 			after, dict(zip(self.FIELDS, ("Off", "https://erp.example.com", "key-1"), strict=True))
 		)
 		self.assertEqual(self._secret(), "s-1")
+
+
+class TestMoveAdvanceAndIncomeAccountsToCurrencyRows(IntegrationTestCase):
+	def test_each_currency_row_gets_the_accounts_the_settings_had(self):
+		with billing_settings(receivable_accounts=[]):
+			settings = frappe.get_doc("Billing Settings")
+			for currency in ("INR", "USD"):
+				settings.append(
+					"receivable_accounts",
+					{
+						"currency": currency,
+						"account": f"Debtors {currency}",
+						"advance_account": "x",
+						"income_account": "x",
+					},
+				)
+			settings.save(ignore_permissions=True)
+			rows = dict(
+				frappe.get_all(
+					"Accounting Receivable Account",
+					filters={"parent": "Billing Settings"},
+					fields=["currency", "name"],
+					as_list=True,
+				)
+			)
+			frappe.db.set_value(
+				"Accounting Receivable Account",
+				rows["INR"],
+				{"advance_account": None, "income_account": None},
+			)
+			frappe.db.set_value("Accounting Receivable Account", rows["USD"], "income_account", None)
+			# The two fields are gone from the doctype, so their old values exist only as rows.
+			frappe.qb.into("Singles").columns("doctype", "field", "value").insert(
+				("Billing Settings", "advance_account", "Advances - TC"),
+				("Billing Settings", "income_account", "Sales - TC"),
+			).run()
+
+			move_advance_and_income_accounts_to_currency_rows.execute()
+
+			moved = frappe.get_all(
+				"Accounting Receivable Account",
+				filters={"parent": "Billing Settings"},
+				fields=["currency", "advance_account", "income_account"],
+				order_by="idx",
+			)
+			self.assertEqual(
+				[(r.currency, r.advance_account, r.income_account) for r in moved],
+				[("INR", "Advances - TC", "Sales - TC"), ("USD", "x", "Sales - TC")],
+			)
+			self.assertFalse(
+				frappe.db.exists("Singles", {"doctype": "Billing Settings", "field": "advance_account"})
+			)
