@@ -6,14 +6,23 @@ import frappe
 from frappe import _
 
 from central.api.pilot import pilot_credential_auth
+from central.deploy.api import finish_github_sign_in, queue_push_deploys
+from central.deploy.connection import DeployConnectionAttempt
 from central.infrastructure.doctype.github_connection.github_connection import (
 	GitHubConnection,
 	GitHubConnectionAttempt,
 )
+from central.infrastructure.doctype.github_installation.github_installation import GitHubInstallation
 from central.integrations.github import WEB_URL, GitHubApp, convert_manifest
 from central.sso import central_url
 
 MANIFEST_TTL_SECONDS = 15 * 60
+# What a webhook for the installation does to its GitHub Installation rows.
+INSTALLATION_ACTIONS = {
+	"deleted": GitHubInstallation.disable_installation,
+	"suspend": GitHubInstallation.suspend_installation,
+	"unsuspend": GitHubInstallation.unsuspend_installation,
+}
 
 
 # nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
@@ -58,7 +67,7 @@ def repositories() -> list[dict]:
 	return [
 		repository
 		for connection in GitHubConnection.get_active(frappe.local.pilot_credential)
-		for repository in app.get_installation_repositories(connection.installation_id)
+		for repository in app.get_installation_repositories(connection.get_installation_id())
 		if repository["repository_id"] in {granted.repository_id for granted in connection.repositories}
 	]
 
@@ -70,7 +79,7 @@ def repository_token(repository: str) -> dict:
 	"""A read-only token for one granted repository (`owner/name`). It expires in about an hour."""
 	connection, repository_id = GitHubConnection.find_repository(frappe.local.pilot_credential, repository)
 	version = connection.version
-	token = GitHubApp().create_installation_token(connection.installation_id, repository_id)
+	token = GitHubApp().create_installation_token(connection.get_installation_id(), repository_id)
 
 	# The grant can change while GitHub mints the token.
 	if not connection.is_current(version):
@@ -143,8 +152,12 @@ def complete_connection(attempt: str, grants: dict[str, list[str]] | str) -> dic
 
 # nosemgrep: guest-whitelisted-method -- the OAuth state binds the callback to the attempt and its user.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
-def oauth_callback(state: str, code: str | None = None, **kwargs) -> None:
-	"""GitHub returns here after an authorize or install. Only the attempt's user gets the token."""
+def oauth_callback(state: str, code: str | None = None, installation_id: str | None = None, **kwargs) -> None:
+	"""GitHub returns here after an authorize or install, for a server's connection or a deploy. Only the
+	attempt's user gets the token."""
+	if DeployConnectionAttempt.has_attempt(state):
+		return finish_github_sign_in(state, code, installation_id)
+
 	attempt_id = GitHubConnectionAttempt.find_attempt_id(state)
 	if not attempt_id:
 		return _redirect("/dashboard/github/connect")
@@ -160,7 +173,7 @@ def oauth_callback(state: str, code: str | None = None, **kwargs) -> None:
 # nosemgrep: guest-whitelisted-method -- the HMAC signature authenticates GitHub.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def webhook() -> None:
-	"""Disable or narrow grants when an installation is removed or loses repositories."""
+	"""Disable or narrow grants when an installation is removed or loses repositories, and deploy pushes."""
 	app = GitHubApp()
 	if not app.is_valid_webhook_signature(
 		frappe.request.get_data(), frappe.get_request_header("X-Hub-Signature-256")
@@ -171,14 +184,16 @@ def webhook() -> None:
 	payload = json.loads(frappe.request.get_data())
 	installation_id = str(payload.get("installation", {}).get("id", ""))
 
-	if event == "installation" and payload.get("action") in ("deleted", "suspend"):
-		GitHubConnection.disable_installation(installation_id)
+	if event == "installation" and payload.get("action") in INSTALLATION_ACTIONS:
+		INSTALLATION_ACTIONS[payload["action"]](installation_id)
 	elif event == "installation_repositories" and payload.get("action") == "removed":
 		removed = {str(repository["id"]) for repository in payload.get("repositories_removed", [])}
 		GitHubConnection.remove_repositories(installation_id, removed)
 	elif event == "repository" and payload.get("action") == "renamed":
 		repository = payload["repository"]
 		GitHubConnection.rename_repository(installation_id, str(repository["id"]), repository["full_name"])
+	elif event == "push":
+		queue_push_deploys(payload, frappe.get_request_header("X-GitHub-Delivery"))
 
 
 @frappe.whitelist(methods=["POST"])
@@ -197,11 +212,13 @@ def create_app_manifest(app_name: str, organization: str | None = None) -> dict:
 		"url": base_url,
 		"hook_attributes": {"url": f"{base_url}/api/method/central.api.integrations.github.webhook"},
 		"redirect_url": f"{base_url}/api/method/central.api.integrations.github.manifest_callback",
+		# One callback: GitHub sends an install to the first one, so deploys and servers share it.
 		"callback_urls": [GitHubApp.callback_url()],
 		"request_oauth_on_install": True,
 		"public": True,
-		"default_permissions": {"contents": "read", "metadata": "read"},
-		"default_events": ["repository"],
+		# Tokens stay `contents: read` unless a call asks for more; only deploys write commit statuses.
+		"default_permissions": {"contents": "read", "metadata": "read", "statuses": "write"},
+		"default_events": ["repository", "push"],
 	}
 	owner = f"organizations/{urllib.parse.quote(organization)}/" if organization else ""
 	return {"action": f"{WEB_URL}/{owner}settings/apps/new?state={state}", "manifest": json.dumps(manifest)}

@@ -66,8 +66,10 @@ class IntegrationTestGitHubConnection(IntegrationTestCase):
 		settings.github_app_id = f"{settings.github_app_id or ''}-replaced"
 		settings.save()
 
-		connection.reload()
-		self.assertEqual(connection.status, "Disabled")
+		self.assertEqual(
+			frappe.db.get_value("GitHub Installation", connection.installation, "status"), "Disabled"
+		)
+		self.assertEqual(GitHubConnection.get_active(self.credential), [])
 
 	def test_a_repository_removed_on_github_is_no_longer_granted(self):
 		GitHubConnection.grant(self.credential, INSTALLATION, [PRIVATE, OTHER])

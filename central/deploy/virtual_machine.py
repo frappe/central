@@ -50,14 +50,16 @@ class DeployMachine:
 		return {"purpose": "deploy", "deploy_app": self.app.name}
 
 	def find(self) -> list[dict]:
-		"""Every VM of this tenant that carries this app's tags."""
+		"""Every live VM of this tenant that carries this app's tags."""
 		tag = ",".join(f"{key}:{value}" for key, value in self.tags.items())
 		page = self.call(list_virtual_machines, tag=tag, limit=2)
 		return [
 			vm
 			for vm in page.get("items") or []
 			# Checked here too, so a region that ignored the filter cannot hand over another VM.
-			if vm.get("tenant_id") == self.tenant_id and self.tags.items() <= (vm.get("tags") or {}).items()
+			if vm.get("tenant_id") == self.tenant_id
+			and self.tags.items() <= (vm.get("tags") or {}).items()
+			and vm.get("last_known_state") != "terminating"
 		]
 
 	def get_newest_image_id(self) -> str | None:
