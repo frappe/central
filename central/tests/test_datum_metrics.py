@@ -1,3 +1,4 @@
+from collections import Counter
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -73,6 +74,31 @@ class TestCentralMetrics(IntegrationTestCase):
 			[(labels["resource"], labels["error"]) for labels in failed], [("acme.frappe.cloud", "Failed")]
 		)
 
+	def test_billing_checks_are_counted_and_name_at_most_five_records(self) -> None:
+		alerts = [
+			{"alert": "held_invoice", "doctype": "Invoice", "subject": f"INV-{index}", "team": "TEAM-1"}
+			for index in range(7)
+		]
+		alerts.append(
+			{"alert": "invariant", "check": "credit_balance", "doctype": "Team", "subject": "TEAM-2"}
+		)
+		with patch("central.integrations.metrics.get_billing_check_alerts", return_value=alerts):
+			metrics = CentralMetrics()
+			metrics.add_billing_checks()
+
+		counts = {
+			sample["labels"]["check"]: sample["value"]
+			for sample in metrics.samples
+			if sample["metric"] == "central_billing_check_open"
+		}
+		self.assertEqual(counts, {"held_invoice": 7.0, "invariant:credit_balance": 1.0})
+		named = Counter(
+			sample["labels"]["check"]
+			for sample in metrics.samples
+			if sample["metric"] == "central_billing_check_subject"
+		)
+		self.assertEqual(named, {"held_invoice": 5, "invariant:credit_balance": 1})
+
 	def test_an_email_waits_from_its_send_after(self) -> None:
 		created = frappe.utils.add_to_date(None, hours=-5)
 		send_after = frappe.utils.add_to_date(None, minutes=-30)
@@ -130,6 +156,8 @@ class TestCentralMetrics(IntegrationTestCase):
 		self.assertIn("central_billing_run_oldest_open_seconds", metrics)
 		self.assertIn("central_job_queue_length", metrics)
 		self.assertIn("central_email_oldest_unsent_seconds", metrics)
+		self.assertIn("central_signup_steps_last_hour", metrics)
+		self.assertIn("central_trial_conversions_unmoved", metrics)
 
 	def test_metrics_go_to_the_telemetry_region(self) -> None:
 		with (
