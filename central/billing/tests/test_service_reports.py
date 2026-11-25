@@ -285,7 +285,7 @@ class TestServiceReports(IntegrationTestCase):
 		self.assertEqual(answer, {"accepted": 1, "rejected": []})
 		self.assertEqual(self.billed_on("2026-06-20"), later)
 
-	def test_a_reused_name_bills_each_day_on_the_bucket_alive_that_day(self):
+	def test_a_reused_name_bills_each_day_on_the_bucket_alive_most_recently(self):
 		first = self.delete_bucket("2026-06-18 12:00:00")
 		self.make_bucket("2026-06-18 13:00:00")
 		second = self.delete_bucket()
@@ -298,7 +298,30 @@ class TestServiceReports(IntegrationTestCase):
 		self.assertEqual(
 			[(r["day"], r["reason"]) for r in answer["rejected"]], [("2026-06-21", "unknown subject")]
 		)
-		self.assertEqual([self.billed_on(day) for day in days[:4]], [first, first, second, second])
+		# Both buckets held the name on the 18th; Cargo's one peak goes on the later one.
+		self.assertEqual([self.billed_on(day) for day in days[:4]], [first, second, second, second])
+
+	def test_a_day_two_deletions_cover_bills_the_later_one(self):
+		self.delete_bucket("2026-06-19 08:00:00")
+		self.make_bucket("2026-06-19 09:00:00")
+		later = self.delete_bucket("2026-06-19 15:00:00")
+
+		answer = self.send_on("2026-06-20", [line("2026-06-19", 12)])
+
+		self.assertEqual(answer, {"accepted": 1, "rejected": []})
+		self.assertEqual(self.billed_on("2026-06-19"), later)
+
+	def test_a_bucket_made_again_on_its_deletion_day_bills_that_day_on_the_live_bucket(self):
+		deleted = self.delete_bucket("2026-06-20 08:00:00")
+		self.make_bucket("2026-06-20 09:00:00")
+		live = frappe.db.get_value("Team Service", {"team": TEAM}, "subscription")
+		self.assertNotEqual(deleted, live)
+
+		answer = self.send_on("2026-06-20", [line("2026-06-19", 8), line("2026-06-20", 12)])
+
+		self.assertEqual(answer, {"accepted": 2, "rejected": []})
+		# The old team is never charged for the new bucket's data on the day they shared.
+		self.assertEqual((self.billed_on("2026-06-19"), self.billed_on("2026-06-20")), (deleted, live))
 
 	def test_a_name_made_again_today_leaves_earlier_days_on_the_deleted_bucket(self):
 		deleted = self.delete_bucket("2026-06-19 12:00:00")
