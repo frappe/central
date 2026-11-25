@@ -19,6 +19,7 @@ class DeletedBucket(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		created_at: DF.Datetime
 		deleted_at: DF.Datetime
 		external_id: DF.Data
 		region: DF.Link | None
@@ -38,6 +39,8 @@ def record_deleted_bucket(service) -> None:
 			"team": service.team,
 			"subscription": service.subscription,
 			"region": service.region,
+			# With the delete time, the days this bucket owned the name, as the name can be reused.
+			"created_at": service.creation,
 			"deleted_at": frappe.utils.now_datetime(),
 		}
 	)

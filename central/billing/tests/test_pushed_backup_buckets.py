@@ -74,6 +74,7 @@ class TestPushedBackupBuckets(base.BundledServerFixture, IntegrationTestCase):
 				"external_id": self.bucket,
 				"status": "Active",
 				"subscription": subscription,
+				"creation": "2026-06-01 00:00:00",
 			}
 		).db_insert()  # Skips before_insert, which would create the bucket in Cargo.
 		self.addCleanup(frappe.db.delete, "Team Service", {"team": base.TEAM})
