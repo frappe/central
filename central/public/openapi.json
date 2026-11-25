@@ -1,0 +1,6021 @@
+{
+ "components": {
+  "securitySchemes": {
+   "apiKey": {
+    "description": "`token <api key>:<api secret>`. The caller's own capabilities apply.",
+    "in": "header",
+    "name": "Authorization",
+    "type": "apiKey"
+   }
+  }
+ },
+ "info": {
+  "description": "Central is the control plane for Frappe Cloud v2. It owns identity, teams, servers, sites and billing. Send the header `Authorization: token <api key>:<api secret>`. The capabilities of the token's user decide access.",
+  "title": "Central API",
+  "version": "0.2.0"
+ },
+ "openapi": "3.1.0",
+ "paths": {
+  "/api/method/central.api.activity.server_activity": {
+   "get": {
+    "deprecated": false,
+    "description": "One server's activity, including its sites, domains and snapshots, newest first.\n\nRead-only.",
+    "operationId": "activity.server_activity",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "resource_id",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "category",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "since",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "until",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Server activity",
+    "tags": [
+     "Activity"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.activity.team_activity": {
+   "get": {
+    "deprecated": false,
+    "description": "The team's activity, newest first. Each member sees the events their capabilities allow.\n\nRead-only.",
+    "operationId": "activity.team_activity",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "category",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "since",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "until",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Team activity",
+    "tags": [
+     "Activity"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.firewall_rulesets.delete_firewall_ruleset": {
+   "post": {
+    "deprecated": false,
+    "description": "Delete a ruleset that no server uses.\n\nChanges data.",
+    "operationId": "firewall_rulesets.delete_firewall_ruleset",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "name"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Delete firewall ruleset",
+    "tags": [
+     "Firewall Rulesets"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.firewall_rulesets.list_firewall_rulesets": {
+   "get": {
+    "deprecated": false,
+    "description": "Return the team's rulesets, each with the number of servers that use it.\n\nRead-only.",
+    "operationId": "firewall_rulesets.list_firewall_rulesets",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "List firewall rulesets",
+    "tags": [
+     "Firewall Rulesets"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.firewall_rulesets.save_firewall_ruleset": {
+   "post": {
+    "deprecated": false,
+    "description": "Create a ruleset, or change the one in `name`. A change goes to every server that uses it.\n\nChanges data.",
+    "operationId": "firewall_rulesets.save_firewall_ruleset",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "name": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "rules": {
+          "type": "object"
+         },
+         "team": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "title",
+         "rules"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Save firewall ruleset",
+    "tags": [
+     "Firewall Rulesets"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.firewall_rulesets.set_server_firewall_rulesets": {
+   "post": {
+    "deprecated": false,
+    "description": "Make a server use these team rulesets together. With none, the server keeps the rules\nas its own.\n\nChanges data.",
+    "operationId": "firewall_rulesets.set_server_firewall_rulesets",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "rulesets": {
+          "items": {
+           "type": "string"
+          },
+          "type": [
+           "array",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Set server firewall rulesets",
+    "tags": [
+     "Firewall Rulesets"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.identity.my_capabilities": {
+   "get": {
+    "deprecated": false,
+    "description": "The capabilities the session user holds on a team, or on any team when none is given.\nA server capability is listed when the user holds it on any server; each server row\ncarries its own list.\n\nRead-only.",
+    "operationId": "identity.my_capabilities",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "My capabilities",
+    "tags": [
+     "Identity"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.identity.my_invitations": {
+   "get": {
+    "deprecated": false,
+    "description": "Pending, unexpired invitations addressed to the signed-in user \u2014 the invitee's\ninbox. Each carries the inviting team's and the role's labels, because a custom role\nbelongs to the inviting team and the console cannot resolve it.\n\nRead-only.",
+    "operationId": "identity.my_invitations",
+    "parameters": [],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "My invitations",
+    "tags": [
+     "Identity"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.identity.my_profile": {
+   "get": {
+    "deprecated": false,
+    "description": "The signed-in user's own profile \u2014 email, display name, photo.\n\nRead-only.",
+    "operationId": "identity.my_profile",
+    "parameters": [],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "My profile",
+    "tags": [
+     "Identity"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.identity.my_teams": {
+   "get": {
+    "deprecated": false,
+    "description": "Teams the signed-in user can switch between in the console \u2014 the teams they\nare an active member of, each with a display label, the owner email, the\ncaller's own role, how many people are in it, when it was created, and the\nonboarding steps the caller still has to answer as its owner. A suspended team is listed with\nits `status`, so the console can say why it cannot open it.\n\nAn operator who impersonates a team owner passes `view_as`, and that team is added\nwith `is_impersonated` set.\n\nRead-only.",
+    "operationId": "identity.my_teams",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "view_as",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "My teams",
+    "tags": [
+     "Identity"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.identity.set_profile_photo": {
+   "post": {
+    "deprecated": false,
+    "description": "Set the signed-in user's photo to an uploaded image, or clear it.\n\nChanges data.",
+    "operationId": "identity.set_profile_photo",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "file_url": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Set profile photo",
+    "tags": [
+     "Identity"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.identity.update_profile": {
+   "post": {
+    "deprecated": false,
+    "description": "Update the signed-in user's display name. Only ever operates on the\nsession user \u2014 there is no user parameter to abuse. The whole string goes\ninto first_name (frappe recomputes full_name from the parts).\n\nChanges data.",
+    "operationId": "identity.update_profile",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "full_name": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "full_name"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Update profile",
+    "tags": [
+     "Identity"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.images.eligible_plans": {
+   "get": {
+    "deprecated": false,
+    "description": "Eligible plans\n\nRead-only.",
+    "operationId": "images.eligible_plans",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "region",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "offering",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "image_id",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "snapshot",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Eligible plans",
+    "tags": [
+     "Images"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.images.get_app_requirements": {
+   "get": {
+    "deprecated": false,
+    "description": "Get app requirements\n\nRead-only.",
+    "operationId": "images.get_app_requirements",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "region",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "application",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Get app requirements",
+    "tags": [
+     "Images"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.images.list_apps": {
+   "get": {
+    "deprecated": false,
+    "description": "List apps\n\nRead-only.",
+    "operationId": "images.list_apps",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "region",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "List apps",
+    "tags": [
+     "Images"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.images.list_images": {
+   "get": {
+    "deprecated": false,
+    "description": "List images\n\nRead-only.",
+    "operationId": "images.list_images",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "region",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "offering",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "flow",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "List images",
+    "tags": [
+     "Images"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.images.list_offerings": {
+   "get": {
+    "deprecated": false,
+    "description": "List offerings\n\nRead-only.",
+    "operationId": "images.list_offerings",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "flow",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "List offerings",
+    "tags": [
+     "Images"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.action_status": {
+   "get": {
+    "deprecated": false,
+    "description": "Action status\n\nRead-only.",
+    "operationId": "servers.action_status",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "name",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Action status",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.servers.create_composed_server": {
+   "post": {
+    "deprecated": false,
+    "description": "Create a custom-sized server from an image, or restore one from a `snapshot`.\n\nChanges data.",
+    "operationId": "servers.create_composed_server",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "app_inputs": {
+          "type": [
+           "object",
+           "null"
+          ]
+         },
+         "has_public_ipv4": {
+          "type": "boolean"
+         },
+         "has_public_ipv6": {
+          "type": "boolean"
+         },
+         "hostname": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "image_id": {
+          "type": "string"
+         },
+         "includes": {
+          "items": {
+           "type": "object"
+          },
+          "type": "array"
+         },
+         "is_firewall_enabled": {
+          "type": "boolean"
+         },
+         "offering": {
+          "type": "string"
+         },
+         "region": {
+          "type": "string"
+         },
+         "request_key": {
+          "type": "string"
+         },
+         "snapshot": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "ssh_key_ids": {
+          "items": {
+           "type": "string"
+          },
+          "type": [
+           "array",
+           "null"
+          ]
+         },
+         "ssh_keys": {
+          "items": {
+           "type": "string"
+          },
+          "type": [
+           "array",
+           "null"
+          ]
+         },
+         "sub_category": {
+          "type": "string"
+         },
+         "team": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         },
+         "user_data": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "region",
+         "title",
+         "request_key",
+         "includes",
+         "sub_category"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Create composed server",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.create_server": {
+   "post": {
+    "deprecated": false,
+    "description": "Create a server from an image, or restore one from a `snapshot`.\n\nChanges data.",
+    "operationId": "servers.create_server",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "app_inputs": {
+          "type": [
+           "object",
+           "null"
+          ]
+         },
+         "has_public_ipv4": {
+          "type": "boolean"
+         },
+         "has_public_ipv6": {
+          "type": "boolean"
+         },
+         "hostname": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "image_id": {
+          "type": "string"
+         },
+         "is_firewall_enabled": {
+          "type": "boolean"
+         },
+         "offering": {
+          "type": "string"
+         },
+         "plan": {
+          "type": "string"
+         },
+         "region": {
+          "type": "string"
+         },
+         "request_key": {
+          "type": "string"
+         },
+         "snapshot": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "ssh_key_ids": {
+          "items": {
+           "type": "string"
+          },
+          "type": [
+           "array",
+           "null"
+          ]
+         },
+         "ssh_keys": {
+          "items": {
+           "type": "string"
+          },
+          "type": [
+           "array",
+           "null"
+          ]
+         },
+         "team": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         },
+         "user_data": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "region",
+         "title",
+         "request_key",
+         "plan"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Create server",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.get_rescue_state": {
+   "get": {
+    "deprecated": false,
+    "description": "Read the region's boot selection and last boot mode for this server.\n\nRead-only.",
+    "operationId": "servers.get_rescue_state",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "resource_id",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Get rescue state",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.keep_trial_site": {
+   "post": {
+    "deprecated": false,
+    "description": "Keep the ended trial on a server: it moves to its paid plan and starts again.\n\nChanges data.",
+    "operationId": "servers.keep_trial_site",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Keep trial site",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.list_instances": {
+   "get": {
+    "deprecated": false,
+    "description": "List the regions a team can place servers in \u2014 every Active Region.\nA pure read for the console's New Server region picker. Gated on `cluster:view`\n(same scope as `registry`); the team only resolves the gate, the region set is\nteam-agnostic.\n\nRead-only.",
+    "operationId": "servers.list_instances",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "List instances",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.open_console": {
+   "post": {
+    "deprecated": false,
+    "description": "Return a single-use web console URL for one server in SSH or TTY mode.\nGated on `server:console`.\n\nChanges data.",
+    "operationId": "servers.open_console",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "mode": {
+          "enum": [
+           "ssh",
+           "tty"
+          ],
+          "type": "string"
+         },
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "required": [
+         "mode"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Open console",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.public_ipv4_pricing": {
+   "get": {
+    "deprecated": false,
+    "description": "The monthly price of one public IPv4 in `region`, shown before the customer commits.\n\nRead-only.",
+    "operationId": "servers.public_ipv4_pricing",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "region",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Public ipv4 pricing",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.refresh_servers": {
+   "post": {
+    "deprecated": false,
+    "description": "Manually reconcile this team's mirror from every Active Atlas \u2014 the on-demand\ntwin of the scheduled reconcile. Gated on `server:view`.\n\nChanges data.",
+    "operationId": "servers.refresh_servers",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Refresh servers",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.registry": {
+   "get": {
+    "deprecated": false,
+    "description": "A team's servers and self-serve sites in one read, for the console map and panel.\nGated on `server:view`. Terminated sites are left out.\n\nRead-only.",
+    "operationId": "servers.registry",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Registry",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.rename_server": {
+   "post": {
+    "deprecated": false,
+    "description": "Rename one server. Gated on `server:resize`, the capability to change a server.\n\nChanges data.",
+    "operationId": "servers.rename_server",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Rename server",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.resize_server": {
+   "post": {
+    "deprecated": false,
+    "description": "Resize a server's CPU, memory and disk. Gated on `server:resize`.\nA compute change stops the server first. A larger disk does not, and a smaller disk is refused.\nOn an open trial it keeps the paid plan the site moves to when the trial converts.\n\nChanges data.",
+    "operationId": "servers.resize_server",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "disk_gigabytes": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "includes": {
+          "type": [
+           "array",
+           "null"
+          ]
+         },
+         "plan": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "sub_category": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Resize server",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.restart_server": {
+   "post": {
+    "deprecated": false,
+    "description": "Restart a running server. Gated on `server:power`.\n\nChanges data.",
+    "operationId": "servers.restart_server",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Restart server",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.retry_action": {
+   "post": {
+    "deprecated": false,
+    "description": "Send a failed creation again on its own record. Gated on `server:create`.\n\nChanges data.",
+    "operationId": "servers.retry_action",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "name": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "name"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Retry action",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.servers.server_hostnames": {
+   "get": {
+    "deprecated": false,
+    "description": "The site and custom-domain hostnames a server answers. They stop working when the\nserver is terminated, so the console lists them before it asks. Gated on `server:view`.\n\nRead-only.",
+    "operationId": "servers.server_hostnames",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "resource_id",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Server hostnames",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.server_metrics": {
+   "get": {
+    "deprecated": false,
+    "description": "One server's samples from its region over a preset `period`, or from `start` to `end`\nwhen `period` is custom. The region measures a server only while it runs.\n\nRead-only.",
+    "operationId": "servers.server_metrics",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "resource_id",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "period",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "start",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "end",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Server metrics",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.server_overview": {
+   "get": {
+    "deprecated": false,
+    "description": "Return one server's Central mirror.\n\nRead-only.",
+    "operationId": "servers.server_overview",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "resource_id",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Server overview",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.set_rescue_mode": {
+   "post": {
+    "deprecated": false,
+    "description": "Select the next boot mode without starting or restarting the server.\n\nChanges data.",
+    "operationId": "servers.set_rescue_mode",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "enabled": {
+          "type": "boolean"
+         },
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "required": [
+         "enabled"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Set rescue mode",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.set_server_ipv4_internet": {
+   "post": {
+    "deprecated": false,
+    "description": "Turn IPv4 internet access on or off. Gated on `server:network`.\n\nChanges data.",
+    "operationId": "servers.set_server_ipv4_internet",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "enabled": {
+          "type": "boolean"
+         },
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Set server ipv4 internet",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.set_server_public_ip": {
+   "post": {
+    "deprecated": false,
+    "description": "Attach or detach the public IPv4 or IPv6 address. Gated on `server:network`. Returns\n`is_pending` when Atlas is still applying the change.\n\nChanges data.",
+    "operationId": "servers.set_server_public_ip",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "is_attached": {
+          "type": "boolean"
+         },
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "version": {
+          "type": "integer"
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Set server public ip",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.set_server_wireguard_access": {
+   "post": {
+    "deprecated": false,
+    "description": "Turn WireGuard device access on or off. Gated on `server:network`.\n\nChanges data.",
+    "operationId": "servers.set_server_wireguard_access",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "enabled": {
+          "type": "boolean"
+         },
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Set server wireguard access",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.set_termination_protection": {
+   "post": {
+    "deprecated": false,
+    "description": "Turn termination protection on or off. Gated on `server:terminate`.\n\nChanges data.",
+    "operationId": "servers.set_termination_protection",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "enabled": {
+          "type": "boolean"
+         },
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Set termination protection",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.start_server": {
+   "post": {
+    "deprecated": false,
+    "description": "Start a stopped server. Gated on `server:power`.\n\nChanges data.",
+    "operationId": "servers.start_server",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Start server",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.stop_server": {
+   "post": {
+    "deprecated": false,
+    "description": "Stop a running server. Gated on `server:power`.\n\nChanges data.",
+    "operationId": "servers.stop_server",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Stop server",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.terminate_server": {
+   "post": {
+    "deprecated": false,
+    "description": "Terminate a server. Gated on `server:terminate`. With `take_snapshot`, it first takes\na final snapshot, which also needs `server:snapshot`.\n\nChanges data.",
+    "operationId": "servers.terminate_server",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "take_snapshot": {
+          "type": "boolean"
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Terminate server",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.servers.update_server_firewall": {
+   "post": {
+    "deprecated": false,
+    "description": "Change the firewall of each server in `resource_ids`. Gated on `server:network` on each\nserver. Returns each server's error, or None when it changed.\n\nChanges data.",
+    "operationId": "servers.update_server_firewall",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "firewall": {
+          "type": [
+           "object",
+           "null"
+          ]
+         },
+         "resource_ids": {
+          "items": {
+           "type": "string"
+          },
+          "type": [
+           "array",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Update server firewall",
+    "tags": [
+     "Servers"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.sites.check_subdomain": {
+   "get": {
+    "deprecated": false,
+    "description": "Whether a name is free, while the customer is still typing it.\n\nRead-only.",
+    "operationId": "sites.check_subdomain",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "subdomain",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Check subdomain",
+    "tags": [
+     "Sites"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.sites.claim_site": {
+   "post": {
+    "deprecated": false,
+    "description": "Return a login for the new site and schedule its rename to the customer's hostname.\nA failed login leaves the site unclaimed, so the console can try again.\n\nChanges data.",
+    "operationId": "sites.claim_site",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "name": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "name"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Claim site",
+    "tags": [
+     "Sites"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.sites.create_trial_site": {
+   "post": {
+    "deprecated": false,
+    "description": "Start a product's trial site under a name the customer chose. Gated on `server:create`.\n\nChanges data.",
+    "operationId": "sites.create_trial_site",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "product": {
+          "type": "string"
+         },
+         "request_key": {
+          "type": "string"
+         },
+         "subdomain": {
+          "type": "string"
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "required": [
+         "subdomain",
+         "request_key",
+         "product"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Create trial site",
+    "tags": [
+     "Sites"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.sites.create_trial_team": {
+   "post": {
+    "deprecated": false,
+    "description": "The team the trial funnel uses, before it asks for a site name: `team` when the caller can\ncreate servers there, else another such team, else a new one. The browser sends how the\nsignup first arrived, which a new team keeps.\n\nChanges data.",
+    "operationId": "sites.create_trial_team",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "product": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "referrer": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "utm_campaign": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "utm_medium": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "utm_source": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Create trial team",
+    "tags": [
+     "Sites"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.sites.get_open_trial": {
+   "get": {
+    "deprecated": false,
+    "description": "The owner's open free trial, so the signup page offers that site before it asks for a new one.\n\nRead-only.",
+    "operationId": "sites.get_open_trial",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Get open trial",
+    "tags": [
+     "Sites"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.sites.get_site": {
+   "get": {
+    "deprecated": false,
+    "description": "Return one site's state without creating a remote Administrator session.\n\nRead-only.",
+    "operationId": "sites.get_site",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "name",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Get site",
+    "tags": [
+     "Sites"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.sites.get_trial_app_install": {
+   "post": {
+    "deprecated": false,
+    "description": "The progress of an app install on the owner's open trial site. See `TrialAppInstall.get_progress`.\n\nChanges data.",
+    "operationId": "sites.get_trial_app_install",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "product": {
+          "type": "string"
+         },
+         "site": {
+          "type": "string"
+         },
+         "task_id": {
+          "type": "string"
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "required": [
+         "site",
+         "task_id",
+         "product"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Get trial app install",
+    "tags": [
+     "Sites"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.sites.install_trial_app": {
+   "post": {
+    "deprecated": false,
+    "description": "Install a product's app on the owner's open trial site, instead of a second free trial.\nReturns `site`, the bench's name for it, and `task_id` for `get_trial_app_install`.\n\nChanges data.",
+    "operationId": "sites.install_trial_app",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "product": {
+          "type": "string"
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "required": [
+         "product"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Install trial app",
+    "tags": [
+     "Sites"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.sites.login_site": {
+   "post": {
+    "deprecated": false,
+    "description": "Create a one-time site login. It signs in as Administrator, so it needs `server:console`.\nIt lands on the page of `product` when given, such as an app just installed on the site.\n\nChanges data.",
+    "operationId": "sites.login_site",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "product": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "required": [
+         "name"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Login site",
+    "tags": [
+     "Sites"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.sites.onboarding_status": {
+   "get": {
+    "deprecated": false,
+    "description": "Resume this product's site or creation within the authorized team, with the journey the\nwaiting page follows, and whether a new site of this product would be a free trial.\n\nRead-only.",
+    "operationId": "sites.onboarding_status",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "product",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Onboarding status",
+    "tags": [
+     "Sites"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.sites.site_domain": {
+   "get": {
+    "deprecated": false,
+    "description": "The zone a new site of this product is named in, so the console can show the suffix as\nthey type. It is the zone of the region that the trial is then created in.\n\nRead-only.",
+    "operationId": "sites.site_domain",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "product",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Site domain",
+    "tags": [
+     "Sites"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.sites.terminate_site": {
+   "post": {
+    "deprecated": false,
+    "description": "Terminate a site by terminating the machine it is. Gated on `server:terminate`.\n\nChanges data.",
+    "operationId": "sites.terminate_site",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "name": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "name"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Terminate site",
+    "tags": [
+     "Sites"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.snapshots.delete_snapshots": {
+   "post": {
+    "deprecated": false,
+    "description": "Delete snapshots from their region. One failure does not stop the others; each\nreason comes back by name. Gated on `server:snapshot`.\n\nChanges data.",
+    "operationId": "snapshots.delete_snapshots",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "names": {
+          "items": {
+           "type": "string"
+          },
+          "type": [
+           "array",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Delete snapshots",
+    "tags": [
+     "Snapshots"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.snapshots.keep_snapshot": {
+   "post": {
+    "deprecated": false,
+    "description": "Keep a daily snapshot past its deletion time. Gated on `server:snapshot`.\n\nChanges data.",
+    "operationId": "snapshots.keep_snapshot",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "name": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Keep snapshot",
+    "tags": [
+     "Snapshots"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.snapshots.list_snapshots": {
+   "get": {
+    "deprecated": false,
+    "description": "The team's snapshots, newest first, each with what it costs. Pass `resource_id` for\none server's snapshots and its automatic setting. Gated on `server:view`.\n\nRead-only.",
+    "operationId": "snapshots.list_snapshots",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "resource_id",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "List snapshots",
+    "tags": [
+     "Snapshots"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.snapshots.set_automatic_snapshots": {
+   "post": {
+    "deprecated": false,
+    "description": "Turn the daily free snapshot of one server on or off. Gated on `server:snapshot`.\n\nChanges data.",
+    "operationId": "snapshots.set_automatic_snapshots",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "enabled": {
+          "type": "boolean"
+         },
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Set automatic snapshots",
+    "tags": [
+     "Snapshots"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.snapshots.snapshot_pricing": {
+   "get": {
+    "deprecated": false,
+    "description": "The price per GB-month of a snapshot in `region`, shown before the customer commits.\n\nRead-only.",
+    "operationId": "snapshots.snapshot_pricing",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "region",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Snapshot pricing",
+    "tags": [
+     "Snapshots"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.snapshots.take_snapshot": {
+   "post": {
+    "deprecated": false,
+    "description": "Take a paid snapshot of a server now. Gated on `server:snapshot`. A free trial has none,\nbecause a server made from it gives server access.\n\nChanges data.",
+    "operationId": "snapshots.take_snapshot",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "resource_id": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "title": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Take snapshot",
+    "tags": [
+     "Snapshots"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.ssh_keys.create_team_ssh_key": {
+   "post": {
+    "deprecated": false,
+    "description": "Create one public key for a Team.\n\nChanges data.",
+    "operationId": "ssh_keys.create_team_ssh_key",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "public_key": {
+          "type": "string"
+         },
+         "team": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "title",
+         "public_key"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Create team ssh key",
+    "tags": [
+     "SSH Keys"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.ssh_keys.delete_team_ssh_key": {
+   "post": {
+    "deprecated": false,
+    "description": "Delete a key after it is removed from all servers.\n\nChanges data.",
+    "operationId": "ssh_keys.delete_team_ssh_key",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "name"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Delete team ssh key",
+    "tags": [
+     "SSH Keys"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.ssh_keys.list_team_ssh_keys": {
+   "get": {
+    "deprecated": false,
+    "description": "Return the public keys that this Team can select for servers.\n\nRead-only.",
+    "operationId": "ssh_keys.list_team_ssh_keys",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "List team ssh keys",
+    "tags": [
+     "SSH Keys"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.ssh_keys.retry_team_ssh_key_sync": {
+   "post": {
+    "deprecated": false,
+    "description": "Retry replacing the desired keys on servers that use this key.\n\nChanges data.",
+    "operationId": "ssh_keys.retry_team_ssh_key_sync",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "name"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Retry team ssh key sync",
+    "tags": [
+     "SSH Keys"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.ssh_keys.rotate_team_ssh_key": {
+   "post": {
+    "deprecated": false,
+    "description": "Save a new public key and queue replacement on selected servers.\n\nChanges data.",
+    "operationId": "ssh_keys.rotate_team_ssh_key",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "public_key": {
+          "type": "string"
+         },
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "name",
+         "public_key"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Rotate team ssh key",
+    "tags": [
+     "SSH Keys"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.ssh_keys.set_server_ssh_keys": {
+   "post": {
+    "deprecated": false,
+    "description": "Replace the team keys that can sign in to one server.\n\nChanges data.",
+    "operationId": "ssh_keys.set_server_ssh_keys",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "resource_id": {
+          "type": "string"
+         },
+         "ssh_keys": {
+          "items": {
+           "type": "string"
+          },
+          "type": "array"
+         },
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "resource_id",
+         "ssh_keys"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Set server ssh keys",
+    "tags": [
+     "SSH Keys"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.support.create_ticket": {
+   "post": {
+    "deprecated": false,
+    "description": "Open a support ticket for the caller's team.\n`category` is a `key` and `issue_type` one of its issue labels from `get_ticket_options`.\nA `server` or `site` is checked against the team first, then attached as context.\n\nChanges data.",
+    "operationId": "support.create_ticket",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "category": {
+          "type": "string"
+         },
+         "description": {
+          "type": "string"
+         },
+         "issue_type": {
+          "type": "string"
+         },
+         "server": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "site": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "subject": {
+          "type": "string"
+         },
+         "team": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        },
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Create ticket",
+    "tags": [
+     "Support"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.support.find_related": {
+   "get": {
+    "deprecated": false,
+    "description": "Articles and the team's past tickets that match `query`, before a ticket is opened.\nA query shorter than 3 characters skips Helpdesk, because it matches everything.\n\nRead-only.",
+    "operationId": "support.find_related",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     },
+     {
+      "in": "query",
+      "name": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Find related",
+    "tags": [
+     "Support"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.support.get_ticket_options": {
+   "get": {
+    "deprecated": false,
+    "description": "The categories and issues a ticket can be about.\n\nRead-only.",
+    "operationId": "support.get_ticket_options",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Get ticket options",
+    "tags": [
+     "Support"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.support.list_tickets": {
+   "get": {
+    "deprecated": false,
+    "description": "The team's open tickets, newest first. Only the caller's own tickets link to the portal.\n\nRead-only.",
+    "operationId": "support.list_tickets",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": false,
+      "schema": {
+       "type": [
+        "string",
+        "null"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "List tickets",
+    "tags": [
+     "Support"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.accept_invitation": {
+   "post": {
+    "deprecated": false,
+    "description": "Accept invitation\n\nChanges data.",
+    "operationId": "teams.accept_invitation",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "invitation": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "invitation"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Accept invitation",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.teams.archive_team": {
+   "post": {
+    "deprecated": false,
+    "description": "Archive team\n\nChanges data.",
+    "operationId": "teams.archive_team",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Archive team",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.create_custom_role": {
+   "post": {
+    "deprecated": false,
+    "description": "Create a team-scoped custom Team Role granting exactly `capabilities`.\n\nChanges data.",
+    "operationId": "teams.create_custom_role",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "capabilities": {
+          "type": "array"
+         },
+         "role_name": {
+          "type": "string"
+         },
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "role_name",
+         "capabilities"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Create custom role",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.create_team": {
+   "post": {
+    "deprecated": false,
+    "description": "Create a new team owned by the caller, with the caller as its active Owner.\n\nChanges data.",
+    "operationId": "teams.create_team",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "team_name": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team_name"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Create team",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.teams.decline_invitation": {
+   "post": {
+    "deprecated": false,
+    "description": "Decline invitation\n\nChanges data.",
+    "operationId": "teams.decline_invitation",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "invitation": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "invitation"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Decline invitation",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.teams.delete_custom_role": {
+   "post": {
+    "deprecated": false,
+    "description": "Delete a team-scoped custom role through its controller rules.\n\nChanges data.",
+    "operationId": "teams.delete_custom_role",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "role": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "role"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Delete custom role",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.teams.get_team_archive_checks": {
+   "get": {
+    "deprecated": false,
+    "description": "What still stops the team from being archived, and the credit that archiving forfeits.\n\nRead-only.",
+    "operationId": "teams.get_team_archive_checks",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Get team archive checks",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.impersonate_team_owner": {
+   "post": {
+    "deprecated": false,
+    "description": "Operator action: the console address that opens as this team.\n\nChanges data.",
+    "operationId": "teams.impersonate_team_owner",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "notify_owner": {
+          "type": "boolean"
+         },
+         "reason": {
+          "type": "string"
+         },
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "reason"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Impersonate team owner",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.invite_team_member": {
+   "post": {
+    "deprecated": false,
+    "description": "Invite one person, or up to 10 with `invitations` (rows of email, role, resource_type,\nresource_name). Rows return one result each: the invitation name or the refusal.\n\nChanges data.",
+    "operationId": "teams.invite_team_member",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "email": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "invitations": {
+          "items": {
+           "type": "object"
+          },
+          "type": [
+           "array",
+           "null"
+          ]
+         },
+         "resource_name": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "resource_type": {
+          "type": "string"
+         },
+         "role": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Invite team member",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.leave_team": {
+   "post": {
+    "deprecated": false,
+    "description": "Leave team\n\nChanges data.",
+    "operationId": "teams.leave_team",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Leave team",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.list_team_members": {
+   "get": {
+    "deprecated": false,
+    "description": "Roster of the team the caller belongs to (user, full name, role grants, status,\nowner flag) \u2014 one entry per user, folding their Team Member rows into a `roles` list.\n\nRead-only.",
+    "operationId": "teams.list_team_members",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "List team members",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.list_team_roles": {
+   "get": {
+    "deprecated": false,
+    "description": "System roles plus this team's custom roles, each with its capabilities \u2014\none join (Team Role \u27d5 Role Capability), grouped in order (system roles first).\n\nRead-only.",
+    "operationId": "teams.list_team_roles",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "List team roles",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.remove_team_member": {
+   "post": {
+    "deprecated": false,
+    "description": "Remove team member\n\nChanges data.",
+    "operationId": "teams.remove_team_member",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "team": {
+          "type": "string"
+         },
+         "user": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "user"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Remove team member",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.rename_team": {
+   "post": {
+    "deprecated": false,
+    "description": "Rename a team. Team.validate re-checks team:edit on save.\n\nChanges data.",
+    "operationId": "teams.rename_team",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "team": {
+          "type": "string"
+         },
+         "team_name": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "team_name"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Rename team",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.resend_invitation": {
+   "post": {
+    "deprecated": false,
+    "description": "Resend invitation\n\nChanges data.",
+    "operationId": "teams.resend_invitation",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "invitation": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "invitation"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Resend invitation",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.teams.restore_team": {
+   "post": {
+    "deprecated": false,
+    "description": "Operator action: open an archived team again.\n\nChanges data.",
+    "operationId": "teams.restore_team",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Restore team",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.revoke_invitation": {
+   "post": {
+    "deprecated": false,
+    "description": "Revoke invitation\n\nChanges data.",
+    "operationId": "teams.revoke_invitation",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "invitation": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "invitation"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Revoke invitation",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": false
+    }
+   }
+  },
+  "/api/method/central.api.teams.set_onboarding_step": {
+   "post": {
+    "deprecated": false,
+    "description": "Record that the owner finished or skipped one onboarding step. Owner only.\n\nChanges data.",
+    "operationId": "teams.set_onboarding_step",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "status": {
+          "type": "string"
+         },
+         "step": {
+          "type": "string"
+         },
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "step",
+         "status"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Set onboarding step",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.set_team_logo": {
+   "post": {
+    "deprecated": false,
+    "description": "Set the team logo to an uploaded image, or clear it. Team.validate re-checks team:edit.\n\nChanges data.",
+    "operationId": "teams.set_team_logo",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "file_url": {
+          "type": [
+           "string",
+           "null"
+          ]
+         },
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Set team logo",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.set_team_member_roles": {
+   "post": {
+    "deprecated": false,
+    "description": "Set team member roles\n\nChanges data.",
+    "operationId": "teams.set_team_member_roles",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "roles": {
+          "items": {
+           "type": "object"
+          },
+          "type": "array"
+         },
+         "team": {
+          "type": "string"
+         },
+         "user": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "user",
+         "roles"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Set team member roles",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.set_team_member_status": {
+   "post": {
+    "deprecated": false,
+    "description": "Set team member status\n\nChanges data.",
+    "operationId": "teams.set_team_member_status",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "status": {
+          "type": "string"
+         },
+         "team": {
+          "type": "string"
+         },
+         "user": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "user",
+         "status"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Set team member status",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.suspend_team": {
+   "post": {
+    "deprecated": false,
+    "description": "Operator action: suspend the team, for example for abuse.\n\nChanges data.",
+    "operationId": "teams.suspend_team",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "reason": {
+          "type": "string"
+         },
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "reason"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Suspend team",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.transfer_team_ownership": {
+   "post": {
+    "deprecated": false,
+    "description": "Hand the Owner role to another active member. Current-owner only.\n\nChanges data.",
+    "operationId": "teams.transfer_team_ownership",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "team": {
+          "type": "string"
+         },
+         "user": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "user"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Transfer team ownership",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.teams.unsuspend_team": {
+   "post": {
+    "deprecated": false,
+    "description": "Operator action: give the team's members access again.\n\nChanges data.",
+    "operationId": "teams.unsuspend_team",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Unsuspend team",
+    "tags": [
+     "Teams"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.wireguard.create_wireguard_device": {
+   "post": {
+    "deprecated": false,
+    "description": "Register a device with the region's gateway and return its settings.\n\nChanges data.",
+    "operationId": "wireguard.create_wireguard_device",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "public_key": {
+          "type": "string"
+         },
+         "region": {
+          "type": "string"
+         },
+         "team": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "region",
+         "title",
+         "public_key"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Create wireguard device",
+    "tags": [
+     "WireGuard"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.wireguard.delete_wireguard_device": {
+   "post": {
+    "deprecated": false,
+    "description": "Remove a device from its gateway. A gateway outage leaves it Removing until a retry works.\n\nChanges data.",
+    "operationId": "wireguard.delete_wireguard_device",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "team": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "team",
+         "name"
+        ],
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "Delete wireguard device",
+    "tags": [
+     "WireGuard"
+    ],
+    "x-mcp": {
+     "read_only": false,
+     "requires_team": true
+    }
+   }
+  },
+  "/api/method/central.api.wireguard.list_wireguard_devices": {
+   "get": {
+    "deprecated": false,
+    "description": "Return the team's devices with the gateway regions and the servers a device could reach.\n\nRead-only.",
+    "operationId": "wireguard.list_wireguard_devices",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "team",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "properties": {
+          "message": {}
+         },
+         "type": "object"
+        }
+       }
+      },
+      "description": "OK"
+     },
+     "401": {
+      "description": "Missing or invalid API key"
+     },
+     "403": {
+      "description": "The token user lacks the capability"
+     }
+    },
+    "summary": "List wireguard devices",
+    "tags": [
+     "WireGuard"
+    ],
+    "x-mcp": {
+     "read_only": true,
+     "requires_team": true
+    }
+   }
+  }
+ },
+ "security": [
+  {
+   "apiKey": []
+  }
+ ],
+ "tags": [
+  {
+   "description": "The signed-in user: profile, teams, invitations and capabilities.",
+   "name": "Identity"
+  },
+  {
+   "description": "Team settings, members, roles and invitations.",
+   "name": "Teams"
+  },
+  {
+   "description": "Create, size, power and protect servers.",
+   "name": "Servers"
+  },
+  {
+   "description": "Sites on a team's servers.",
+   "name": "Sites"
+  },
+  {
+   "description": "Offerings, images and apps a new server can start from.",
+   "name": "Images"
+  },
+  {
+   "description": "Server snapshots and their schedules.",
+   "name": "Snapshots"
+  },
+  {
+   "description": "Team firewall rules and the servers that use them.",
+   "name": "Firewall Rulesets"
+  },
+  {
+   "description": "Team SSH keys and the servers they reach.",
+   "name": "SSH Keys"
+  },
+  {
+   "description": "Devices that reach team servers through the regional gateway.",
+   "name": "WireGuard"
+  },
+  {
+   "description": "What happened on a team and its servers, newest first.",
+   "name": "Activity"
+  },
+  {
+   "description": "Support tickets and help articles.",
+   "name": "Support"
+  }
+ ]
+}

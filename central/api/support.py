@@ -24,6 +24,7 @@ def create_ticket(
 	site: str | None = None,
 ) -> dict:
 	"""Open a support ticket for the caller's team.
+	`category` is a `key` and `issue_type` one of its issue labels from `get_ticket_options`.
 	A `server` or `site` is checked against the team first, then attached as context."""
 	support.validate_ticket(category, issue_type, description)
 	server_row = support.get_server(team, server) if server else None
