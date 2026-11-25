@@ -404,10 +404,15 @@ Each minute, `central.integrations.metrics.publish_metrics` sends gauges to the 
 | Gauge | Meaning |
 | --- | --- |
 | `central_requests{group,status_class}` | API requests since the last accepted push, by `central.api` module and status class. The `after_request` hook `count_request` counts them in Redis. The minute job reads and resets the counts, and puts them back when the push fails. |
+| `central_signup_steps_last_hour{step,product}`, `central_signup_failed{product,site,error}` | The signup funnel of the last hour: new accounts (`verified`), and trial sites `requested`, `ready` and `failed`. A trial site is a Site create Resource Action. The first 20 failed ones are named. |
+| `central_signup_setup_seconds{region,quantile}`, `central_signup_oldest_waiting_seconds{region}` | The median (`p50`) and the longest (`max`) time from a trial request to a ready site in the last hour, and the oldest trial request of the last day that has no ready site, did not fail, and whose server is not terminated. |
 | `central_resource_action_oldest_open_seconds{region,resource_type,action}`, `central_resource_actions_finished_last_hour{...,status}` | Open and finished Resource Actions. |
 | `central_payment_attempts_last_hour{gateway,status}`, `central_payment_last_capture_seconds{gateway}` | Payment Attempts and the newest capture. |
 | `central_gateway_webhooks_unprocessed{gateway}`, `central_gateway_webhook_oldest_unprocessed_seconds{gateway}`, `central_gateway_webhooks_failed_last_hour{gateway}` | Webhook Events that wait or failed. |
 | `central_billing_run_oldest_open_seconds`, `central_invoices_sync_failed` | Billing Runs that did not complete, and invoices that failed to sync to accounting. |
+| `central_card_setups_last_hour{gateway,method_type,outcome}`, `central_card_setup_failed{gateway,team,code}` | Card and UPI setups (Payment Methods) of the last hour: `started`, `succeeded`, `failed` and `expired`. Failed and expired count only setups that were never checked. A Cancelled setup is one that the team's next attempt replaced, so it is not counted. The first 20 failed ones are named with their decline or failure code. |
+| `central_card_setup_unfinished_attempts{team}`, `central_card_setup_oldest_pending_seconds{gateway}` | Teams that started 2 or more setups in the last hour and finished none, and the oldest setup that is still Pending Validation. |
+| `central_trial_conversions_blocked{reason}`, `central_trial_conversions_unmoved` | Active trials whose team has had an active card for 10 minutes, by Trial Error, and converted trials whose server still runs a trial plan. |
 | `central_site_domains_failed_last_hour{route_type}`, `central_site_domain_oldest_pending_seconds{route_type}` | Proxy routes. |
 | `central_vm_snapshots_failed_last_day{snapshot_type}`, `central_vm_snapshot_oldest_pending_seconds` | VM Snapshots. |
 | `central_emails_failed_last_hour`, `central_email_oldest_unsent_seconds` | The Email Queue. An email with a later `send_after` waits from that time. |

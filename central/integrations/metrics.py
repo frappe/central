@@ -21,7 +21,7 @@ API_GROUPS = {"auth", "identity", "jwks", "oidc", "pilot", "servers", "signups",
 
 
 class CentralMetrics:
-	"""The gauges that show whether Central does its work: customer requests, resource actions, payments,
+	"""The gauges that show whether Central does its work: customer requests, signups, resource actions, payments,
 	billing, domains, snapshots, emails and background jobs. Each is a count or an age. Only failures get a
 	label per record, at most FAILURES_NAMED of each kind, so Beacon can name what failed."""
 
@@ -34,6 +34,7 @@ class CentralMetrics:
 	def collect(self) -> list[dict]:
 		for add in (
 			self.add_requests,
+			self.add_signups,
 			self.add_resource_actions,
 			self.add_payments,
 			self.add_billing,
@@ -67,6 +68,15 @@ class CentralMetrics:
 		for field, count in self.request_counts.items():
 			group, status_class = field.split("|", 1)
 			self.add("central_requests", count, group=group, status_class=status_class)
+
+	def add_signups(self) -> None:
+		"""The signup funnel, card setups and trial conversions. The signups module owns these gauges."""
+		# Imported here, because the signups gauges import this module.
+		from central.signups import metrics as signup_metrics
+
+		signup_metrics.add_signup_metrics(self)
+		signup_metrics.add_card_setup_metrics(self)
+		signup_metrics.add_conversion_metrics(self)
 
 	def add_resource_actions(self) -> None:
 		"""Open actions and the oldest open one, and actions that finished in the last hour, for each region and action."""
