@@ -13,7 +13,7 @@ import { formatCalendarDate, timeAgo } from '@/lib/datetime'
 import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
 import { getServerMenu, type ServerMenuVerb } from '@/lib/serverMenu'
-import { isSettingUp } from '@/lib/status'
+import { isAwakeOrSleeping, isSettingUp } from '@/lib/status'
 import { __ } from '@/lib/translate'
 import type { ServerOverview } from '@/types/servers'
 
@@ -53,7 +53,7 @@ const sleepHelp = computed(() => {
 			)
 })
 const isLocked = computed(() => !!props.server.pending_action)
-const isRunning = computed(() => props.server.status === 'Running')
+const isOpenable = computed(() => isAwakeOrSleeping(props.server))
 const isUbuntu = computed(() => props.server.image_offering === 'ubuntu')
 
 const isProtected = computed(() => !!props.details?.is_termination_protected)
@@ -275,7 +275,7 @@ const menu = computed(() => {
 				variant="solid"
 				:label="siteUrl ? 'Visit site' : 'Open Pilot'"
 				icon-right="lucide-arrow-up-right"
-				:disabled="!isRunning || isLocked"
+				:disabled="!isOpenable || isLocked"
 				:loading="opening"
 				@click="emit('open')"
 			/>

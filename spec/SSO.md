@@ -28,6 +28,8 @@ The "Open server" link in a site's cloud settings is a browser GET to this route
 
 If the Pilot has not enrolled, the server has no Active Pilot Credential and there is no login URL.
 
+A sleeping server opens like a running one. Both logins first ask for the Pilot health check or the site, and that request wakes the server. Until the server answers, `get_bench_link` raises `PilotStarting` and `login_site` returns `login_pending`. The dashboard asks again every 3 seconds, for up to 5 minutes.
+
 The console (bench) login is carried by the browser. Only the site login is a relay from Central to the bench.
 
 ## Where do tokens live?

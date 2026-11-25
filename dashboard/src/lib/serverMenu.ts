@@ -8,6 +8,7 @@ import {
 	canChange,
 	canStart,
 	canStop,
+	isAwakeOrSleeping,
 	isSettingUp,
 	isSleeping,
 } from '@/lib/status'
@@ -125,6 +126,7 @@ function getViewItems(
 ): DropdownOption[] {
 	const opensSite = !!site
 	const isRunning = server.status === 'Running'
+	const isOpenable = isAwakeOrSleeping(server)
 	const isBusy = !!server.pending_action
 	const canOpen = allowed.open && !isBusy && !isSettingUp(server.status)
 	const items: DropdownOption[] = []
@@ -140,7 +142,7 @@ function getViewItems(
 					opensSite ? 'Visit site' : 'Open server',
 					opensSite ? 'lucide-globe' : 'lucide-server',
 				),
-				disabled: !isRunning || !(opensSite || server.gateway_url),
+				disabled: !isOpenable || !(opensSite || server.gateway_url),
 			}),
 		)
 
@@ -149,7 +151,7 @@ function getViewItems(
 		items.push(
 			...lockable(allowed, true, {
 				...entry('pilot', 'Open server', 'lucide-server'),
-				disabled: !isRunning || !server.gateway_url,
+				disabled: !isOpenable || !server.gateway_url,
 			}),
 		)
 
