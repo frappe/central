@@ -40,8 +40,12 @@ def billed_storage_subjects(day=None) -> dict[str, frappe._dict]:
 
 
 def billed_subjects_of(service: str, day=None, names: list[str] | None = None) -> dict[str, frappe._dict]:
-	"""Every subject, or those among `names`, a service bills; a backup bucket only on its server's days."""
-	subjects = billed_subjects(service, names)
+	"""Every subject, or those among `names`, a service bills now or on `day`; a bucket only on its days."""
+	# A bucket made after `day` ended did not bill it, though it may reuse a deleted bucket's name.
+	created_before = (
+		None if day is None else utc_day_start(frappe.utils.getdate(day) + datetime.timedelta(days=1))
+	)
+	subjects = billed_subjects(service, names, created_before)
 	if service != STORAGE_SERVICE:
 		return subjects
 	# A backup bucket wins a name it shares with a team's bucket, as Central's own reading does.

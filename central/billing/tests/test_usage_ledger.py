@@ -71,6 +71,8 @@ class TestUsageLedger(IntegrationTestCase):
 				"external_id": BUCKET,
 				"status": "Active",
 				"subscription": self.subscription,
+				# Made before the days the tests read, as a bucket bills only from the day it is made.
+				"creation": "2026-06-01 00:00:00",
 			}
 		)
 		self.bucket.db_insert()  # Skips before_insert, which would create the bucket in Cargo.
@@ -198,6 +200,16 @@ class TestUsageLedger(IntegrationTestCase):
 		frappe.db.delete("Team Service", {"name": self.bucket.name})
 		usage_ledger.fill_missing_days("2026-06-05")
 		self.assertEqual(len(self.days()), 1)
+
+	def test_a_bucket_made_again_later_is_not_estimated_before_it_was_made(self):
+		self.read("2026-06-01", 30)
+		# The name is made again on June 4, after the bucket that held it on June 1 was deleted.
+		frappe.db.set_value(
+			"Team Service", self.bucket.name, "creation", "2026-06-04 12:00", update_modified=False
+		)
+		usage_ledger.fill_missing_days("2026-06-07")
+		self.assertEqual(self.days(day="2026-06-02"), [])
+		self.assertEqual([d.estimated for d in self.days(day="2026-06-04")], [1])
 
 	def test_a_day_belongs_to_the_month_of_its_utc_date(self):
 		self.read("2026-06-30", 30)

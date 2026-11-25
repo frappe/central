@@ -1,6 +1,8 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
 
+import datetime
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -246,11 +248,15 @@ def on_doctype_update():
 	)
 
 
-def billed_subjects(service: str, external_ids: list[str] | None = None) -> dict:
+def billed_subjects(
+	service: str, external_ids: list[str] | None = None, created_before: datetime.datetime | None = None
+) -> dict:
 	"""The Team Services that bill a subscription for `service`, by subject, suspended ones included."""
 	filters = {"add_on_service": service, "subscription": ["is", "set"]}
 	if external_ids is not None:
 		filters["external_id"] = ["in", external_ids]
+	if created_before is not None:
+		filters["creation"] = ["<", created_before]
 	rows = frappe.get_all(
 		"Team Service",
 		filters=filters,
