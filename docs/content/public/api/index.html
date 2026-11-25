@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Central API · Frappe Cloud</title>
+		<style>
+			body {
+				margin: 0;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="app"></div>
+		<!-- Pinned with an integrity hash, so a changed file on the CDN never runs on this site. -->
+		<script
+			src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.77.0/dist/browser/standalone.js"
+			integrity="sha384-+7ESN8b9Ljg46TCYKedZUlhF/wfZbOt78aV/DtoU3anEElh8Q2eXsyhQ9W5lAZD4"
+			crossorigin="anonymous"
+		></script>
+		<script>
+			Scalar.createApiReference("#app", {
+				url: "./openapi.json",
+				hideClientButton: true,
+				hideTestRequestButton: true,
+				showDeveloperTools: "never",
+				documentDownloadType: "json",
+				agent: { disabled: true },
+				mcp: { disabled: true },
+				telemetry: false,
+			});
+		</script>
+	</body>
+</html>
