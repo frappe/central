@@ -16,7 +16,9 @@ PRODUCT_KEY_PATTERN = re.compile(r"[a-z][a-z0-9-]*")
 # A path on the site itself, never another host.
 LANDING_ROUTE_PATTERN = re.compile(r"/[A-Za-z0-9_/-]*")
 # A path on the site, which can name a whitelisted method such as /api/method/app.module.method.
-CONNECTOR_ROUTE_PATTERN = re.compile(r"/[A-Za-z0-9_./-]*")
+CONNECTOR_ROUTE_PATTERN = re.compile(r"(?!.*(//|\.\.))/[A-Za-z0-9_./-]*")
+# A bare host name, such as mcp.example.com, with no scheme, port or path.
+HOST_PATTERN = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+")
 APP_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
 # A Frappe branch as Cargo writes it in the image's frappe_version tag.
 FRAPPE_VERSION_PATTERN = re.compile(r"develop|version-[0-9]+(-hotfix)?")
@@ -90,11 +92,21 @@ class Product(Document):
 		if self.connector_route and not CONNECTOR_ROUTE_PATTERN.fullmatch(self.connector_route):
 			frappe.throw(_("Use a path on the site for the connector route."))
 
+		self.validate_connector_hosts()
 		self.validate_emails()
 
 		plans = [row.plan for row in self.plan_notes]
 		if len(plans) != len(set(plans)):
 			frappe.throw(_("Add at most one note for each plan."))
+
+	def validate_connector_hosts(self) -> None:
+		"""One bare host per line, in lower case, so the check at sign in is an exact match."""
+		hosts = (self.connector_hosts or "").lower().split()
+		for host in hosts:
+			if not HOST_PATTERN.fullmatch(host):
+				frappe.throw(_("Use one host per line for connector hosts, such as mcp.example.com."))
+
+		self.connector_hosts = "\n".join(hosts) or None
 
 	def validate_emails(self) -> None:
 		"""An email client loads the logo without a session, so it must be a public file. An HTML
@@ -161,10 +173,16 @@ class Product(Document):
 		}
 
 	def is_connector_return(self, url: str) -> bool:
-		"""A connector sign in returns only over https, to a host this product lists."""
+		"""A connector sign in returns only over https, to a host this product lists. A fragment
+		is refused, since the site is added to the query and must not land after it."""
 		parts = urlsplit(url)
 		hosts = (self.connector_hosts or "").split()
-		return bool(self.connector_route) and parts.scheme == "https" and parts.netloc in hosts
+		return (
+			bool(self.connector_route)
+			and parts.scheme == "https"
+			and not parts.fragment
+			and parts.netloc.lower() in hosts
+		)
 
 	def get_plan_notes(self) -> dict[str, str]:
 		"""The note for each plan, by plan name."""
