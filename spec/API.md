@@ -27,13 +27,9 @@ Staff actions on another team are excluded: impersonate, suspend, unsuspend and 
 
 The built-in `/api/v2/mcp` endpoint is the MCP surface for Desk users. It is not part of this document.
 
-## MCP server
-
-`mcp_server/server.py` is a stdio MCP server for any token user. It reads this document from `central.api.openapi.document` at start, so it never drifts from the deployed API. It also reads the agent guide at `/assets/central/agents.md` (`central/public/agents.md`) and gives it to the agent as its instructions. It exposes three tools: `search_operations`, `get_operation`, and `call_operation`. `mcp_server/README.md` gives the environment variables.
-
 ## Customer docs
 
-The customer docs in `docs/content/developers/` explain how to use the API and connect an agent. `yarn api` in `docs/` copies `central/public/openapi.json` into the site, and `docs/content/public/api/index.html` renders it at `https://frappe.github.io/central/api/`.
+The customer docs in `docs/content/developers/` explain how to use the API. `yarn api` in `docs/` copies `central/public/openapi.json` into the site, and `docs/content/public/api/index.html` renders it at `https://frappe.github.io/central/api/`.
 
 ## Regenerate
 
