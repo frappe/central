@@ -12,6 +12,8 @@
   "team",
   "installation",
   "repository_id",
+  "app_secrets_section",
+  "secrets",
   "machine_section",
   "region",
   "virtual_machine",
@@ -107,6 +109,17 @@
    "fieldtype": "Password",
    "label": "Agent Token",
    "read_only": 1
+  },
+  {
+   "fieldname": "app_secrets_section",
+   "fieldtype": "Section Break",
+   "label": "App Secrets"
+  },
+  {
+   "fieldname": "secrets",
+   "fieldtype": "Table",
+   "label": "Secrets",
+   "options": "Deploy App Secret"
   }
  ],
  "index_web_pages_for_search": 0,
@@ -116,7 +129,7 @@
    "link_fieldname": "deploy_app"
   }
  ],
- "modified": "2026-11-24 15:00:00.000000",
+ "modified": "2026-11-25 23:09:39.666546",
  "modified_by": "Administrator",
  "module": "Deploy",
  "name": "Deploy App",
