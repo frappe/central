@@ -14,7 +14,7 @@ IP_COUNTRY_TTL_SECONDS = 30 * 24 * 60 * 60
 
 
 def get_country_from_ip(ip: str | None = None) -> str | None:
-	"""The country name for `ip`, or for the request IP, or None when it cannot be found.
+	"""The Country record name for `ip`, or for the request IP, or None when it cannot be found.
 	Never raises, so callers must handle None."""
 	if frappe.flags.in_test:
 		return None
@@ -34,7 +34,10 @@ def get_country_from_ip(ip: str | None = None) -> str | None:
 		if info:
 			frappe.cache.set_value(key, info, expires_in_sec=IP_COUNTRY_TTL_SECONDS)
 
-	return (info or {}).get("country")
+	# ip-api names some countries differently from the Country records, such as
+	# "The Netherlands", so the ISO code finds the record.
+	code = (info or {}).get("countryCode")
+	return frappe.db.get_value("Country", {"code": code.lower()}, "name") if code else None
 
 
 def warm_country_cache(ip: str | None = None) -> None:
