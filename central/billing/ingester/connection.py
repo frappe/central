@@ -15,21 +15,29 @@ class NoAccess(Exception):
 	"""The accounting sync user may not read this record."""
 
 
+OFF, MANUAL, AUTOMATIC = "Off", "Manual", "Automatic"
+
+
+def sync_mode() -> str:
+	"""Off, Manual or Automatic, from Billing Settings."""
+	return frappe.get_cached_doc("Billing Settings").accounting_sync_mode or OFF
+
+
 def enabled() -> bool:
-	"""Whether this site pushes records to the accounting system at all."""
-	return bool(frappe.conf.get("enable_erpnext_sync"))
+	"""Whether Central talks to the accounting system at all: reads, and pushes an operator asks for."""
+	return sync_mode() != OFF
 
 
-def is_configured() -> bool:
-	"""Whether the sync is on and the site knows where the accounting system is."""
-	return enabled() and bool(frappe.conf.get("erpnext_url"))
+def is_automatic() -> bool:
+	"""Whether records go to the accounting system without an operator: on change and in the daily jobs."""
+	return sync_mode() == AUTOMATIC
 
 
 def auth_headers() -> dict:
-	key = frappe.conf.get("erpnext_api_key")
-	secret = frappe.conf.get("erpnext_api_secret")
-	if key and secret:
-		return {"Authorization": f"token {key}:{secret}"}
+	settings = frappe.get_cached_doc("Billing Settings")
+	secret = settings.get_password("accounting_api_secret", raise_exception=False)
+	if settings.accounting_api_key and secret:
+		return {"Authorization": f"token {settings.accounting_api_key}:{secret}"}
 	return {}
 
 
@@ -132,7 +140,7 @@ def _request(method: str, endpoint: str, **kwargs) -> frappe._dict | None:
 
 
 def _url(endpoint: str) -> str:
-	base = (frappe.conf.get("erpnext_url") or "").rstrip("/")
+	base = (frappe.get_cached_doc("Billing Settings").accounting_url or "").rstrip("/")
 	if not base:
-		raise RuntimeError("erpnext_url is not set in the site config")
+		raise RuntimeError("Billing Settings has no accounting Site URL")
 	return f"{base}/{endpoint.lstrip('/')}"

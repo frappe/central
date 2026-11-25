@@ -15,6 +15,7 @@ from central.billing.tests.accounting_fake import (
 	billing_team,
 	configure_accounting,
 	requires_accounting_system,
+	sync_mode,
 )
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
@@ -25,7 +26,7 @@ SALES_INVOICE = "SINV-ORIGINAL"
 @requires_accounting_system
 class CorrectionsTestCase(IntegrationTestCase):
 	def setUp(self):
-		conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
+		conf = sync_mode()
 		conf.start()
 		self.addCleanup(conf.stop)
 		configure_accounting()
@@ -447,10 +448,10 @@ class TestLateCaptureRefund(CorrectionsTestCase):
 		self.assertEqual(self._payment_entries_for(refund), [])
 
 	def test_the_card_payment_in_the_books_is_never_it(self):
-		from central.billing.ingester.erpnext_sync import _card_attempt
+		from central.billing.ingester.payment_records import card_attempt
 
 		inv, _refund = self._late_refund(status="Failed")
-		paid_by = _card_attempt(frappe.get_doc("Invoice", inv))
+		paid_by = card_attempt(frappe.get_doc("Invoice", inv))
 		self.assertEqual(paid_by.gateway_transaction_id, "pi_card")
 
 	def test_a_part_back_to_the_card_never_takes_it_after_its_refund_failed(self):

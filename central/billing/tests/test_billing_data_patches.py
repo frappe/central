@@ -29,11 +29,8 @@ from central.patches.v0_0 import (
 	mark_old_setups_released,
 	mark_waived_invoices_as_not_synced,
 	merge_invoice_draft_and_open_into_outstanding,
-<<<<<<< HEAD
-=======
 	move_accounting_sync_to_billing_settings,
 	move_advance_and_income_accounts_to_currency_rows,
->>>>>>> 50d0e0f (feat(billing): book advances and income to accounts of each currency)
 	move_internal_flag_to_billing_profile,
 	remove_webhook_events_of_another_product,
 	repoint_billing_records_to_renamed_region,
@@ -587,8 +584,6 @@ class TestMarkOldSetupsReleased(IntegrationTestCase):
 		self.assertEqual(str(released[cancelled]), "2026-10-02 10:00:00")
 		for name in (lapsed_card, no_reference, pending):
 			self.assertIsNone(released[name])
-<<<<<<< HEAD
-=======
 
 
 class TestMoveAccountingSyncToBillingSettings(IntegrationTestCase):
@@ -682,4 +677,3 @@ class TestMoveAdvanceAndIncomeAccountsToCurrencyRows(IntegrationTestCase):
 			self.assertFalse(
 				frappe.db.exists("Singles", {"doctype": "Billing Settings", "field": "advance_account"})
 			)
->>>>>>> 50d0e0f (feat(billing): book advances and income to accounts of each currency)

@@ -167,17 +167,34 @@ def retry_failed_refunds(invoice: str) -> int:
 
 
 def run_cancellation(invoice: str) -> None:
-	"""Background job: take the next step of this invoice's cancellation."""
-	from central.billing.ingester.connection import enabled
+	"""Background job: take the next step of this invoice's cancellation.
+
+	The accounting system steps run here in Automatic mode only. In Manual mode an operator sends them."""
+	from central.billing.ingester.connection import is_automatic
 	from central.billing.ingester.locks import hold_until_transaction_ends
 
 	if not hold_until_transaction_ends(f"cancellation::{invoice}"):
 		return  # a step is running and queues the one after
 	doc = frappe.get_doc("Invoice", invoice)
-	step = _next_step(doc, enabled())
+	step = _next_step(doc, is_automatic())
 	if step:
 		step()
 		enqueue_steps(invoice)
+
+
+def next_accounting_step(invoice: str):
+	"""The next accounting system step of this invoice's refunds, for an operator push, or None.
+
+	Each step records the id it made, so the next call finds the step after it. The gateway
+	steps stay with the background job."""
+	from central.billing.ingester.locks import hold_until_transaction_ends
+
+	doc = frappe.get_doc("Invoice", invoice)
+	refunds = [r for r in _refunds(invoice) if not r.late_capture]
+	step = doc.erpnext_invoice and _accounting_step(doc, refunds)
+	if step and not hold_until_transaction_ends(f"cancellation::{invoice}"):
+		frappe.throw(_("A refund step of invoice {0} is running. Try again in a minute.").format(invoice))
+	return step or None
 
 
 def _next_step(doc, accounting: bool):
@@ -518,7 +535,8 @@ def _record_payment(doc, refund) -> None:
 
 def _reverse_promotional(doc, refund) -> None:
 	"""Take back the promotional account's payment, against the credit note."""
-	from central.billing.ingester.erpnext_sync import _promotional_part, promotional_journal
+	from central.billing.ingester.erpnext_sync import _promotional_part
+	from central.billing.ingester.payment_records import promotional_journal
 
 	customer = frappe.db.get_value("Billing Profile", doc.team, "profile_id")
 	name = promotional_journal(

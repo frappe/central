@@ -53,6 +53,12 @@
   "section_muted_alerts",
   "muted_operator_alerts",
   "tab_accounting",
+  "section_connection",
+  "accounting_sync_mode",
+  "accounting_url",
+  "column_break_connection",
+  "accounting_api_key",
+  "accounting_api_secret",
   "section_company",
   "company",
   "company_address",
@@ -126,7 +132,7 @@
   },
   {
    "default": "0",
-   "description": "Create every new team as a staging trial \u2014 it provisions servers on welcome credits without a full billing profile. For staging deployments.",
+   "description": "Create every new team as a staging trial — it provisions servers on welcome credits without a full billing profile. For staging deployments.",
    "fieldname": "provision_teams_as_trial",
    "fieldtype": "Check",
    "label": "Provision Teams as Trial"
@@ -377,8 +383,46 @@
    "fieldname": "tab_accounting",
    "fieldtype": "Tab Break",
    "label": "Accounting",
-   "depends_on": "eval:doc.__onload && doc.__onload.accounting_sync_enabled",
    "description": "Names Central reads from the accounting system. Central does not create them."
+  },
+  {
+   "fieldname": "section_connection",
+   "fieldtype": "Section Break",
+   "label": "Connection",
+   "description": "Off sends nothing. Manual reads from the accounting system, and an operator sends each record from its form. Automatic also sends every record as it is made, and the daily jobs send what was missed."
+  },
+  {
+   "fieldname": "accounting_sync_mode",
+   "fieldtype": "Select",
+   "label": "Sync Mode",
+   "options": "Off\nManual\nAutomatic",
+   "default": "Off",
+   "reqd": 1
+  },
+  {
+   "fieldname": "accounting_url",
+   "fieldtype": "Data",
+   "options": "URL",
+   "label": "Site URL",
+   "description": "The accounting site, for example https://erp.example.com.",
+   "mandatory_depends_on": "eval:doc.accounting_sync_mode != 'Off'"
+  },
+  {
+   "fieldname": "column_break_connection",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "accounting_api_key",
+   "fieldtype": "Data",
+   "label": "API Key",
+   "description": "Of the user Central signs in as. That user needs access to the records on this tab.",
+   "mandatory_depends_on": "eval:doc.accounting_sync_mode != 'Off'"
+  },
+  {
+   "fieldname": "accounting_api_secret",
+   "fieldtype": "Password",
+   "label": "API Secret",
+   "mandatory_depends_on": "eval:doc.accounting_sync_mode != 'Off'"
   },
   {
    "fieldname": "section_company",
@@ -563,11 +607,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
-<<<<<<< HEAD
- "modified": "2026-11-19 12:00:00.000000",
-=======
  "modified": "2026-11-25 13:00:00.000000",
->>>>>>> 50d0e0f (feat(billing): book advances and income to accounts of each currency)
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

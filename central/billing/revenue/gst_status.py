@@ -33,8 +33,10 @@ RECHECK_COOLDOWN_SECONDS = 10 * 60
 
 
 def lookups_enabled() -> bool:
-	"""Lookups go through ERPNext, so they are off when the sync is."""
-	return bool(frappe.conf.get("enable_erpnext_sync"))
+	"""Lookups go through ERPNext, so they are off when the sync is. They run in Manual mode too."""
+	from central.billing.ingester.connection import enabled
+
+	return enabled()
 
 
 def standing(team: str) -> frappe._dict:

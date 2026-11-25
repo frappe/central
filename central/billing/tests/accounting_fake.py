@@ -23,15 +23,21 @@ GST_ROWS = {
 }
 
 
+SYNC_MODE = "central.billing.ingester.connection.sync_mode"
+
+
+def sync_mode(mode: str = "Automatic"):
+	"""Patch the accounting sync mode of Billing Settings for a test."""
+	return patch(SYNC_MODE, return_value=mode)
+
+
 def requires_accounting_system(cls):
 	"""Skip a test class on a site with no accounting system configured, such as CI.
 
 	The tests fake every call, but they exercise an integration the site does not use.
 	"""
-	configured = frappe.conf.get("erpnext_url") or frappe.conf.get("enable_erpnext_sync")
-	return unittest.skipUnless(
-		configured, "no accounting system configured (erpnext_url, enable_erpnext_sync)"
-	)(cls)
+	configured = frappe.db.get_single_value("Billing Settings", "accounting_url")
+	return unittest.skipUnless(configured, "no accounting Site URL in Billing Settings")(cls)
 
 
 class FakeAccountingSystem:

@@ -109,11 +109,11 @@ def check_mandates_in_billing_currency() -> list[Violation]:
 
 
 def check_billed_teams_are_invoiceable() -> list[Violation]:
-	"""A team the next run bills has full billing details and its accounting records."""
-	from central.billing.ingester.connection import enabled
+	"""A team the next run bills has full billing details and, in Automatic mode, its accounting records."""
+	from central.billing.ingester.connection import is_automatic
 
 	profiles = _profiles()
-	syncs = enabled()
+	syncs = is_automatic()  # only then does a missing record hold the invoice
 	found = []
 	for team in _billed_run_rates():
 		profile = profiles.get(team)
