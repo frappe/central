@@ -62,7 +62,7 @@
    "fieldname": "installation",
    "fieldtype": "Link",
    "label": "Installation",
-   "options": "GitHub Deploy App Installation",
+   "options": "GitHub Installation",
    "reqd": 1
   },
   {

@@ -40,12 +40,6 @@ class CentralSettings(Document):
 		github_app_slug: DF.Data | None
 		github_client_id: DF.Data | None
 		github_client_secret: DF.Password | None
-		github_deploy_app_id: DF.Data | None
-		github_deploy_app_slug: DF.Data | None
-		github_deploy_client_id: DF.Data | None
-		github_deploy_client_secret: DF.Password | None
-		github_deploy_private_key: DF.Password | None
-		github_deploy_webhook_secret: DF.Password | None
 		github_private_key: DF.Password | None
 		github_webhook_secret: DF.Password | None
 		helpdesk_api_key: DF.Data | None
@@ -76,12 +70,12 @@ class CentralSettings(Document):
 
 	def on_update(self) -> None:
 		from central.infrastructure.doctype.blocked_domain.blocked_domain import seed_regional_domains
-		from central.infrastructure.doctype.github_connection.github_connection import GitHubConnection
+		from central.infrastructure.doctype.github_installation.github_installation import GitHubInstallation
 
 		if self.has_value_changed("wildcard_domain"):
 			seed_regional_domains()
 		if self.has_value_changed("github_app_id"):
-			GitHubConnection.disable_all()
+			GitHubInstallation.disable_all()
 
 	def validate_limits(self) -> None:
 		"""A zero would refuse every invitation or sign-in code, or give a new server no disk or network."""

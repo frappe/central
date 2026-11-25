@@ -17,6 +17,12 @@ WEB_URL = "https://github.com"
 API_HEADERS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
 TIMEOUT = (5, 20)
 PAGE_SIZE = 100
+# A deploy config is a few lines; anything larger is refused before it is parsed.
+MAX_FILE_BYTES = 64 * 1024
+# The name GitHub shows the deploy under on each commit.
+COMMIT_STATUS_CONTEXT = "Deploy"
+# GitHub refuses a longer status description.
+MAX_STATUS_DESCRIPTION = 140
 
 
 class GitHubError(frappe.ValidationError):
@@ -66,6 +72,16 @@ class GitHubApp:
 		}
 		return f"{WEB_URL}/login/oauth/authorize?{urllib.parse.urlencode(query)}"
 
+	@staticmethod
+	def get_installation_settings_url(installation: dict) -> str:
+		"""The installation's page on GitHub, where an owner accepts permissions the App added later."""
+		owner = (
+			f"organizations/{installation['account']}/"
+			if installation["account_type"] == "Organization"
+			else ""
+		)
+		return f"{WEB_URL}/{owner}settings/installations/{installation['installation_id']}"
+
 	def get_install_url(self, state: str) -> str:
 		return f"{WEB_URL}/apps/{self.slug}/installations/new?{urllib.parse.urlencode({'state': state})}"
 
@@ -88,13 +104,16 @@ class GitHubApp:
 		return body["access_token"]
 
 	def get_user_installations(self, user_token: str) -> list[dict]:
-		"""Installations of this App that the user can access."""
+		"""Installations of this App that the user can access, with the permissions and events each accepted."""
 		return [
 			{
 				"installation_id": str(installation["id"]),
 				"account": installation["account"]["login"],
 				"account_type": installation["account"]["type"],
 				"avatar_url": installation["account"].get("avatar_url", ""),
+				"permissions": installation.get("permissions", {}),
+				"events": installation.get("events", []),
+				"is_suspended": bool(installation.get("suspended_at")),
 			}
 			for installation in self._paginate(f"{API_URL}/user/installations", user_token, "installations")
 			if installation.get("app_id") == int(self.app_id)
@@ -130,6 +149,59 @@ class GitHubApp:
 				GitHubError,
 			)
 		return True
+
+	def get_file(
+		self, installation_id: str, repository_id: str, full_name: str, path: str, ref: str
+	) -> str | None:
+		"""The text of `path` at `ref`, or None when the repository has no such file."""
+		token = self.create_installation_token(installation_id, repository_id)["token"]
+		url = f"{API_URL}/repos/{full_name}/contents/{urllib.parse.quote(path)}"
+		headers = {
+			**API_HEADERS,
+			"Accept": "application/vnd.github.raw+json",
+			"Authorization": f"Bearer {token}",
+		}
+		try:
+			response = requests.get(url, headers=headers, params={"ref": ref}, timeout=TIMEOUT)
+		except requests.RequestException as error:
+			frappe.throw(_("GitHub could not be reached: {0}").format(str(error)), GitHubError)
+
+		if response.status_code == 404:
+			return None
+		if not response.ok:
+			frappe.throw(
+				_("GitHub returned HTTP {0}: {1}").format(response.status_code, response.text[:200]),
+				GitHubError,
+			)
+		if len(response.content) > MAX_FILE_BYTES:
+			frappe.throw(_("{0} is larger than {1} bytes.").format(path, MAX_FILE_BYTES))
+		return response.content.decode()
+
+	def list_root(self, installation_id: str, repository_id: str, full_name: str, ref: str) -> list[dict]:
+		"""The entries at the root of the repository at `ref`, each with its exact `name` and `type`."""
+		token = self.create_installation_token(installation_id, repository_id)["token"]
+		url = f"{API_URL}/repos/{full_name}/contents?{urllib.parse.urlencode({'ref': ref})}"
+		return self._request("GET", url, token=token)
+
+	def set_commit_status(
+		self,
+		installation_id: str,
+		repository_id: str,
+		full_name: str,
+		commit: str,
+		state: str,
+		description: str,
+		target_url: str | None = None,
+	) -> None:
+		"""Show the deploy's `state` (pending, success, failure or error) on `commit`."""
+		token = self.create_installation_token(installation_id, repository_id, {"statuses": "write"})["token"]
+		payload = {
+			"state": state,
+			"description": description[:MAX_STATUS_DESCRIPTION],
+			"context": COMMIT_STATUS_CONTEXT,
+			"target_url": target_url,
+		}
+		self._request("POST", f"{API_URL}/repos/{full_name}/statuses/{commit}", token=token, json=payload)
 
 	def create_installation_token(
 		self, installation_id: str, repository_id: str | None = None, permissions: dict | None = None

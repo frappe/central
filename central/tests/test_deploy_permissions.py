@@ -5,7 +5,7 @@ from frappe.tests import IntegrationTestCase
 
 from central.deploy import api
 from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
-from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
+from central.infrastructure.doctype.github_installation.test_github_installation import (
 	make_installation,
 )
 from central.tests.test_iam import ensure_user
@@ -24,10 +24,10 @@ class TestDeployPermissions(IntegrationTestCase):
 		self.addCleanup(patch.stopall)
 		self.addCleanup(frappe.set_user, "Administrator")
 
-		mine = self.make_team("Deploy Mine", {self.viewer: "Viewer", self.billing: "Billing"})
-		theirs = self.make_team("Deploy Theirs", {})
-		self.my_app, self.my_request = self.make_deploy(mine, "21")
-		self.their_app, self.their_request = self.make_deploy(theirs, "22")
+		self.my_team = self.make_team("Deploy Mine", {self.viewer: "Viewer", self.billing: "Billing"})
+		self.their_team = self.make_team("Deploy Theirs", {})
+		self.my_app, self.my_request = self.make_deploy(self.my_team, "21")
+		self.their_app, self.their_request = self.make_deploy(self.their_team, "22")
 
 	def make_team(self, label: str, members: dict[str, str]) -> str:
 		rows = [{"user": self.owner, "role": "Owner", "status": "Active"}]
@@ -71,6 +71,28 @@ class TestDeployPermissions(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			api.get_deploy_request(self.their_request)
 		self.assertNotIn(self.their_app, frappe.get_list("Deploy App", pluck="name"))
+
+	def test_a_viewer_lists_the_teams_apps_but_cannot_disable_them(self):
+		frappe.set_user(self.viewer)
+		self.assertEqual([app["name"] for app in api.get_apps(self.my_team)], [self.my_app])
+		self.assertEqual(api.get_apps(self.their_team), [])
+		with self.assertRaises(frappe.PermissionError):
+			api.disable_app(self.my_app)
+
+	def test_a_member_with_app_deploy_disables_only_the_teams_apps(self):
+		frappe.set_user(self.owner)
+		api.disable_app(self.my_app)
+		self.assertEqual(frappe.db.get_value("Deploy App", self.my_app, "status"), "Disabled")
+
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			api.disable_app(self.their_app)
+		self.assertEqual(frappe.db.get_value("Deploy App", self.their_app, "status"), "Active")
+
+	def test_a_running_deploy_is_left_to_finish_when_its_app_is_disabled(self):
+		frappe.set_user(self.owner)
+		api.disable_app(self.my_app)
+		self.assertEqual(frappe.db.get_value("Deploy Request", self.my_request, "status"), "Queued")
 
 	def test_a_member_without_app_view_sees_no_deploy(self):
 		frappe.set_user(self.billing)
