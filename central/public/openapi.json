@@ -4825,66 +4825,6 @@
     }
    }
   },
-  "/api/method/central.api.teams.impersonate_team_owner": {
-   "post": {
-    "deprecated": false,
-    "description": "Operator action: the console address that opens as this team.\n\nChanges data.",
-    "operationId": "teams.impersonate_team_owner",
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "properties": {
-         "notify_owner": {
-          "type": "boolean"
-         },
-         "reason": {
-          "type": "string"
-         },
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "reason"
-        ],
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
-      "description": "OK"
-     },
-     "401": {
-      "description": "Missing or invalid API key"
-     },
-     "403": {
-      "description": "The token user lacks the capability"
-     }
-    },
-    "summary": "Impersonate team owner",
-    "tags": [
-     "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
-   }
-  },
   "/api/method/central.api.teams.invite_team_member": {
    "post": {
     "deprecated": false,
@@ -5280,59 +5220,6 @@
     }
    }
   },
-  "/api/method/central.api.teams.restore_team": {
-   "post": {
-    "deprecated": false,
-    "description": "Operator action: open an archived team again.\n\nChanges data.",
-    "operationId": "teams.restore_team",
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "properties": {
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team"
-        ],
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
-      "description": "OK"
-     },
-     "401": {
-      "description": "Missing or invalid API key"
-     },
-     "403": {
-      "description": "The token user lacks the capability"
-     }
-    },
-    "summary": "Restore team",
-    "tags": [
-     "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
-   }
-  },
   "/api/method/central.api.teams.revoke_invitation": {
    "post": {
     "deprecated": false,
@@ -5631,63 +5518,6 @@
     }
    }
   },
-  "/api/method/central.api.teams.suspend_team": {
-   "post": {
-    "deprecated": false,
-    "description": "Operator action: suspend the team, for example for abuse.\n\nChanges data.",
-    "operationId": "teams.suspend_team",
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "properties": {
-         "reason": {
-          "type": "string"
-         },
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "reason"
-        ],
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
-      "description": "OK"
-     },
-     "401": {
-      "description": "Missing or invalid API key"
-     },
-     "403": {
-      "description": "The token user lacks the capability"
-     }
-    },
-    "summary": "Suspend team",
-    "tags": [
-     "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
-   }
-  },
   "/api/method/central.api.teams.transfer_team_ownership": {
    "post": {
     "deprecated": false,
@@ -5736,59 +5566,6 @@
      }
     },
     "summary": "Transfer team ownership",
-    "tags": [
-     "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
-   }
-  },
-  "/api/method/central.api.teams.unsuspend_team": {
-   "post": {
-    "deprecated": false,
-    "description": "Operator action: give the team's members access again.\n\nChanges data.",
-    "operationId": "teams.unsuspend_team",
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "properties": {
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team"
-        ],
-        "type": "object"
-       }
-      }
-     }
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
-      "description": "OK"
-     },
-     "401": {
-      "description": "Missing or invalid API key"
-     },
-     "403": {
-      "description": "The token user lacks the capability"
-     }
-    },
-    "summary": "Unsuspend team",
     "tags": [
      "Teams"
     ],

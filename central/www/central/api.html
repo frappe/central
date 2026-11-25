@@ -13,7 +13,12 @@
 	<body>
 		<div id="app"></div>
 
-		<script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@latest/dist/browser/standalone.js"></script>
+		<!-- Pinned with an integrity hash, so a changed file on the CDN never runs on this domain. -->
+		<script
+			src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.77.0/dist/browser/standalone.js"
+			integrity="sha384-+7ESN8b9Ljg46TCYKedZUlhF/wfZbOt78aV/DtoU3anEElh8Q2eXsyhQ9W5lAZD4"
+			crossorigin="anonymous"
+		></script>
 		<script>
 			fetch("{{ spec_url }}")
 				.then((response) => response.json())

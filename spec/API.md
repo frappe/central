@@ -23,6 +23,8 @@ Guest endpoints are excluded, because no token identifies the caller. The exclud
 
 Functions whose return value is not JSON are excluded, because a schema cannot describe them.
 
+Staff actions on another team are excluded: impersonate, suspend, unsuspend and restore. Their own checks refuse customers. `OPERATOR_METHODS` in `central/api/openapi.py` lists them.
+
 The built-in `/api/v2/mcp` endpoint is the MCP surface for Desk users. It is not part of this document.
 
 ## MCP server
