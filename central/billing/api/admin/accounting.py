@@ -25,7 +25,7 @@ def get_manual_setup_gaps() -> list[dict]:
 
 
 @frappe.whitelist(methods=["GET"])
-def preview_accounting_push(doctype: str, name: str) -> dict:
+def preview_accounting_sync(doctype: str, name: str) -> dict:
 	"""What sending this record to the accounting system would post. Writes nothing."""
 	from central.billing.ingester import push
 
@@ -34,7 +34,7 @@ def preview_accounting_push(doctype: str, name: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def push_to_accounting(doctype: str, name: str) -> dict:
+def send_to_accounting(doctype: str, name: str) -> dict:
 	"""Send this record, and what it needs first, to the accounting system now."""
 	from central.billing.ingester import push
 

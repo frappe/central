@@ -139,7 +139,7 @@ class TestPush(AccountingPushTestCase):
 		frappe.set_user("Guest")
 		self.addCleanup(frappe.set_user, "Administrator")
 		with self.assertRaises(frappe.PermissionError):
-			accounting.push_to_accounting("Invoice", self._invoice())
+			accounting.send_to_accounting("Invoice", self._invoice())
 		self.assertEqual(self.remote.posted, [])
 
 
