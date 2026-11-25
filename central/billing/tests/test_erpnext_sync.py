@@ -263,6 +263,14 @@ class TestFailureIsolation(SyncTestCase):
 		self.assertTrue(out["retry_scheduled"])
 		self.assertEqual(self.remote.posted, [])
 
+	def test_the_team_hears_of_its_tax_invoice_only_in_automatic_mode(self):
+		billing_team(TEAM, gstin=GSTIN)
+		with patch("central.billing.platform.notifications.notify") as notify:
+			erpnext_sync.sync_invoice(inv := self._invoice())
+			with sync_mode("Manual"):
+				erpnext_sync.sync_invoice(self._invoice(month=9))
+		notify.assert_called_once_with(TEAM, "Invoice Ready", reference_doctype="Invoice", reference_name=inv)
+
 	def test_a_sync_already_running_is_not_repeated(self):
 		billing_team(TEAM, gstin=GSTIN)
 		self.lock.return_value = False
