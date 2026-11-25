@@ -5,6 +5,7 @@ from frappe.utils import now_datetime
 from central.deploy.connection import DeployConnectionAttempt
 from central.deploy.doctype.deploy_app.deploy_app import DeployApp
 from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
+from central.iam import can
 
 DELIVERY_TTL_SECONDS = 24 * 60 * 60
 BRANCH_REF_PREFIX = "refs/heads/"
@@ -32,6 +33,28 @@ def complete_repository_connection(state: str) -> dict:
 	"""Create the Deploy App once GitHub returned from the install; pushes to its branch deploy from then on."""
 	app = DeployConnectionAttempt.complete(state, frappe.session.user)
 	return {"name": app.name, "repository": app.repository, "branch": app.branch, "domain": app.domain}
+
+
+@frappe.whitelist(methods=["GET"])
+def get_apps(team: str) -> list[dict]:
+	"""The team's deploy apps, newest first. The user sees them with app:view."""
+	return frappe.get_list(
+		"Deploy App",
+		filters={"team": team},
+		fields=["name", "repository", "branch", "status", "region", "domain", "virtual_machine", "creation"],
+		order_by="creation desc",
+	)
+
+
+@frappe.whitelist(methods=["POST"])
+def disable_app(name: str) -> None:
+	"""Stop deploying the app on push. A deploy already running finishes, and the VM and domain keep running.
+	Connecting the repository again makes the app active."""
+	app: DeployApp = frappe.get_doc("Deploy App", name)
+	app.check_permission("read")
+	if not can(frappe.session.user, app.team, "app:deploy"):
+		frappe.throw(_("You can't change the apps of this team."), frappe.PermissionError)
+	app.disable()
 
 
 @frappe.whitelist(methods=["GET"])

@@ -160,7 +160,7 @@ class DeployApp(Document):
 
 	def disable(self) -> None:
 		self.status = "Disabled"
-		# A GitHub webhook disables the app; no Desk user owns it.
+		# Central disables the app for a GitHub webhook or a team member with app:deploy; users can't write it.
 		self.save(ignore_permissions=True)
 
 
