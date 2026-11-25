@@ -8,6 +8,7 @@ frappe.ui.form.on("Billing Profile", {
 	refresh: (frm) => {
 		set_state_options(frm);
 		add_clear_setup_lock(frm);
+		central.billing.add_accounting_push(frm);
 	},
 	country: (frm) => set_state_options(frm),
 });

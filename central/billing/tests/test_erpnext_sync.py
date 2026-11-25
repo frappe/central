@@ -15,6 +15,7 @@ from central.billing.tests.accounting_fake import (
 	billing_team,
 	configure_accounting,
 	requires_accounting_system,
+	sync_mode,
 )
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
@@ -25,12 +26,16 @@ GSTIN = "27AABCT1111T1Z5"
 @requires_accounting_system
 class SyncTestCase(IntegrationTestCase):
 	def setUp(self):
-		conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
+		conf = sync_mode()
 		conf.start()
 		self.addCleanup(conf.stop)
 		configure_accounting()
 		self.remote = FakeAccountingSystem()
 		self.enterContext(self.remote.patches())
+		# A job's lock ends with its transaction. A test runs many syncs in one transaction.
+		self.lock = self.enterContext(
+			patch("central.billing.ingester.erpnext_sync.hold_until_transaction_ends", return_value=True)
+		)
 
 	def _invoice(
 		self, team=TEAM, currency="INR", subtotal=8000, tax=1440, credit=0, paid=0, month=8, advance=0
@@ -230,7 +235,7 @@ class TestCardPayment(SyncTestCase):
 class TestFailureIsolation(SyncTestCase):
 	def test_sync_off_does_nothing(self):
 		billing_team(TEAM, gstin=GSTIN)
-		frappe.local.conf["enable_erpnext_sync"] = 0
+		self.enterContext(sync_mode("Off"))
 		self.assertEqual(erpnext_sync.sync_invoice(self._invoice())["skipped"], "sync_off")
 
 	def test_team_without_a_customer_retries_later(self):
@@ -239,6 +244,12 @@ class TestFailureIsolation(SyncTestCase):
 		with patch("central.billing.ingester.customer._enqueue"):
 			out = erpnext_sync.sync_invoice(self._invoice())
 		self.assertTrue(out["retry_scheduled"])
+		self.assertEqual(self.remote.posted, [])
+
+	def test_a_sync_already_running_is_not_repeated(self):
+		billing_team(TEAM, gstin=GSTIN)
+		self.lock.return_value = False
+		self.assertEqual(erpnext_sync.sync_invoice(self._invoice())["skipped"], "running")
 		self.assertEqual(self.remote.posted, [])
 
 	def test_backoff_grows_then_alerts_ops(self):

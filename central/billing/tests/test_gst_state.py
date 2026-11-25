@@ -9,12 +9,12 @@ import requests
 from frappe.utils import getdate
 
 from central.billing.doctype.invoice.invoice import period_key_for
-from central.billing.ingester import erpnext_sync
+from central.billing.ingester import erpnext_sync, payment_records
 from central.billing.ingester.gst_state_backfill import CURSOR_KEY, record_missing_gst_states
 from central.billing.payments import corrections
 from central.billing.revenue import invoicing
 from central.billing.revenue.tax import TaxNames
-from central.billing.tests.accounting_fake import IN_STATE, OUT_STATE, billing_team
+from central.billing.tests.accounting_fake import IN_STATE, OUT_STATE, billing_team, sync_mode
 from central.billing.tests.test_corrections import CorrectionsTestCase
 from central.billing.tests.test_erpnext_sync import SyncTestCase
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -114,7 +114,7 @@ class TestFilingFollowsTheRecordedState(SyncTestCase):
 		billing_team(TEAM, state="Karnataka")
 		inv = self._invoice(team=TEAM)
 		frappe.db.set_value("Invoice", inv, {"output_tax_type": "GST", "due_date": "2026-09-01"})
-		marker = erpnext_sync._marker(frappe.get_doc("Invoice", inv))
+		marker = payment_records.marker(frappe.get_doc("Invoice", inv))
 		self.remote.records[("Sales Invoice", "SINV-LOST")] = {
 			"remarks": marker,
 			"docstatus": 1,
@@ -272,7 +272,7 @@ class TestBackfillFromTheFiling(SyncTestCase):
 	def test_with_sync_off_synced_invoices_do_not_crowd_out_unsynced_ones(self):
 		synced = self._synced("SINV-1", "29-Karnataka", name="INV-GST-STATE-1")
 		unsynced = _insert_invoice(TEAM, "2026-04-30", name="INV-GST-STATE-2")
-		with patch.dict(frappe.local.conf, {"enable_erpnext_sync": 0}), patch(f"{BACKFILL}.MAX_PER_RUN", 1):
+		with sync_mode("Off"), patch(f"{BACKFILL}.MAX_PER_RUN", 1):
 			record_missing_gst_states()
 		self.assertEqual([_recorded(synced), _recorded(unsynced)], [(None, 0), ("Maharashtra", 1)])
 

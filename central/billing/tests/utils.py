@@ -10,6 +10,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.pricing import set_catalog_rates
+from central.billing.tests.accounting_fake import SYNC_MODE
 
 _SWEEP_DEADLOCK_RETRIES = 3
 
@@ -117,7 +118,7 @@ class BillingTestCase(IntegrationTestCase):
 		gateways = self._snapshot_gateways()
 		try:
 			# The bench config may point at a real accounting site; a test opts in.
-			with patch.dict(frappe.local.conf, {"enable_erpnext_sync": 0}):
+			with patch(SYNC_MODE, return_value="Off"):
 				return super().run(result)
 		finally:
 			self._sweep(before)

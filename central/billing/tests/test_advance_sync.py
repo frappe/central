@@ -16,6 +16,7 @@ from central.billing.tests.accounting_fake import (
 	billing_team,
 	configure_accounting,
 	requires_accounting_system,
+	sync_mode,
 )
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
@@ -26,7 +27,7 @@ GSTIN = "27AABCT1111T1Z5"
 @requires_accounting_system
 class AdvanceTestCase(IntegrationTestCase):
 	def setUp(self):
-		conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
+		conf = sync_mode()
 		conf.start()
 		self.addCleanup(conf.stop)
 		configure_accounting()
@@ -129,7 +130,7 @@ class TestTopUp(AdvanceTestCase):
 			advance.sync_advance(entry)
 
 	def test_nothing_is_queued_while_sync_is_off(self):
-		frappe.local.conf["enable_erpnext_sync"] = 0
+		self.enterContext(sync_mode("Off"))
 		with patch("frappe.enqueue") as enqueue:
 			advance.enqueue_sync("any")
 		enqueue.assert_not_called()

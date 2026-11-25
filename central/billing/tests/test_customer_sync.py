@@ -12,6 +12,7 @@ from central.billing.tests.accounting_fake import (
 	FakeAccountingSystem,
 	configure_accounting,
 	requires_accounting_system,
+	sync_mode,
 )
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team
@@ -31,7 +32,7 @@ class CustomerSyncTestCase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM)
-		self._conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
+		self._conf = sync_mode()
 		self._conf.start()
 		self.enterContext(patch("central.billing.ingester.customer.has_billable_activity", return_value=True))
 		# Reads such as the company's GSTIN come from a fake accounting system, never a real one.
@@ -145,7 +146,7 @@ class TestWhenToSync(CustomerSyncTestCase):
 		self._save(phone="6666666666").assert_not_called()
 
 	def test_nothing_is_queued_when_sync_is_off(self):
-		frappe.local.conf["enable_erpnext_sync"] = 0
+		self.enterContext(sync_mode("Off"))
 		self._save(phone="9555555555").assert_not_called()
 
 
@@ -174,7 +175,7 @@ class TestPending(CustomerSyncTestCase):
 class TestContactPayload(CustomerSyncTestCase):
 	def test_leaves_out_what_is_blank(self):
 		frappe.db.set_value("Billing Profile", TEAM, {"email": None, "phone": None})
-		payload = customer._contact_payload(frappe.get_doc("Billing Profile", TEAM))
+		payload = customer.contact_payload(frappe.get_doc("Billing Profile", TEAM))
 		self.assertEqual(payload["phone_nos"], [])
 		self.assertTrue(all(e["email_id"] for e in payload["email_ids"]))
 		self.assertTrue(payload["first_name"])
