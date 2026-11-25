@@ -20,8 +20,9 @@
   "report_secret",
   "column_break_delivery",
   "secret_delivery_status",
-  "secret_delivered_at",
-  "secret_delivery_error",
+  "secret_run",
+  "secret_deliveries_section",
+  "secret_deliveries",
   "meters_section",
   "meters"
  ],
@@ -113,30 +114,37 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Whether the hosts that sign reports hold the last saved secret. Blank while a send is queued.",
+   "description": "Failed when a host refused the last saved secret, Pending while a host has not answered, and Delivered when every host holds it.",
    "fieldname": "secret_delivery_status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Secret Delivery",
    "no_copy": 1,
-   "options": "\nDelivered\nFailed",
+   "options": "\nPending\nDelivered\nFailed",
    "read_only": 1
   },
   {
-   "description": "When the hosts last received the secret.",
-   "fieldname": "secret_delivered_at",
-   "fieldtype": "Datetime",
-   "label": "Secret Delivered At",
+   "description": "Set on each save of a new secret, so a send of an older secret does not change this save's rows.",
+   "fieldname": "secret_run",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Secret Run",
    "no_copy": 1,
    "read_only": 1
   },
   {
-   "description": "Which host or region did not receive the secret, and why. Fix it, then enter the secret again and save to resend it.",
-   "fieldname": "secret_delivery_error",
-   "fieldtype": "Small Text",
-   "label": "Secret Delivery Error",
+   "fieldname": "secret_deliveries_section",
+   "fieldtype": "Section Break",
+   "label": "Secret Delivery"
+  },
+  {
+   "description": "One row for each host that signs reports with the secret. Fix a Failed host, then enter the secret again and save to resend it.",
+   "fieldname": "secret_deliveries",
+   "fieldtype": "Table",
+   "label": "Secret Deliveries",
    "no_copy": 1,
+   "options": "Report Secret Delivery",
    "read_only": 1
   },
   {
@@ -153,7 +161,7 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-11-25 14:00:00.000000",
+ "modified": "2026-11-25 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Service",

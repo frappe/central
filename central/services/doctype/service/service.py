@@ -68,13 +68,34 @@ class Service(Document):
 		)
 		if self.flags.has_new_report_secret:
 			self.start_secret_delivery()
+		else:
+			self.keep_secret_delivery()
 
 	def start_secret_delivery(self) -> None:
-		"""Clear the last delivery's outcome, as the delivery jobs record this secret's."""
-		# The jobs keep a failure already recorded in a run, so the run must start with none.
-		self.secret_delivery_status = ""
-		self.secret_delivery_error = None
-		self.secret_delivered_at = None
+		"""Give each host of the new secret a Pending row, under a new run."""
+		from central.integrations.report_secret import delivery_targets
+
+		self.secret_run = frappe.generate_hash(length=12)
+		self.set(
+			"secret_deliveries",
+			[
+				{"host": host, "region": region, "status": "Pending", "run": self.secret_run}
+				for host, region in delivery_targets(self.name)
+			],
+		)
+		self.secret_delivery_status = get_secret_delivery_status(
+			[row.status for row in self.secret_deliveries]
+		)
+
+	def keep_secret_delivery(self) -> None:
+		"""Keep the delivery rows as the jobs wrote them."""
+		# Only the jobs write these rows. A form opened before a job ended must not save its old copy.
+		before = self.get_doc_before_save()
+		if not before:
+			return
+		self.set("secret_deliveries", [row.as_dict() for row in before.secret_deliveries])
+		self.secret_delivery_status = before.secret_delivery_status
+		self.secret_run = before.secret_run
 
 	def on_update(self) -> None:
 		if self.flags.has_new_report_secret:
@@ -85,6 +106,14 @@ class Service(Document):
 	def get_meter(self, meter_key: str):
 		"""The meter row named `meter_key`, or None."""
 		return next((meter for meter in self.meters if meter.meter_key == meter_key), None)
+
+
+def get_secret_delivery_status(statuses: list[str]) -> str:
+	"""The Service's summary of its delivery rows."""
+	for status in ("Failed", "Pending"):
+		if status in statuses:
+			return status
+	return "Delivered" if statuses else ""
 
 
 def is_read_by_central(service: str) -> bool:
@@ -104,3 +133,7 @@ def ensure_services() -> None:
 			continue
 		# Reference data seeded at install and migrate, before any user exists.
 		frappe.get_doc({"doctype": "Service", "enabled": 0, **spec}).insert(ignore_permissions=True)
+
+
+def on_doctype_update():
+	frappe.db.add_index("Service", ["secret_delivery_status"])
