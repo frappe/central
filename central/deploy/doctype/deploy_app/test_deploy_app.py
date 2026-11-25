@@ -8,10 +8,10 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.deploy.doctype.deploy_app.deploy_app import DeployApp, get_new_domain
-from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
+from central.infrastructure.doctype.github_connection.test_github_connection import make_team
+from central.infrastructure.doctype.github_installation.test_github_installation import (
 	make_installation,
 )
-from central.infrastructure.doctype.github_connection.test_github_connection import make_team
 from central.infrastructure.doctype.region.region import Region
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_region
@@ -31,7 +31,7 @@ class IntegrationTestDeployApp(IntegrationTestCase):
 		self.installation = make_installation(self.team)
 		self.region = ensure_region("deploy-app-test")
 
-		app = patch("central.deploy.doctype.deploy_app.deploy_app.GitHubDeployApp").start()
+		app = patch("central.deploy.doctype.deploy_app.deploy_app.GitHubApp").start()
 		self.addCleanup(patch.stopall)
 		app.return_value.has_branch.side_effect = lambda *args: args[-1] in ("main", "staging")
 

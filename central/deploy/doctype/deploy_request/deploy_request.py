@@ -28,10 +28,10 @@ from central.deploy.config import (
 	get_deploy_config,
 	get_machine_size,
 )
-from central.deploy.github import GitHubDeployApp
 from central.deploy.notifications import notify
 from central.deploy.virtual_machine import DeployMachine
 from central.integrations import servers
+from central.integrations.github import GitHubApp
 from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
 
 if TYPE_CHECKING:
@@ -186,11 +186,9 @@ class DeployRequest(PipelineBuilder):
 		generate one yet. Returns its exact name."""
 		self.set_status("Validating")
 		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
-		installation_id = frappe.db.get_value(
-			"GitHub Deploy App Installation", app.installation, "installation_id"
-		)
+		installation_id = app.get_installation_id()
 		# One listing of the root, so case and the file's type are read from GitHub, not guessed.
-		root = GitHubDeployApp().list_root(installation_id, app.repository_id, app.repository, self.commit)
+		root = GitHubApp().list_root(installation_id, app.repository_id, app.repository, self.commit)
 		return find_containerfile(root)
 
 	@task
@@ -200,10 +198,8 @@ class DeployRequest(PipelineBuilder):
 		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
 		if not app.region:
 			frappe.throw(_("Choose a region for {0} first.").format(app.repository))
-		installation_id = frappe.db.get_value(
-			"GitHub Deploy App Installation", app.installation, "installation_id"
-		)
-		config = GitHubDeployApp().get_file(
+		installation_id = app.get_installation_id()
+		config = GitHubApp().get_file(
 			installation_id, app.repository_id, app.repository, CONFIG_FILE, self.commit
 		)
 		deploy_config = get_deploy_config(config)
@@ -322,10 +318,8 @@ class DeployRequest(PipelineBuilder):
 	def update_github_commit_status(self) -> None:
 		"""Show this deploy's current status on its commit in GitHub."""
 		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
-		installation_id = frappe.db.get_value(
-			"GitHub Deploy App Installation", app.installation, "installation_id"
-		)
-		GitHubDeployApp().set_commit_status(
+		installation_id = app.get_installation_id()
+		GitHubApp().set_commit_status(
 			installation_id,
 			app.repository_id,
 			app.repository,
@@ -439,10 +433,8 @@ class DeployRequest(PipelineBuilder):
 	def get_build_payload(self) -> dict:
 		"""What the agent needs to fetch and build the commit; the token reads only this repository."""
 		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
-		installation_id = frappe.db.get_value(
-			"GitHub Deploy App Installation", app.installation, "installation_id"
-		)
-		token = GitHubDeployApp().create_installation_token(installation_id, app.repository_id)["token"]
+		installation_id = app.get_installation_id()
+		token = GitHubApp().create_installation_token(installation_id, app.repository_id)["token"]
 		return {
 			"deploy_request": self.name,
 			"repository": app.repository,

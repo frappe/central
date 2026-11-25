@@ -1,15 +1,10 @@
-import json
-
 import frappe
 from frappe import _
 from frappe.utils import now_datetime
 
+from central.deploy.connection import DeployConnectionAttempt
 from central.deploy.doctype.deploy_app.deploy_app import DeployApp
 from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
-from central.deploy.doctype.github_deploy_app_installation.github_deploy_app_installation import (
-	GitHubDeployAppInstallation,
-)
-from central.deploy.github import GitHubDeployApp
 
 DELIVERY_TTL_SECONDS = 24 * 60 * 60
 BRANCH_REF_PREFIX = "refs/heads/"
@@ -23,17 +18,17 @@ def connect_repository(team: str, repository: str, region: str, branch: str | No
 	"""Start deploying `repository` (owner/name) for `team`. The user signs in to GitHub at `sign_in_url`, and
 	installs the App there when it can't reach the repository yet, then finishes with
 	complete_repository_connection and the same `state`."""
-	state = GitHubDeployAppInstallation.start(team, frappe.session.user, repository, region, branch)
+	state = DeployConnectionAttempt.start(team, frappe.session.user, repository, region, branch)
 	return {
 		"state": state,
-		"sign_in_url": GitHubDeployAppInstallation.get_sign_in_url(state, frappe.session.user),
+		"sign_in_url": DeployConnectionAttempt.get_sign_in_url(state, frappe.session.user),
 	}
 
 
 @frappe.whitelist(methods=["POST"])
 def complete_repository_connection(state: str) -> dict:
 	"""Create the Deploy App once GitHub returned from the install; pushes to its branch deploy from then on."""
-	app = GitHubDeployAppInstallation.complete(state, frappe.session.user)
+	app = DeployConnectionAttempt.complete(state, frappe.session.user)
 	return {"name": app.name, "repository": app.repository, "branch": app.branch, "domain": app.domain}
 
 
@@ -64,23 +59,21 @@ def get_deploy_request(name: str) -> dict:
 	}
 
 
-# nosemgrep: guest-whitelisted-method -- the state binds the callback to the user who started it.
-@frappe.whitelist(allow_guest=True, methods=["GET"])
-def oauth_callback(
-	state: str | None = None, code: str | None = None, installation_id: str | None = None, **kwargs
-) -> None:
-	"""GitHub returns here after the sign-in or an install. An install started on github.com has no state to link."""
-	if not (state and code):
+def finish_github_sign_in(state: str, code: str | None, installation_id: str | None) -> None:
+	"""The GitHub App's callback for a deploy attempt: after the sign-in, or after an install it sent the user to."""
+	if not code:
 		return frappe.respond_as_web_page(
-			_("Nothing to connect"),
-			_("Start the connection from Frappe Cloud, then sign in to GitHub from the link it gives."),
+			_("GitHub sign-in cancelled"),
+			_("Start the connection again to deploy this repository."),
 			indicator_color="orange",
 		)
 
-	if not GitHubDeployAppInstallation.verify(state, code, installation_id, frappe.session.user):
-		# GitHub shows its install page, or its configure page when the App is on the account already.
+	next_url = DeployConnectionAttempt.verify(state, code, installation_id, frappe.session.user)
+	if next_url:
+		# GitHub's install page, its configure page when the App is on the account already, or the
+		# installation's settings, where an owner accepts the deploy permissions.
 		frappe.local.response["type"] = "redirect"
-		frappe.local.response["location"] = GitHubDeployApp().get_install_url(state)
+		frappe.local.response["location"] = next_url
 		return
 
 	frappe.respond_as_web_page(
@@ -90,17 +83,8 @@ def oauth_callback(
 	)
 
 
-# nosemgrep: guest-whitelisted-method -- the HMAC signature authenticates GitHub.
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def webhook() -> None:
-	"""Events of the deploy App. Each delivery is handled once; a push queues a deploy of each matching app."""
-	body = frappe.request.get_data()
-	if not GitHubDeployApp().is_valid_webhook_signature(
-		body, frappe.get_request_header("X-Hub-Signature-256")
-	):
-		frappe.throw(_("Invalid webhook signature."), frappe.AuthenticationError)
-
-	delivery = frappe.get_request_header("X-GitHub-Delivery")
+def queue_push_deploys(push: dict, delivery: str | None) -> None:
+	"""Queue a deploy of each app the push matches. GitHub's webhook calls this; each delivery is handled once."""
 	if not delivery:
 		frappe.throw(_("Missing X-GitHub-Delivery header."))
 	key = frappe.cache.make_key(f"github-deploy:delivery:{delivery}")
@@ -108,11 +92,8 @@ def webhook() -> None:
 	if not frappe.cache.set(key, 1, nx=True, ex=DELIVERY_TTL_SECONDS):
 		return
 
-	event = frappe.get_request_header("X-GitHub-Event")
-	payload = json.loads(body)
-	if event == "push":
-		for app in get_deploy_apps(payload):
-			DeployRequest.queue(app, payload["after"], delivery)
+	for app in get_deploy_apps(push):
+		DeployRequest.queue(app, push["after"], delivery)
 
 
 def get_deploy_apps(push: dict) -> list[str]:

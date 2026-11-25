@@ -6,12 +6,12 @@ import httpx
 from frappe.tests import IntegrationTestCase
 
 from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
-from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
-	make_installation,
-)
 from central.deploy.tests.test_deploy_billing import make_size
 from central.deploy.virtual_machine import AtlasError, DeployMachine
 from central.infrastructure.doctype.github_connection.test_github_connection import make_team
+from central.infrastructure.doctype.github_installation.test_github_installation import (
+	make_installation,
+)
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 

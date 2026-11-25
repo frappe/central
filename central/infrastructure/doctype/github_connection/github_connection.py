@@ -14,6 +14,7 @@ from frappe.model.document import Document
 from frappe.utils.password import decrypt, encrypt
 
 from central.iam import can
+from central.infrastructure.doctype.github_installation.github_installation import GitHubInstallation
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.github import GitHubApp
 
@@ -23,7 +24,7 @@ class GitHubRepositoryNotGranted(frappe.PermissionError):
 
 
 class GitHubConnection(Document):
-	"""A Pilot's grant to read selected repositories of one GitHub App installation."""
+	"""A Pilot's grant to read selected repositories of one GitHub Installation of its team."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -38,8 +39,7 @@ class GitHubConnection(Document):
 		)
 
 		account: DF.Data | None
-		account_type: DF.Literal["User", "Organization"]
-		installation_id: DF.Data
+		installation: DF.Link
 		pilot_credential: DF.Link
 		repositories: DF.Table[GitHubConnectionRepository]
 		server: DF.Link | None
@@ -51,9 +51,10 @@ class GitHubConnection(Document):
 	@staticmethod
 	def grant(credential: PilotCredential, installation: dict, repositories: list[dict]) -> GitHubConnection:
 		"""Save the repositories one installation grants to a Pilot, replacing an earlier grant."""
+		installation = GitHubInstallation.link(credential.team, installation)
 		name = frappe.db.get_value(
 			"GitHub Connection",
-			{"pilot_credential": credential.name, "installation_id": installation["installation_id"]},
+			{"pilot_credential": credential.name, "installation": installation.name},
 			for_update=True,
 		)
 		connection = (
@@ -64,9 +65,7 @@ class GitHubConnection(Document):
 				"team": credential.team,
 				"server": credential.server,
 				"pilot_credential": credential.name,
-				"installation_id": installation["installation_id"],
-				"account": installation["account"],
-				"account_type": installation["account_type"],
+				"installation": installation.name,
 				"status": "Active",
 				"version": (connection.version or 0) + 1,
 			}
@@ -85,22 +84,32 @@ class GitHubConnection(Document):
 	@staticmethod
 	def revoke(credential: PilotCredential, installation_id: str) -> None:
 		"""Remove the grant of one installation from a Pilot."""
+		installation = frappe.db.get_value(
+			"GitHub Installation", {"team": credential.team, "installation_id": installation_id}
+		)
 		name = frappe.db.get_value(
 			"GitHub Connection",
-			{"pilot_credential": credential.name, "installation_id": installation_id, "status": "Active"},
+			{"pilot_credential": credential.name, "installation": installation, "status": "Active"},
 			for_update=True,
 		)
-		if name:
+		if installation and name:
 			frappe.get_doc("GitHub Connection", name).disable()
 
 	@staticmethod
 	def get_active(credential: PilotCredential) -> list[GitHubConnection]:
-		names = frappe.get_all(
-			"GitHub Connection",
-			filters={"pilot_credential": credential.name, "status": "Active"},
-			pluck="name",
-			order_by="creation asc",
-		)
+		"""The Pilot's active grants whose installation is still active."""
+		connection = frappe.qb.DocType("GitHub Connection")
+		installation = frappe.qb.DocType("GitHub Installation")
+		names = (
+			frappe.qb.from_(connection)
+			.join(installation)
+			.on(installation.name == connection.installation)
+			.select(connection.name)
+			.where(connection.pilot_credential == credential.name)
+			.where(connection.status == "Active")
+			.where(installation.status == "Active")
+			.orderby(connection.creation)
+		).run(pluck=True)
 		return [frappe.get_doc("GitHub Connection", name) for name in names]
 
 	@staticmethod
@@ -115,27 +124,23 @@ class GitHubConnection(Document):
 			_("Repository {0} is not granted to this server.").format(full_name), GitHubRepositoryNotGranted
 		)
 
+	def get_installation_id(self) -> str:
+		return GitHubInstallation.get_installation_id(self.installation)
+
 	def is_current(self, version: int) -> bool:
-		"""Whether the grant is still active and unchanged since `version` was read."""
+		"""Whether the grant and its installation are still active, and the grant is unchanged since `version`."""
 		status, current_version = frappe.db.get_value("GitHub Connection", self.name, ["status", "version"])
-		return status == "Active" and current_version == version
+		return (
+			status == "Active"
+			and current_version == version
+			and GitHubInstallation.is_active(self.installation)
+		)
 
 	def disable(self) -> None:
 		self.status = "Disabled"
 		self.version += 1
 		# The Pilot or a GitHub webhook disables the grant; no Desk user owns it.
 		self.save(ignore_permissions=True)
-
-	@staticmethod
-	def disable_all() -> None:
-		"""Disable every grant. Installations of a replaced GitHub App do not work with the new App."""
-		for name in frappe.get_all("GitHub Connection", filters={"status": "Active"}, pluck="name"):
-			frappe.get_doc("GitHub Connection", name, for_update=True).disable()
-
-	@staticmethod
-	def disable_installation(installation_id: str) -> None:
-		for connection in GitHubConnection._lock_active(installation_id):
-			connection.disable()
 
 	@staticmethod
 	def remove_repositories(installation_id: str, repository_ids: set[str]) -> None:
@@ -159,9 +164,15 @@ class GitHubConnection(Document):
 
 	@staticmethod
 	def _lock_active(installation_id: str) -> list[GitHubConnection]:
+		installations = frappe.get_all(
+			"GitHub Installation", filters={"installation_id": installation_id}, pluck="name"
+		)
+		if not installations:
+			return []
+
 		names = frappe.get_all(
 			"GitHub Connection",
-			filters={"installation_id": installation_id, "status": "Active"},
+			filters={"installation": ["in", installations], "status": "Active"},
 			pluck="name",
 		)
 		return [frappe.get_doc("GitHub Connection", name, for_update=True) for name in names]
@@ -351,4 +362,4 @@ class GitHubConnectionAttempt:
 
 
 def on_doctype_update() -> None:
-	frappe.db.add_unique("GitHub Connection", ["pilot_credential", "installation_id"])
+	frappe.db.add_unique("GitHub Connection", ["pilot_credential", "installation"])

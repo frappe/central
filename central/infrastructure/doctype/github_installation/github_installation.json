@@ -1,0 +1,43 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-25 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "installation_id",
+  "column_break_installation",
+  "account",
+  "account_type",
+  "status"
+ ],
+ "fields": [
+  {"fieldname": "team", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Team", "options": "Team", "reqd": 1, "search_index": 1},
+  {"description": "The installation's ID on GitHub. Server grants and deploy apps read it from here.", "fieldname": "installation_id", "fieldtype": "Data", "in_standard_filter": 1, "label": "Installation ID", "read_only": 1, "reqd": 1},
+  {"fieldname": "column_break_installation", "fieldtype": "Column Break"},
+  {"fieldname": "account", "fieldtype": "Data", "in_list_view": 1, "label": "Account", "read_only": 1},
+  {"fieldname": "account_type", "fieldtype": "Select", "label": "Account Type", "options": "User\nOrganization", "read_only": 1},
+  {"default": "Active", "description": "Disabled when the installation is removed or suspended on GitHub, or the GitHub App is replaced. Its server grants and deploy apps stop working.", "fieldname": "status", "fieldtype": "Select", "in_list_view": 1, "in_standard_filter": 1, "label": "Status", "options": "Active\nDisabled"}
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [
+  {"link_doctype": "GitHub Connection", "link_fieldname": "installation"},
+  {"link_doctype": "Deploy App", "link_fieldname": "installation"}
+ ],
+ "modified": "2026-11-25 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Infrastructure",
+ "name": "GitHub Installation",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "search_fields": "account,installation_id",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "account",
+ "track_changes": 1
+}

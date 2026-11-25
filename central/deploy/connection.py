@@ -1,6 +1,3 @@
-# Copyright (c) 2026, frappe and contributors
-# For license information, please see license.txt
-
 from __future__ import annotations
 
 import base64
@@ -11,14 +8,16 @@ import secrets
 
 import frappe
 from frappe import _
-from frappe.model.document import Document
 from frappe.utils.password import decrypt, encrypt
 
 from central.deploy.doctype.deploy_app.deploy_app import DeployApp
-from central.deploy.github import GitHubDeployApp
 from central.iam import can
+from central.infrastructure.doctype.github_installation.github_installation import GitHubInstallation
+from central.integrations.github import GitHubApp
 
 STATE_TTL_SECONDS = 60 * 60
+# A deploy writes its status on the commit and starts from a push.
+DEPLOY_PERMISSION, DEPLOY_EVENT = ("statuses", "write"), "push"
 # owner/name alone, or inside a github.com URL or SSH remote. GitHub owners are letters, digits and
 # hyphens; repository names may also have dots and underscores.
 REPOSITORY_PATTERN = re.compile(
@@ -27,23 +26,9 @@ REPOSITORY_PATTERN = re.compile(
 )
 
 
-class GitHubDeployAppInstallation(Document):
-	"""A team's access to one installation of the push-to-deploy GitHub App."""
-
-	# begin: auto-generated types
-	# This code is auto-generated. Do not modify anything in this block.
-
-	from typing import TYPE_CHECKING
-
-	if TYPE_CHECKING:
-		from frappe.types import DF
-
-		account: DF.Data | None
-		account_type: DF.Literal["User", "Organization"]
-		installation_id: DF.Data
-		status: DF.Literal["Active", "Disabled"]
-		team: DF.Link
-	# end: auto-generated types
+class DeployConnectionAttempt:
+	"""A user's attempt to deploy one repository: GitHub sign-in, the installation that reaches the repository,
+	then the Deploy App. It lives in Redis until it completes or expires."""
 
 	@staticmethod
 	def start(team: str, user: str, repository: str, region: str, branch: str | None = None) -> str:
@@ -68,29 +53,36 @@ class GitHubDeployAppInstallation(Document):
 		return state
 
 	@staticmethod
+	def has_attempt(state: str) -> bool:
+		"""Whether `state` is a deploy attempt's, so the GitHub App's callback sends it here."""
+		return frappe.cache.get_value(state_key(state)) is not None
+
+	@staticmethod
 	def get_sign_in_url(state: str, user: str) -> str:
 		"""The GitHub sign-in that returns to the callback with a code for this attempt."""
 		digest = hashlib.sha256(load_attempt(state, user)["code_verifier"].encode()).digest()
 		challenge = base64.urlsafe_b64encode(digest).decode().rstrip("=")
-		return GitHubDeployApp().get_authorize_url(state, challenge)
+		return GitHubApp().get_authorize_url(state, challenge)
 
 	@staticmethod
-	def verify(state: str, code: str, installation_id: str | None, user: str) -> bool:
+	def verify(state: str, code: str, installation_id: str | None, user: str) -> str | None:
 		"""Trade GitHub's code for the user's token and look for the repository in their installations. A code
-		from the sign-in has no installation; one from an install names it. False means the repository is in
-		none of them yet, so the user installs the App or adds the repository to it. Only Redis is written:
-		GitHub returns with a GET, which Frappe rolls back, so `complete` saves the link."""
+		from the sign-in has no installation; one from an install names it. Returns the GitHub page the user goes
+		to next, or None once the repository is found. Only Redis is written: GitHub returns with a GET, which
+		Frappe rolls back, so `complete` saves the link."""
 		attempt = load_attempt(state, user)
 		require_deploy_access(user, attempt["team"])
 		# Only the sign-in sent a PKCE challenge; a code from an install has none.
 		verifier = None if installation_id else attempt["code_verifier"]
-		attempt["user_token"] = encrypt(GitHubDeployApp().exchange_code(code, verifier))
-		return GitHubDeployAppInstallation.find_repository(state, attempt, installation_id)
+		attempt["user_token"] = encrypt(GitHubApp().exchange_code(code, verifier))
+		return DeployConnectionAttempt.find_repository(state, attempt, installation_id)
 
 	@staticmethod
-	def find_repository(state: str, attempt: dict, installation_id: str | None = None) -> bool:
-		"""Keep the installation through which the user reaches the attempt's repository as an admin."""
-		app = GitHubDeployApp()
+	def find_repository(state: str, attempt: dict, installation_id: str | None = None) -> str | None:
+		"""Keep the installation through which the user reaches the attempt's repository as an admin. Returns the
+		GitHub page the user goes to next: the install page, or the installation's settings to accept the
+		deploy permissions. None means the installation can deploy the repository."""
+		app = GitHubApp()
 		user_token = decrypt(attempt["user_token"])
 		# The installation ID in the callback URL is user input; GitHub's own list is the proof.
 		installations = [
@@ -118,7 +110,7 @@ class GitHubDeployAppInstallation(Document):
 					frappe.PermissionError,
 				)
 			save_attempt(state, attempt)
-			return False
+			return app.get_install_url(state)
 
 		installation, repository = found
 		if not repository["is_admin"]:
@@ -126,10 +118,17 @@ class GitHubDeployAppInstallation(Document):
 				_("Only an admin of {0} can deploy it.").format(repository["full_name"]),
 				frappe.PermissionError,
 			)
+		# An installation made before the App asked for these keeps its old permissions until an owner accepts.
+		if not has_deploy_permissions(installation):
+			attempt["unaccepted_account"] = installation["account"]
+			save_attempt(state, attempt)
+			return app.get_installation_settings_url(installation)
+
 		attempt.pop("user_token")
+		attempt.pop("unaccepted_account", None)
 		attempt.update(installation=installation, found_repository=repository)
 		save_attempt(state, attempt)
-		return True
+		return None
 
 	@staticmethod
 	def is_verified(state: str, user: str) -> bool:
@@ -143,38 +142,25 @@ class GitHubDeployAppInstallation(Document):
 		require_deploy_access(user, attempt["team"])
 		# GitHub sends no callback when a repository is added to an existing installation, so look again.
 		if not attempt.get("installation") and attempt.get("user_token"):
-			GitHubDeployAppInstallation.find_repository(state, attempt)
+			DeployConnectionAttempt.find_repository(state, attempt)
+		if not attempt.get("installation") and attempt.get("unaccepted_account"):
+			frappe.throw(
+				_("Accept the GitHub App's new permissions on {0} first.").format(
+					attempt["unaccepted_account"]
+				),
+				frappe.PermissionError,
+			)
 		if not attempt.get("installation"):
 			frappe.throw(_("Install the GitHub App first."), frappe.PermissionError)
 
 		frappe.cache.delete_value(state_key(state))
-		installation = GitHubDeployAppInstallation.link(attempt["team"], attempt["installation"])
+		installation = GitHubInstallation.link(attempt["team"], attempt["installation"])
 		return DeployApp.add(installation, attempt["found_repository"], attempt["region"], attempt["branch"])
 
-	@staticmethod
-	def link(team: str, installation: dict) -> GitHubDeployAppInstallation:
-		name = frappe.db.get_value(
-			"GitHub Deploy App Installation",
-			{"team": team, "installation_id": installation["installation_id"]},
-			for_update=True,
-		)
-		doc = (
-			frappe.get_doc("GitHub Deploy App Installation", name)
-			if name
-			else frappe.new_doc("GitHub Deploy App Installation")
-		)
-		doc.update(
-			{
-				"team": team,
-				"installation_id": installation["installation_id"],
-				"account": installation["account"],
-				"account_type": installation["account_type"],
-				"status": "Active",
-			}
-		)
-		# The GitHub callback saves the link after its own checks; only System Manager has Desk access.
-		doc.save(ignore_permissions=True)
-		return doc
+
+def has_deploy_permissions(installation: dict) -> bool:
+	name, level = DEPLOY_PERMISSION
+	return installation["permissions"].get(name) == level and DEPLOY_EVENT in installation["events"]
 
 
 def require_deploy_access(user: str, team: str) -> None:
@@ -200,11 +186,6 @@ def save_attempt(state: str, attempt: dict) -> None:
 
 def state_key(state: str) -> str:
 	return f"github-deploy:install-state:{state}"
-
-
-def on_doctype_update() -> None:
-	frappe.db.add_unique("GitHub Deploy App Installation", ["team", "installation_id"])
-	frappe.db.add_index("GitHub Deploy App Installation", ["installation_id", "status"])
 
 
 def to_owner_and_name(repository: str) -> str:

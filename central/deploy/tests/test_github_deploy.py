@@ -6,12 +6,11 @@ from unittest.mock import MagicMock, call, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.deploy.api import webhook
-from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
+from central.api.integrations.github import create_app_manifest, webhook
+from central.infrastructure.doctype.github_connection.test_github_connection import make_team
+from central.infrastructure.doctype.github_installation.test_github_installation import (
 	make_installation,
 )
-from central.deploy.github import GitHubDeployApp
-from central.infrastructure.doctype.github_connection.test_github_connection import make_team
 from central.integrations.github import GitHubApp
 from central.tests.test_iam import ensure_user
 
@@ -23,15 +22,10 @@ PUSH = {
 }
 
 
-def deploy_settings() -> MagicMock:
-	settings = MagicMock(
-		github_app_id=None,
-		github_deploy_app_id="2",
-		github_deploy_client_id="deploy-client",
-		github_deploy_app_slug="deploy-app",
-	)
+def app_settings() -> MagicMock:
+	settings = MagicMock(github_app_id="2", github_client_id="client", github_app_slug="app")
 	settings.get_password.side_effect = lambda field, raise_exception=True: {
-		"github_deploy_webhook_secret": "deploy-secret"
+		"github_webhook_secret": "app-secret"
 	}.get(field)
 	return settings
 
@@ -39,12 +33,12 @@ def deploy_settings() -> MagicMock:
 class IntegrationTestGitHubDeploy(IntegrationTestCase):
 	def setUp(self):
 		self.settings = patch(
-			"central.integrations.github.frappe.get_cached_doc", return_value=deploy_settings()
+			"central.integrations.github.frappe.get_cached_doc", return_value=app_settings()
 		)
 		self.settings.start()
 		self.addCleanup(self.settings.stop)
 
-	def deliver(self, delivery: str, secret: bytes = b"deploy-secret", payload: dict = PUSH) -> MagicMock:
+	def deliver(self, delivery: str, secret: bytes = b"app-secret", payload: dict = PUSH) -> MagicMock:
 		body = json.dumps(payload).encode()
 		headers = {
 			"X-Hub-Signature-256": "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest(),
@@ -59,22 +53,32 @@ class IntegrationTestGitHubDeploy(IntegrationTestCase):
 			webhook()
 		return queue
 
-	def test_the_deploy_app_reads_its_own_settings(self):
-		app = GitHubDeployApp()
-		self.assertEqual((app.app_id, app.client_id, app.slug), ("2", "deploy-client", "deploy-app"))
-		self.assertTrue(GitHubDeployApp.is_configured())
-		self.assertFalse(GitHubApp.is_configured())
+	def test_deploys_and_servers_share_one_github_app_and_its_callback(self):
+		app = GitHubApp()
+		self.assertEqual((app.app_id, app.client_id, app.slug), ("2", "client", "app"))
 		self.assertTrue(
-			GitHubDeployApp.callback_url().endswith("/api/method/central.deploy.api.oauth_callback")
+			GitHubApp.callback_url().endswith("/api/method/central.api.integrations.github.oauth_callback")
+		)
+
+	def test_the_app_manifest_asks_for_what_deploys_need(self):
+		frappe.set_user("Administrator")
+		url = "https://central.example.test"
+		with (
+			patch("central.api.integrations.github.central_url", return_value=url),
+			patch("central.integrations.github.central_url", return_value=url),
+		):
+			manifest = json.loads(create_app_manifest("Frappe Cloud")["manifest"])
+		self.assertEqual(manifest["default_permissions"]["statuses"], "write")
+		self.assertIn("push", manifest["default_events"])
+		self.assertEqual(
+			manifest["callback_urls"], [f"{url}/api/method/central.api.integrations.github.oauth_callback"]
 		)
 
 	def test_a_commit_status_is_posted_with_a_token_that_only_writes_statuses(self):
-		app = GitHubDeployApp()
+		app = GitHubApp()
 		with (
-			patch.object(GitHubDeployApp, "_app_jwt", return_value="jwt"),
-			patch.object(
-				GitHubDeployApp, "_request", return_value={"token": "t", "expires_at": "x"}
-			) as request,
+			patch.object(GitHubApp, "_app_jwt", return_value="jwt"),
+			patch.object(GitHubApp, "_request", return_value={"token": "t", "expires_at": "x"}) as request,
 		):
 			app.set_commit_status("101", "11", "octo/app", "a" * 40, "failure", "x" * 200)
 		token_call, status_call = request.call_args_list
@@ -95,7 +99,7 @@ class IntegrationTestGitHubDeploy(IntegrationTestCase):
 
 	def test_a_push_signed_with_another_secret_is_refused(self):
 		with self.assertRaises(frappe.AuthenticationError):
-			self.deliver(frappe.generate_hash(), secret=b"pilot-secret")
+			self.deliver(frappe.generate_hash(), secret=b"other-secret")
 
 	def make_app(self) -> str:
 		team = make_team("GitHub Deploy Push Team", ensure_user("github.deploy.push@example.test"))

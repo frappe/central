@@ -227,7 +227,9 @@ The service gets Central's public keys from `central.api.jwks.get_jwks` and veri
 
 ## How does a Pilot read private GitHub repositories?
 
-Central owns the GitHub App, set on the GitHub tab of Central Settings. The App private key and secrets stay in Central. A Pilot gets only a token for one repository, with `contents: read`, that expires in about an hour.
+Central owns one GitHub App, set on the GitHub tab of Central Settings. Pilot grants and push-to-deploy use the same App. The App private key and secrets stay in Central. A Pilot gets only a token for one repository, with `contents: read`, that expires in about an hour. Only a deploy asks GitHub for `statuses: write`, to show its status on a commit.
+
+A `GitHub Installation` is the only record of a team's access to one installation of the App. It holds the installation ID and its status. A `GitHub Connection` (a Pilot's grant) and a `Deploy App` link to it and read the installation ID from it.
 
 ```text
 Pilot ── start_connection ──> Central ── authorize, install ──> GitHub
@@ -237,11 +239,11 @@ Pilot ── start_connection ──> Central ── authorize, install ──> 
 
 1. Pilot calls `central.api.integrations.github.start_connection(return_url)` with its credential and gets a link to `/dashboard/github/connect/<attempt>`. The attempt lives in Redis for 1 hour after the last activity. The `return_url` lives 24 hours, so an expired link still leads back to the server.
 2. The first user who opens the link must hold `server:console` on the Pilot's server. The attempt binds to that user. The OAuth `state` and a PKCE verifier bind the GitHub callback to the attempt and the user's session.
-3. The user authorizes or installs the App, then selects repositories in one or more accounts. The user must be a GitHub admin of each one. `complete_connection` saves one `GitHub Connection` per Pilot credential and installation. An account sent with no repositories loses its grant.
+3. The user authorizes or installs the App, then selects repositories in one or more accounts. The user must be a GitHub admin of each one. `complete_connection` links the team's `GitHub Installation` and saves one `GitHub Connection` per Pilot credential and installation. An account sent with no repositories loses its grant.
 4. Pilot calls `status`, `repositories` and `repository_token(repository)` with its credential. Each grant change increases the connection `version`. Central refuses a token when the grant changed while GitHub minted it.
-5. The signed GitHub webhook disables a connection when its installation is deleted or suspended, removes repositories the installation lost, and updates the name of a renamed repository. The App must subscribe to the `repository` event for renames. `disconnect` disables the Pilot's grants. Issued tokens stay valid until they expire.
+5. The signed GitHub webhook `central.api.integrations.github.webhook` disables the `GitHub Installation` when its installation is deleted or suspended. Its Pilot grants and deploy apps then stop working. The webhook also removes repositories the installation lost from the grants, updates the name of a renamed repository, and sends a `push` to push-to-deploy. The App must subscribe to the `repository` and `push` events. `disconnect` disables the Pilot's grants. Issued tokens stay valid until they expire.
 
-The App needs one callback URL, on Central's issuer URL (`central_url()`). "Create GitHub App" in Central Settings creates the App from a manifest and fills the GitHub tab. A new App ID disables every grant, so each Pilot must connect GitHub again.
+The App needs one callback URL, `central.api.integrations.github.oauth_callback` on Central's issuer URL (`central_url()`). The callback sends the state of a deploy attempt to push-to-deploy, and every other state to the Pilot connection. "Create GitHub App" in Central Settings creates the App from a manifest and fills the GitHub tab. A new App ID disables every `GitHub Installation`, so each Pilot and each deploy must connect GitHub again.
 
 ## How does the trial flow work?
 
