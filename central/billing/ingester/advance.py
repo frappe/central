@@ -12,14 +12,14 @@ import frappe
 from frappe import _
 
 from central.billing.ingester import connection, gst
-from central.billing.ingester.settings import accounting_settings
+from central.billing.ingester.settings import accounting_settings, advance_account
 
 PENDING_BATCH = 100
 
 
 def enqueue_sync(entry: str) -> None:
 	"""Queue the advance for a top-up credit, once the credit commits."""
-	if not connection.enabled():
+	if not connection.is_automatic():
 		return
 	frappe.enqueue(
 		"central.billing.ingester.advance.sync_advance",
@@ -32,14 +32,20 @@ def enqueue_sync(entry: str) -> None:
 
 
 def sync_advance(entry: str) -> str | None:
-	"""Background job: make sure this top-up has its advance. Returns the advance id."""
-	from central.billing.ingester.customer import ensure_customer
+	"""Make sure this top-up has its advance. Returns the advance id.
 
+	Runs as a background job, or for an operator. The lock keeps the two from booking it twice.
+	"""
+	from central.billing.ingester.customer import ensure_customer
+	from central.billing.ingester.locks import hold_until_transaction_ends
+
+	if not connection.enabled() or not hold_until_transaction_ends(f"advance-sync::{entry}"):
+		return None
 	credit = frappe.get_doc("Credit Ledger Entry", entry)
 	if credit.advance_id or not credit.gateway_payment_id:
 		return credit.advance_id
 
-	gateway, payment_id = _split_payment_id(credit.gateway_payment_id)
+	gateway, payment_id = split_payment_id(credit.gateway_payment_id)
 	existing = connection.find(
 		"Payment Entry", [["reference_no", "=", payment_id], ["docstatus", "=", 1]], ["name"]
 	)
@@ -51,7 +57,9 @@ def sync_advance(entry: str) -> str | None:
 	customer = ensure_customer(credit.team)
 	if not customer:
 		frappe.throw(_("Team {0} has no customer in the accounting system yet.").format(credit.team))
-	advance = connection.post("api/resource/Payment Entry", _payload(credit, customer, gateway, payment_id))
+	advance = connection.post(
+		"api/resource/Payment Entry", payment_entry_payload(credit, customer, gateway, payment_id)
+	)
 	credit.db_set("advance_id", advance.name, update_modified=False)
 	return advance.name
 
@@ -66,7 +74,7 @@ def receipt_pdf(advance_id: str) -> bytes:
 
 def sync_pending_advances() -> None:
 	"""Daily: queue every top-up whose advance never made it."""
-	if not connection.enabled():
+	if not connection.is_automatic():
 		return
 	for entry in frappe.get_all(
 		"Credit Ledger Entry",
@@ -78,7 +86,7 @@ def sync_pending_advances() -> None:
 		enqueue_sync(entry)
 
 
-def _payload(credit, customer: str, gateway: str, payment_id: str) -> dict:
+def payment_entry_payload(credit, customer: str, gateway: str, payment_id: str) -> dict:
 	settings = accounting_settings()
 	route = _gateway_row(settings, gateway, credit.currency)
 	tax = gst.treatment(credit.team, charged_tax=credit.tax_amount)
@@ -94,7 +102,7 @@ def _payload(credit, customer: str, gateway: str, payment_id: str) -> dict:
 		"party_type": "Customer",
 		"party": customer,
 		# Named here because the accounting system does not always move it there itself.
-		"paid_from": settings.advance_account,
+		"paid_from": advance_account(credit.currency),
 		"paid_to": route.clearing_account,
 		"paid_amount": paid,
 		"received_amount": paid,
@@ -119,7 +127,7 @@ def _gateway_row(settings, gateway: str, currency: str):
 	frappe.throw(_("Billing Settings has no {0} {1} row under Gateway Accounts.").format(gateway, currency))
 
 
-def _split_payment_id(stored: str) -> tuple[str, str]:
+def split_payment_id(stored: str) -> tuple[str, str]:
 	"""`Stripe:pi_123` into its gateway and the gateway's own payment id."""
 	gateway, _sep, payment_id = stored.partition(":")
 	if not payment_id:

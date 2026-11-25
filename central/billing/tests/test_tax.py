@@ -148,7 +148,6 @@ class TestTaxLabel(TaxTestBase):
 			patch("central.billing.ingester.gst.company_state_code", return_value="27")
 		)
 		self.enterContext(patch("central.billing.ingester.connection.enabled", return_value=True))
-		self.enterContext(patch.dict(frappe.conf, {"erpnext_url": "https://erp.invalid"}))
 		self.enterContext(
 			patch(
 				"central.billing.ingester.gst.accounting_settings",
@@ -207,11 +206,6 @@ class TestTaxLabel(TaxTestBase):
 	def test_with_no_company_address_the_accounting_system_is_not_asked(self):
 		settings = frappe._dict(company_address=None)
 		with patch("central.billing.ingester.gst.accounting_settings", return_value=settings):
-			self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "GST 18%")
-		self.read.assert_not_called()
-
-	def test_with_no_accounting_url_the_accounting_system_is_not_asked(self):
-		with patch.dict(frappe.conf, {"erpnext_url": None}):
 			self.assertEqual(tax.get_tax_names(TEAM)["tax_label"], "GST 18%")
 		self.read.assert_not_called()
 

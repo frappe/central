@@ -7,14 +7,34 @@ from unittest.mock import patch
 
 import frappe
 
+from central.billing.api.admin import accounting as accounting_api
 from central.billing.api.dashboard import invoices as dashboard_invoices
-from central.billing.ingester import connection, setup
+from central.billing.ingester import connection, pdfs, setup
 from central.billing.ingester import settings as accounting
-from central.billing.tests.accounting_fake import requires_accounting_system
+from central.billing.tests.accounting_fake import requires_accounting_system, sync_mode
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team, make_user
 
 COMPANY = "Test Co"
+
+
+def _blank_pdf() -> bytes:
+	"""A real one-page PDF: Frappe reads a PDF's pages when it saves the file."""
+	from io import BytesIO
+
+	from pypdf import PdfWriter
+
+	writer, out = PdfWriter(), BytesIO()
+	writer.add_blank_page(width=72, height=72)
+	writer.write(out)
+	return out.getvalue()
+
+
+PDF = _blank_pdf()
+
+
+def _account(currency: str, **kind) -> dict:
+	return {"company": COMPANY, "is_group": 0, "account_currency": currency, **kind}
 
 
 def complete_setup() -> dict:
@@ -25,13 +45,15 @@ def complete_setup() -> dict:
 			"default_advance_received_account": "Customer Advances - TC",
 		},
 		("Address", "Test Co-Billing"): {"gstin": "27AAACZ9999Z1ZC"},
-		("Account", "Debtors - TC"): {"account_currency": "INR"},
-		("Account", "Customer Advances - TC"): {},
-		("Account", "Sales - TC"): {},
-		("Account", "Stripe Clearing - TC"): {"account_currency": "INR"},
-		("Account", "Wallet Clearing - TC"): {"account_currency": "INR"},
+		("Account", "Debtors - TC"): _account("INR", account_type="Receivable", root_type="Asset"),
+		("Account", "Customer Advances - TC"): _account(
+			"INR", account_type="Receivable", root_type="Liability"
+		),
+		("Account", "Sales - TC"): _account("INR", root_type="Income"),
+		("Account", "Stripe Clearing - TC"): _account("INR"),
+		("Account", "Wallet Clearing - TC"): _account("INR"),
 		("Cost Center", "Main - TC"): {},
-		("Account", "Promotional Credit - TC"): {},
+		("Account", "Promotional Credit - TC"): _account("INR"),
 		("Mode of Payment", "Stripe"): {},
 		("Item", "Cloud Hosting"): {"gst_hsn_code": "998315"},
 		("Sales Taxes and Charges Template", "In - TC"): {},
@@ -39,6 +61,7 @@ def complete_setup() -> dict:
 		("GST Settings", "GST Settings"): {"enable_overseas_transactions": 1},
 		("Print Format", "Cloud Tax Invoice"): {"doc_type": "Sales Invoice"},
 		("Print Format", "Cloud Receipt Voucher"): {"doc_type": "Payment Entry"},
+		("Terms and Conditions", "Frappe Cloud"): {"terms": "Pay on time."},
 	}
 
 
@@ -56,6 +79,7 @@ class FakeAccountingSystem:
 		self.series = dict(SERIES)
 		self.forbidden = set()
 		self.writes = []
+		self.custom_fields = {"Sales Invoice": ["frappe_cloud_invoice_id", "frappe_cloud_invoice"]}
 
 	def fetch(self, doctype, name):
 		if doctype in self.forbidden:
@@ -67,9 +91,10 @@ class FakeAccountingSystem:
 		return [frappe._dict(name=n) for (dt, n) in self.records if dt == doctype]
 
 	def call(self, method, params=None):
-		options = self.series[params["doctype"]]
-		fields = [{"fieldname": "naming_series", "options": options}]
-		return {"docs": [{"name": params["doctype"], "fields": fields}]}
+		doctype = params["doctype"]
+		fields = [{"fieldname": "naming_series", "options": self.series[doctype]}]
+		fields += [{"fieldname": name} for name in self.custom_fields.get(doctype, ())]
+		return {"docs": [{"name": doctype, "fields": fields}]}
 
 	def write(self, *args, **kwargs):
 		self.writes.append(args)
@@ -78,7 +103,7 @@ class FakeAccountingSystem:
 @requires_accounting_system
 class AccountingSetupTestCase(IntegrationTestCase):
 	def setUp(self):
-		self._conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
+		self._conf = sync_mode()
 		self._conf.start()
 		self.remote = FakeAccountingSystem()
 		self._patches = [
@@ -106,19 +131,24 @@ class AccountingSetupTestCase(IntegrationTestCase):
 			{
 				"company": COMPANY,
 				"company_address": "Test Co-Billing",
-				"advance_account": "Customer Advances - TC",
-				"income_account": "Sales - TC",
 				"cost_center": "Main - TC",
 				"promotional_credit_account": "Promotional Credit - TC",
 				"in_state_template": "In - TC",
 				"out_state_template": "Out - TC",
+				"invoice_terms": "Frappe Cloud",
 				**values,
 			}
 		)
 		doc.set("receivable_accounts", [])
 		doc.append(
 			"receivable_accounts",
-			{"currency": "INR", "account": "Debtors - TC", "wallet_clearing_account": "Wallet Clearing - TC"},
+			{
+				"currency": "INR",
+				"account": "Debtors - TC",
+				"advance_account": "Customer Advances - TC",
+				"income_account": "Sales - TC",
+				"wallet_clearing_account": "Wallet Clearing - TC",
+			},
 		)
 		doc.set("gateways", [])
 		doc.append(
@@ -156,9 +186,24 @@ class TestCheck(AccountingSetupTestCase):
 		self.remote.records[("Print Format", "Cloud Tax Invoice")]["doc_type"] = "Delivery Note"
 		states = self._states()
 		gateway = frappe.get_doc("Billing Settings").gateways[0].gateway
-		self.assertEqual(states["Advance account"][0], "Wrong")
+		self.assertEqual(states["Advances in a separate account"][0], "Wrong")
 		self.assertEqual(states[f"{gateway} INR: clearing account"][0], "Wrong")
 		self.assertEqual(states["Sales Invoice print format"][0], "Wrong")
+
+	def test_an_account_of_the_wrong_kind_is_explained(self):
+		self.remote.records[("Account", "Customer Advances - TC")]["root_type"] = "Asset"
+		self.remote.records[("Account", "Sales - TC")]["company"] = "Other Co"
+		self.remote.records[("Account", "Debtors - TC")]["is_group"] = 1
+		states = self._states()
+		self.assertEqual(states["INR advance account"], ("Wrong", "Its root type is Asset, not Liability."))
+		self.assertEqual(states["INR income account"], ("Wrong", "It belongs to Other Co, not Test Co."))
+		self.assertEqual(states["INR receivable account"][0], "Wrong")
+
+	def test_a_missing_frappe_cloud_invoice_field_is_reported(self):
+		self.remote.custom_fields["Sales Invoice"] = ["frappe_cloud_invoice_id"]
+		self.assertEqual(
+			self._states()["Frappe Cloud invoice fields"], ("Missing", "Add: frappe_cloud_invoice")
+		)
 
 	def test_a_record_the_sync_user_cannot_read_is_flagged(self):
 		self.remote.forbidden.add("Print Format")
@@ -171,21 +216,24 @@ class TestCheck(AccountingSetupTestCase):
 		self.assertIn("Test Co-Billing", detail)
 
 	def test_names_are_saved_without_stray_spaces(self):
-		self._configure(advance_account=" Customer Advances - TC ")
-		self.assertEqual(
-			frappe.db.get_single_value("Billing Settings", "advance_account"), "Customer Advances - TC"
-		)
+		self._configure(cost_center=" Main - TC ")
+		doc = frappe.get_doc("Billing Settings")
+		doc.receivable_accounts[0].advance_account = " Customer Advances - TC "
+		doc.save(ignore_permissions=True)
+		doc.reload()
+		self.assertEqual(doc.cost_center, "Main - TC")
+		self.assertEqual(doc.receivable_accounts[0].advance_account, "Customer Advances - TC")
 
 	def test_accounting_tab_shows_only_while_sync_is_on(self):
 		doc = frappe.get_doc("Billing Settings")
 		doc.run_method("onload")
 		self.assertTrue(doc.get_onload().accounting_sync_enabled)
-		frappe.local.conf["enable_erpnext_sync"] = 0
+		self.enterContext(sync_mode("Off"))
 		doc.run_method("onload")
 		self.assertFalse(doc.get_onload().accounting_sync_enabled)
 
 	def test_refused_while_sync_is_off(self):
-		frappe.local.conf["enable_erpnext_sync"] = 0
+		self.enterContext(sync_mode("Off"))
 		with self.assertRaises(frappe.ValidationError):
 			setup.check()
 
@@ -244,19 +292,33 @@ class TestInvoicePdf(AccountingSetupTestCase):
 		frappe.local.response = frappe._dict()
 		with (
 			patch("central.billing.api.dashboard.invoices._require_view"),
-			patch("central.billing.ingester.connection.download", return_value=b"%PDF-1.7") as download,
+			patch("central.billing.ingester.connection.download", return_value=PDF) as download,
 		):
 			dashboard_invoices.download_invoice_pdf(self.invoice.name)
 		return download
 
 	def test_an_issued_invoice_downloads_with_the_configured_print_format(self):
 		frappe.db.set_value("Invoice", self.invoice.name, "erpnext_invoice", "B2B/26-27/00001")
+		self.addCleanup(pdfs.forget_pdf, "Invoice", self.invoice.name)
 		download = self._download()
 		self.assertEqual(download.call_args.args[0], "frappe.utils.print_format_generator.download_pdf")
 		self.assertEqual(download.call_args.args[1]["print_format"], "Cloud Tax Invoice")
 		self.assertEqual(download.call_args.args[1]["letterhead"], "No Letterhead")
-		self.assertEqual(frappe.local.response.filecontent, b"%PDF-1.7")
+		self.assertEqual(frappe.local.response.filecontent, PDF)
 		self.assertEqual(frappe.local.response.filename, "B2B-26-27-00001.pdf")
+
+	def test_the_pdf_is_rendered_once_then_served_from_central(self):
+		frappe.db.set_value("Invoice", self.invoice.name, "erpnext_invoice", "B2B/26-27/00001")
+		self.addCleanup(pdfs.forget_pdf, "Invoice", self.invoice.name)  # its file is on disk
+		self._download()
+		self.assertTrue(frappe.db.get_value("Invoice", self.invoice.name, "pdf_url"))
+
+		self._download().assert_not_called()
+		self.assertEqual(frappe.local.response.filecontent, PDF)
+
+		accounting_api.fetch_pdf_again("Invoice", self.invoice.name)
+		self.assertIsNone(frappe.db.get_value("Invoice", self.invoice.name, "pdf_url"))
+		self._download().assert_called_once()
 
 	def test_an_unissued_invoice_has_no_pdf(self):
 		with self.assertRaises(frappe.DoesNotExistError):
@@ -292,13 +354,14 @@ class TestTopUpReceipt(AccountingSetupTestCase):
 		frappe.local.response = frappe._dict()
 		with (
 			patch("central.billing.api.dashboard.invoices._require_view"),
-			patch("central.billing.ingester.connection.download", return_value=b"%PDF-1.7") as download,
+			patch("central.billing.ingester.connection.download", return_value=PDF) as download,
 		):
 			dashboard_invoices.download_topup_receipt(self.entry.name)
 		return download
 
 	def test_a_booked_top_up_downloads_its_receipt_voucher(self):
 		self.entry.db_set("advance_id", "RV/26-27/000001")
+		self.addCleanup(pdfs.forget_pdf, "Credit Ledger Entry", self.entry.name)
 		download = self._download()
 		self.assertEqual(download.call_args.args[1]["doctype"], "Payment Entry")
 		self.assertEqual(download.call_args.args[1]["print_format"], "Cloud Receipt Voucher")

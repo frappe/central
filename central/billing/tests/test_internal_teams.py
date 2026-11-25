@@ -75,7 +75,7 @@ class TestInternalTeams(IntegrationTestCase):
 		profile = frappe._dict(
 			team=TEAM, currency="INR", legal_name="Us", address_line1="1", city="Pune", country="India"
 		)
-		self.assertFalse(customer._should_sync(profile))
+		self.assertFalse(customer.is_sync_allowed(profile))
 
 	def test_report_shows_usage_and_waived_amount(self):
 		_mark_internal()

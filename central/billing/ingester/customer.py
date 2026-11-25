@@ -11,11 +11,14 @@ id instead of creating the customer again.
 from urllib.parse import quote
 
 import frappe
+from frappe import _
 from frappe.query_builder.functions import Coalesce
 from pypika.terms import Criterion, ExistsCriterion
 
 from central.billing.doctype.billing_event import billing_event
-from central.billing.ingester.connection import enabled, get, post, put
+from central.billing.ingester import connection
+from central.billing.ingester.connection import enabled, get, is_automatic, post, put
+from central.billing.ingester.customer_match import emails_of, find_existing, match_customer
 from central.billing.ingester.locks import hold_until_transaction_ends, lock_name
 from central.billing.states import record_event
 
@@ -37,11 +40,25 @@ SYNCED_FIELDS = (
 )
 
 PENDING_BATCH = 100
+# Fields of a child row that the accounting system sets itself.
+ROW_META = (
+	"name",
+	"idx",
+	"parent",
+	"parentfield",
+	"parenttype",
+	"doctype",
+	"owner",
+	"creation",
+	"modified",
+	"modified_by",
+	"docstatus",
+)
 
 
 def enqueue_sync(profile) -> None:
 	"""Queue a sync for a complete, real profile whose synced details changed."""
-	if not _should_sync(profile):
+	if not is_automatic() or not is_sync_allowed(profile):
 		return
 	if profile.profile_id and not any(profile.has_value_changed(f) for f in SYNCED_FIELDS):
 		return
@@ -57,11 +74,11 @@ def sync_customer_profile(team: str) -> None:
 	if not hold_until_transaction_ends(f"customer-sync::{team}"):
 		return  # another step for this team is running and queues what follows
 	profile = frappe.get_doc("Billing Profile", team)
-	if not _should_sync(profile):
+	if not is_sync_allowed(profile):
 		return
 	frappe.db.savepoint(_SYNC_STEP)
 	try:
-		_take_next_step(profile)
+		following = take_next_step(profile)
 	except (frappe.QueryDeadlockError, frappe.QueryTimeoutError):
 		raise  # the job runner retries lock contention within seconds
 	except Exception as error:
@@ -78,35 +95,108 @@ def sync_customer_profile(team: str) -> None:
 			category=CUSTOMER_SYNC,
 			outcome=billing_event.FAILED,
 		)
+		return
+	if following and is_automatic():
+		# Each step has its own job id: this job is still running when it queues the next,
+		# and a shared id would be dropped as a duplicate of itself.
+		_enqueue(profile.team, job_id=f"customer-sync::{profile.team}::{following}")
 
 
-def _take_next_step(profile) -> None:
+def take_next_step(profile) -> str | None:
+	"""Make the next missing record, or update all three. Returns the step that follows, if any."""
 	team = profile.team
 	if not profile.profile_id:
-		_create(profile, "profile_id", "Customer", _customer_payload)
-		following = "address"
+		if match := find_existing(profile):
+			_use(profile, match)  # made before, by Press v1 or by hand
+		else:
+			_create(profile, "profile_id", "Customer", customer_payload)
+		following = _first_missing(profile) or "update"
 	elif not profile.address_id:
-		_create(profile, "address_id", "Address", _address_payload)
+		_create(profile, "address_id", "Address", address_payload)
 		following = "contact"
 	elif not profile.contact_id:
-		_create(profile, "contact_id", "Contact", _contact_payload)
+		_create(profile, "contact_id", "Contact", contact_payload)
 		# A last update pass also catches profile edits made while the records were created.
 		following = "update"
 	else:
 		update_customer_profile(profile)
 		record_event(profile, "Customer Sync Succeeded", category=CUSTOMER_SYNC)
 		_release_held_drafts(team)
-		return
-	# Each step has its own job id: this job is still running when it queues the next,
-	# and a shared id would be dropped as a duplicate of itself.
-	_enqueue(team, job_id=f"customer-sync::{team}::{following}")
+		return None
+	return following
 
 
 def update_customer_profile(profile) -> None:
-	"""Bring all three records up to date. Safe to repeat."""
-	put(_resource("Customer", profile.profile_id), _customer_payload(profile))
-	put(_resource("Address", profile.address_id), _address_payload(profile))
-	put(_resource("Contact", profile.contact_id), _contact_payload(profile))
+	"""Bring all three records up to date. Safe to repeat.
+
+	The address and contact keep what they had that Central does not send: their other links,
+	and the contact's other emails and phones. A record made by Press v1 may carry them."""
+	put(_resource("Customer", profile.profile_id), customer_payload(profile))
+	put(
+		_resource("Address", profile.address_id),
+		_keeping(address_payload(profile), "Address", profile.address_id),
+	)
+	put(
+		_resource("Contact", profile.contact_id),
+		_keeping(contact_payload(profile), "Contact", profile.contact_id),
+	)
+
+
+def use_customer(team: str, customer: str) -> None:
+	"""For an operator: use this existing customer for the team, with its address and contact if they match."""
+	profile = frappe.get_doc("Billing Profile", team)
+	if profile.profile_id:
+		# Its invoices and advances are already filed under that customer.
+		frappe.throw(
+			_("Team {0} already uses customer {1} in the accounting system.").format(team, profile.profile_id)
+		)
+	_use(profile, match_customer(profile, customer))
+
+
+def _use(profile, match) -> None:
+	profile.db_set(
+		{"profile_id": match.customer, "address_id": match.address, "contact_id": match.contact},
+		update_modified=False,
+	)
+	record_event(profile, "Customer Reused", reason=match.customer, category=CUSTOMER_SYNC)
+
+
+def _first_missing(profile) -> str | None:
+	if not profile.address_id:
+		return "address"
+	if not profile.contact_id:
+		return "contact"
+	return None
+
+
+def _keeping(payload: dict, doctype: str, name: str) -> dict:
+	"""`payload` with the rows the record has that the payload does not, so a save adds and never drops."""
+	existing = connection.fetch(doctype, name) or {}
+	for table, key in (("links", "link_name"), ("email_ids", "email_id"), ("phone_nos", "phone")):
+		if table in payload:
+			payload[table] = _merged_rows(existing.get(table) or [], payload[table], key)
+	return payload
+
+
+def _merged_rows(existing: list[dict], wanted: list[dict], key: str) -> list[dict]:
+	"""The existing rows first, then each wanted row they lack. Only an existing row stays primary."""
+	have = {_row_key(row, key) for row in existing}
+	added = [row for row in wanted if _row_key(row, key) not in have]
+	if existing:
+		added = [_not_primary(row) for row in added]
+	return [_without_meta(row) for row in existing] + added
+
+
+def _row_key(row: dict, key: str) -> str:
+	return str(row.get(key) or "").casefold()
+
+
+def _not_primary(row: dict) -> dict:
+	return {field: 0 if field.startswith("is_primary") else value for field, value in row.items()}
+
+
+def _without_meta(row: dict) -> dict:
+	return {field: value for field, value in row.items() if field not in ROW_META}
 
 
 def ensure_customer(team: str) -> str | None:
@@ -119,10 +209,10 @@ def ensure_customer(team: str) -> str | None:
 
 def awaiting_records(team: str) -> bool:
 	"""Whether the team's records should exist but don't yet. Queues their sync if so."""
-	if not frappe.db.exists("Billing Profile", team):
-		return False
+	if not is_automatic() or not frappe.db.exists("Billing Profile", team):
+		return False  # in Manual mode an operator sends the records, so nothing waits on them
 	profile = frappe.get_doc("Billing Profile", team)
-	if not _should_sync(profile) or (profile.profile_id and profile.address_id and profile.contact_id):
+	if not is_sync_allowed(profile) or (profile.profile_id and profile.address_id and profile.contact_id):
 		return False
 	_enqueue(team)
 	return True
@@ -130,13 +220,17 @@ def awaiting_records(team: str) -> bool:
 
 def enqueue_for(team: str) -> None:
 	"""Queue a sync for this team if its profile is one we sync."""
-	if frappe.db.exists("Billing Profile", team) and _should_sync(frappe.get_doc("Billing Profile", team)):
+	if (
+		is_automatic()
+		and frappe.db.exists("Billing Profile", team)
+		and is_sync_allowed(frappe.get_doc("Billing Profile", team))
+	):
 		_enqueue(team)
 
 
 def sync_pending_profiles() -> None:
 	"""Daily: retry profiles whose sync never finished."""
-	if not enabled():
+	if not is_automatic():
 		return
 	for team in _pending_teams():
 		_enqueue(team)
@@ -182,7 +276,7 @@ def billable_activity_of(team_column) -> Criterion:
 	)
 
 
-def _should_sync(profile) -> bool:
+def is_sync_allowed(profile) -> bool:
 	"""Only complete profiles of real customers with billable activity; staging trials carry placeholders and internal teams are never sold to."""
 	from central.billing.doctype.billing_profile.billing_profile import get_missing_fields_of
 	from central.billing.revenue.tax import is_internal_team
@@ -256,13 +350,29 @@ def _gstin(profile) -> str:
 	return gst_status.standing(profile.team).gstin or ""
 
 
-def _customer_payload(profile) -> dict:
+def customer_payload(profile) -> dict:
 	return {
 		"customer_name": profile.legal_name,
 		"customer_type": "Company",
 		"default_currency": profile.currency,
 		"gstin": _gstin(profile),
 		"gst_category": _gst_category(profile),
+		"accounts": [_party_accounts(profile.currency)],
+		"disabled": 0,  # a customer reused from Press v1 may be disabled
+	}
+
+
+def _party_accounts(currency: str) -> dict:
+	"""The customer's receivable and advance account in its currency.
+
+	The accounting system books an advance to the advance account it finds on the customer
+	(else the company's one), whatever account the Payment Entry names."""
+	from central.billing.ingester.settings import accounting_settings, advance_account, receivable_account
+
+	return {
+		"company": accounting_settings().company,
+		"account": receivable_account(currency),
+		"advance_account": advance_account(currency),
 	}
 
 
@@ -272,7 +382,7 @@ def _gst_category(profile) -> str:
 	return gst.treatment(profile.team).gst_category
 
 
-def _address_payload(profile) -> dict:
+def address_payload(profile) -> dict:
 	return {
 		"address_title": profile.legal_name,
 		"address_type": "Billing",
@@ -290,12 +400,9 @@ def _address_payload(profile) -> dict:
 	}
 
 
-def _contact_payload(profile) -> dict:
-	owner = profile.team_owner or frappe.db.get_value("Team", profile.team, "owner_user")
-	names = (
-		frappe.db.get_value("User", owner, ["first_name", "last_name"], as_dict=True) if owner else None
-	) or frappe._dict()
-	emails = [e for e in dict.fromkeys([owner, profile.email]) if e]
+def contact_payload(profile) -> dict:
+	names = _owner_names(profile)
+	emails = emails_of(profile)
 	return {
 		"first_name": names.first_name or profile.legal_name,
 		"last_name": names.last_name,
@@ -304,3 +411,10 @@ def _contact_payload(profile) -> dict:
 		"phone_nos": [{"phone": profile.phone, "is_primary_phone": 1}] if profile.phone else [],
 		"links": [{"link_doctype": "Customer", "link_name": profile.profile_id}],
 	}
+
+
+def _owner_names(profile) -> frappe._dict:
+	"""The team owner's first and last name, which the contact carries."""
+	owner = profile.team_owner or frappe.db.get_value("Team", profile.team, "owner_user")
+	names = frappe.db.get_value("User", owner, ["first_name", "last_name"], as_dict=True) if owner else None
+	return names or frappe._dict()

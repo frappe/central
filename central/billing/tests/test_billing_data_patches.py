@@ -29,6 +29,8 @@ from central.patches.v0_0 import (
 	mark_old_setups_released,
 	mark_waived_invoices_as_not_synced,
 	merge_invoice_draft_and_open_into_outstanding,
+	move_accounting_sync_to_billing_settings,
+	move_advance_and_income_accounts_to_currency_rows,
 	move_internal_flag_to_billing_profile,
 	remove_webhook_events_of_another_product,
 	repoint_billing_records_to_renamed_region,
@@ -582,3 +584,96 @@ class TestMarkOldSetupsReleased(IntegrationTestCase):
 		self.assertEqual(str(released[cancelled]), "2026-10-02 10:00:00")
 		for name in (lapsed_card, no_reference, pending):
 			self.assertIsNone(released[name])
+
+
+class TestMoveAccountingSyncToBillingSettings(IntegrationTestCase):
+	SETTINGS = "Billing Settings"
+	FIELDS = ("accounting_sync_mode", "accounting_url", "accounting_api_key")
+
+	def setUp(self):
+		before = {name: frappe.db.get_single_value(self.SETTINGS, name) for name in self.FIELDS}
+		self.addCleanup(frappe.db.set_single_value, self.SETTINGS, before)
+		secret = self._secret()
+		self.addCleanup(self._put_back_secret, secret)
+		frappe.db.set_single_value(
+			self.SETTINGS,
+			{"accounting_sync_mode": "Automatic", "accounting_url": None, "accounting_api_key": None},
+		)
+		self._put_back_secret(None)
+
+	def _secret(self):
+		return frappe.get_single(self.SETTINGS).get_password("accounting_api_secret", raise_exception=False)
+
+	def _put_back_secret(self, secret):
+		from frappe.utils.password import set_encrypted_password
+
+		frappe.db.delete("__Auth", {"doctype": self.SETTINGS, "fieldname": "accounting_api_secret"})
+		if secret:
+			set_encrypted_password(self.SETTINGS, self.SETTINGS, secret, "accounting_api_secret")
+
+	def test_the_connection_moves_and_the_sync_starts_off(self):
+		conf = {
+			"erpnext_url": "https://erp.example.com",
+			"erpnext_api_key": "key-1",
+			"erpnext_api_secret": "s-1",
+		}
+		with patch.dict(frappe.conf, conf):
+			move_accounting_sync_to_billing_settings.execute()
+
+		after = {name: frappe.db.get_single_value(self.SETTINGS, name) for name in self.FIELDS}
+		self.assertEqual(
+			after, dict(zip(self.FIELDS, ("Off", "https://erp.example.com", "key-1"), strict=True))
+		)
+		self.assertEqual(self._secret(), "s-1")
+
+
+class TestMoveAdvanceAndIncomeAccountsToCurrencyRows(IntegrationTestCase):
+	def test_each_currency_row_gets_the_accounts_the_settings_had(self):
+		with billing_settings(receivable_accounts=[]):
+			settings = frappe.get_doc("Billing Settings")
+			for currency in ("INR", "USD"):
+				settings.append(
+					"receivable_accounts",
+					{
+						"currency": currency,
+						"account": f"Debtors {currency}",
+						"advance_account": "x",
+						"income_account": "x",
+					},
+				)
+			settings.save(ignore_permissions=True)
+			rows = dict(
+				frappe.get_all(
+					"Accounting Receivable Account",
+					filters={"parent": "Billing Settings"},
+					fields=["currency", "name"],
+					as_list=True,
+				)
+			)
+			frappe.db.set_value(
+				"Accounting Receivable Account",
+				rows["INR"],
+				{"advance_account": None, "income_account": None},
+			)
+			frappe.db.set_value("Accounting Receivable Account", rows["USD"], "income_account", None)
+			# The two fields are gone from the doctype, so their old values exist only as rows.
+			frappe.qb.into("Singles").columns("doctype", "field", "value").insert(
+				("Billing Settings", "advance_account", "Advances - TC"),
+				("Billing Settings", "income_account", "Sales - TC"),
+			).run()
+
+			move_advance_and_income_accounts_to_currency_rows.execute()
+
+			moved = frappe.get_all(
+				"Accounting Receivable Account",
+				filters={"parent": "Billing Settings"},
+				fields=["currency", "advance_account", "income_account"],
+				order_by="idx",
+			)
+			self.assertEqual(
+				[(r.currency, r.advance_account, r.income_account) for r in moved],
+				[("INR", "Advances - TC", "Sales - TC"), ("USD", "x", "Sales - TC")],
+			)
+			self.assertFalse(
+				frappe.db.exists("Singles", {"doctype": "Billing Settings", "field": "advance_account"})
+			)

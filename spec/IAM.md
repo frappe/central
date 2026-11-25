@@ -110,6 +110,7 @@ Sign-in and signup use the same emailed 6-digit code. There is no password.
 - `central.identity.email_code.EmailCode` owns the code. It holds one cache entry per email, checks and spends a code under a lock, and expires it ten minutes after the last send or incorrect attempt.
 - An email permits five incorrect codes in total, including after a new code is sent. After that, send and verify refuse until the entry expires.
 - Central limits code sends to five per email and 20 per IP in ten minutes, and verifies to ten per email and 20 per IP. New accounts also follow System Settings, Max Signups Allowed Per Hour.
+- Central refuses a new signup from a disposable email domain or its subdomain before it sends a code. The list comes from the `disposable-email-domains` package. Central Settings, Block Disposable Emails, turns this off. An existing account on such a domain still signs in.
 - Website Settings, Disable Signup, does not apply. It turns off Frappe's own signup page, not Central's.
 
 ```mermaid

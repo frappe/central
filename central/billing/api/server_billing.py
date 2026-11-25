@@ -124,13 +124,13 @@ def assert_covers_only_server(team: str, server: str, invoice: str) -> None:
 def get_server_invoice_pdf(team: str, server: str, invoice: str) -> dict:
 	"""The statutory invoice PDF, as base64, because Pilot relays JSON only."""
 	from central.billing.ingester.erpnext_sync import sales_invoice_pdf
+	from central.billing.ingester.pdfs import stored_pdf
 
 	assert_covers_only_server(team, server, invoice)
 	sales_invoice = frappe.db.get_value("Invoice", invoice, "erpnext_invoice")
 	if not sales_invoice:
 		frappe.throw(_("This invoice has not been issued yet, so it has no PDF."), frappe.DoesNotExistError)
 
-	return {
-		"filename": f"{sales_invoice.replace('/', '-')}.pdf",
-		"content": base64.b64encode(sales_invoice_pdf(sales_invoice)).decode(),
-	}
+	filename = f"{sales_invoice.replace('/', '-')}.pdf"
+	content = stored_pdf("Invoice", invoice, filename, lambda: sales_invoice_pdf(sales_invoice))
+	return {"filename": filename, "content": base64.b64encode(content).decode()}
