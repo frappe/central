@@ -184,6 +184,22 @@ class DeployApp(Document):
 		for name in names:
 			frappe.get_doc("Deploy App", name, for_update=True).disable()
 
+	def update_secrets(self, secrets: dict[str, str], unset: list[str]) -> None:
+		"""Set each of `secrets` and remove each name in `unset`. A deploy reads them when it builds, so the container
+		gets them on the next push."""
+		if missing := set(unset) - {secret.key for secret in self.secrets}:
+			frappe.throw(_("The app has no secret {0}.").format(", ".join(sorted(missing))))
+
+		self.set("secrets", [secret for secret in self.secrets if secret.key not in unset])
+		rows = {secret.key: secret for secret in self.secrets}
+		for name, value in secrets.items():
+			if name in rows:
+				rows[name].value = value
+			else:
+				self.append("secrets", {"key": name, "value": value})
+		# A team member with app:deploy changes the app's secrets through the deploy API; users can't write it.
+		self.save(ignore_permissions=True)
+
 	def disable(self) -> None:
 		self.status = "Disabled"
 		# Central disables the app for a GitHub webhook or a team member with app:deploy; users can't write it.
