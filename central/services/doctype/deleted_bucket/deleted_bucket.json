@@ -58,6 +58,7 @@
   {
    "fieldname": "region",
    "fieldtype": "Link",
+   "in_standard_filter": 1,
    "label": "Region",
    "options": "Region",
    "read_only": 1
@@ -65,7 +66,7 @@
  ],
  "in_create": 1,
  "links": [],
- "modified": "2026-11-25 12:00:00.000000",
+ "modified": "2026-11-25 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Deleted Bucket",
