@@ -192,11 +192,13 @@ class BillingProfile(Document):
 
 	def onload(self):
 		from central.billing import authz
+		from central.billing.ingester import push
 		from central.billing.payments import setup_lockout
 
 		# Only an operator may clear the lock, so only an operator is told about it.
 		is_shown = authz.is_operator() and setup_lockout.is_anyone_waiting(self.name)
 		self.set_onload("setup_lock_wait", is_shown)
+		self.set_onload("accounting_push", push.is_offered())
 
 	def validate(self):
 		self.validate_phone()

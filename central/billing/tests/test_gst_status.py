@@ -7,7 +7,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.revenue import gst_status
-from central.billing.tests.accounting_fake import requires_accounting_system
+from central.billing.tests.accounting_fake import requires_accounting_system, sync_mode
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team
 
@@ -34,7 +34,7 @@ def profile_with_gstin(team, status=None, checked_days_ago=None):
 @requires_accounting_system
 class GstStatusTestCase(IntegrationTestCase):
 	def setUp(self):
-		self._conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
+		self._conf = sync_mode()
 		self._conf.start()
 		self._pace = patch.object(gst_status, "PACE_SECONDS", 0)
 		self._pace.start()
@@ -169,7 +169,7 @@ class TestSweep(GstStatusTestCase):
 
 	def test_does_nothing_when_lookups_are_off(self):
 		profile_with_gstin("team-gst-off")
-		frappe.local.conf["enable_erpnext_sync"] = 0
+		self.enterContext(sync_mode("Off"))
 		with patch(LOOKUP) as lookup:
 			self.assertEqual(gst_status.refresh_stale()["skipped"], "lookups_off")
 		lookup.assert_not_called()
@@ -225,7 +225,7 @@ class TestSezFollowsTheGstin(GstStatusTestCase):
 
 	def test_removed_gstin_drops_sez(self):
 		self._sez("team-gst-sez-removed")
-		frappe.local.conf["enable_erpnext_sync"] = 0  # cleared even without lookups
+		self.enterContext(sync_mode("Off"))  # cleared even without lookups
 		doc = frappe.get_doc("Billing Profile", "team-gst-sez-removed")
 		doc.gstin = None
 		doc.save(ignore_permissions=True)
@@ -233,7 +233,7 @@ class TestSezFollowsTheGstin(GstStatusTestCase):
 
 	def test_changed_gstin_drops_sez_without_lookups(self):
 		self._sez("team-gst-sez-unchecked")
-		frappe.local.conf["enable_erpnext_sync"] = 0
+		self.enterContext(sync_mode("Off"))
 		doc = frappe.get_doc("Billing Profile", "team-gst-sez-unchecked")
 		doc.gstin = "27AAACR5055K1Z7"
 		doc.save(ignore_permissions=True)

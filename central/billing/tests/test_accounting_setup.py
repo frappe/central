@@ -10,7 +10,7 @@ import frappe
 from central.billing.api.dashboard import invoices as dashboard_invoices
 from central.billing.ingester import connection, setup
 from central.billing.ingester import settings as accounting
-from central.billing.tests.accounting_fake import requires_accounting_system
+from central.billing.tests.accounting_fake import requires_accounting_system, sync_mode
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team, make_user
 
@@ -78,7 +78,7 @@ class FakeAccountingSystem:
 @requires_accounting_system
 class AccountingSetupTestCase(IntegrationTestCase):
 	def setUp(self):
-		self._conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
+		self._conf = sync_mode()
 		self._conf.start()
 		self.remote = FakeAccountingSystem()
 		self._patches = [
@@ -180,12 +180,12 @@ class TestCheck(AccountingSetupTestCase):
 		doc = frappe.get_doc("Billing Settings")
 		doc.run_method("onload")
 		self.assertTrue(doc.get_onload().accounting_sync_enabled)
-		frappe.local.conf["enable_erpnext_sync"] = 0
+		self.enterContext(sync_mode("Off"))
 		doc.run_method("onload")
 		self.assertFalse(doc.get_onload().accounting_sync_enabled)
 
 	def test_refused_while_sync_is_off(self):
-		frappe.local.conf["enable_erpnext_sync"] = 0
+		self.enterContext(sync_mode("Off"))
 		with self.assertRaises(frappe.ValidationError):
 			setup.check()
 

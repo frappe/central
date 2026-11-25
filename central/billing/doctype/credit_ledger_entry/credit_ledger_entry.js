@@ -1,8 +1,8 @@
 // Copyright (c) 2026, frappe and contributors
 // For license information, please see license.txt
 
-// frappe.ui.form.on("Credit Ledger Entry", {
-// 	refresh(frm) {
-
-// 	},
-// });
+frappe.ui.form.on("Credit Ledger Entry", {
+	refresh(frm) {
+		central.billing.add_accounting_push(frm);
+	},
+});
