@@ -93,6 +93,7 @@ class GroveClient:
 		cap: int | None = None,
 		expiry: str | None = None,
 		model_groups: list[str] | None = None,
+		timeout: tuple[int, int] = TIMEOUT,
 	) -> dict:
 		"""Mint a key in `geography` (Grove's default when None) with `cap` whole USD to spend a
 		month (0 when None: refused until it gets one), untitled when `title` is None, retiring by
@@ -105,7 +106,7 @@ class GroveClient:
 			body["expiry"] = expiry
 		if model_groups:
 			body["model_groups"] = model_groups
-		return self.call("grove.api.keys.provision_key", **body)
+		return self.call("grove.api.keys.provision_key", timeout=timeout, **body)
 
 	def update_caps(self, team: str, caps: dict[str, int]) -> list[dict]:
 		"""Set several keys' monthly caps at once, {key: whole USD}; Grove saves all or none. →
