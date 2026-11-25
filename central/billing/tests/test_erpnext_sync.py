@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 """Issuing the statutory Sales Invoice, using advances, and recording card payments."""
 
+import json
 from unittest.mock import patch
 
 import frappe
@@ -95,6 +96,8 @@ class TestIssue(SyncTestCase):
 		self.assertEqual(si["items"][0]["item_code"], "Cloud Hosting")
 		self.assertEqual(si["items"][0]["income_account"], "Sales India - TC")
 		self.assertIn(f"Central invoice {inv}", si["remarks"])
+		self.assertEqual(si["frappe_cloud_invoice_id"], inv)
+		self.assertEqual((si["tc_name"], si["terms"]), ("Frappe Cloud", "Pay on time."))
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "erpnext_invoice"), out["synced"])
 		self.assertIsNotNone(frappe.db.get_value("Invoice", inv, "erpnext_synced_at"))
 
@@ -130,7 +133,12 @@ class TestIssue(SyncTestCase):
 	def test_an_invoice_already_issued_is_adopted_not_repeated(self):
 		billing_team(TEAM, gstin=GSTIN)
 		inv = self._invoice()
-		self.remote.records[("Sales Invoice", "SINV-EXISTING")] = {"remarks": f"Central invoice {inv}"}
+		# Its credit note carries the same invoice id, and is never taken for it.
+		self.remote.records[("Sales Invoice", "SINV-RETURN")] = {
+			"frappe_cloud_invoice_id": inv,
+			"is_return": 1,
+		}
+		self.remote.records[("Sales Invoice", "SINV-EXISTING")] = {"frappe_cloud_invoice_id": inv}
 		out = erpnext_sync.sync_invoice(inv)
 		self.assertEqual(out["synced"], "SINV-EXISTING")
 		self.assertEqual(self.remote.posts("Sales Invoice"), [])
@@ -175,6 +183,13 @@ class TestAdvances(SyncTestCase):
 		erpnext_sync.sync_invoice(self._invoice(credit=9000, advance=8000))
 		sales_invoice = self._sales_invoice()
 		self.assertNotIn("romotional", sales_invoice["remarks"])
+		# The print format shows every line, then the promotional credit taken off them.
+		printed = json.loads(sales_invoice["frappe_cloud_invoice"])
+		self.assertEqual(printed["applied_credits"], 1000)
+		self.assertEqual(
+			{k: printed["items"][0][k] for k in ("document_name", "plan", "amount", "quantity")},
+			{"document_name": "vm-1", "plan": "Business VM", "amount": 8000, "quantity": 1},
+		)
 		self.assertEqual(sales_invoice["items"][0]["rate"], 8440)
 		self.assertTrue(all(row["included_in_print_rate"] for row in sales_invoice["taxes"]))
 

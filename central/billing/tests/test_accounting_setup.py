@@ -45,6 +45,7 @@ def complete_setup() -> dict:
 		("GST Settings", "GST Settings"): {"enable_overseas_transactions": 1},
 		("Print Format", "Cloud Tax Invoice"): {"doc_type": "Sales Invoice"},
 		("Print Format", "Cloud Receipt Voucher"): {"doc_type": "Payment Entry"},
+		("Terms and Conditions", "Frappe Cloud"): {"terms": "Pay on time."},
 	}
 
 
@@ -62,6 +63,7 @@ class FakeAccountingSystem:
 		self.series = dict(SERIES)
 		self.forbidden = set()
 		self.writes = []
+		self.custom_fields = {"Sales Invoice": ["frappe_cloud_invoice_id", "frappe_cloud_invoice"]}
 
 	def fetch(self, doctype, name):
 		if doctype in self.forbidden:
@@ -73,9 +75,10 @@ class FakeAccountingSystem:
 		return [frappe._dict(name=n) for (dt, n) in self.records if dt == doctype]
 
 	def call(self, method, params=None):
-		options = self.series[params["doctype"]]
-		fields = [{"fieldname": "naming_series", "options": options}]
-		return {"docs": [{"name": params["doctype"], "fields": fields}]}
+		doctype = params["doctype"]
+		fields = [{"fieldname": "naming_series", "options": self.series[doctype]}]
+		fields += [{"fieldname": name} for name in self.custom_fields.get(doctype, ())]
+		return {"docs": [{"name": doctype, "fields": fields}]}
 
 	def write(self, *args, **kwargs):
 		self.writes.append(args)
@@ -116,6 +119,7 @@ class AccountingSetupTestCase(IntegrationTestCase):
 				"promotional_credit_account": "Promotional Credit - TC",
 				"in_state_template": "In - TC",
 				"out_state_template": "Out - TC",
+				"invoice_terms": "Frappe Cloud",
 				**values,
 			}
 		)
@@ -178,6 +182,12 @@ class TestCheck(AccountingSetupTestCase):
 		self.assertEqual(states["INR advance account"], ("Wrong", "Its root type is Asset, not Liability."))
 		self.assertEqual(states["INR income account"], ("Wrong", "It belongs to Other Co, not Test Co."))
 		self.assertEqual(states["INR receivable account"][0], "Wrong")
+
+	def test_a_missing_frappe_cloud_invoice_field_is_reported(self):
+		self.remote.custom_fields["Sales Invoice"] = ["frappe_cloud_invoice_id"]
+		self.assertEqual(
+			self._states()["Frappe Cloud invoice fields"], ("Missing", "Add: frappe_cloud_invoice")
+		)
 
 	def test_a_record_the_sync_user_cannot_read_is_flagged(self):
 		self.remote.forbidden.add("Print Format")

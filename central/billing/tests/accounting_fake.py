@@ -47,6 +47,7 @@ class FakeAccountingSystem:
 	def __init__(self):
 		self.records = {
 			("Address", COMPANY_ADDRESS): {"gstin": COMPANY_GSTIN},
+			("Terms and Conditions", "Frappe Cloud"): {"terms": "Pay on time."},
 			**{("Sales Taxes and Charges Template", t): {"taxes": rows} for t, rows in GST_ROWS.items()},
 		}
 		self.posted = []
@@ -149,6 +150,8 @@ class FakeAccountingSystem:
 			return value.strip("%") in (actual or "")
 		if field == "docstatus" and actual is None:
 			actual = 1  # everything Central posts is submitted
+		if field == "is_return" and actual is None:
+			actual = 0
 		return actual == value
 
 
@@ -160,6 +163,7 @@ def configure_accounting(**values) -> None:
 			"company": COMPANY,
 			"company_address": COMPANY_ADDRESS,
 			"cost_center": "Main - TC",
+			"invoice_terms": "Frappe Cloud",
 			"promotional_credit_account": "Promotional Credit - TC",
 			"in_state_template": IN_STATE,
 			"out_state_template": OUT_STATE,
