@@ -66,6 +66,15 @@ class Service(Document):
 		self.flags.has_new_report_secret = bool(self.report_secret) and not self.is_dummy_password(
 			self.report_secret
 		)
+		if self.flags.has_new_report_secret:
+			self.start_secret_delivery()
+
+	def start_secret_delivery(self) -> None:
+		"""Clear the last delivery's outcome, as the delivery jobs record this secret's."""
+		# The jobs keep a failure already recorded in a run, so the run must start with none.
+		self.secret_delivery_status = ""
+		self.secret_delivery_error = None
+		self.secret_delivered_at = None
 
 	def on_update(self) -> None:
 		if self.flags.has_new_report_secret:

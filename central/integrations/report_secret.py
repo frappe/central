@@ -36,7 +36,7 @@ def send_to_grove() -> None:
 		client = GroveClient.from_settings()
 	except frappe.ValidationError as error:
 		# AI Settings without control credentials; logged like a refusal, so the job does not fail.
-		_log_failure("Grove", error, get_report_secret(AI_SERVICE))
+		_report_failure(AI_SERVICE, "Grove is not set up", error, get_report_secret(AI_SERVICE))
 		return
 	_send_until_current(AI_SERVICE, "Grove", lambda sent: _send_to_grove_once(client, sent))
 
@@ -99,12 +99,14 @@ def _send_to_cargo_once(region: str, sent: str | None) -> str | None:
 			reference_doctype="Region",
 			reference_name=region,
 		)
+		_record_failure(STORAGE_SERVICE, f"Cargo in region {region}: the region has no Cargo webhook secret.")
 		return None
 	try:
 		CargoClient(instance).configure_webhooks(webhook_secret, secret)
 	except frappe.ValidationError as error:
-		_log_failure("Cargo", error, secret, region)
+		_report_failure(STORAGE_SERVICE, "Cargo refused the secret", error, secret, region)
 		return None
+	_record_delivered(STORAGE_SERVICE, region)
 	return secret
 
 
@@ -116,8 +118,9 @@ def _send_to_grove_once(client, sent: str | None) -> str | None:
 	try:
 		client.set_report_secret(secret)
 	except frappe.ValidationError as error:
-		_log_failure("Grove", error, secret)
+		_report_failure(AI_SERVICE, "Grove refused the secret", error, secret)
 		return None
+	_record_delivered(AI_SERVICE)
 	return secret
 
 
@@ -130,15 +133,63 @@ def _enqueue(job: str, **kwargs) -> None:
 	)
 
 
-def _log_failure(host: str, error: Exception, secret: str | None, region: str | None = None) -> None:
+def _report_failure(
+	service: str, problem: str, error: Exception, secret: str | None, region: str | None = None
+) -> None:
+	"""Log a failed send and show it on the Service, with the secret masked in both."""
 	# An explicit message, so the log holds no traceback whose frames could show the secret, and a
 	# host that echoes the secret in its refusal does not put it in the log either.
 	message = f"{type(error).__name__}: {error}"
 	if secret:
 		message = message.replace(secret, "***")
+	host = "Cargo" if service == STORAGE_SERVICE else "Grove"
 	frappe.log_error(
 		title=f"Report secret not sent to {host}",
 		message=message,
 		reference_doctype="Region" if region else None,
 		reference_name=region,
+	)
+	where = f"Cargo in region {region}" if region else host
+	_record_failure(service, f"{where}: {problem}. {message}")
+
+
+def _record_failure(service: str, message: str) -> None:
+	"""Show on the Service that a host did not get its secret, beside the run's earlier failures."""
+	# Locked, so two regions failing at once both stay listed.
+	current = frappe.db.get_value(
+		"Service", service, ["secret_delivery_status", "secret_delivery_error"], as_dict=True, for_update=True
+	)
+	earlier = current.secret_delivery_error if current.secret_delivery_status == "Failed" else ""
+	lines = (earlier or "").splitlines()
+	if message in lines:
+		return
+	# Not modified, so an operator with the form open can still save it.
+	frappe.db.set_value(
+		"Service",
+		service,
+		{
+			"secret_delivery_status": "Failed",
+			"secret_delivery_error": "\n".join([*lines, message]),
+		},
+		update_modified=False,
+	)
+
+
+def _record_delivered(service: str, region: str | None = None) -> None:
+	"""Show on the Service that its secret reached the host."""
+	# Each storage region sends in its own job. A region that failed keeps the Service Failed until the
+	# next save, so it reads Delivered only when every region of that run took the secret. A region
+	# still queued has not failed yet: the status can read Delivered until its job fails.
+	status = frappe.db.get_value("Service", service, "secret_delivery_status", for_update=True)
+	if region and status == "Failed":
+		return
+	frappe.db.set_value(
+		"Service",
+		service,
+		{
+			"secret_delivery_status": "Delivered",
+			"secret_delivery_error": None,
+			"secret_delivered_at": frappe.utils.now_datetime(),
+		},
+		update_modified=False,
 	)
