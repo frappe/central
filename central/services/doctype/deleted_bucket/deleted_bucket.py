@@ -19,12 +19,11 @@ class DeletedBucket(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		bucket_name: DF.Data | None
-		deleted_at: DF.Datetime | None
-		external_id: DF.Data | None
+		deleted_at: DF.Datetime
+		external_id: DF.Data
 		region: DF.Link | None
 		subscription: DF.Link | None
-		team: DF.Link | None
+		team: DF.Link
 	# end: auto-generated types
 
 	pass
@@ -35,16 +34,13 @@ def record_deleted_bucket(service) -> None:
 	record = frappe.get_doc(
 		{
 			"doctype": "Deleted Bucket",
-			"bucket_name": service.bucket_name,
-			"external_id": service.external_id or service.bucket_name,
+			"external_id": service.external_id,
 			"team": service.team,
 			"subscription": service.subscription,
 			"region": service.region,
 			"deleted_at": frappe.utils.now_datetime(),
 		}
 	)
-	# A note of what billed the bucket copies the bucket's own links, and must never block its delete.
-	record.flags.ignore_links = True
 	# The user deleting their bucket cannot write this system record themselves.
 	record.insert(ignore_permissions=True)
 
