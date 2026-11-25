@@ -89,11 +89,20 @@ def sync_invoice(invoice: str) -> dict:
 			"erpnext_next_retry_at": None,
 		},
 	)
+	_announce(inv)
 	return {
 		"synced": inv.erpnext_invoice,
 		"payment": inv.payment_record_id,
 		"attempt": attempt,
 	}
+
+
+def _announce(inv) -> None:
+	"""Tell the team its tax invoice can be downloaded. Not in Manual mode, while an operator checks the sync."""
+	from central.billing.platform import notifications
+
+	if connection.is_automatic():
+		notifications.notify(inv.team, "Invoice Ready", reference_doctype="Invoice", reference_name=inv.name)
 
 
 def _cannot_start(invoice: str) -> dict | None:
