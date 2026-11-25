@@ -88,6 +88,7 @@ class TestIssue(SyncTestCase):
 		self.assertEqual(si["taxes_and_charges"], IN_STATE)
 		self.assertEqual([t["rate"] for t in si["taxes"]], [9, 9])
 		self.assertEqual(si["items"][0]["item_code"], "Cloud Hosting")
+		self.assertEqual(si["items"][0]["income_account"], "Sales India - TC")
 		self.assertIn(f"Central invoice {inv}", si["remarks"])
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "erpnext_invoice"), out["synced"])
 		self.assertIsNotNone(frappe.db.get_value("Invoice", inv, "erpnext_synced_at"))
@@ -117,6 +118,7 @@ class TestIssue(SyncTestCase):
 		si = self._sales_invoice()
 		self.assertEqual(si["naming_series"], "EXP/.TFY./.#####")
 		self.assertEqual(si["debit_to"], "Debtors USD - TC")
+		self.assertEqual(si["items"][0]["income_account"], "Sales Global - TC")
 		self.assertEqual((si["gst_category"], si["place_of_supply"]), ("Overseas", "96-Other Countries"))
 		self.assertEqual(si["taxes"], [])
 

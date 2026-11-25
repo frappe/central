@@ -58,9 +58,7 @@
   "company_address",
   "column_break_company",
   "section_accounts",
-  "advance_account",
   "column_break_accounts",
-  "income_account",
   "cost_center",
   "promotional_credit_account",
   "section_receivables",
@@ -410,19 +408,8 @@
    "description": "Full account names, for example Debtors - ABBR."
   },
   {
-   "fieldname": "advance_account",
-   "fieldtype": "Data",
-   "label": "Advance Account",
-   "description": "Where customer advances are booked. The company must book advances in a separate account, this one."
-  },
-  {
    "fieldname": "column_break_accounts",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "income_account",
-   "fieldtype": "Data",
-   "label": "Income Account"
   },
   {
    "fieldname": "cost_center",
@@ -439,7 +426,7 @@
    "fieldname": "section_receivables",
    "fieldtype": "Section Break",
    "label": "Accounts per Currency",
-   "description": "Each invoice is booked to the receivable in its own currency."
+   "description": "Each invoice, top-up and refund is booked to the accounts of its own currency. The customer in the accounting system gets the receivable and advance account of its currency."
   },
   {
    "fieldname": "receivable_accounts",
@@ -576,7 +563,11 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
+<<<<<<< HEAD
  "modified": "2026-11-19 12:00:00.000000",
+=======
+ "modified": "2026-11-25 13:00:00.000000",
+>>>>>>> 50d0e0f (feat(billing): book advances and income to accounts of each currency)
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

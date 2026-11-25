@@ -263,6 +263,21 @@ def _customer_payload(profile) -> dict:
 		"default_currency": profile.currency,
 		"gstin": _gstin(profile),
 		"gst_category": _gst_category(profile),
+		"accounts": [_party_accounts(profile.currency)],
+	}
+
+
+def _party_accounts(currency: str) -> dict:
+	"""The customer's receivable and advance account in its currency.
+
+	The accounting system books an advance to the advance account it finds on the customer
+	(else the company's one), whatever account the Payment Entry names."""
+	from central.billing.ingester.settings import accounting_settings, advance_account, receivable_account
+
+	return {
+		"company": accounting_settings().company,
+		"account": receivable_account(currency),
+		"advance_account": advance_account(currency),
 	}
 
 

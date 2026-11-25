@@ -35,15 +35,26 @@ def invoice_series(team: str) -> str:
 
 def receivable_account(currency: str) -> str:
 	"""The receivable account an invoice in `currency` is booked to."""
-	for row in accounting_settings().receivable_accounts:
-		if row.currency == currency:
-			return row.account
-	frappe.throw(_("Billing Settings has no receivable account for {0}.").format(currency))
+	return _account_for(currency, "account", _("receivable account"))
+
+
+def advance_account(currency: str) -> str:
+	"""The account a top-up in `currency` is held in until an invoice uses it."""
+	return _account_for(currency, "advance_account", _("advance account"))
+
+
+def income_account(currency: str) -> str:
+	"""The account invoice lines in `currency` are booked to."""
+	return _account_for(currency, "income_account", _("income account"))
 
 
 def wallet_clearing_account(currency: str) -> str:
 	"""The account wallet credit passes through when it is given back, in `currency`."""
+	return _account_for(currency, "wallet_clearing_account", _("wallet clearing account"))
+
+
+def _account_for(currency: str, field: str, label: str) -> str:
 	for row in accounting_settings().receivable_accounts:
-		if row.currency == currency and row.wallet_clearing_account:
-			return row.wallet_clearing_account
-	frappe.throw(_("Billing Settings has no wallet clearing account for {0}.").format(currency))
+		if row.currency == currency and row.get(field):
+			return row.get(field)
+	frappe.throw(_("Billing Settings has no {0} for {1}.").format(label, currency))

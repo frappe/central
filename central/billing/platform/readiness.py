@@ -21,8 +21,6 @@ STALLED_HOURS = 3
 ACCOUNTING_FIELDS = (
 	"company",
 	"company_address",
-	"advance_account",
-	"income_account",
 	"cost_center",
 	"service_item",
 	"in_state_template",

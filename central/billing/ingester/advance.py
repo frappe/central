@@ -12,7 +12,7 @@ import frappe
 from frappe import _
 
 from central.billing.ingester import connection, gst
-from central.billing.ingester.settings import accounting_settings
+from central.billing.ingester.settings import accounting_settings, advance_account
 
 PENDING_BATCH = 100
 
@@ -94,7 +94,7 @@ def _payload(credit, customer: str, gateway: str, payment_id: str) -> dict:
 		"party_type": "Customer",
 		"party": customer,
 		# Named here because the accounting system does not always move it there itself.
-		"paid_from": settings.advance_account,
+		"paid_from": advance_account(credit.currency),
 		"paid_to": route.clearing_account,
 		"paid_amount": paid,
 		"received_amount": paid,

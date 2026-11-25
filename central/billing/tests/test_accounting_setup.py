@@ -17,6 +17,10 @@ from central.billing.tests.utils import complete_billing_profile, ensure_team, m
 COMPANY = "Test Co"
 
 
+def _account(currency: str, **kind) -> dict:
+	return {"company": COMPANY, "is_group": 0, "account_currency": currency, **kind}
+
+
 def complete_setup() -> dict:
 	"""An accounting system that has everything the settings below name."""
 	return {
@@ -25,13 +29,15 @@ def complete_setup() -> dict:
 			"default_advance_received_account": "Customer Advances - TC",
 		},
 		("Address", "Test Co-Billing"): {"gstin": "27AAACZ9999Z1ZC"},
-		("Account", "Debtors - TC"): {"account_currency": "INR"},
-		("Account", "Customer Advances - TC"): {},
-		("Account", "Sales - TC"): {},
-		("Account", "Stripe Clearing - TC"): {"account_currency": "INR"},
-		("Account", "Wallet Clearing - TC"): {"account_currency": "INR"},
+		("Account", "Debtors - TC"): _account("INR", account_type="Receivable", root_type="Asset"),
+		("Account", "Customer Advances - TC"): _account(
+			"INR", account_type="Receivable", root_type="Liability"
+		),
+		("Account", "Sales - TC"): _account("INR", root_type="Income"),
+		("Account", "Stripe Clearing - TC"): _account("INR"),
+		("Account", "Wallet Clearing - TC"): _account("INR"),
 		("Cost Center", "Main - TC"): {},
-		("Account", "Promotional Credit - TC"): {},
+		("Account", "Promotional Credit - TC"): _account("INR"),
 		("Mode of Payment", "Stripe"): {},
 		("Item", "Cloud Hosting"): {"gst_hsn_code": "998315"},
 		("Sales Taxes and Charges Template", "In - TC"): {},
@@ -106,8 +112,6 @@ class AccountingSetupTestCase(IntegrationTestCase):
 			{
 				"company": COMPANY,
 				"company_address": "Test Co-Billing",
-				"advance_account": "Customer Advances - TC",
-				"income_account": "Sales - TC",
 				"cost_center": "Main - TC",
 				"promotional_credit_account": "Promotional Credit - TC",
 				"in_state_template": "In - TC",
@@ -118,7 +122,13 @@ class AccountingSetupTestCase(IntegrationTestCase):
 		doc.set("receivable_accounts", [])
 		doc.append(
 			"receivable_accounts",
-			{"currency": "INR", "account": "Debtors - TC", "wallet_clearing_account": "Wallet Clearing - TC"},
+			{
+				"currency": "INR",
+				"account": "Debtors - TC",
+				"advance_account": "Customer Advances - TC",
+				"income_account": "Sales - TC",
+				"wallet_clearing_account": "Wallet Clearing - TC",
+			},
 		)
 		doc.set("gateways", [])
 		doc.append(
@@ -156,9 +166,18 @@ class TestCheck(AccountingSetupTestCase):
 		self.remote.records[("Print Format", "Cloud Tax Invoice")]["doc_type"] = "Delivery Note"
 		states = self._states()
 		gateway = frappe.get_doc("Billing Settings").gateways[0].gateway
-		self.assertEqual(states["Advance account"][0], "Wrong")
+		self.assertEqual(states["Advances in a separate account"][0], "Wrong")
 		self.assertEqual(states[f"{gateway} INR: clearing account"][0], "Wrong")
 		self.assertEqual(states["Sales Invoice print format"][0], "Wrong")
+
+	def test_an_account_of_the_wrong_kind_is_explained(self):
+		self.remote.records[("Account", "Customer Advances - TC")]["root_type"] = "Asset"
+		self.remote.records[("Account", "Sales - TC")]["company"] = "Other Co"
+		self.remote.records[("Account", "Debtors - TC")]["is_group"] = 1
+		states = self._states()
+		self.assertEqual(states["INR advance account"], ("Wrong", "Its root type is Asset, not Liability."))
+		self.assertEqual(states["INR income account"], ("Wrong", "It belongs to Other Co, not Test Co."))
+		self.assertEqual(states["INR receivable account"][0], "Wrong")
 
 	def test_a_record_the_sync_user_cannot_read_is_flagged(self):
 		self.remote.forbidden.add("Print Format")
@@ -171,10 +190,13 @@ class TestCheck(AccountingSetupTestCase):
 		self.assertIn("Test Co-Billing", detail)
 
 	def test_names_are_saved_without_stray_spaces(self):
-		self._configure(advance_account=" Customer Advances - TC ")
-		self.assertEqual(
-			frappe.db.get_single_value("Billing Settings", "advance_account"), "Customer Advances - TC"
-		)
+		self._configure(cost_center=" Main - TC ")
+		doc = frappe.get_doc("Billing Settings")
+		doc.receivable_accounts[0].advance_account = " Customer Advances - TC "
+		doc.save(ignore_permissions=True)
+		doc.reload()
+		self.assertEqual(doc.cost_center, "Main - TC")
+		self.assertEqual(doc.receivable_accounts[0].advance_account, "Customer Advances - TC")
 
 	def test_accounting_tab_shows_only_while_sync_is_on(self):
 		doc = frappe.get_doc("Billing Settings")

@@ -124,3 +124,10 @@ central.patches.v0_0.grant_support_view_to_custom_roles
 central.patches.v0_0.sync_helpdesk_customers
 # Price object storage per GB-month: replace each rate of 0, keep a rate above 0, add a no-region rate where none exists.
 central.patches.v0_0.set_object_storage_rates
+<<<<<<< HEAD
+=======
+# Move the accounting connection from the site config to Billing Settings, and start it Off.
+central.patches.v0_0.move_accounting_sync_to_billing_settings
+# Book advances and income to an account of each currency, starting from the one account the settings had.
+central.patches.v0_0.move_advance_and_income_accounts_to_currency_rows
+>>>>>>> 50d0e0f (feat(billing): book advances and income to accounts of each currency)

@@ -150,8 +150,6 @@ def configure_accounting(**values) -> None:
 		{
 			"company": COMPANY,
 			"company_address": COMPANY_ADDRESS,
-			"advance_account": "Customer Advances - TC",
-			"income_account": "Sales - TC",
 			"cost_center": "Main - TC",
 			"promotional_credit_account": "Promotional Credit - TC",
 			"in_state_template": IN_STATE,
@@ -160,12 +158,17 @@ def configure_accounting(**values) -> None:
 		}
 	)
 	doc.set("receivable_accounts", [])
-	for currency, account in (("INR", "Debtors - TC"), ("USD", "Debtors USD - TC")):
+	for currency, account, region in (
+		("INR", "Debtors - TC", "India"),
+		("USD", "Debtors USD - TC", "Global"),
+	):
 		doc.append(
 			"receivable_accounts",
 			{
 				"currency": currency,
 				"account": account,
+				"advance_account": f"Customer Advances {currency} - TC",
+				"income_account": f"Sales {region} - TC",
 				"wallet_clearing_account": f"Wallet Clearing {currency} - TC",
 			},
 		)

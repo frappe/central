@@ -171,6 +171,22 @@ class TestPending(CustomerSyncTestCase):
 		self.assertNotIn(TEAM, customer._pending_teams())
 
 
+class TestCustomerPayload(CustomerSyncTestCase):
+	def test_the_customer_carries_the_accounts_of_its_currency(self):
+		profile = frappe.get_doc("Billing Profile", TEAM)
+		profile.currency = "USD"
+		self.assertEqual(
+			customer.customer_payload(profile)["accounts"],
+			[
+				{
+					"company": "Test Co",
+					"account": "Debtors USD - TC",
+					"advance_account": "Customer Advances USD - TC",
+				}
+			],
+		)
+
+
 class TestContactPayload(CustomerSyncTestCase):
 	def test_leaves_out_what_is_blank(self):
 		frappe.db.set_value("Billing Profile", TEAM, {"email": None, "phone": None})
