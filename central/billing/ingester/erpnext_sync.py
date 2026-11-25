@@ -15,18 +15,24 @@ nothing is ever read back from ERPNext into billing.
 
 import frappe
 
-from central.billing.ingester import connection, gst
+from central.billing.ingester import connection, gst, payment_records
 from central.billing.ingester.gst_state_backfill import state_at_issue
+from central.billing.ingester.locks import hold_until_transaction_ends
 from central.billing.ingester.settings import accounting_settings, invoice_series, receivable_account
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue.tax import has_gst_charged
 
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_SECONDS = 60  # 60s, 120s, 240s
+NEVER_SENT_BATCH = 100
+# A newly paid invoice has its own job queued. The sweep leaves it alone this long.
+NEVER_SENT_AFTER_SECONDS = 60 * 60
 
 
 def enqueue_invoice_sync(invoice: str):
-	"""Post-payment hook: queue the ERPNext sync after the transaction commits."""
+	"""Post-payment hook: queue the ERPNext sync after the transaction commits. Automatic mode only."""
+	if not connection.is_automatic():
+		return
 	frappe.enqueue(
 		"central.billing.ingester.erpnext_sync.sync_invoice",
 		invoice=invoice,
@@ -42,8 +48,8 @@ def sync_invoice(invoice: str) -> dict:
 	Each step is looked up before it is made, so a retry finishes the job instead
 	of repeating it.
 	"""
-	if not connection.enabled():
-		return {"skipped": "sync_off"}
+	if skipped := _cannot_start(invoice):
+		return skipped
 	inv = frappe.get_doc("Invoice", invoice)
 	if inv.invoice_type != "Billable":
 		return {"skipped": "not_billable"}  # cost_report is not a statutory sale
@@ -61,8 +67,8 @@ def sync_invoice(invoice: str) -> dict:
 		if not inv.erpnext_invoice:
 			inv.erpnext_invoice = _issue(inv, customer)
 			frappe.db.set_value("Invoice", invoice, "erpnext_invoice", inv.erpnext_invoice)
-		if _card_attempt(inv) and not inv.payment_record_id:
-			inv.payment_record_id = _record_card_payment(inv, customer)
+		if payment_records.card_attempt(inv) and not inv.payment_record_id:
+			inv.payment_record_id = payment_records.record_card_payment(inv, customer)
 			frappe.db.set_value("Invoice", invoice, "payment_record_id", inv.payment_record_id)
 	except Exception as e:
 		return _handle_failure(invoice, attempt, _error_text(e))
@@ -85,15 +91,27 @@ def sync_invoice(invoice: str) -> dict:
 	}
 
 
+def _cannot_start(invoice: str) -> dict | None:
+	if not connection.enabled():
+		return {"skipped": "sync_off"}
+	if not hold_until_transaction_ends(f"invoice-sync::{invoice}"):
+		return {"skipped": "running"}  # a job and an operator push must not issue it twice
+	return None
+
+
 def _settled_there(inv) -> bool:
 	"""The card payment, if any, is recorded in the accounting system. Promotional credit never is."""
-	return bool(inv.payment_record_id or not _card_attempt(inv))
+	return bool(inv.payment_record_id or not payment_records.card_attempt(inv))
 
 
 def is_paid_by_free_credit(inv) -> bool:
 	"""Whether promotional credit paid the whole invoice, so nothing was sold to record."""
 	collectable = frappe.utils.flt(inv.total) - frappe.utils.flt(inv.tds_amount)
-	return collectable > 0 and not _card_attempt(inv) and _promotional_part(inv) >= collectable - 0.01
+	return (
+		collectable > 0
+		and not payment_records.card_attempt(inv)
+		and _promotional_part(inv) >= collectable - 0.01
+	)
 
 
 def _promotional_part(inv) -> float:
@@ -120,7 +138,9 @@ def _handle_failure(invoice: str, attempt: int, error: str) -> dict:
 
 
 def retry_failed_syncs(now=None) -> list:
-	"""Scheduler: re-run syncs whose backoff window has elapsed."""
+	"""Scheduler, in Automatic mode: re-run syncs whose backoff elapsed, and send paid invoices never sent."""
+	if not connection.is_automatic():
+		return []
 	now = now or frappe.utils.now_datetime()
 	due = frappe.get_all(
 		"Invoice",
@@ -131,7 +151,24 @@ def retry_failed_syncs(now=None) -> list:
 		],
 		pluck="name",
 	)
-	return each_isolated("Accounting sync retry", "Invoice", due, sync_invoice)
+	return each_isolated("Accounting sync retry", "Invoice", due + _never_sent(now), sync_invoice)
+
+
+def _never_sent(now) -> list[str]:
+	"""Paid invoices no sync has tried, such as those paid while the sync was off. Oldest first."""
+	return frappe.get_all(
+		"Invoice",
+		filters=[
+			["invoice_type", "=", "Billable"],
+			["status", "=", "Paid"],
+			["erpnext_sync_status", "=", "Pending"],
+			["erpnext_next_retry_at", "is", "not set"],
+			["paid_at", "<=", frappe.utils.add_to_date(now, seconds=-NEVER_SENT_AFTER_SECONDS)],
+		],
+		order_by="paid_at asc",
+		limit=NEVER_SENT_BATCH,
+		pluck="name",
+	)
 
 
 # --- ERPNext transport ------------------------------------------------------
@@ -148,29 +185,42 @@ def _customer_for(team: str) -> str:
 
 
 def _record_state_before_filing(inv) -> None:
-	"""An invoice issued before states were recorded is filed under its state at issue,
-	the same one the daily backfill would record, so the two never disagree.
+	"""Keep the state the Sales Invoice is filed under on the invoice. See `fill_state_for_filing`."""
+	if is_state_missing_for_filing(inv):
+		fill_state_for_filing(inv)
+		frappe.db.set_value(
+			"Invoice", inv.name, {"gst_state": inv.gst_state, "gst_state_recorded": 1}, update_modified=False
+		)
+
+
+def is_state_missing_for_filing(inv) -> bool:
+	"""An Indian GST invoice issued before states were recorded."""
+	return not gst.is_state_recorded(inv) and inv.currency == "INR" and has_gst_charged(inv)
+
+
+def fill_state_for_filing(inv) -> None:
+	"""Set the state at issue on an invoice issued before states were recorded, in memory.
+
+	The state is the one the daily backfill would record, so the two never disagree.
 	Only for a new filing: an existing one is read by the backfill instead."""
-	if gst.is_state_recorded(inv) or inv.currency != "INR" or not has_gst_charged(inv):
-		return
-	inv.gst_state, inv.gst_state_recorded = state_at_issue(inv), 1
-	frappe.db.set_value(
-		"Invoice", inv.name, {"gst_state": inv.gst_state, "gst_state_recorded": 1}, update_modified=False
-	)
+	if is_state_missing_for_filing(inv):
+		inv.gst_state, inv.gst_state_recorded = state_at_issue(inv), 1
 
 
 def _issue(inv, customer: str) -> str:
 	"""The submitted Sales Invoice for this invoice: found if it exists, else created."""
 	existing = connection.find(
-		"Sales Invoice", [["remarks", "like", f"%{_marker(inv)}%"], ["docstatus", "=", 1]], ["name"]
+		"Sales Invoice",
+		[["remarks", "like", f"%{payment_records.marker(inv)}%"], ["docstatus", "=", 1]],
+		["name"],
 	)
 	if existing:
 		return existing[0].name
 	_record_state_before_filing(inv)
-	return connection.post("api/resource/Sales Invoice", _build_sales_invoice(inv, customer)).name
+	return connection.post("api/resource/Sales Invoice", build_sales_invoice(inv, customer)).name
 
 
-def _build_sales_invoice(inv, customer: str) -> dict:
+def build_sales_invoice(inv, customer: str) -> dict:
 	"""Map the part of a Central invoice paid with money to a submitted ERPNext Sales Invoice.
 
 	Usage paid with promotional credit is left out, so the Sales Invoice closes exactly
@@ -205,7 +255,7 @@ def _build_sales_invoice(inv, customer: str) -> dict:
 		"allocate_advances_automatically": 0,
 		"disable_rounded_total": 1,
 		"ignore_pricing_rule": 1,
-		"remarks": _marker(inv),
+		"remarks": payment_records.marker(inv),
 	}
 
 
@@ -302,130 +352,6 @@ def _advances(inv) -> list[dict]:
 		if needed <= 0:
 			break
 	return rows
-
-
-def _card_attempt(inv):
-	"""The captured card or UPI payment that settled this invoice, if one did."""
-	from central.billing.payments.refunds import late_captured_attempts
-
-	if frappe.utils.flt(inv.amount_paid) <= 0:
-		return None
-	filters = {"invoice": inv.name, "status": "Captured"}
-	if late := late_captured_attempts(inv.name):
-		filters["name"] = ["not in", late]  # captured after the invoice was paid; never in the books
-	name = frappe.db.get_value("Payment Attempt", filters, "name", order_by="creation desc")
-	return frappe.get_doc("Payment Attempt", name) if name else None
-
-
-def _record_card_payment(inv, customer: str) -> str | None:
-	"""A Payment Entry against the Sales Invoice for what the card paid. Found if it exists."""
-	attempt = _card_attempt(inv)
-	if not attempt:
-		return None
-	existing = connection.find(
-		"Payment Entry",
-		[["reference_no", "=", attempt.gateway_transaction_id], ["docstatus", "=", 1]],
-		["name"],
-	)
-	if existing:
-		return existing[0].name
-
-	settings = accounting_settings()
-	route = _gateway_row(settings, attempt.gateway, attempt.currency)
-	if attempt.currency != inv.currency:
-		raise RuntimeError(f"{inv.name} is in {inv.currency} but was paid in {attempt.currency}")
-	sales_invoice = connection.fetch("Sales Invoice", inv.erpnext_invoice)
-	# What the card took, capped at what is outstanding.
-	owed = min(frappe.utils.flt(attempt.amount), frappe.utils.flt(sales_invoice.outstanding_amount))
-	# The receivable and the clearing account are both in the invoice's currency.
-	rate = frappe.utils.flt(sales_invoice.conversion_rate) or 1
-	payload = {
-		"doctype": "Payment Entry",
-		"docstatus": 1,
-		"payment_type": "Receive",
-		"company": settings.company,
-		"posting_date": frappe.utils.nowdate(),
-		"party_type": "Customer",
-		"party": customer,
-		"paid_from": sales_invoice.debit_to,
-		"paid_to": route.clearing_account,
-		"paid_amount": owed,
-		"received_amount": owed,
-		"source_exchange_rate": rate,
-		"target_exchange_rate": rate,
-		"mode_of_payment": route.mode_of_payment,
-		"reference_no": attempt.gateway_transaction_id,
-		"reference_date": str(frappe.utils.getdate(attempt.completed_at or attempt.creation)),
-		"references": [
-			{
-				"reference_doctype": "Sales Invoice",
-				"reference_name": inv.erpnext_invoice,
-				"allocated_amount": owed,
-			}
-		],
-		"remarks": f"{attempt.gateway} payment {attempt.gateway_transaction_id} for {_marker(inv)}",
-	}
-	return connection.post("api/resource/Payment Entry", payload).name
-
-
-def promotional_journal(inv, customer: str, against: str, amount: float, marker: str, reverse=False) -> str:
-	"""Settle (or, with `reverse`, unsettle) promotional credit against a Sales Invoice or credit note.
-
-	Found by `marker` if it was made before.
-	"""
-	existing = connection.find("Journal Entry", [["cheque_no", "=", marker], ["docstatus", "=", 1]], ["name"])
-	if existing:
-		return existing[0].name
-	settings = accounting_settings()
-	if not settings.promotional_credit_account:
-		raise RuntimeError("Billing Settings has no promotional credit account")
-	document = connection.fetch("Sales Invoice", against) or {}
-	rate = frappe.utils.flt(document.get("conversion_rate")) or 1
-	expense = {
-		"account": settings.promotional_credit_account,
-		"cost_center": settings.cost_center,
-		"exchange_rate": 1,
-	}
-	party = {
-		"account": document.get("debit_to") or receivable_account(inv.currency),
-		"party_type": "Customer",
-		"party": customer,
-		"exchange_rate": rate,
-		"reference_type": "Sales Invoice",
-		"reference_name": against,
-	}
-	if reverse:
-		expense["credit_in_account_currency"] = frappe.utils.flt(amount * rate, 2)
-		party["debit_in_account_currency"] = amount
-	else:
-		expense["debit_in_account_currency"] = frappe.utils.flt(amount * rate, 2)
-		party["credit_in_account_currency"] = amount
-	return connection.post(
-		"api/resource/Journal Entry",
-		{
-			"doctype": "Journal Entry",
-			"docstatus": 1,
-			"voucher_type": "Journal Entry",
-			"company": settings.company,
-			"posting_date": frappe.utils.nowdate(),
-			"cheque_no": marker,
-			"cheque_date": frappe.utils.nowdate(),
-			"multi_currency": int(rate != 1),
-			"user_remark": f"Promotional credit {'given back' if reverse else 'used'} on Central invoice {inv.name}",
-			"accounts": [expense, party],
-		},
-	).name
-
-
-def _gateway_row(settings, gateway: str, currency: str):
-	for row in settings.gateways:
-		if row.gateway == gateway and row.currency == currency:
-			return row
-	raise RuntimeError(f"Billing Settings has no {gateway} {currency} row under Gateway Accounts")
-
-
-def _marker(inv) -> str:
-	return f"Central invoice {inv.name}"
 
 
 def _error_text(error: Exception) -> str:

@@ -7,6 +7,7 @@ import frappe
 
 from central.billing.platform import alerts, invariants, readiness
 from central.billing.report.billing_invariant_violations import billing_invariant_violations as report
+from central.billing.tests.accounting_fake import sync_mode
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
@@ -35,7 +36,7 @@ def _found_run(check: str) -> list:
 
 
 def _accounting_sync(on: bool):
-	return patch("central.billing.ingester.connection.enabled", return_value=on)
+	return sync_mode("Automatic" if on else "Off")
 
 
 class TestReadiness(IntegrationTestCase):

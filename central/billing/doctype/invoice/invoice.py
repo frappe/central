@@ -73,6 +73,9 @@ class Invoice(Document):
 		self.name = make_autoname(f"INV-{month.year:04d}-{month.month:02d}-.#####")
 
 	def onload(self):
+		from central.billing.ingester import push
+
+		self.set_onload("accounting_sync_actions", push.is_offered())
 		# The form offers a retry when a gateway refused one of this invoice's refunds.
 		self.set_onload(
 			"failed_refunds",

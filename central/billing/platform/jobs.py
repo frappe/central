@@ -6,7 +6,7 @@ import frappe
 _SAVEPOINT = "billing_job_item"
 
 
-def each_isolated(job: str, doctype: str, names, work) -> list:
+def each_isolated(job: str, doctype: str, names, work, reference: str | None = None) -> list:
 	"""Run `work(name)` for every name, so one bad row never stops the rest.
 
 	1. Each item runs under a savepoint and commits on its own, so the next day's run
@@ -16,6 +16,7 @@ def each_isolated(job: str, doctype: str, names, work) -> list:
 	3. An item that committed part-way (a gateway call commits its intent first) has no
 	   savepoint left; everything since the last per-item commit is that item's, so the
 	   whole transaction is rolled back instead.
+	4. With `reference`, each Error Log links to that record of `doctype` instead of the item.
 	"""
 	results = []
 	for name in names:
@@ -25,7 +26,9 @@ def each_isolated(job: str, doctype: str, names, work) -> list:
 		except Exception:
 			_undo_item()
 			frappe.log_error(
-				title=f"{job} failed on {doctype} {name}", reference_doctype=doctype, reference_name=name
+				title=f"{job} failed on {doctype} {name}",
+				reference_doctype=doctype,
+				reference_name=reference or name,
 			)
 			continue
 		if not frappe.in_test:

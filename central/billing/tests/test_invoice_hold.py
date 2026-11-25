@@ -11,6 +11,7 @@ from central.billing.tests.accounting_fake import (
 	FakeAccountingSystem,
 	configure_accounting,
 	requires_accounting_system,
+	sync_mode,
 )
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
@@ -37,7 +38,7 @@ class InvoiceHoldTestCase(IntegrationTestCase):
 		add_segment(sub, "Created", 1000, "2026-06-01 00:00:00")
 		complete_billing_profile(TEAM)
 		self.invoice = invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30")
-		self._conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
+		self._conf = sync_mode()
 		self._conf.start()
 		# Reads such as the company's GSTIN come from a fake accounting system, never a real one.
 		configure_accounting()
@@ -122,7 +123,7 @@ class TestIssued(InvoiceHoldTestCase):
 		self.assertEqual(inv.total, 1180.0)
 
 	def test_nothing_is_held_when_sync_is_off(self):
-		frappe.local.conf["enable_erpnext_sync"] = 0
+		self.enterContext(sync_mode("Off"))
 		self._profile(gstin=GSTIN, gst_status=None)
 		result, _, _ = self._open()
 		self.assertTrue(result["claimed"])

@@ -34,7 +34,7 @@ class TestCustomerRecordRule(IntegrationTestCase):
 
 	def test_a_complete_profile_alone_creates_no_customer(self):
 		with _sync_on():
-			self.assertFalse(customer._should_sync(self.profile))
+			self.assertFalse(customer.is_sync_allowed(self.profile))
 			self.assertNotIn(TEAM, customer._pending_teams())
 
 	def test_an_enabled_subscription_creates_the_customer(self):
@@ -43,7 +43,7 @@ class TestCustomerRecordRule(IntegrationTestCase):
 		frappe.db.set_value("Subscription", subscription, "enabled", 1)
 
 		with _sync_on():
-			self.assertTrue(customer._should_sync(self.profile))
+			self.assertTrue(customer.is_sync_allowed(self.profile))
 
 	def test_enabling_a_subscription_queues_the_sync(self):
 		make_plan(PLAN)
@@ -62,13 +62,13 @@ class TestCustomerRecordRule(IntegrationTestCase):
 			credits.purchase(TEAM, 100, "INR", gateway="Stripe", gateway_payment_id="pay_customer_rule")
 
 		with _sync_on():
-			self.assertTrue(customer._should_sync(self.profile))
+			self.assertTrue(customer.is_sync_allowed(self.profile))
 
 	def test_free_credit_alone_creates_no_customer(self):
 		credits.grant_promotional_credits(TEAM, 100, "INR")
 
 		with _sync_on():
-			self.assertFalse(customer._should_sync(self.profile))
+			self.assertFalse(customer.is_sync_allowed(self.profile))
 
 	def test_a_cancelled_subscription_with_an_unpaid_invoice_keeps_its_customer(self):
 		make_plan(PLAN)
@@ -77,7 +77,7 @@ class TestCustomerRecordRule(IntegrationTestCase):
 		invoicing.generate_draft_invoice(subscription, "2026-06-01", "2026-06-30")
 
 		with _sync_on():
-			self.assertTrue(customer._should_sync(self.profile))
+			self.assertTrue(customer.is_sync_allowed(self.profile))
 
 
 class TestWaivedInvoiceAccounting(IntegrationTestCase):

@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Admin action for the accounting setup: check that what Central reads is there."""
+"""Admin actions for the accounting system: check the setup, and send records by hand."""
 
 import frappe
 
@@ -22,3 +22,21 @@ def get_manual_setup_gaps() -> list[dict]:
 
 	authz.require_operator()
 	return [{"check": gap.check, "detail": gap.detail} for gap in readiness.get_manual_setup_gaps()]
+
+
+@frappe.whitelist(methods=["GET"])
+def preview_accounting_sync(doctype: str, name: str) -> dict:
+	"""What sending this record to the accounting system would post. Writes nothing."""
+	from central.billing.ingester import push
+
+	authz.require_operator()
+	return push.preview(doctype, name)
+
+
+@frappe.whitelist(methods=["POST"])
+def send_to_accounting(doctype: str, name: str) -> dict:
+	"""Send this record, and what it needs first, to the accounting system now."""
+	from central.billing.ingester import push
+
+	authz.require_operator()
+	return push.push(doctype, name)

@@ -180,4 +180,4 @@ def _is_zero_rated_sez(team: str) -> bool:
 
 def _is_company_readable() -> bool:
 	"""Whether the accounting system can be asked for the company's address at all."""
-	return connection.is_configured() and bool(accounting_settings().company_address)
+	return connection.enabled() and bool(accounting_settings().company_address)
