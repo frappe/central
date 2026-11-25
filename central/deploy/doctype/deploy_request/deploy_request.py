@@ -254,9 +254,9 @@ class DeployRequest(PipelineBuilder):
 			frappe.throw(
 				_("The disk can't shrink from {0} MiB to {1} MiB.").format(current["disk_mib"], self.disk_mib)
 			)
+
+		validate_vm_resize(name, self.plan)
 		if state == "running":
-			# Billing refuses the new size before the live app goes down for it.
-			validate_vm_resize(name, self.plan)
 			machine.stop(atlas_vm_id)
 		elif state == "stopped":
 			machine.resize(atlas_vm_id, self.specs)
