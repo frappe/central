@@ -9,7 +9,7 @@ import frappe
 from cloudtoolkit.pipeline.doctype.pipeline.decorators import flow, task
 from cloudtoolkit.pipeline.doctype.pipeline.pipeline_builder import PipelineBuilder
 from frappe import _
-from frappe.model.naming import append_number_if_name_exists
+from frappe.model.naming import append_number_if_name_exists, make_autoname
 from frappe.utils import now_datetime, time_diff_in_seconds
 from redis.exceptions import LockError
 
@@ -405,10 +405,14 @@ class DeployRequest(PipelineBuilder):
 	def record_virtual_machine(
 		self, app: DeployApp, atlas_vm_id: str, image_id: str | None
 	) -> VirtualMachine:
-		"""The Virtual Machine row Central shows and observes for the app's VM."""
-		name = f"server-deploy-{app.name}"
-		if frappe.db.exists("Virtual Machine", name):
+		"""The Virtual Machine row Central shows and observes for the app's VM. Each Atlas VM gets its own row,
+		named like any other server, so a VM that replaces a terminated one does not reuse the old row."""
+		if name := frappe.db.get_value("Virtual Machine", {"region": app.region, "atlas_vm_id": atlas_vm_id}):
 			return frappe.get_doc("Virtual Machine", name)
+
+		# This is required since otherwise it's borrowed from resource action (which we don't use here)
+		# Or this comes from deploy app hash, however reconnecting a disabled app would then point to a dead vm
+		name = f"server-{make_autoname('hash')}"
 
 		server = frappe.get_doc(
 			{

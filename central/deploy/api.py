@@ -13,6 +13,7 @@ BUILD_REPORT_STATES = ("Running", "Succeeded", "Failed")
 RELEASE_REPORT_STATES = ("Releasing", "Live", "Failed")
 
 
+# Frist Step
 @frappe.whitelist(methods=["POST"])
 def connect_repository(team: str, repository: str, region: str, branch: str | None = None) -> dict:
 	"""Start deploying `repository` (owner/name) for `team`. The user signs in to GitHub at `sign_in_url`, and
@@ -25,6 +26,7 @@ def connect_repository(team: str, repository: str, region: str, branch: str | No
 	}
 
 
+# Finally finish the connection and create the deploy app
 @frappe.whitelist(methods=["POST"])
 def complete_repository_connection(state: str) -> dict:
 	"""Create the Deploy App once GitHub returned from the install; pushes to its branch deploy from then on."""
@@ -59,6 +61,7 @@ def get_deploy_request(name: str) -> dict:
 	}
 
 
+# Called via callback
 def finish_github_sign_in(state: str, code: str | None, installation_id: str | None) -> None:
 	"""The GitHub App's callback for a deploy attempt: after the sign-in, or after an install it sent the user to."""
 	if not code:
