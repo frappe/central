@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerStatusBadge from '@/components/servers/ServerStatusBadge.vue'
 import type { MapNode, MapPin } from '@/lib/serverMap'
+import { isAwakeOrSleeping } from '@/lib/status'
 
 // The map's hover card, split out of ServerMap so the map component keeps just
 // the pan/zoom viewport. Purely presentational: ServerMap owns placement (the
@@ -32,7 +33,7 @@ const hasManyTargets = computed(
 )
 
 function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
-	return props.allowOpen && server.status === 'Running' && !!server.gateway_url
+	return props.allowOpen && isAwakeOrSleeping(server) && !!server.gateway_url
 }
 </script>
 
