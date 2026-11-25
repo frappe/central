@@ -112,6 +112,7 @@ export interface MyInvitation {
 	role: string
 	/** The role's display name; a custom role's `role` is an opaque record name. */
 	role_name: string
+	/** The inviter's full name, or their email. */
 	invited_by: string | null
 	expires_on: string | null
 	creation: string

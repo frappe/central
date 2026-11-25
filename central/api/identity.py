@@ -2,7 +2,7 @@ from typing import Any
 
 import frappe
 from frappe.query_builder import Order
-from frappe.query_builder.functions import Count
+from frappe.query_builder.functions import Coalesce, Count
 from frappe.utils import escape_html, get_email_address
 
 from central.iam import (
@@ -169,6 +169,7 @@ def my_invitations() -> list[dict[str, Any]]:
 	invitation = frappe.qb.DocType("Team Invitation")
 	team = frappe.qb.DocType("Team")
 	role = frappe.qb.DocType("Team Role")
+	inviter = frappe.qb.DocType("User")
 
 	rows = (
 		frappe.qb.from_(invitation)
@@ -176,11 +177,13 @@ def my_invitations() -> list[dict[str, Any]]:
 		.on(team.name == invitation.team)
 		.left_join(role)
 		.on(role.name == invitation.role)
+		.left_join(inviter)
+		.on(inviter.name == invitation.invited_by)
 		.select(
 			invitation.name,
 			invitation.team,
 			invitation.role,
-			invitation.invited_by,
+			Coalesce(inviter.full_name, inviter.email).as_("invited_by"),
 			invitation.expires_on,
 			invitation.creation,
 			team.team_name,
