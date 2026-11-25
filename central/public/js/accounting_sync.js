@@ -13,7 +13,38 @@ central.billing.add_accounting_sync_actions = function (frm) {
 	const group = __("Accounting");
 	frm.add_custom_button(__("Preview"), () => preview_accounting_sync(frm), group);
 	frm.add_custom_button(__("Send Now"), () => confirm_accounting_sync(frm), group);
+	if (frm.doctype === "Billing Profile" && !frm.doc.profile_id) {
+		frm.add_custom_button(__("Use Existing Customer"), () => use_existing_customer(frm), group);
+	}
 };
+
+// When a team matches more than one customer, the operator names the one to use.
+function use_existing_customer(frm) {
+	frappe.prompt(
+		[
+			{
+				fieldname: "customer",
+				fieldtype: "Data",
+				label: __("Customer in the accounting system"),
+				description: __("Its ID, as the accounting system shows it. Its currency must be the team's."),
+				reqd: 1,
+			},
+		],
+		({ customer }) =>
+			frappe
+				.call({
+					method: `${central.billing.ACCOUNTING_API}.use_existing_customer`,
+					args: { team: frm.docname, customer: customer.trim() },
+					freeze: true,
+				})
+				.then(() => {
+					frappe.show_alert({ message: __("The team now uses {0}", [customer]), indicator: "green" });
+					frm.reload_doc();
+				}),
+		__("Use Existing Customer"),
+		__("Use")
+	);
+}
 
 function preview_accounting_sync(frm) {
 	frappe
