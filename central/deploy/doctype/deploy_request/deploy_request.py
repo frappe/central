@@ -153,7 +153,7 @@ class DeployRequest(PipelineBuilder):
 			.run(pluck=True)
 		)
 		for request in supersedable_requests:
-			request_doc: DeployRequest = frappe.get_doc("Deploy Request", request)
+			request_doc: DeployRequest = frappe.get_doc("Deploy Request", request, for_update=True)
 			request_doc.status = "Superseded"
 			# Central supersedes the team's older deploy; no Desk user owns it.
 			request_doc.save(ignore_permissions=True)
