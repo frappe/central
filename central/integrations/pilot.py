@@ -63,7 +63,7 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 	}
 	if mailbox := UserMailAccount.assign(action):
 		common_site_config |= mailbox.get_site_config()
-	# A free trial boots with a Grove key from the pool: AI works before the team holds any key.
+	# A free trial boots with a Grove key, from the pool or minted now: AI works before the team holds any key.
 	if trial_key := AITrialKey.assign(action):
 		common_site_config |= trial_key.get_site_config()
 	metadata["pilot-common-site-config"] = json.dumps(common_site_config)
