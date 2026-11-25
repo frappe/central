@@ -70,8 +70,8 @@ export class LoadingTab {
 			.loadingTab
 	}
 
-	hold(): void {
-		this.controls?.hold(__('Holding short. Pilot is starting up.'))
+	hold(message: string): void {
+		this.controls?.hold(message)
 	}
 
 	takeoff(url: string): void {

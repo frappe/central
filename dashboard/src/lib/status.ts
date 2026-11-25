@@ -29,6 +29,14 @@ export function isSleeping(server: {
 	return server.status === 'Stopped' && !!server.sleep_state
 }
 
+/** Opening the bench or the site wakes a sleeping server, so it opens like a running one. */
+export function isAwakeOrSleeping(server: {
+	status?: VirtualMachineStatus
+	sleep_state?: VirtualMachine['sleep_state']
+}): boolean {
+	return server.status === 'Running' || isSleeping(server)
+}
+
 /** States a stopped server can be powered on from (mirrors central/api/servers.py). */
 export const POWER_ON_STATES: VirtualMachineStatus[] = [
 	'Stopped',

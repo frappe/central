@@ -158,3 +158,28 @@ test('a sleeping server offers Wake, and a stopped one offers Start', () => {
 	assert.deepEqual([...powerLabels('Sleeping')], ['Wake'])
 	assert.deepEqual([...powerLabels('')], ['Start'])
 })
+
+test('a sleeping server opens its bench and its site', () => {
+	const disabledByLabel = (site) =>
+		Object.fromEntries(
+			menu
+				.getServerMenuGroups(
+					{
+						resource_id: 'vm-1',
+						status: 'Stopped',
+						sleep_state: 'Sleeping',
+						pending_action: null,
+						gateway_url: 'https://vm-1.example.test',
+					},
+					{ ...allowed, open: true },
+					() => {},
+					{ site, isOnServerPage: true },
+				)
+				.flat()
+				.map((option) => [option.label, option.disabled]),
+		)
+
+	assert.equal(disabledByLabel(undefined)['Open server'], false)
+	assert.equal(disabledByLabel('acme.example.test')['Visit site'], false)
+	assert.equal(disabledByLabel('acme.example.test')['Open server'], false)
+})
