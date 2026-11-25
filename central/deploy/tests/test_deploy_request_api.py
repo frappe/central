@@ -6,10 +6,10 @@ from frappe.tests import IntegrationTestCase
 
 from central.deploy import api
 from central.deploy.doctype.deploy_request.deploy_request import DeployRequest
-from central.deploy.doctype.github_deploy_app_installation.test_github_deploy_app_installation import (
+from central.infrastructure.doctype.github_connection.test_github_connection import make_team
+from central.infrastructure.doctype.github_installation.test_github_installation import (
 	make_installation,
 )
-from central.infrastructure.doctype.github_connection.test_github_connection import make_team
 from central.tests.test_iam import ensure_user
 
 

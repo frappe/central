@@ -11,11 +11,14 @@ id instead of creating the customer again.
 from urllib.parse import quote
 
 import frappe
+from frappe import _
 from frappe.query_builder.functions import Coalesce
 from pypika.terms import Criterion, ExistsCriterion
 
 from central.billing.doctype.billing_event import billing_event
+from central.billing.ingester import connection
 from central.billing.ingester.connection import enabled, get, is_automatic, post, put
+from central.billing.ingester.customer_match import emails_of, find_existing, match_customer
 from central.billing.ingester.locks import hold_until_transaction_ends, lock_name
 from central.billing.states import record_event
 
@@ -37,6 +40,20 @@ SYNCED_FIELDS = (
 )
 
 PENDING_BATCH = 100
+# Fields of a child row that the accounting system sets itself.
+ROW_META = (
+	"name",
+	"idx",
+	"parent",
+	"parentfield",
+	"parenttype",
+	"doctype",
+	"owner",
+	"creation",
+	"modified",
+	"modified_by",
+	"docstatus",
+)
 
 
 def enqueue_sync(profile) -> None:
@@ -89,8 +106,11 @@ def take_next_step(profile) -> str | None:
 	"""Make the next missing record, or update all three. Returns the step that follows, if any."""
 	team = profile.team
 	if not profile.profile_id:
-		_create(profile, "profile_id", "Customer", customer_payload)
-		following = "address"
+		if match := find_existing(profile):
+			_use(profile, match)  # made before, by Press v1 or by hand
+		else:
+			_create(profile, "profile_id", "Customer", customer_payload)
+		following = _first_missing(profile) or "update"
 	elif not profile.address_id:
 		_create(profile, "address_id", "Address", address_payload)
 		following = "contact"
@@ -107,10 +127,76 @@ def take_next_step(profile) -> str | None:
 
 
 def update_customer_profile(profile) -> None:
-	"""Bring all three records up to date. Safe to repeat."""
+	"""Bring all three records up to date. Safe to repeat.
+
+	The address and contact keep what they had that Central does not send: their other links,
+	and the contact's other emails and phones. A record made by Press v1 may carry them."""
 	put(_resource("Customer", profile.profile_id), customer_payload(profile))
-	put(_resource("Address", profile.address_id), address_payload(profile))
-	put(_resource("Contact", profile.contact_id), contact_payload(profile))
+	put(
+		_resource("Address", profile.address_id),
+		_keeping(address_payload(profile), "Address", profile.address_id),
+	)
+	put(
+		_resource("Contact", profile.contact_id),
+		_keeping(contact_payload(profile), "Contact", profile.contact_id),
+	)
+
+
+def use_customer(team: str, customer: str) -> None:
+	"""For an operator: use this existing customer for the team, with its address and contact if they match."""
+	profile = frappe.get_doc("Billing Profile", team)
+	if profile.profile_id:
+		# Its invoices and advances are already filed under that customer.
+		frappe.throw(
+			_("Team {0} already uses customer {1} in the accounting system.").format(team, profile.profile_id)
+		)
+	_use(profile, match_customer(profile, customer))
+
+
+def _use(profile, match) -> None:
+	profile.db_set(
+		{"profile_id": match.customer, "address_id": match.address, "contact_id": match.contact},
+		update_modified=False,
+	)
+	record_event(profile, "Customer Reused", reason=match.customer, category=CUSTOMER_SYNC)
+
+
+def _first_missing(profile) -> str | None:
+	if not profile.address_id:
+		return "address"
+	if not profile.contact_id:
+		return "contact"
+	return None
+
+
+def _keeping(payload: dict, doctype: str, name: str) -> dict:
+	"""`payload` with the rows the record has that the payload does not, so a save adds and never drops."""
+	existing = connection.fetch(doctype, name) or {}
+	for table, key in (("links", "link_name"), ("email_ids", "email_id"), ("phone_nos", "phone")):
+		if table in payload:
+			payload[table] = _merged_rows(existing.get(table) or [], payload[table], key)
+	return payload
+
+
+def _merged_rows(existing: list[dict], wanted: list[dict], key: str) -> list[dict]:
+	"""The existing rows first, then each wanted row they lack. Only an existing row stays primary."""
+	have = {_row_key(row, key) for row in existing}
+	added = [row for row in wanted if _row_key(row, key) not in have]
+	if existing:
+		added = [_not_primary(row) for row in added]
+	return [_without_meta(row) for row in existing] + added
+
+
+def _row_key(row: dict, key: str) -> str:
+	return str(row.get(key) or "").casefold()
+
+
+def _not_primary(row: dict) -> dict:
+	return {field: 0 if field.startswith("is_primary") else value for field, value in row.items()}
+
+
+def _without_meta(row: dict) -> dict:
+	return {field: value for field, value in row.items() if field not in ROW_META}
 
 
 def ensure_customer(team: str) -> str | None:
@@ -272,6 +358,7 @@ def customer_payload(profile) -> dict:
 		"gstin": _gstin(profile),
 		"gst_category": _gst_category(profile),
 		"accounts": [_party_accounts(profile.currency)],
+		"disabled": 0,  # a customer reused from Press v1 may be disabled
 	}
 
 
@@ -314,8 +401,8 @@ def address_payload(profile) -> dict:
 
 
 def contact_payload(profile) -> dict:
-	owner, names = _owner(profile)
-	emails = [e for e in dict.fromkeys([owner, profile.email]) if e]
+	names = _owner_names(profile)
+	emails = emails_of(profile)
 	return {
 		"first_name": names.first_name or profile.legal_name,
 		"last_name": names.last_name,
@@ -326,10 +413,8 @@ def contact_payload(profile) -> dict:
 	}
 
 
-def _owner(profile) -> tuple[str | None, frappe._dict]:
-	"""The team owner's email and name, which the contact carries."""
+def _owner_names(profile) -> frappe._dict:
+	"""The team owner's first and last name, which the contact carries."""
 	owner = profile.team_owner or frappe.db.get_value("Team", profile.team, "owner_user")
-	if not owner:
-		return None, frappe._dict()
-	names = frappe.db.get_value("User", owner, ["first_name", "last_name"], as_dict=True)
-	return owner, names or frappe._dict()
+	names = frappe.db.get_value("User", owner, ["first_name", "last_name"], as_dict=True) if owner else None
+	return names or frappe._dict()

@@ -29,7 +29,7 @@ The distinction matters:
 
 | Capability | Meaning |
 | --- | --- |
-| `app:deploy` | Link GitHub Deploy App installations to the team and deploy apps from their repositories. |
+| `app:deploy` | Link GitHub Installations to the team and deploy apps from their repositories. |
 | `app:view` | View the team's deployed apps, their deploys, and each deploy's build and release logs. |
 | `billing:view` | View billing data. |
 | `billing:manage` | Manage billing settings and payment operations. |
