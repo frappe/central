@@ -7,7 +7,6 @@ from zoneinfo import ZoneInfo
 import frappe
 from frappe.utils import get_datetime, get_system_timezone, now_datetime
 from frappe.utils.background_jobs import get_queue, get_queue_list
-from frappe.utils.caching import redis_cache
 from frappe.utils.file_lock import LockTimeoutError
 from frappe.utils.synchronization import filelock
 
@@ -39,7 +38,6 @@ class CentralMetrics:
 			self.add_resource_actions,
 			self.add_payments,
 			self.add_billing,
-			self.add_billing_checks,
 			self.add_site_domains,
 			self.add_snapshots,
 			self.add_emails,
@@ -190,24 +188,6 @@ class CentralMetrics:
 			"central_invoices_sync_failed", frappe.db.count("Invoice", {"erpnext_sync_status": "Failed"})
 		)
 
-	def add_billing_checks(self) -> None:
-		"""Open problems of each operator billing check, and the first 5 records of each, so Beacon can name them."""
-		counts = Counter()
-		for alert in get_billing_check_alerts():
-			check = ":".join(filter(None, (alert["alert"], alert.get("check"))))
-			counts[check] += 1
-			if counts[check] > 5:
-				continue
-			self.add(
-				"central_billing_check_subject",
-				1,
-				check=check,
-				subject=f"{alert.get('doctype') or ''} {alert.get('subject') or ''}".strip() or "none",
-				team=alert.get("team") or "none",
-			)
-		for check, count in counts.items():
-			self.add("central_billing_check_open", count, check=check)
-
 	def add_site_domains(self) -> None:
 		"""Proxy routes that failed in the last hour, and the oldest route that is still pending."""
 		for route_type in ("Site", "Domain"):
@@ -276,15 +256,6 @@ class CentralMetrics:
 			job = frappe.get_doc("Scheduled Job Type", name)
 			late = (self.now - job.get_next_execution()).total_seconds() if job.last_execution else 0
 			self.add("central_scheduled_job_late_seconds", max(late, 0), job=job.method)
-
-
-@redis_cache(ttl=900)
-def get_billing_check_alerts() -> list[dict]:
-	"""The operator billing checks, run at most once in 15 min, because some of them read every ledger."""
-	# Imported here, so the request counting hook in this module does not load billing.
-	from central.billing.platform import alerts
-
-	return alerts.collect()
 
 
 def add_webhook_requests(metrics: CentralMetrics, now: datetime) -> None:
