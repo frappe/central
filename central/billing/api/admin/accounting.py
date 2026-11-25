@@ -3,6 +3,7 @@
 """Admin actions for the accounting system: check the setup, and send records by hand."""
 
 import frappe
+from frappe import _
 
 from central.billing import authz
 from central.billing.ingester import setup
@@ -52,3 +53,14 @@ def use_existing_customer(team: str, customer: str) -> dict:
 	return frappe.db.get_value(
 		"Billing Profile", team, ["profile_id", "address_id", "contact_id"], as_dict=True
 	)
+
+
+@frappe.whitelist(methods=["POST"])
+def fetch_pdf_again(doctype: str, name: str) -> None:
+	"""Drop the kept PDF of an invoice or top-up, so the next download renders it again."""
+	from central.billing.ingester import pdfs
+
+	authz.require_operator()
+	if doctype not in pdfs.PDF_FIELDS:
+		frappe.throw(_("A {0} has no PDF.").format(doctype))
+	pdfs.forget_pdf(doctype, name)

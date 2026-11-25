@@ -13,10 +13,27 @@ central.billing.add_accounting_sync_actions = function (frm) {
 	const group = __("Accounting");
 	frm.add_custom_button(__("Preview"), () => preview_accounting_sync(frm), group);
 	frm.add_custom_button(__("Send Now"), () => confirm_accounting_sync(frm), group);
+	if (frm.doc.pdf_url || frm.doc.receipt_url) {
+		frm.add_custom_button(__("Fetch PDF Again"), () => fetch_pdf_again(frm), group);
+	}
 	if (frm.doctype === "Billing Profile" && !frm.doc.profile_id) {
 		frm.add_custom_button(__("Use Existing Customer"), () => use_existing_customer(frm), group);
 	}
 };
+
+// After a print format change, the kept PDF is dropped and the next download renders it again.
+function fetch_pdf_again(frm) {
+	frappe
+		.call({
+			method: `${central.billing.ACCOUNTING_API}.fetch_pdf_again`,
+			args: { doctype: frm.doctype, name: frm.docname },
+			freeze: true,
+		})
+		.then(() => {
+			frappe.show_alert({ message: __("The next download renders the PDF again"), indicator: "green" });
+			frm.reload_doc();
+		});
+}
 
 // When a team matches more than one customer, the operator names the one to use.
 function use_existing_customer(frm) {
