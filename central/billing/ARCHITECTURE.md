@@ -756,7 +756,7 @@ Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
     currency or day format; the service never sends these again
   → report_subjects.subjects_by_day resolves the subjects once per distinct day in the report
     with bundled_buckets.billed_subjects_of(service, day, names): the service's Team Services
-    with a subscription; for storage, a server's backup bucket on a day its server billed, with
+    with a subscription, made by the end of that UTC day; for storage, a server's backup bucket on a day its server billed, with
     that day's bundle set as Usage Day.included, as storage_bridge._bundled_reading sets it (a
     backup bucket wins a name it shares with a Team Service, as in Central's own reading; only
     the servers whose name ends a reported name are looked up); and a subject Central no longer

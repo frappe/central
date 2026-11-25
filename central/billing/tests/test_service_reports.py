@@ -300,6 +300,17 @@ class TestServiceReports(IntegrationTestCase):
 		)
 		self.assertEqual([self.billed_on(day) for day in days[:4]], [first, first, second, second])
 
+	def test_a_name_made_again_today_leaves_earlier_days_on_the_deleted_bucket(self):
+		deleted = self.delete_bucket("2026-06-19 12:00:00")
+		self.make_bucket("2026-06-20 09:00:00")
+		current = frappe.db.get_value("Team Service", {"team": TEAM}, "subscription")
+		self.assertNotEqual(deleted, current)
+
+		answer = self.send_on("2026-06-20", [line("2026-06-19", 8), line("2026-06-20", 12)])
+
+		self.assertEqual(answer, {"accepted": 2, "rejected": []})
+		self.assertEqual((self.billed_on("2026-06-19"), self.billed_on("2026-06-20")), (deleted, current))
+
 	def test_a_day_between_two_buckets_of_one_name_is_an_unknown_subject(self):
 		# Deleted Monday, made again Wednesday, deleted Thursday: no bucket held the name on Tuesday.
 		self.delete_bucket("2026-06-15 12:00:00")
