@@ -18,7 +18,7 @@ class CreditLedgerEntry(Document):
 		from central.billing.ingester import push
 
 		# Only a paid top-up becomes an advance in the accounting system.
-		self.set_onload("accounting_push", bool(self.gateway_payment_id) and push.is_offered())
+		self.set_onload("accounting_sync_actions", bool(self.gateway_payment_id) and push.is_offered())
 
 	def after_insert(self):
 		if self.entry_type != "Credit" or frappe.utils.flt(self.amount) <= 0:

@@ -41,7 +41,7 @@ PENDING_BATCH = 100
 
 def enqueue_sync(profile) -> None:
 	"""Queue a sync for a complete, real profile whose synced details changed."""
-	if not is_automatic() or not is_syncable(profile):
+	if not is_automatic() or not is_sync_allowed(profile):
 		return
 	if profile.profile_id and not any(profile.has_value_changed(f) for f in SYNCED_FIELDS):
 		return
@@ -57,7 +57,7 @@ def sync_customer_profile(team: str) -> None:
 	if not hold_until_transaction_ends(f"customer-sync::{team}"):
 		return  # another step for this team is running and queues what follows
 	profile = frappe.get_doc("Billing Profile", team)
-	if not is_syncable(profile):
+	if not is_sync_allowed(profile):
 		return
 	frappe.db.savepoint(_SYNC_STEP)
 	try:
@@ -126,7 +126,7 @@ def awaiting_records(team: str) -> bool:
 	if not is_automatic() or not frappe.db.exists("Billing Profile", team):
 		return False  # in Manual mode an operator sends the records, so nothing waits on them
 	profile = frappe.get_doc("Billing Profile", team)
-	if not is_syncable(profile) or (profile.profile_id and profile.address_id and profile.contact_id):
+	if not is_sync_allowed(profile) or (profile.profile_id and profile.address_id and profile.contact_id):
 		return False
 	_enqueue(team)
 	return True
@@ -137,7 +137,7 @@ def enqueue_for(team: str) -> None:
 	if (
 		is_automatic()
 		and frappe.db.exists("Billing Profile", team)
-		and is_syncable(frappe.get_doc("Billing Profile", team))
+		and is_sync_allowed(frappe.get_doc("Billing Profile", team))
 	):
 		_enqueue(team)
 
@@ -190,7 +190,7 @@ def billable_activity_of(team_column) -> Criterion:
 	)
 
 
-def is_syncable(profile) -> bool:
+def is_sync_allowed(profile) -> bool:
 	"""Only complete profiles of real customers with billable activity; staging trials carry placeholders and internal teams are never sold to."""
 	from central.billing.doctype.billing_profile.billing_profile import get_missing_fields_of
 	from central.billing.revenue.tax import is_internal_team

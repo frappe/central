@@ -3,6 +3,6 @@
 
 frappe.ui.form.on("Credit Ledger Entry", {
 	refresh(frm) {
-		central.billing.add_accounting_push(frm);
+		central.billing.add_accounting_sync_actions(frm);
 	},
 });

@@ -198,7 +198,7 @@ class BillingProfile(Document):
 		# Only an operator may clear the lock, so only an operator is told about it.
 		is_shown = authz.is_operator() and setup_lockout.is_anyone_waiting(self.name)
 		self.set_onload("setup_lock_wait", is_shown)
-		self.set_onload("accounting_push", push.is_offered())
+		self.set_onload("accounting_sync_actions", push.is_offered())
 
 	def validate(self):
 		self.validate_phone()

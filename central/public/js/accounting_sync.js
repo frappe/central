@@ -7,18 +7,18 @@ frappe.provide("central.billing");
 
 central.billing.ACCOUNTING_API = "central.billing.api.admin.accounting";
 
-central.billing.add_accounting_push = function (frm) {
+central.billing.add_accounting_sync_actions = function (frm) {
 	// The server offers it to operators only, and only while the sync is not Off.
-	if (frm.is_new() || !frm.doc.__onload?.accounting_push) return;
+	if (frm.is_new() || !frm.doc.__onload?.accounting_sync_actions) return;
 	const group = __("Accounting");
-	frm.add_custom_button(__("Preview"), () => preview_accounting_push(frm), group);
-	frm.add_custom_button(__("Send Now"), () => confirm_accounting_push(frm), group);
+	frm.add_custom_button(__("Preview"), () => preview_accounting_sync(frm), group);
+	frm.add_custom_button(__("Send Now"), () => confirm_accounting_sync(frm), group);
 };
 
-function preview_accounting_push(frm) {
+function preview_accounting_sync(frm) {
 	frappe
 		.call({
-			method: `${central.billing.ACCOUNTING_API}.preview_accounting_push`,
+			method: `${central.billing.ACCOUNTING_API}.preview_accounting_sync`,
 			type: "GET",
 			args: { doctype: frm.doctype, name: frm.docname },
 			freeze: true,
@@ -34,7 +34,7 @@ function preview_accounting_push(frm) {
 		});
 }
 
-function confirm_accounting_push(frm) {
+function confirm_accounting_sync(frm) {
 	frappe.confirm(
 		__(
 			"Send {0} to the accounting system now? The team's customer and its advances are sent first when they are missing. Central does not delete what it makes there.",
@@ -43,7 +43,7 @@ function confirm_accounting_push(frm) {
 		() =>
 			frappe
 				.call({
-					method: `${central.billing.ACCOUNTING_API}.push_to_accounting`,
+					method: `${central.billing.ACCOUNTING_API}.send_to_accounting`,
 					args: { doctype: frm.doctype, name: frm.docname },
 					freeze: true,
 					freeze_message: __("Sending to the accounting system"),

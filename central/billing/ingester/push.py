@@ -55,7 +55,7 @@ def is_offered() -> bool:
 
 def _steps_for(doctype: str, name: str) -> Iterator[Step]:
 	if doctype == "Billing Profile":
-		_require_syncable(name)
+		_require_sync_allowed(name)
 		return _customer_steps(name)
 	if doctype == "Credit Ledger Entry":
 		return _advance_steps(frappe.get_doc("Credit Ledger Entry", name))
@@ -132,12 +132,12 @@ def _invoice_steps(inv) -> Iterator[Step]:
 
 def _missing_customer_steps(team: str) -> Iterator[Step]:
 	if not frappe.db.get_value("Billing Profile", team, "contact_id"):
-		_require_syncable(team)
+		_require_sync_allowed(team)
 		yield from _customer_steps(team)
 
 
-def _require_syncable(team: str) -> None:
-	if not customer.is_syncable(frappe.get_doc("Billing Profile", team)):
+def _require_sync_allowed(team: str) -> None:
+	if not customer.is_sync_allowed(frappe.get_doc("Billing Profile", team)):
 		frappe.throw(
 			_(
 				"Team {0} is not sent to the accounting system. Its billing details are incomplete, it is internal or a staging trial, or it has nothing billable yet."
