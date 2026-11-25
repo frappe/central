@@ -178,6 +178,16 @@ class TestOpenBench(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self._open(self.dev, server="vm-open-1")
 
+	def test_a_sleeping_vm_opens_after_the_health_check_wakes_it(self):
+		self._server("vm-open-1", "Stopped")
+		frappe.db.set_value("Virtual Machine", "vm-open-1", "sleep_state", "Deep Sleeping")
+
+		with patch("central.integrations.pilot.is_pilot_reachable", return_value=False):
+			with self.assertRaises(PilotStarting):
+				self._open(self.dev, server="vm-open-1")
+
+		self.assertTrue(self._open(self.dev, server="vm-open-1")["url"].startswith(f"{GATEWAY}/?sid="))
+
 	def test_missing_gateway_refused(self):
 		self._server("vm-open-1", "Running", gateway=None)
 		with self.assertRaises(frappe.ValidationError):
