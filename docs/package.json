@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "apps": "node scripts/sync-apps.mjs",
-    "dev": "yarn apps && vitepress dev",
-    "build": "yarn apps && vitepress build",
+    "api": "cp ../central/public/openapi.json content/public/api/openapi.json",
+    "dev": "yarn apps && yarn api && vitepress dev",
+    "build": "yarn apps && yarn api && vitepress build",
     "preview": "vitepress preview",
     "capture": "node capture/run.mjs"
   },

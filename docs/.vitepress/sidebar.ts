@@ -85,6 +85,13 @@ export const sidebar: SidebarSection[] = [
 		],
 	},
 	{
+		text: 'Developers',
+		items: [
+			{ text: 'Use the API', link: '/developers/api' },
+			{ text: 'Connect an AI agent', link: '/developers/agents' },
+		],
+	},
+	{
 		text: 'Help',
 		items: [{ text: 'Troubleshooting', link: '/help/troubleshooting' }],
 	},
