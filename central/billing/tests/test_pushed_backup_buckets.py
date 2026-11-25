@@ -12,6 +12,7 @@ from central.billing.tests import test_bundled_buckets as base
 from central.billing.tests.test_service_reports import signed
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import add_segment, complete_billing_profile, give_team_a_card
+from central.services.doctype.team_service import team_service
 
 SECRET = "storage-report-secret"
 PAUSED_AT = "2026-06-02 12:00:00"
@@ -78,6 +79,15 @@ class TestPushedBackupBuckets(base.BundledServerFixture, IntegrationTestCase):
 		self.addCleanup(frappe.db.delete, "Team Service", {"team": base.TEAM})
 		return subscription
 
+	def delete_team_bucket(self, at: str) -> None:
+		"""Delete the team's bucket of the same name at `at`, as a team would."""
+		name = frappe.db.get_value("Team Service", {"team": base.TEAM}, "name")
+		with (
+			patch.object(team_service, "ObjectStorageClient"),
+			patch("frappe.utils.now_datetime", return_value=frappe.utils.get_datetime(at)),
+		):
+			frappe.delete_doc("Team Service", name, ignore_permissions=True)
+
 	def subjects_on(self, days: set[str]) -> dict:
 		with patch.object(report_subjects, "utc_today", return_value=frappe.utils.getdate("2026-06-04")):
 			return report_subjects.subjects_by_day("storage", [self.bucket], days)
@@ -107,12 +117,13 @@ class TestPushedBackupBuckets(base.BundledServerFixture, IntegrationTestCase):
 
 		self.assertEqual(answer["accepted"], 0)
 		self.assertEqual(answer["rejected"][0]["reason"], "unknown subject")
+		# Only a team deleting its own bucket records a deletion; a server's bucket never does.
+		self.assertFalse(frappe.db.exists("Deleted Bucket", {"external_id": self.bucket}))
 
 	def test_a_name_billed_on_one_day_is_a_deleted_subject_on_another(self):
 		add_segment(self.subscription, "Paused", 0, PAUSED_AT, plan=base.VM_PLAN)
 		own = self.team_bucket_of_the_same_name()
-		self.send(["2026-06-03"], today="2026-06-04")
-		frappe.db.delete("Team Service", {"team": base.TEAM})
+		self.delete_team_bucket("2026-06-04 10:00:00")
 
 		together = self.subjects_on({"2026-06-02", "2026-06-03"})
 		alone = {day: self.subjects_on({day})[day] for day in together}

@@ -335,6 +335,7 @@ scheduler_events = {
 		"central.billing.ingester.advance.sync_pending_advances",
 		"central.billing.revenue.usage_ledger.fill_missing_days",
 		"central.billing.revenue.usage_ledger.prune_old_days",
+		"central.services.doctype.deleted_bucket.deleted_bucket.prune_deleted_buckets",
 		"central.billing.platform.invariants.run_invariant_audit",
 		"central.billing.payments.reconciliation.recheck_completed_refunds",
 	],

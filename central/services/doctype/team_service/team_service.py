@@ -7,6 +7,7 @@ from frappe.model.document import Document
 
 from central.billing.catalog.subscriptions import end_subscription, provision_service_subscription
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
+from central.services.doctype.deleted_bucket.deleted_bucket import record_deleted_bucket
 from central.services.doctype.service.service import AI_SERVICE, STORAGE_SERVICE
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 
@@ -81,6 +82,10 @@ class TeamService(Document):
 		"""Delete the bucket with its record. Cargo refuses a bucket that still holds objects."""
 		if not self.is_bucket:
 			return
+
+		# Recorded first, so a refused delete rolls it back with the rest.
+		if self.subscription:
+			record_deleted_bucket(self)
 
 		try:
 			ObjectStorageClient.from_region(self.region).delete_bucket(self.bucket_name)

@@ -6,13 +6,13 @@ import datetime
 
 import frappe
 from frappe.query_builder import Order
-from frappe.query_builder.functions import Max
 
 from central.billing.revenue.bundled_buckets import billed_subjects_of
-from central.billing.revenue.usage_ledger import utc_today
+from central.billing.revenue.usage_ledger import utc_day_start, utc_today
+from central.services.doctype.service.service import STORAGE_SERVICE
 
-# A service sends a deleted subject's last day after the delete, so Central takes a subject it no
-# longer bills while its most recent Usage Day is within this many UTC days of today.
+# A service sends a deleted bucket's last days after the delete, so Central takes lines for a bucket
+# deleted today or on the 2 UTC days before.
 DELETED_SUBJECT_DAYS = 2
 
 
@@ -20,58 +20,38 @@ def subjects_by_day(service: str, names: list[str], days: set[str]) -> dict[str,
 	"""The subjects among `names` that `service` bills on each of `days`, by day then subject."""
 	billed = {day: billed_subjects_of(service, day, names) for day in days}
 	# One lookup for every name missing on some day, so a day's answer never depends on the other
-	# days sent with it: a name billed on one day may still be a deleted subject on another.
+	# days sent with it: a name billed on one day may still be a deleted bucket on another.
 	missing = {name for name in names for subjects in billed.values() if name not in subjects}
 	deleted = _recently_deleted(service, sorted(missing))
-	# A deleted subject's lines go on its last subscription for any day it is not billed, a backlog
-	# too; a subject billed that day wins over a deleted one of the same name.
-	return {day: {**deleted, **subjects} for day, subjects in billed.items()}
+	# A subject billed that day wins over a deleted bucket of the same name.
+	return {day: {**_deleted_on(deleted, day), **subjects} for day, subjects in billed.items()}
+
+
+def _deleted_on(deleted: dict, day: str) -> dict:
+	"""The deleted buckets that still existed at some moment of the UTC day `day`."""
+	start = utc_day_start(day)
+	return {name: row for name, row in deleted.items() if row.deleted_at >= start}
 
 
 def _recently_deleted(service: str, names: list[str]) -> dict:
-	"""Subjects Central no longer bills whose own latest Usage Day is a recent team-level one."""
+	"""The latest recorded deletion of each of `names` in the last few UTC days, in one query."""
+	# Only a team's own bucket is recorded when deleted; a server's backup bucket never is.
+	if service != STORAGE_SERVICE or not names:
+		return {}
 	today = utc_today()
-	since = today - datetime.timedelta(days=DELETED_SUBJECT_DAYS)
-	# Only the subject's single latest day counts: an older recent row must not stand in for a
-	# latest day on a server's subscription (resolved by day) or one dated after today.
-	return {
-		row.external_id: frappe._dict(
-			external_id=row.external_id, team=row.team, subscription=row.subscription
-		)
-		for row in _latest_usage_days(service, names)
-		if since <= row.day <= today and not row.server_id
-	}
-
-
-def _latest_usage_days(service: str, names: list[str]) -> list:
-	"""Each subject's latest Usage Day for `service`, over all its subscriptions, in two queries."""
-	if not names:
-		return []
-	day = frappe.qb.DocType("Usage Day")
-	latest = dict(
-		frappe.qb.from_(day)
-		.select(day.subject, Max(day.day))
-		.where(day.service == service)
-		.where(day.subject.isin(names))
-		.groupby(day.subject)
-		.run()
-	)
-	if not latest:
-		return []
-	subscription = frappe.qb.DocType("Subscription")
+	since = utc_day_start(today - datetime.timedelta(days=DELETED_SUBJECT_DAYS))
+	until = utc_day_start(today + datetime.timedelta(days=1))
+	table = frappe.qb.DocType("Deleted Bucket")
 	rows = (
-		frappe.qb.from_(day)
-		.join(subscription)
-		.on(subscription.name == day.subscription)
-		.select(day.subject.as_("external_id"), day.team, day.subscription, day.day, subscription.server_id)
-		.where(day.service == service)
-		.where(day.subject.isin(list(latest)))
-		.where(day.day.isin(list(set(latest.values()))))
-		.orderby(day.creation, order=Order.desc)
+		frappe.qb.from_(table)
+		.select(table.external_id, table.team, table.subscription, table.deleted_at)
+		.where(table.external_id.isin(names))
+		.where(table.deleted_at >= since)
+		.orderby(table.deleted_at, order=Order.desc)
+		.orderby(table.creation, order=Order.desc)
 	).run(as_dict=True)
-	# Another subject's latest day can match this subject's older day, so keep exact matches.
-	first: dict = {}
+	latest: dict = {}
 	for row in rows:
-		if row.day == latest[row.external_id]:
-			first.setdefault(row.external_id, row)
-	return list(first.values())
+		latest.setdefault(row.external_id, row)
+	# A deletion stamped after today is a clock error, not a bucket that still bills.
+	return {name: row for name, row in latest.items() if row.deleted_at < until}

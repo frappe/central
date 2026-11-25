@@ -762,18 +762,26 @@ Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
     the servers whose name ends a reported name are looked up); and a subject Central no longer
     bills on that day (a deleted bucket), resolved day by day: a name billed on one reported
     day can still resolve this way on another, and a day gets the same answer whatever other
-    days the report holds. Central takes its single latest Usage Day for the service, over
-    all its subscriptions, and accepts it only when that day is within the last 2 UTC days
-    (today or the 2 days before, never after today) and is not on a server's subscription. Then the lines for any of its days in the report that it is not billed, older days from a backlog too,
-    go on the team and subscription of that Usage Day. A real reading replaces an estimated
-    day that is not invoiced. Any other subject is "unknown subject"
+    days the report holds. Deleting a team's bucket (TeamService.on_trash, before Cargo deletes
+    it and the subscription is released) writes a Deleted Bucket row: name, team, subscription,
+    region, deleted_at. Central takes the latest row for the name (one query for every name
+    not billed on some day) when deleted_at is within the last 2 UTC days (today or the 2 days
+    before), and a line for a day on or before the UTC date of deleted_at goes on that row's
+    team and subscription, a backlog day too. No Usage Day is consulted, so lines accepted
+    after the delete never extend the window, and a server's backup bucket is never resolved
+    this way (only a Team Service delete writes a row). A daily job deletes rows older than 30
+    days. A real reading replaces an estimated day that is not invoiced. Any other subject is
+    "unknown subject"
   → every signed report sets Service.last_report_at and last_report_as_of
   → the report secret: saving a new Service.report_secret queues it after commit
     (integrations.report_secret). storage: one job per Registered region calls
     cargo.api.webhooks.configure with the region's webhook secret and `report_secret`; region
     enrolment (register_cargo) sends it too. ai: one job calls grove.api.control.set_report_secret.
-    Each job reads the secret itself; a failed send logs "Report secret not sent to Cargo/Grove"
-    with no secret and no traceback, and other regions still get theirs
+    Each job reads the secret itself; a failed send (AI Settings without Grove control
+    credentials too) logs "Report secret not sent to Cargo/Grove" with no secret and no
+    traceback, and other regions still get theirs. A secret that changes during each of 3
+    sends is logged once and a fresh job is queued after commit for the newest one, one job id
+    per service and region, so a queued or running resend is never queued again
   → once Central stops reading a service (central_reads off): alert `silent_service` after
     twice its expected_cadence with no report; usage_checks compares Central's own reading with
     the pushed days and raises `usage_mismatch` (a check never writes a Usage Day)
