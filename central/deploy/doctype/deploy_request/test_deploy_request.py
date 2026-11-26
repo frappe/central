@@ -137,6 +137,21 @@ class IntegrationTestDeployRequest(IntegrationTestCase):
 			self.assertEqual((kwargs["state"], kwargs["description"], kwargs["target_url"]), expected)
 		self.assertEqual(set_commit_status.call_args.args, ("101", "11", "octo/app", "a" * 40))
 
+	def test_a_live_deploy_records_a_github_deployment_at_the_apps_domain(self):
+		self.app.db_set("domain", "live.example.test")
+		with patch("frappe.enqueue_doc") as enqueue:
+			request = DeployRequest.queue(self.app.name, "a" * 40)
+			self.set_status(request, "Succeeded")
+		enqueue.assert_any_call(
+			"Deploy Request", request.name, "update_github_deployment_status", enqueue_after_commit=True
+		)
+
+		github = patch("central.deploy.doctype.deploy_request.deploy_request.GitHubApp").start()
+		request.update_github_deployment_status()
+		github.return_value.create_deployment.assert_called_once_with(
+			"101", "11", "octo/app", "a" * 40, environment_url="https://live.example.test"
+		)
+
 
 class IntegrationTestDeployPipeline(IntegrationTestCase):
 	"""A push runs as a pipeline: VM, then a build and a release the deploy agent reports on."""

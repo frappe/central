@@ -21,11 +21,13 @@ INSTALLATION = {
 	"installation_id": "101",
 	"account": "octo",
 	"account_type": "Organization",
-	"permissions": {"contents": "read", "metadata": "read", "statuses": "write"},
+	"permissions": {"contents": "read", "metadata": "read", "statuses": "write", "deployments": "write"},
 	"events": ["push", "repository"],
 }
 # An installation made before the App asked for commit statuses and pushes.
 PILOT_ONLY_INSTALLATION = {**INSTALLATION, "permissions": {"contents": "read"}, "events": ["repository"]}
+# An installation made before the App asked for deployments.
+STATUSES_ONLY_INSTALLATION = {**INSTALLATION, "permissions": {"contents": "read", "statuses": "write"}}
 REPOSITORY = {"repository_id": "11", "full_name": "octo/app", "default_branch": "main", "is_admin": True}
 
 
@@ -137,15 +139,18 @@ class IntegrationTestDeployConnection(IntegrationTestCase):
 		)
 
 	def test_the_callback_sends_the_user_to_accept_the_deploy_permissions_on_an_older_installation(self):
-		self.github.get_user_installations.return_value = [PILOT_ONLY_INSTALLATION]
-		state = self.start()
-		frappe.set_user(self.owner)
-		oauth_callback(state=state, code="code")
-		self.assertEqual(
-			(frappe.local.response.get("type"), frappe.local.response.get("location")),
-			("redirect", "installation-settings-url"),
-		)
-		self.github.get_installation_settings_url.assert_called_with(PILOT_ONLY_INSTALLATION)
+		for installation in (PILOT_ONLY_INSTALLATION, STATUSES_ONLY_INSTALLATION):
+			with self.subTest(installation["permissions"]):
+				frappe.set_user("Administrator")
+				self.github.get_user_installations.return_value = [installation]
+				state = self.start()
+				frappe.set_user(self.owner)
+				oauth_callback(state=state, code="code")
+				self.assertEqual(
+					(frappe.local.response.get("type"), frappe.local.response.get("location")),
+					("redirect", "installation-settings-url"),
+				)
+				self.github.get_installation_settings_url.assert_called_with(installation)
 
 	def test_a_deploy_waits_for_the_permissions_and_connects_on_the_next_poll_once_accepted(self):
 		self.github.get_user_installations.return_value = [PILOT_ONLY_INSTALLATION]

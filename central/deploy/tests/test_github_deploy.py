@@ -69,6 +69,7 @@ class IntegrationTestGitHubDeploy(IntegrationTestCase):
 		):
 			manifest = json.loads(create_app_manifest("Frappe Cloud")["manifest"])
 		self.assertEqual(manifest["default_permissions"]["statuses"], "write")
+		self.assertEqual(manifest["default_permissions"]["deployments"], "write")
 		self.assertIn("push", manifest["default_events"])
 		self.assertEqual(
 			manifest["callback_urls"], [f"{url}/api/method/central.api.integrations.github.oauth_callback"]
@@ -89,6 +90,25 @@ class IntegrationTestGitHubDeploy(IntegrationTestCase):
 		self.assertEqual(
 			status_call.kwargs["json"],
 			{"state": "failure", "description": "x" * 140, "context": "Deploy", "target_url": None},
+		)
+
+	def test_a_live_deploy_is_recorded_as_a_successful_production_deployment(self):
+		app = GitHubApp()
+		with (
+			patch.object(GitHubApp, "_app_jwt", return_value="jwt"),
+			patch.object(
+				GitHubApp, "_request", return_value={"token": "t", "expires_at": "x", "id": 7}
+			) as request,
+		):
+			app.create_deployment("101", "11", "octo/app", "a" * 40, "https://app.example.test")
+		token_call, deployment_call, status_call = request.call_args_list
+		self.assertEqual(token_call.kwargs["json"]["permissions"], {"deployments": "write"})
+		self.assertTrue(deployment_call.args[1].endswith("/repos/octo/app/deployments"))
+		self.assertEqual(deployment_call.kwargs["json"]["ref"], "a" * 40)
+		self.assertEqual(deployment_call.kwargs["json"]["required_contexts"], [])
+		self.assertTrue(status_call.args[1].endswith("/repos/octo/app/deployments/7/statuses"))
+		self.assertEqual(
+			status_call.kwargs["json"], {"state": "success", "environment_url": "https://app.example.test"}
 		)
 
 	def test_a_delivery_is_handled_once(self):
