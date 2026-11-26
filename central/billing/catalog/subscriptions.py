@@ -65,6 +65,7 @@ def _record_change(
 	locked_rate=None,
 	currency=None,
 	included_resources=None,
+	effective_at=None,
 ):
 	"""Append one immutable Subscription Change row. A change that opens a segment
 	carries its locked rate and currency."""
@@ -76,7 +77,7 @@ def _record_change(
 			"old_value": old_value,
 			"new_value": new_value,
 			"included_resources": included_resources,
-			"effective_at": frappe.utils.now_datetime(),
+			"effective_at": effective_at or frappe.utils.now_datetime(),
 			"changed_by": changed_by or frappe.session.user,
 			"locked_rate": locked_rate,
 			"currency": currency,
@@ -1223,11 +1224,11 @@ def change_payment_method(subscription: str, new_method: str, changed_by: str | 
 	return doc
 
 
-def cancel_subscription(subscription: str, changed_by: str | None = None):
+def cancel_subscription(subscription: str, changed_by: str | None = None, effective_at=None):
 	"""Cancel the subscription intent. The contract record is kept; the
 	cancellation is logged. Stopping/terminating the running resource is a separate
 	operational step Central drives via the cluster manager (ADR 0006)."""
-	_record_change(subscription, "Cancelled", changed_by=changed_by)
+	_record_change(subscription, "Cancelled", changed_by=changed_by, effective_at=effective_at)
 	return frappe.get_doc("Subscription", subscription)
 
 
