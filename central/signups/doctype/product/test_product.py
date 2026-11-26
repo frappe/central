@@ -122,6 +122,7 @@ class IntegrationTestProduct(IntegrationTestCase):
 		product = self.product("raven-connector-route")
 
 		for route in ("//evil.example.test/x", "/../admin", "/api//method", "https://evil.example.test"):
+			product.reload()
 			product.connector_route = route
 			with self.assertRaises(frappe.ValidationError):
 				product.save()
@@ -135,10 +136,12 @@ class IntegrationTestProduct(IntegrationTestCase):
 			"mcp.example.test:443",
 			"a,b.test",
 		):
+			product.reload()
 			product.connector_hosts = hosts
 			with self.assertRaises(frappe.ValidationError):
 				product.save()
 
+		product.reload()
 		product.connector_hosts = "MCP.example.test\n  staging.example.test "
 		product.save()
 		self.assertEqual(product.connector_hosts, "mcp.example.test\nstaging.example.test")
