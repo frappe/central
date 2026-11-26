@@ -19,7 +19,8 @@ def execute():
 	ensure_services()
 	move_ip_rates_to_plan()
 	today = utc_today()
-	# A second run on a later day keeps the first cutover day.
+	# A second run on a later day keeps the first cutover day. It is set before day C is
+	# written, because no IPv4 day is written while the cutover day is unset.
 	if not frappe.db.get_value("Service", NETWORK_SERVICE, "bill_from"):
 		frappe.db.set_value("Service", NETWORK_SERVICE, "bill_from", today)
 	close_address_subscriptions(utc_day_start(today))

@@ -754,6 +754,8 @@ Public IPv4 (#197, #200): one Level Usage Day per server and UTC day on the serv
     saw, so an address released before the job runs still bills its day; and the hourly
     read_public_ipv4 sweep (see the scheduled table). write_days keeps the highest count, so both
     are idempotent
+  → no writer writes a day while Service `network`.bill_from is empty: until the cutover patch
+    runs (a deploy runs the new code before migrate), the per-address subscriptions still bill
   → a day is written only when the server's subscription had an open segment at some moment of it
     (public_ipv4_usage.billed_servers_on over catalog.subscriptions.server_segments, which
     bundled_buckets also reads): a trial server (no subscription) is free until it converts, a
