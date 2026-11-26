@@ -141,6 +141,7 @@ after_install = [
 	"central.infrastructure.doctype.image_offering.image_offering.ensure_default_offerings",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.services.doctype.service.service.ensure_services",
+	"central.billing.revenue.public_ipv4_usage.start_on_install",
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",

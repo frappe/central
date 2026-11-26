@@ -17,7 +17,7 @@ from central.billing.doctype.subscription_change.subscription_change import (
 )
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue.usage_ledger import utc_day_window, utc_today, write_days
-from central.services.doctype.service.service import NETWORK_SERVICE, PUBLIC_IPV4_METER
+from central.services.doctype.service.service import NETWORK_SERVICE, PUBLIC_IPV4_METER, ensure_services
 
 SWEPT_DAY = "public_ipv4_swept_day"
 PAGE_SIZE = 500
@@ -64,6 +64,23 @@ def read_public_ipv4() -> int:
 		# A failed page leaves the mark unset, so the next run writes the day before again.
 		frappe.db.set_default(SWEPT_DAY, str(today))
 	return written + closed
+
+
+def start_on_install() -> None:
+	"""Bill public IPv4 per day from the day a fresh site is installed."""
+	# A fresh install marks the cutover patch done without running it, and holds no
+	# per-address subscription, so its days can start at once.
+	ensure_services()
+	if not cutover_day():
+		frappe.db.set_value("Service", NETWORK_SERVICE, "bill_from", utc_today())
+
+
+def cutover_day() -> datetime.date | None:
+	"""The first UTC day public IPv4 bills per day, or None before the cutover."""
+	# Before migrate the service may not exist, and before the cutover the per-address
+	# subscriptions still bill, so either way no day may be written.
+	bill_from = frappe.db.get_value("Service", NETWORK_SERVICE, "bill_from")
+	return frappe.utils.getdate(bill_from) if bill_from else None
 
 
 def held_addresses() -> dict[str, int]:
@@ -139,13 +156,14 @@ def _pages(held: dict[str, int]) -> dict[str, list[str]]:
 
 def _page_writer(day, pages: dict[str, list[str]], held: dict[str, int]):
 	"""Write `day` for the page that starts with a given server."""
-	service = frappe.get_doc("Service", NETWORK_SERVICE)
-	if not service.bill_from:
-		# Before the cutover the per-address subscriptions still bill, so a day would bill twice.
+	cutover = cutover_day()
+	if not cutover:
+		# Every page "writes" nothing, so the sweep still marks the day before as swept. That
+		# day is before the cutover, which writes it off, so nothing is lost.
 		return lambda first: 0
-	meter = service.get_meter(PUBLIC_IPV4_METER)
+	meter = frappe.get_doc("Service", NETWORK_SERVICE).get_meter(PUBLIC_IPV4_METER)
 	# Per-address subscriptions all closed by the cutover day, so no later day can overlap one.
-	is_cutover_day = frappe.utils.getdate(day) == frappe.utils.getdate(service.bill_from)
+	is_cutover_day = frappe.utils.getdate(day) == cutover
 
 	def write_page(first: str) -> int:
 		servers = pages[first]

@@ -443,6 +443,33 @@ class TestIPv4Cutover(IPv4DaysTestCase):
 		)
 
 
+class TestIPv4BeforeTheCutover(IPv4DaysTestCase):
+	"""A fresh install starts the days itself; a site not yet migrated writes none."""
+
+	def test_a_fresh_install_bills_from_its_install_day(self):
+		frappe.db.set_value("Service", NETWORK_SERVICE, "bill_from", None)
+		with patch.object(public_ipv4_usage, "utc_today", return_value=CUTOVER_DAY):
+			public_ipv4_usage.start_on_install()
+
+		self.assertEqual(frappe.db.get_value("Service", NETWORK_SERVICE, "bill_from"), CUTOVER_DAY)
+
+	def test_install_keeps_a_cutover_day_already_set(self):
+		with patch.object(public_ipv4_usage, "utc_today", return_value=CUTOVER_DAY):
+			public_ipv4_usage.start_on_install()
+
+		self.assertEqual(frappe.db.get_value("Service", NETWORK_SERVICE, "bill_from"), BEFORE_JUNE)
+
+	def test_no_day_is_written_before_migrate_creates_the_service(self):
+		# The deleted service must come back before the setUp cleanups run.
+		self.addCleanup(frappe.db.rollback)
+		frappe.db.delete("Service", NETWORK_SERVICE)
+
+		self.write("2026-06-05")
+		self.sweep("2026-06-11")
+
+		self.assertEqual(self.days(), [])
+
+
 def _hours_billed(line) -> float:
 	"""The hours a fixed line covers: its hours on a part day, or its whole days."""
 	return line.hours or line.days * 24
