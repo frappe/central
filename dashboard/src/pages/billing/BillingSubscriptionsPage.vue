@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import { ScrollArea } from 'frappe-ui'
 import PayingForCard from '@/components/billing/PayingForCard.vue'
 </script>
 
 <template>
-	<div class="h-full overflow-y-auto">
+	<ScrollArea class="h-full">
 		<div class="p-3 md:p-4">
 			<PayingForCard full />
 		</div>
-	</div>
+	</ScrollArea>
 </template>
