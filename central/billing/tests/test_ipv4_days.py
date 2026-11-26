@@ -453,6 +453,11 @@ class TestIPv4BeforeTheCutover(IPv4DaysTestCase):
 
 		self.assertEqual(frappe.db.get_value("Service", NETWORK_SERVICE, "bill_from"), CUTOVER_DAY)
 
+	def test_a_fresh_install_runs_the_start_hook(self):
+		self.assertIn(
+			"central.billing.revenue.public_ipv4_usage.start_on_install", frappe.get_hooks("after_install")
+		)
+
 	def test_install_keeps_a_cutover_day_already_set(self):
 		with patch.object(public_ipv4_usage, "utc_today", return_value=CUTOVER_DAY):
 			public_ipv4_usage.start_on_install()

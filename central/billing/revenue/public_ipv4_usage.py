@@ -70,6 +70,7 @@ def start_on_install() -> None:
 	"""Bill public IPv4 per day from the day a fresh site is installed."""
 	# A fresh install marks the cutover patch done without running it, and holds no
 	# per-address subscription, so its days can start at once.
+	# Called again here so the service exists whatever order the install hooks run in.
 	ensure_services()
 	if not cutover_day():
 		frappe.db.set_value("Service", NETWORK_SERVICE, "bill_from", utc_today())
