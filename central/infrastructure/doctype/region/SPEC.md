@@ -70,7 +70,7 @@ Cargo also connects through this record, in its own `cargo_*` fields, under the 
 
 ### Registration
 
-`register_cargo` checks `/api/method/ping` at the Cargo address. When Cargo answers `pong`, Central sends it a fresh `cargo_webhook_secret` and Central's receiver URL through `cargo.api.webhooks.configure`, and sets `cargo_status` to Registered. A repeat only replaces the secret, so it is safe to retry. `accept_cargo_report` refuses every report until then.
+`register_cargo` checks `/api/method/ping` at the Cargo address. When Cargo answers `pong`, Central sends it a fresh `cargo_webhook_secret`, Central's receiver URL and the storage Service's `report_secret` (when it is set) through `cargo.api.webhooks.configure`, and sets `cargo_status` to Registered. A repeat only replaces the secret, so it is safe to retry. `accept_cargo_report` refuses every report until then. When an operator changes the storage `report_secret`, Central sends it again through the same call to each Registered Cargo, one background job per region.
 
 | Trigger | When Cargo answers | When Cargo does not answer or refuses |
 |---|---|---|

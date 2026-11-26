@@ -15,12 +15,9 @@ from central.billing.tests.utils import add_segment, make_metered_plan, make_pla
 PAUSED_AT = "2026-06-02 12:00:00"
 
 
-class TestBundledBucketHistory(IntegrationTestCase):
-	# The fixture is the bundled-bucket one: a server whose plan includes 40 GB of storage.
-	setUp = base.TestBundledBuckets.setUp
-	read = base.TestBundledBuckets.read
-	estimated_bundles = base.TestBundledBuckets.estimated_bundles
-	transfer_day = base.TestBundledBuckets.transfer_day
+class TestBundledBucketHistory(base.BundledServerFixture, IntegrationTestCase):
+	def setUp(self):
+		self.set_up_bundled_server()
 
 	def read_page(self, day: str, gb: float, queued_for: str | None = None) -> None:
 		"""Run a page on `day` (UTC), after whatever changed since it was queued."""

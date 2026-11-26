@@ -77,6 +77,7 @@ class BillingTestCase(IntegrationTestCase):
 		"Entitlement Token",
 		"Commitment",
 		"Usage Day",
+		"Deleted Bucket",
 		"Monthly Exchange Rate",
 		"Usage Rollup",
 		"Usage Check",
@@ -682,3 +683,10 @@ def run_repeat_counts(method, **kwargs):
 	"""Run the repeat-count job inline and leave the processing job queued."""
 	if method == WEBHOOK_COUNT_JOB:
 		run_enqueued_inline(method, **kwargs)
+
+
+def central_reads(case, service: str, is_on: bool = True) -> None:
+	"""Have Central read `service` itself, or not, for the rest of `case`."""
+	before = frappe.db.get_value("Service", service, "central_reads")
+	frappe.db.set_value("Service", service, "central_reads", int(is_on))
+	case.addCleanup(frappe.db.set_value, "Service", service, "central_reads", before)

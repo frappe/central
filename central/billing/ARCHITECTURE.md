@@ -745,13 +745,54 @@ Server bundles (#188): a server plan's Plan Includes row is the server's bundle 
   → storage: storage_bridge reads each server's backup bucket (bundled_buckets: tenant, region and
     server name it) beside the team buckets; a paused or ended server's bucket is not read
 Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
+  → while the service's central_reads is on, Central's own reading still bills it: every line is
+    refused with retry true ("Central still reads this service; send it again after the switch")
+    and no Usage Day is written, so the service holds its lines until the switch
+  → Central's own page jobs (storage_bridge.read_page, read_bundled_page, grove_bridge.read_page)
+    read central_reads again under the same Service row lock right before they write, and write
+    nothing once it is off: a page queued before the switch never writes a day a report owns.
+    A Usage Day is written by Central's reading only while central_reads is on, and by a pushed
+    report only while it is off
   → service_reports.accept_report stores each line as a Usage Day; a refused line comes back
     with its subject, meter, day, dimension ("" when it has none) and `retry`. It is true for an
     unknown subject (the team may subscribe later), a day in the future (the service's clock may
     be ahead) and a day written by another worker at the same time; the service sends these
     again. It is false for a malformed line, an unknown meter and a bad value, dimension, amount,
     currency or day format; the service never sends these again
+  → report_subjects.subjects_by_day resolves the subjects once per distinct day in the report
+    with bundled_buckets.billed_subjects_of(service, day, names): the service's Team Services
+    with a subscription, made by the end of that UTC day; for storage, a server's backup bucket on a day its server billed, with
+    that day's bundle set as Usage Day.included, as storage_bridge._bundled_reading sets it (a
+    backup bucket wins a name it shares with a Team Service, as in Central's own reading; only
+    the servers whose name ends a reported name are looked up); and a subject Central no longer
+    bills on that day (a deleted bucket), resolved day by day: a name billed on one reported
+    day can still resolve this way on another, and a day gets the same answer whatever other
+    days the report holds. Deleting a team's bucket (TeamService.on_trash, before Cargo deletes
+    it and the subscription is released) writes a Deleted Bucket row: external_id, team,
+    subscription, region, deleted_at. Central reads the rows for the name whose deleted_at is
+    within the last 2 UTC days (today or the 2 days before), in one query for every name not
+    billed on some day. A line for a day goes on the team and subscription of the latest of
+    those rows made before that UTC day ended and deleted on or after it began, the bucket that
+    held the name most recently that day (a name deleted, made again and deleted again bills
+    each day on its own bucket), a backlog day too; a day after the UTC date of the latest
+    deletion is unknown. Cargo keeps one daily peak per bucket name, so a day two buckets of one
+    name shared cannot be split: Central bills it to the bucket alive most recently that day, a
+    live (billed) bucket first, then the latest deletion. The old team is never charged for the
+    new bucket's data; at most the earlier bucket's last part-day goes unbilled. No Usage Day is consulted, so lines accepted
+    after the delete never extend the window, and a server's backup bucket is never resolved
+    this way (only a Team Service delete writes a row). A daily job deletes rows older than 30
+    days. A real reading replaces an estimated day that is not invoiced. Any other subject is
+    "unknown subject"
   → every signed report sets Service.last_report_at and last_report_as_of
+  → the report secret: saving a new Service.report_secret queues it after commit
+    (integrations.report_secret). storage: one job per Registered region calls
+    cargo.api.webhooks.configure with the region's webhook secret and `report_secret`; region
+    enrolment (register_cargo) sends it too. ai: one job calls grove.api.control.set_report_secret.
+    Each job reads the secret itself; a failed send (AI Settings without Grove control
+    credentials too) logs "Report secret not sent to Cargo/Grove" with no secret and no
+    traceback, and other regions still get theirs. A secret that changes during each of 3
+    sends is logged once and a fresh job is queued after commit for the newest one, one job id
+    per service and region, so a queued or running resend is never queued again
   → once Central stops reading a service (central_reads off): alert `silent_service` after
     twice its expected_cadence with no report; usage_checks compares Central's own reading with
     the pushed days and raises `usage_mismatch` (a check never writes a Usage Day)

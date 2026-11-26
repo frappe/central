@@ -24,47 +24,67 @@ from central.services.doctype.team_service.team_service import billed_subjects, 
 
 def bundled_buckets(names: list[str] | None = None, day=None) -> dict[str, frappe._dict]:
 	"""The backup bucket of every server billing now, or on `day`, whose plan includes storage."""
-	buckets = _bundled_buckets_on(day)
 	if names is None:
-		return buckets
+		return _bundled_buckets_on(day)
+	# Only the servers these names can belong to, so a few names never scan every server.
+	servers = _servers_named_in(names)
+	if not servers:
+		return {}
+	buckets = _bundled_buckets_on(day, servers)
 	return {name: buckets[name] for name in names if name in buckets}
 
 
 def billed_storage_subjects(day=None) -> dict[str, frappe._dict]:
 	"""Every bucket storage bills, the team's own and the servers' backup buckets, by bucket name."""
-	return {**billed_subjects(STORAGE_SERVICE), **_bundled_buckets_on(day)}
+	return billed_subjects_of(STORAGE_SERVICE, day)
 
 
-def billed_subjects_of(service: str, day=None) -> dict[str, frappe._dict]:
-	"""Every subject a service bills; a server's backup bucket only while the server bills on `day`."""
-	if service == STORAGE_SERVICE:
-		return billed_storage_subjects(day)
-	return billed_subjects(service)
+def billed_subjects_of(service: str, day=None, names: list[str] | None = None) -> dict[str, frappe._dict]:
+	"""Every subject, or those among `names`, a service bills now or on `day`; a bucket only on its days."""
+	# A bucket made after `day` ended did not bill it, though it may reuse a deleted bucket's name.
+	created_before = (
+		None if day is None else utc_day_start(frappe.utils.getdate(day) + datetime.timedelta(days=1))
+	)
+	subjects = billed_subjects(service, names, created_before)
+	if service != STORAGE_SERVICE:
+		return subjects
+	# A backup bucket wins a name it shares with a team's bucket, as Central's own reading does.
+	return {**subjects, **bundled_buckets(names, day)}
 
 
-def _bundled_buckets_on(day) -> dict[str, frappe._dict]:
+def _bundled_buckets_on(day, servers: list[str] | None = None) -> dict[str, frappe._dict]:
 	"""The backup buckets of servers billing now, or at any point of the UTC day `day`."""
 	if day is None:
-		return _all_bundled_buckets()
+		return _all_bundled_buckets(servers=servers)
 	day = frappe.utils.getdate(day)
 	start, end = utc_day_start(day), utc_day_start(day + datetime.timedelta(days=1))
-	return _all_bundled_buckets((start, end))
+	return _all_bundled_buckets((start, end), servers)
 
 
-def _all_bundled_buckets(during=None) -> dict[str, frappe._dict]:
+def _all_bundled_buckets(during=None, servers: list[str] | None = None) -> dict[str, frappe._dict]:
 	# A paused or ended server has no open segment, so its bucket bills nothing.
-	segments, included = _segments_with_storage(during)
-	servers = _servers([segment.server_id for segment in segments])
+	segments, included = _segments_with_storage(during, servers)
+	vms = _servers([segment.server_id for segment in segments])
 	tenants = _tenants({segment.team for segment in segments})
-	rows = [_bucket(segment, servers, tenants, included) for segment in segments]
+	rows = [_bucket(segment, vms, tenants, included) for segment in segments]
 	return {row.external_id: row for row in rows if row}
 
 
-def _segments_with_storage(during) -> tuple[list, dict[str, float]]:
+def _segments_with_storage(during, servers: list[str] | None) -> tuple[list, dict[str, float]]:
 	"""The server segments open now, or at some moment of `during`, with a storage bundle; and the bundles."""
-	segments = active_segments({"server_id": ["is", "set"]}, during=during)
+	server_id = ["is", "set"] if servers is None else ["in", servers]
+	segments = active_segments({"server_id": server_id}, during=during)
 	included = _bundles_now(segments) if during is None else _bundles_during(segments, during)
 	return [segment for segment in segments if included.get(segment.subscription)], included
+
+
+def _servers_named_in(names: list[str]) -> list[str]:
+	"""The servers whose name ends one of these bucket names after a dash."""
+	# A bucket is named tenant-region-server and a server's name may hold dashes, so every tail is a candidate.
+	tails = {name.split("-", cut)[cut] for name in names for cut in range(1, name.count("-") + 1)}
+	if not tails:
+		return []
+	return frappe.get_all("Virtual Machine", filters={"name": ["in", list(tails)]}, pluck="name")
 
 
 def _bundles_now(segments: list) -> dict[str, float]:
