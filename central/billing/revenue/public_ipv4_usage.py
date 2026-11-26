@@ -5,10 +5,17 @@
 import datetime
 
 import frappe
+from frappe.query_builder import Order
 
 from central.billing.catalog.pricing import resolve_rate
 from central.billing.catalog.public_ips import get_public_ipv4_rates
 from central.billing.catalog.subscriptions import server_segments
+from central.billing.doctype.subscription_change.subscription_change import (
+	CLOSING_CHANGE_TYPES,
+	RATED_CHANGE_TYPES,
+	SEGMENT_CHANGE_TYPES,
+)
+from central.billing.platform.jobs import each_isolated
 from central.billing.revenue.usage_ledger import utc_day_window, utc_today, write_days
 from central.services.doctype.service.service import NETWORK_SERVICE, PUBLIC_IPV4_METER
 
@@ -48,13 +55,15 @@ def read_public_ipv4() -> int:
 	"""Hourly: write today's day for each server holding an address, and yesterday's on a UTC day's first run."""
 	today = utc_today()
 	held = held_addresses()
-	days = [today]
-	if frappe.db.get_default(SWEPT_DAY) != str(today):
-		# The first run of a UTC day closes the day before, so the hours the scheduler missed still count.
-		days.append(today - datetime.timedelta(days=1))
-	written = sum(write_ipv4_days(day, held) for day in days)
-	frappe.db.set_default(SWEPT_DAY, str(today))
-	return written
+	written, _ = _sweep(today, held)
+	if frappe.db.get_default(SWEPT_DAY) == str(today):
+		return written
+	# The first run of a UTC day closes the day before, so the hours the scheduler missed still count.
+	closed, is_complete = _sweep(today - datetime.timedelta(days=1), held)
+	if is_complete:
+		# A failed page leaves the mark unset, so the next run writes the day before again.
+		frappe.db.set_default(SWEPT_DAY, str(today))
+	return written + closed
 
 
 def held_addresses() -> dict[str, int]:
@@ -69,14 +78,9 @@ def held_addresses() -> dict[str, int]:
 
 def write_ipv4_days(day, held: dict[str, int]) -> int:
 	"""Write one Usage Day for each server in `held` that billed at some moment of the UTC day `day`."""
-	meter = frappe.get_doc("Service", NETWORK_SERVICE).get_meter(PUBLIC_IPV4_METER)
-	names = [name for name, addresses in held.items() if addresses > 0]
-	written = 0
-	for start in range(0, len(names), PAGE_SIZE):
-		billed = billed_servers_on(day, names[start : start + PAGE_SIZE])
-		rows = [_day_row(meter, segment, day, held[server]) for server, segment in billed.items()]
-		written += write_days(rows).count
-	return written
+	pages = _pages(held)
+	write_page = _page_writer(day, pages, held)
+	return sum(write_page(first) for first in pages)
 
 
 def billed_servers_on(day, servers: list[str]) -> dict[str, frappe._dict]:
@@ -85,15 +89,27 @@ def billed_servers_on(day, servers: list[str]) -> dict[str, frappe._dict]:
 	return {segment.server_id: segment for segment in server_segments(servers, utc_day_window(day))}
 
 
+def billed_per_address(day, servers: list[str]) -> set[str]:
+	"""The servers whose per-address IPv4 subscription billed some hour of the UTC day `day`."""
+	start, end = utc_day_window(day)
+	closed = {row.subscription for row in _address_changes(servers, CLOSING_CHANGE_TYPES, start, end)}
+	if not closed:
+		return set()
+	billed, previous = set(), {}
+	for row in _address_changes(servers, SEGMENT_CHANGE_TYPES, None, end):
+		if row.subscription in closed and _is_end_of_billed_segment(
+			previous.get(row.subscription), row, start
+		):
+			billed.add(row.server)
+		previous[row.subscription] = row
+	return billed
+
+
 def find_unbilled_addresses() -> list[tuple[frappe._dict, str]]:
-	"""Each billed server holding an address with no price for it or no day for yesterday, and why."""
+	"""Each billed server holding an address that has no price in its team's currency for its region."""
 	servers = list(held_addresses())
 	if not servers:
 		return []
-	return [*_unpriced(servers), *_unrecorded(servers)]
-
-
-def _unpriced(servers: list[str]) -> list[tuple[frappe._dict, str]]:
 	rates = get_public_ipv4_rates()
 	return [
 		(
@@ -105,20 +121,72 @@ def _unpriced(servers: list[str]) -> list[tuple[frappe._dict, str]]:
 	]
 
 
-def _unrecorded(servers: list[str]) -> list[tuple[frappe._dict, str]]:
-	yesterday = utc_today() - datetime.timedelta(days=1)
-	recorded = set(
-		frappe.get_all(
-			"Usage Day",
-			filters={"service": NETWORK_SERVICE, "day": yesterday, "subject": ["in", servers]},
-			pluck="subject",
-		)
+def _sweep(day, held: dict[str, int]) -> tuple[int, bool]:
+	"""Write `day` one page at a time, so a failed page never stops the rest; and whether every page wrote."""
+	pages = _pages(held)
+	counts = each_isolated(
+		f"Public IPv4 day {day}", "Virtual Machine", list(pages), _page_writer(day, pages, held)
 	)
-	return [
-		(segment, f"Holds a public IPv4 with no usage for {yesterday} (UTC), so that day bills nothing.")
-		for server, segment in billed_servers_on(yesterday, servers).items()
-		if server not in recorded
-	]
+	return sum(counts), len(counts) == len(pages)
+
+
+def _pages(held: dict[str, int]) -> dict[str, list[str]]:
+	"""The servers that hold an address, in pages keyed by their first server."""
+	names = [name for name, addresses in held.items() if addresses > 0]
+	pages = [names[start : start + PAGE_SIZE] for start in range(0, len(names), PAGE_SIZE)]
+	return {page[0]: page for page in pages}
+
+
+def _page_writer(day, pages: dict[str, list[str]], held: dict[str, int]):
+	"""Write `day` for the page that starts with a given server."""
+	meter = frappe.get_doc("Service", NETWORK_SERVICE).get_meter(PUBLIC_IPV4_METER)
+
+	def write_page(first: str) -> int:
+		servers = pages[first]
+		billed = billed_servers_on(day, servers)
+		# An hour a per-address subscription billed is not billed again as a day.
+		skipped = billed_per_address(day, servers)
+		rows = [
+			_day_row(meter, segment, day, held[server])
+			for server, segment in billed.items()
+			if server not in skipped
+		]
+		return write_days(rows).count
+
+	return write_page
+
+
+def _address_changes(servers: list[str], types, after, before) -> list:
+	"""The segment changes of the servers' per-address subscriptions of `types`, oldest first."""
+	change = frappe.qb.DocType("Subscription Change")
+	subscription = frappe.qb.DocType("Subscription")
+	query = (
+		frappe.qb.from_(change)
+		.join(subscription)
+		.on(change.subscription == subscription.name)
+		.select(subscription.public_ip_server.as_("server"), change.subscription)
+		.select(change.change_type, change.effective_at)
+		.where(subscription.public_ip_server.isin(servers))
+		.where(change.change_type.isin(list(types)))
+		.where(change.effective_at < before)
+		.orderby(change.effective_at, order=Order.asc)
+		.orderby(change.creation, order=Order.asc)
+	)
+	if after is not None:
+		query = query.where(change.effective_at > after)
+	return query.run(as_dict=True)
+
+
+def _is_end_of_billed_segment(previous, row, start) -> bool:
+	"""Whether `row` closes, after `start`, a segment that was open for some time."""
+	if row.change_type not in CLOSING_CHANGE_TYPES or row.effective_at <= start:
+		return False
+	# A segment opened and closed at the same moment billed no hour.
+	return (
+		bool(previous)
+		and previous.change_type in RATED_CHANGE_TYPES
+		and previous.effective_at < row.effective_at
+	)
 
 
 def _day_row(meter, segment, day, addresses: int) -> dict:
