@@ -51,66 +51,80 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		self.machine.find.return_value = []
 		self.machine.get_newest_image_id.return_value = "image-new"
 		self.machine.create.return_value = self.atlas_vm_id
+		self.machine.get.return_value = make_vm("running", memory=8192, disk=102400)
 		patch(f"{MODULE}.DeployMachine", return_value=self.machine).start()
+		self.observe = patch(f"{MODULE}.servers.observe_server", return_value="Running").start()
 		self.wait = patch.object(DeployRequest, "wait").start()
 		self.validate_purchase = patch(f"{MODULE}.validate_vm_purchase", return_value=12.5).start()
 		self.open_subscription = patch(f"{MODULE}.open_vm_subscription").start()
-		self.validate_resize = patch(f"{MODULE}.validate_vm_resize").start()
-		self.update_plan = patch(f"{MODULE}.update_vm_plan").start()
+		self.begin_resize = patch(f"{MODULE}.begin_resize", return_value={"queued": False}).start()
 		self.addCleanup(patch.stopall)
 
-	def test_the_first_deploy_creates_a_vm_at_its_size(self):
-		self.request.cpu_millicores, self.request.memory_mib = 4000, 8192
-		machine = self.request.get_virtual_machine()
+	def link_vm(self) -> str:
+		return self.request.find_or_create_virtual_machine(self.app)
 
-		self.assertTrue(machine["is_new"])
+	def test_the_first_deploy_creates_a_vm_at_its_plans_size(self):
+		server = frappe.get_doc("Virtual Machine", self.link_vm())
+
 		self.machine.create.assert_called_once_with(
-			"image-new", {"cpu_millicores": 4000, "memory_mib": 8192, "disk_mib": 20480}
+			"image-new", {"cpu_millicores": 2000, "memory_mib": 8192, "disk_mib": 102400}
 		)
-		server = frappe.get_doc("Virtual Machine", machine["name"])
-		self.assertEqual((server.atlas_vm_id, server.vcpus), (self.atlas_vm_id, 4))
+		self.assertEqual(
+			(server.atlas_vm_id, server.plan, server.vcpus), (self.atlas_vm_id, self.request.plan, 2)
+		)
 		self.assertEqual(frappe.db.get_value("Deploy App", self.app.name, "virtual_machine"), server.name)
-		self.assertEqual(server.plan, self.request.plan)
 		self.validate_purchase.assert_called_once_with(self.app.team, self.app.region, self.request.plan)
 		self.open_subscription.assert_called_once_with(
-			server.name, self.app.team, self.app.region, self.request.plan, 12.5
+			server.name, self.app.team, self.app.region, plan=self.request.plan, rate=12.5
 		)
 
 	def test_a_purchase_billing_refuses_creates_no_vm(self):
 		self.validate_purchase.side_effect = frappe.ValidationError
 
 		with self.assertRaises(frappe.ValidationError):
-			self.request.get_virtual_machine()
+			self.link_vm()
 		self.machine.create.assert_not_called()
 		self.open_subscription.assert_not_called()
 
 	def test_a_later_deploy_reuses_the_linked_vm(self):
-		first = self.request.get_virtual_machine()
-		self.assertEqual(self.request.get_virtual_machine(), {"name": first["name"], "is_new": False})
+		first = self.link_vm()
+		self.assertEqual(self.link_vm(), first)
 		self.machine.create.assert_called_once()
 
-	def test_a_vm_atlas_already_built_is_reused_instead_of_created(self):
+	def test_a_vm_from_a_lost_create_is_billed_at_the_size_atlas_reports(self):
 		self.machine.find.return_value = [{"id": self.atlas_vm_id, "image_id": "image-new"}]
+		self.machine.get.return_value = make_vm("running", cpu=1000, memory=2048, disk=25600)
 
-		self.assertFalse(self.request.get_virtual_machine()["is_new"])
+		server = frappe.get_doc("Virtual Machine", self.link_vm())
+
 		self.machine.create.assert_not_called()
 		self.validate_purchase.assert_not_called()
-		# Billed at the current rate card, since the accepted rate was lost with the create reply.
-		self.assertIsNone(self.open_subscription.call_args.args[-1])
+		self.assertIsNone(server.plan)
+		self.assertEqual((server.vcpus, server.memory_megabytes, server.disk_gigabytes), (1, 2048, 25))
+		self.open_subscription.assert_called_once_with(
+			server.name,
+			self.app.team,
+			self.app.region,
+			includes=[
+				{"resource_type": "Compute", "quantity": 1, "unit": "vCPU"},
+				{"resource_type": "Memory", "quantity": 2, "unit": "GB"},
+				{"resource_type": "Disk", "quantity": 25, "unit": "GB"},
+			],
+		)
 
 	def test_a_deploy_after_termination_records_the_new_vm_as_a_new_server(self):
-		old = self.request.get_virtual_machine()["name"]
+		old = self.link_vm()
 		# What termination leaves: a Terminated row, and an app no longer linked to it.
 		frappe.db.set_value("Virtual Machine", old, "status", "Terminated")
-		frappe.db.set_value("Deploy App", self.app.name, "virtual_machine", None)
+		self.app.reload()
+		self.app.virtual_machine = None
 		self.machine.create.return_value = new_atlas_vm_id = f"atlas-vm-{frappe.generate_hash(length=8)}"
 
-		new = self.request.get_virtual_machine()
+		new = self.link_vm()
 
-		self.assertTrue(new["is_new"])
-		self.assertNotEqual(new["name"], old)
-		self.assertEqual(frappe.db.get_value("Virtual Machine", new["name"], "atlas_vm_id"), new_atlas_vm_id)
-		self.assertEqual(frappe.db.get_value("Deploy App", self.app.name, "virtual_machine"), new["name"])
+		self.assertNotEqual(new, old)
+		self.assertEqual(frappe.db.get_value("Virtual Machine", new, "atlas_vm_id"), new_atlas_vm_id)
+		self.assertEqual(frappe.db.get_value("Deploy App", self.app.name, "virtual_machine"), new)
 		self.assertEqual(
 			frappe.db.get_value("Virtual Machine", old, ["status", "atlas_vm_id"]),
 			("Terminated", self.atlas_vm_id),
@@ -120,79 +134,104 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		self.machine.find.return_value = [{"id": "atlas-vm-a"}, {"id": "atlas-vm-b"}]
 
 		with self.assertRaises(frappe.ValidationError):
-			self.request.get_virtual_machine()
+			self.link_vm()
 		self.machine.create.assert_not_called()
 
 	def test_a_region_without_a_deploy_image_is_refused(self):
 		self.machine.get_newest_image_id.return_value = None
 
 		with self.assertRaises(frappe.ValidationError):
-			self.request.get_virtual_machine()
+			self.link_vm()
 
-	def test_a_vm_at_the_deploys_size_is_left_alone(self):
-		name = self.request.get_virtual_machine()["name"]
-		self.machine.get.return_value = make_vm("running")
+	def test_a_running_vm_at_the_plans_size_records_that_size(self):
+		self.link_vm()
 
-		self.request.resize_virtual_machine(name)
-		self.machine.stop.assert_not_called()
-		self.machine.resize.assert_not_called()
+		self.request.converge_virtual_machine()
+		self.begin_resize.assert_called_once_with(None, plan=self.request.plan, disk_gigabytes=100)
 		self.wait.assert_not_called()
-		self.update_plan.assert_called_once_with(name, self.request.plan)
-
-	def test_a_new_size_stops_then_resizes_then_starts_the_vm(self):
-		name = self.request.get_virtual_machine()["name"]
-		self.request.cpu_millicores, self.request.memory_mib = 4000, 8192
-
-		self.machine.get.return_value = make_vm("running")
-		self.request.resize_virtual_machine(name)
-		self.validate_resize.assert_called_once_with(name, self.request.plan)
-		self.machine.stop.assert_called_once_with(self.atlas_vm_id)
-		self.update_plan.assert_not_called()
-
-		self.machine.get.return_value = make_vm("stopped")
-		self.request.resize_virtual_machine(name)
-		self.machine.resize.assert_called_once_with(
-			self.atlas_vm_id, {"cpu_millicores": 4000, "memory_mib": 8192, "disk_mib": 20480}
+		self.assertEqual(
+			(self.request.cpu_millicores, self.request.memory_mib, self.request.disk_mib),
+			(2000, 8192, 102400),
 		)
 
-		self.machine.get.return_value = make_vm("migrating", cpu=4000, memory=8192)
-		self.wait.reset_mock()
-		self.request.resize_virtual_machine(name)
+	def test_a_vm_still_provisioning_is_waited_on_without_a_resize(self):
+		self.link_vm()
+		self.observe.return_value = "Provisioning"
+
+		self.request.converge_virtual_machine()
+		self.wait.assert_called_once()
+		self.begin_resize.assert_not_called()
+		self.assertFalse(self.request.disk_mib)
+
+	def test_a_stopped_vm_is_started_and_waited_on(self):
+		self.link_vm()
+		self.observe.return_value = "Stopped"
+
+		self.request.converge_virtual_machine()
+		self.machine.start.assert_called_once_with(self.atlas_vm_id)
 		self.wait.assert_called_once()
 
-		self.machine.get.return_value = make_vm("stopped", cpu=4000, memory=8192)
-		self.request.resize_virtual_machine(name)
-		self.machine.start.assert_called_once_with(self.atlas_vm_id)
-		self.update_plan.assert_called_with(name, self.request.plan)
+	def test_a_migrating_vm_is_waited_on(self):
+		self.link_vm()
+		self.machine.get.return_value = make_vm("migrating")
 
-	def test_a_size_billing_refuses_keeps_the_vm_running(self):
-		name = self.request.get_virtual_machine()["name"]
-		self.request.cpu_millicores, self.request.memory_mib = 4000, 8192
-		self.validate_resize.side_effect = frappe.ValidationError
-		self.machine.get.return_value = make_vm("running")
+		self.request.converge_virtual_machine()
+		self.wait.assert_called_once()
+		self.observe.assert_not_called()
+
+	def test_a_new_size_waits_for_the_consoles_resize_before_recording_a_size(self):
+		self.link_vm()
+		self.begin_resize.return_value = {"queued": True}
+
+		self.request.converge_virtual_machine()
+		self.wait.assert_called_once()
+		self.machine.start.assert_not_called()
+		self.assertFalse(self.request.disk_mib)
+
+	def test_a_resize_still_running_is_waited_on_without_a_new_one(self):
+		self.make_resize(self.link_vm(), "Sent")
+
+		self.request.converge_virtual_machine()
+		self.wait.assert_called_once()
+		self.begin_resize.assert_not_called()
+
+	def test_a_failed_resize_fails_the_deploy_with_its_error(self):
+		self.make_resize(self.link_vm(), "Failed", error_code="ACTION_FAILED")
+
+		with self.assertRaisesRegex(frappe.ValidationError, "reported a failure while trying to resize"):
+			self.request.converge_virtual_machine()
+		self.begin_resize.assert_not_called()
+
+	def test_a_resize_billing_refuses_fails_the_deploy(self):
+		self.link_vm()
+		self.begin_resize.side_effect = frappe.ValidationError
 
 		with self.assertRaises(frappe.ValidationError):
-			self.request.resize_virtual_machine(name)
-		self.machine.stop.assert_not_called()
+			self.request.converge_virtual_machine()
+		self.machine.start.assert_not_called()
 
-	def test_a_size_billing_refuses_leaves_a_stopped_vm_at_its_size(self):
-		name = self.request.get_virtual_machine()["name"]
-		self.request.cpu_millicores, self.request.memory_mib = 4000, 8192
-		self.validate_resize.side_effect = frappe.ValidationError
-		self.machine.get.return_value = make_vm("stopped")
+	def test_a_plan_with_a_smaller_disk_keeps_the_vms_disk_and_says_so(self):
+		self.link_vm()
+		self.machine.get.return_value = make_vm("running", memory=8192, disk=204800)
 
-		with self.assertRaises(frappe.ValidationError):
-			self.request.resize_virtual_machine(name)
-		self.machine.resize.assert_not_called()
+		self.request.converge_virtual_machine()
+		self.request.converge_virtual_machine()
+		self.begin_resize.assert_called_with(None, plan=self.request.plan, disk_gigabytes=200)
+		self.assertEqual(frappe.db.get_value("Deploy Request", self.request.name, "disk_mib"), 204800)
+		self.assertEqual(self.request.get_log("build_log").count("Preserving disk size"), 1)
 
-	def test_a_smaller_disk_is_refused(self):
-		name = self.request.get_virtual_machine()["name"]
-		self.request.disk_mib = 10240
-		self.machine.get.return_value = make_vm("running")
-
-		with self.assertRaises(frappe.ValidationError):
-			self.request.resize_virtual_machine(name)
-		self.machine.stop.assert_not_called()
+	def make_resize(self, server: str, status: str, **fields) -> None:
+		frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"resource_type": "Server",
+				"action": "resize",
+				"team": self.app.team,
+				"server": server,
+				"status": status,
+				**fields,
+			}
+		).insert(ignore_permissions=True)
 
 
 class IntegrationTestDeployMachine(IntegrationTestCase):
