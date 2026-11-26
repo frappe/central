@@ -123,7 +123,7 @@ const columns = computed<ListViewColumn<ResourceRow>[]>(() => [
 		key: 'name',
 		label: __('Server'),
 		value: (row) => `${row.name} ${imageLabel(row.server)}`,
-		width: 'minmax(14rem,1.6fr)',
+		width: 'minmax(14rem,2fr)',
 		sortable: true,
 		compare: (left, right) => left.name.localeCompare(right.name),
 	},
@@ -138,7 +138,7 @@ const columns = computed<ListViewColumn<ResourceRow>[]>(() => [
 		key: 'address',
 		label: __('Address'),
 		value: (row) => `${row.site?.url ?? ''} ${row.server?.public_ipv4 ?? ''}`,
-		width: 'minmax(12rem,1.3fr)',
+		width: 'minmax(10rem,0.9fr)',
 	},
 	{
 		key: 'size',
