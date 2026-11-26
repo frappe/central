@@ -10,6 +10,8 @@ STORAGE_SERVICE = "storage"
 AI_SERVICE = "ai"
 STORAGE_METER = "bytes_stored"
 AI_METER = "cost"
+NETWORK_SERVICE = "network"
+PUBLIC_IPV4_METER = "public_ipv4"
 BYTES_PER_GB = 1_000_000_000
 # Grove keeps cost to nine decimal places of a dollar.
 NANO_PER_UNIT = 1_000_000_000
@@ -47,6 +49,23 @@ SERVICES = (
 				"cost_currency": "USD",
 				"allow_negative": 1,
 				"label": "AI",
+			},
+		],
+	},
+	{
+		# Central counts the public IPv4 addresses each server holds; no other service reports them.
+		"service_name": NETWORK_SERVICE,
+		"title": "Network",
+		"plan_category": "Live Metered Resources",
+		"central_reads": 1,
+		"meters": [
+			{
+				"meter_key": PUBLIC_IPV4_METER,
+				"aggregation": "Level",
+				"resource_type": "IP",
+				"unit": "Nos",
+				"unit_divisor": 1,
+				"label": "Public IPv4",
 			},
 		],
 	},

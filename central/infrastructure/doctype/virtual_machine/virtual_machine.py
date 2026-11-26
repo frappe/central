@@ -435,15 +435,11 @@ class VirtualMachine(SystemRecord):
 			subscription.insert(ignore_permissions=True)
 
 	def sync_public_ipv4_billing(self) -> None:
-		"""Bill a public IPv4 while Atlas reports one on this server, and stop when it is gone."""
-		from central.billing.catalog import public_ips
+		"""Count today's public IPv4 while Atlas reports one on this server."""
+		from central.billing.revenue import public_ipv4_usage
 
-		is_billed = bool(self.public_ipv4) and self.status != "Terminated"
-		subscription = frappe.db.get_value("Subscription", {"public_ip_server": self.name, "enabled": 1})
-		if is_billed and not subscription:
-			public_ips.open_public_ipv4_subscription(self)
-		elif subscription and not is_billed:
-			public_ips.close_public_ipv4_subscription(subscription)
+		if addresses := public_ipv4_usage.count_addresses(self.public_ipv4):
+			public_ipv4_usage.queue_today(self.name, addresses)
 
 	def disable_active_subscription(self):
 		"""Cancel and disable this terminated server's subscription, running or paused.

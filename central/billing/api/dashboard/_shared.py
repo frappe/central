@@ -266,9 +266,9 @@ def _describe_line(team: str, li, period: tuple) -> dict:
 
 def _describe_metered(team: str, li, period: tuple) -> dict:
 	"""The item, kind and detail of a metered line."""
-	from central.billing.revenue.metering import _metered_plan_for
+	from central.billing.revenue.metering import metered_plan_for
 
-	metered_plan = _metered_plan_for(li.resource_type)
+	metered_plan = metered_plan_for(li.resource_type)
 	title = frappe.db.get_value("Plan", metered_plan.name, "title") if metered_plan else None
 	item = title or f"{li.resource_type.title()} overage"
 	# A server's own bucket bills on the server; name it so two servers' lines differ.
