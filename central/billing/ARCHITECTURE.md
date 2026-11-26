@@ -280,7 +280,7 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, setup 
 | hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run once the draft tick has started it |
 | hourly | `revenue.storage_bridge.read_storage_usage` | until Cargo reports usage itself: read every billed bucket, and each billed server's backup bucket, in pages of 100, one job per page, and keep each UTC day's peak as a Usage Day; a failed bucket never stops its page, and the last page of a region writes one Error Log that names how many of the region's buckets the run could not read |
 | hourly | `revenue.grove_bridge.read_ai_usage` | until Grove reports usage itself: subscribe AI teams that now have a billing currency, then read each AI team's cost per model that landed at Grove from the team's `usage_read_until` day through today (UTC), at most 7 days a run, as one Usage Day per model and landing day; a team read in full moves its `usage_read_until` to the last day read, so a missed hour, an outage or a late subscription is caught up; a team never read starts at the later of `Service.bill_from` and the day AI was turned on; a correction lands as a negative day; one Error Log per page names the teams it could not read, and their day does not move |
-| hourly | `revenue.public_ipv4_usage.read_public_ipv4` | write today's Usage Day for every server that holds a public IPv4 and is not Terminated; the first run of a UTC day (watermark default `public_ipv4_swept_day`) also writes yesterday, so hours the scheduler missed still count |
+| hourly | `revenue.public_ipv4_usage.read_public_ipv4` | write today's Usage Day for every server that holds a public IPv4, is not Terminated, and whose subscription had an open segment at some moment of the day, in pages of 500 through `platform.jobs.each_isolated`; the first run of a UTC day also writes yesterday, so hours the scheduler missed still count, and sets the watermark default `public_ipv4_swept_day` only when every page of yesterday wrote |
 | hourly | `revenue.usage_recount.recount_changed` | recount the usage months whose Usage Days changed since the last run, as page jobs |
 | cron `30 17 * * *` (12:00 UTC) | `revenue.usage_checks.sample_storage` | only while Cargo pushes storage (`Service.central_reads` off): read every billed bucket and each billed server's backup bucket once, in pages of 100 queued as `sample_team_page` and `sample_bundled_page`, with the same readers `storage_bridge` bills with, and keep the reading as a Usage Check for the next day's comparison |
 | cron `30 7 * * *` (02:00 UTC) | `revenue.usage_checks.check_yesterday` | only for a service that pushes: mark a storage day whose stored peak is more than 1 % below Central's sample, read each AI team's landing day from Grove with `grove_bridge.read_days` (failures logged as "Usage check: N AI team(s) not read") and mark a model that differs by more than 0.01 USD, then delete Usage Checks older than 7 days; writes no Usage Day |
@@ -761,17 +761,23 @@ Public IPv4 (#197, #200): one Level Usage Day per server and UTC day on the serv
   → included is always 0: no plan bundles an address. IPv6 is free
   → usage_recount bills the month as count ÷ days in the month per day, at the current Catalog
     Rate of the Live metered plan that models IP (`public-ipv4` under Live Metered Resources,
-    seeded by plan_setup.ensure_public_ipv4_plan with INR 170 / USD 2). public_ips.get_public_ipv4_rate
+    seeded by plan_setup.ensure_public_ipv4_plan with INR 170 / USD 2 when the plan does not exist;
+    an inactive plan is left as it is). public_ips.get_public_ipv4_rate
     reads the same plan, so the console price, the attach and create guards and the invoice agree
   → a day with no IP price for the team's currency and region is still written; the unpriced guard
     in metering.metered_line_items fails the team's draft until an operator adds the rate, and the
     next run bills every unbilled day of the open month
-  → readiness M3: a billed server that holds an address with no IP price, or with no IP Usage Day
-    for yesterday (UTC)
-  → cutover (patch bill_public_ipv4_per_day): on the UTC day C it runs, Service.bill_from = C,
-    each enabled per-address subscription gets a Cancelled change at 00:00 UTC on C (or at its
-    own last change, if later) and is disabled, and day C is written for every holder; an hour
-    before C bills on the old segment and every hour from C as a day
+  → readiness M3: a billed server that holds an address and has no IP price in its team's currency
+    for its region; a server with no address is never listed
+  → cutover (patch bill_public_ipv4_per_day): on the UTC day C it runs, it copies every IP
+    Resource Type Catalog Rate (regional ones too) onto the plan and deletes them, sets
+    Service.bill_from = C when empty, gives each enabled per-address subscription a Cancelled
+    change at 00:00 UTC on C (or at its own last change, if later) and disables it, and writes
+    day C for every holder; an hour before C bills on the old segment and every hour from C as a
+    day
+  → a server whose per-address segment billed some hour of a day (it closed after 00:00 UTC on C,
+    for example a pause or a detach) gets no Usage Day for that day from any writer
+    (public_ipv4_usage.billed_per_address), so those hours bill only on the old segment
 Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
   → while the service's central_reads is on, Central's own reading still bills it: every line is
     refused with retry true ("Central still reads this service; send it again after the switch")

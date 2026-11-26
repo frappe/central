@@ -26,7 +26,7 @@ Every server gets a private IPv6 address when it finishes setting up. Click an a
 1. In **Addresses**, click **Attach IPv4** or **Attach IPv6 · Free**.
 2. For IPv4, read the price. Click **Attach IPv4**.
 
-The IPv4 address is billed while it is attached. If the region is still applying the change, the address shows within a few minutes.
+The IPv4 address is billed for each UTC day it is attached, at the monthly price divided by the days in the month. If the region is still applying the change, the address shows within a few minutes.
 
 ### Detach a public address
 
@@ -34,7 +34,7 @@ The IPv4 address is billed while it is attached. If the region is still applying
 2. Click **Detach** to confirm.
 
 ::: warning
-A detached IPv4 address goes back to the region and its billing stops. You cannot get the same address back. A new IPv6 address can also be different from the old one.
+A detached IPv4 address goes back to the region and its billing stops after that day. The day you detach it is still billed. You cannot get the same address back. A new IPv6 address can also be different from the old one.
 :::
 
 ### IPv4 internet access
