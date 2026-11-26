@@ -416,12 +416,24 @@ Each minute, `central.integrations.metrics.publish_metrics` sends gauges to the 
 | `central_site_domains_failed_last_hour{route_type}`, `central_site_domain_oldest_pending_seconds{route_type}` | Proxy routes. |
 | `central_vm_snapshots_failed_last_day{snapshot_type}`, `central_vm_snapshot_oldest_pending_seconds` | VM Snapshots. |
 | `central_emails_failed_last_hour`, `central_email_oldest_unsent_seconds` | The Email Queue. An email with a later `send_after` waits from that time. |
-| `central_job_queue_length{queue}`, `central_scheduled_job_late_seconds{job}` | Queues, and how late each scheduled Central job is. Failed jobs write Error Logs, so `central-errors` covers them. |
+| `central_job_queue_length{queue}`, `central_scheduled_job_late_seconds{job}` | Queues, and how late each scheduled Central job is. |
+| `central_jobs_failed_last_hour{queue,method}`, `central_scheduled_job_runs_last_hour{job,status}` | Background jobs that failed in the last hour, read from the newest 100 entries of each queue's failed registry, and scheduler runs by Scheduled Job Log status. |
+| `central_resource_actions_finished_within_last_hour{region,resource_type,action,le}`, `central_signup_ready_within_last_hour{region,le}` | Succeeded actions, and trial sites that became ready, within each latency bucket of 30, 60, 120, 300 and 600 seconds. The counts are cumulative: an action of 40 seconds counts in the 60, 120, 300 and 600 buckets. |
 | `frappe_webhook_requests_last_day{webhook,status}` | Webhook Request Logs of the last day. `Exhausted` means Frappe gave up after its retries. |
 
 The rules in `beacon/rules/` read these gauges, and the runbooks in `beacon/runbooks/` tell the responder what to do.
 
-Two SLOs in `beacon/services/` read the same data. `dashboard-api` counts the requests that did not fail with 5xx. `server-actions` counts the finished create, start, stop, restart and resize actions that succeeded. Both are global, so in Beacon set their Query Region to the Central Telemetry Region. `billing` is a declared service with no query: a published incident in Beacon sets its status.
+The SLOs in `beacon/services/` read the same data. All are global, so in Beacon set their Query Region to the Central Telemetry Region. Each SLO file holds its own target, so a target change needs no Central release.
+
+| Service | Good | Target | Status page |
+|---|---|---|---|
+| `dashboard-api` | Requests that did not fail with 5xx | 99.9% | Shown |
+| `server-actions` | Finished create, start, stop, restart and resize actions that succeeded | 99% | Shown |
+| `server-action-latency` | Succeeded server actions within their target: create, start and restart 60 s, stop 30 s, resize 120 s | 99% | Hidden |
+| `signups` | Trial sites ready within 120 s of the request. A failed trial site counts as bad. | 99% | Hidden |
+| `scheduled-jobs` | Scheduler runs that completed | 99.9% | Hidden |
+
+`billing` is a declared service with no query: a published incident in Beacon sets its status.
 
 Three checks in `beacon/rules/` call Central from outside: `central-dashboard-unreachable.http`, `central-api-unreachable.http` and `central-certificate.tls`. They use `{central_url}` from Beacon Settings and have no region, so Beacon adds them turned off. In Beacon, set their Regions to the Central Telemetry Region and turn them on.
 

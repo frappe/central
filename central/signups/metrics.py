@@ -9,7 +9,7 @@ import frappe
 from frappe.query_builder.functions import Min
 from frappe.utils import get_datetime
 
-from central.integrations.metrics import FAILURES_NAMED
+from central.integrations.metrics import FAILURES_NAMED, get_buckets_within
 
 if TYPE_CHECKING:
 	from central.integrations.metrics import CentralMetrics
@@ -66,7 +66,8 @@ def add_signup_metrics(metrics: CentralMetrics) -> None:
 
 
 def add_signup_setup_times(metrics: CentralMetrics, ready: list[frappe._dict]) -> None:
-	"""The median and the longest time from request to ready site, for each region."""
+	"""The median and the longest time from request to ready site, and the sites ready within each latency
+	bucket, for each region."""
 	seconds: dict[str, list[float]] = {}
 	for row in ready:
 		wait = (get_datetime(row.ready_at) - get_datetime(row.requested_at)).total_seconds()
@@ -74,6 +75,9 @@ def add_signup_setup_times(metrics: CentralMetrics, ready: list[frappe._dict]) -
 	for region, waits in seconds.items():
 		metrics.add("central_signup_setup_seconds", median(waits), region=region, quantile="p50")
 		metrics.add("central_signup_setup_seconds", max(waits), region=region, quantile="max")
+		within = Counter(bucket for wait in waits for bucket in get_buckets_within(wait))
+		for bucket, count in within.items():
+			metrics.add("central_signup_ready_within_last_hour", count, region=region, le=str(bucket))
 
 
 def get_ready_signups(since: datetime) -> list[frappe._dict]:
