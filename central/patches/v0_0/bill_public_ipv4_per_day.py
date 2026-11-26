@@ -1,6 +1,7 @@
 import datetime
 
 import frappe
+from frappe import _
 
 from central.billing.catalog.plan_setup import IP_RESOURCE_TYPE
 from central.billing.catalog.pricing import get_catalog_rates, set_catalog_rate
@@ -28,6 +29,13 @@ def execute():
 def move_ip_rates_to_plan() -> None:
 	"""Copy each IP rate card price, regional ones too, onto the plan that bills public IPv4, then delete it."""
 	plan = metered_plan_for(IP_RESOURCE_TYPE)
+	if not plan:
+		# The rate card is deleted below, so its prices must have somewhere to go first.
+		frappe.throw(
+			_(
+				"No active metered plan bills public IPv4. Activate the public-ipv4 plan and run the patch again."
+			)
+		)
 	for row in get_catalog_rates("Resource Type", IP_RESOURCE_TYPE):
 		set_catalog_rate("Plan", plan.name, row.currency, row.rate, cluster=row.cluster)
 	# The plan holds the price now; a second copy on the rate card would drift from it.
@@ -45,6 +53,9 @@ def close_address_subscriptions(cutover: datetime.datetime) -> None:
 		if not (last and last.change_type == "Cancelled"):
 			# The cancel never comes before the last change, so the ledger stays in time order.
 			# One opened today then bills no hour, and its day bills as a Usage Day.
+			# One paused or detached after 00:00 and then resumed or re-attached closes at the
+			# resume, and its server gets no Usage Day today, so the hours after it go unbilled:
+			# at most one address-day per such server, once, and never a double charge.
 			effective_at = max(cutover, last.effective_at) if last else cutover
 			cancel_subscription(name, effective_at=effective_at)
 		frappe.get_doc("Subscription", name).disable()
