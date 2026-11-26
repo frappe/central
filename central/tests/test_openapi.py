@@ -18,11 +18,6 @@ def _request_properties(document: dict, operation: dict) -> dict:
 	return document["components"]["schemas"][name]["properties"]
 
 
-def _declared_names(document: dict, operation: dict) -> set:
-	names = {parameter["name"] for parameter in operation.get("parameters", [])}
-	return names | set(_request_properties(document, operation))
-
-
 def _is_named_model(schema: dict) -> bool:
 	"""A model, a list of models, a mapping or a scalar: anything but a bare object."""
 	if "anyOf" in schema:
@@ -72,33 +67,12 @@ class TestOpenAPI(IntegrationTestCase):
 				if body:
 					self.assertIn("$ref", body["content"]["application/json"]["schema"], path)
 
-	def test_every_operation_declares_its_mcp_behavior(self):
-		for path, methods in build_document()["paths"].items():
-			for method, operation in methods.items():
-				self.assertEqual({"requires_team", "read_only"}, set(operation["x-mcp"]), path)
-				self.assertEqual(method == "get", operation["x-mcp"]["read_only"], path)
-
 	def test_every_description_ends_with_its_data_change_note(self):
 		for path, methods in build_document()["paths"].items():
 			for operation in methods.values():
 				description = operation["description"]
 				self.assertTrue(description.endswith(("Read-only.", "Changes data.")), path)
 				self.assertGreater(len(description), len("Changes data.") + 1, path)
-
-	def test_requires_team_matches_a_declared_team_parameter(self):
-		requires_team = 0
-		declares_team = 0
-		document = build_document()
-		for path, methods in document["paths"].items():
-			for operation in methods.values():
-				names = _declared_names(document, operation)
-				counted = operation["x-mcp"]["requires_team"]
-				requires_team += counted
-				declares_team += "team" in names
-				self.assertEqual("team" in names, counted, path)
-
-		self.assertEqual(requires_team, declares_team)
-		self.assertGreater(requires_team, 0)
 
 	def test_the_document_has_the_expected_size(self):
 		count = sum(len(methods) for methods in build_document()["paths"].values())

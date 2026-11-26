@@ -130,7 +130,6 @@ def _operation(module_name: str, function, hints: dict, models: dict) -> dict:
 		"description": f"{docstring or summary}\n\n{note}",
 		"deprecated": False,
 		"responses": _responses(hints.get("return"), models),
-		"x-mcp": {"requires_team": "team" in properties, "read_only": method == "get"},
 	}
 	operation.update(_payload(method, properties, required, _request_model_name(function), models))
 

@@ -4137,11 +4137,7 @@
     "summary": "Server activity",
     "tags": [
      "Activity"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.activity.team_activity": {
@@ -4240,11 +4236,7 @@
     "summary": "Team activity",
     "tags": [
      "Activity"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.firewall_rulesets.delete_firewall_ruleset": {
@@ -4275,11 +4267,7 @@
     "summary": "Delete firewall ruleset",
     "tags": [
      "Firewall Rulesets"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.firewall_rulesets.list_firewall_rulesets": {
@@ -4329,11 +4317,7 @@
     "summary": "List firewall rulesets",
     "tags": [
      "Firewall Rulesets"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.firewall_rulesets.save_firewall_ruleset": {
@@ -4379,11 +4363,7 @@
     "summary": "Save firewall ruleset",
     "tags": [
      "Firewall Rulesets"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.firewall_rulesets.set_server_firewall_rulesets": {
@@ -4414,11 +4394,7 @@
     "summary": "Set server firewall rulesets",
     "tags": [
      "Firewall Rulesets"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.identity.my_capabilities": {
@@ -4471,11 +4447,7 @@
     "summary": "My capabilities",
     "tags": [
      "Identity"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.identity.my_invitations": {
@@ -4516,11 +4488,7 @@
     "summary": "My invitations",
     "tags": [
      "Identity"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.identity.my_profile": {
@@ -4558,11 +4526,7 @@
     "summary": "My profile",
     "tags": [
      "Identity"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.identity.my_teams": {
@@ -4615,11 +4579,7 @@
     "summary": "My teams",
     "tags": [
      "Identity"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.identity.set_profile_photo": {
@@ -4665,11 +4625,7 @@
     "summary": "Set profile photo",
     "tags": [
      "Identity"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.identity.update_profile": {
@@ -4715,11 +4671,7 @@
     "summary": "Update profile",
     "tags": [
      "Identity"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.images.eligible_plans": {
@@ -4801,11 +4753,7 @@
     "summary": "Eligible plans",
     "tags": [
      "Images"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.images.get_app_requirements": {
@@ -4868,11 +4816,7 @@
     "summary": "Get app requirements",
     "tags": [
      "Images"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.images.list_apps": {
@@ -4930,11 +4874,7 @@
     "summary": "List apps",
     "tags": [
      "Images"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.images.list_images": {
@@ -5013,11 +4953,7 @@
     "summary": "List images",
     "tags": [
      "Images"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.images.list_offerings": {
@@ -5075,11 +5011,7 @@
     "summary": "List offerings",
     "tags": [
      "Images"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.action_status": {
@@ -5126,11 +5058,7 @@
     "summary": "Action status",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.create_composed_server": {
@@ -5176,11 +5104,7 @@
     "summary": "Create composed server",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.create_server": {
@@ -5226,11 +5150,7 @@
     "summary": "Create server",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.get_idle_sleep": {
@@ -5291,11 +5211,7 @@
     "summary": "Get idle sleep",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.get_rescue_state": {
@@ -5356,11 +5272,7 @@
     "summary": "Get rescue state",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.keep_trial_site": {
@@ -5406,11 +5318,7 @@
     "summary": "Keep trial site",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.list_instances": {
@@ -5463,11 +5371,7 @@
     "summary": "List instances",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.open_console": {
@@ -5513,11 +5417,7 @@
     "summary": "Open console",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.public_ipv4_pricing": {
@@ -5578,11 +5478,7 @@
     "summary": "Public ipv4 pricing",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.refresh_servers": {
@@ -5628,11 +5524,7 @@
     "summary": "Refresh servers",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.registry": {
@@ -5682,11 +5574,7 @@
     "summary": "Registry",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.rename_server": {
@@ -5732,11 +5620,7 @@
     "summary": "Rename server",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.resize_server": {
@@ -5782,11 +5666,7 @@
     "summary": "Resize server",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.restart_server": {
@@ -5832,11 +5712,7 @@
     "summary": "Restart server",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.retry_action": {
@@ -5882,11 +5758,7 @@
     "summary": "Retry action",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.server_hostnames": {
@@ -5950,11 +5822,7 @@
     "summary": "Server hostnames",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.server_metrics": {
@@ -6045,11 +5913,7 @@
     "summary": "Server metrics",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.server_overview": {
@@ -6110,11 +5974,7 @@
     "summary": "Server overview",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.set_idle_sleep": {
@@ -6145,11 +6005,7 @@
     "summary": "Set idle sleep",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.set_rescue_mode": {
@@ -6180,11 +6036,7 @@
     "summary": "Set rescue mode",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.set_server_ipv4_internet": {
@@ -6215,11 +6067,7 @@
     "summary": "Set server ipv4 internet",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.set_server_public_ip": {
@@ -6265,11 +6113,7 @@
     "summary": "Set server public ip",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.set_server_wireguard_access": {
@@ -6300,11 +6144,7 @@
     "summary": "Set server wireguard access",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.set_termination_protection": {
@@ -6335,11 +6175,7 @@
     "summary": "Set termination protection",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.start_server": {
@@ -6385,11 +6221,7 @@
     "summary": "Start server",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.stop_server": {
@@ -6435,11 +6267,7 @@
     "summary": "Stop server",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.terminate_server": {
@@ -6485,11 +6313,7 @@
     "summary": "Terminate server",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.servers.update_server_firewall": {
@@ -6541,11 +6365,7 @@
     "summary": "Update server firewall",
     "tags": [
      "Servers"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.sites.check_subdomain": {
@@ -6603,11 +6423,7 @@
     "summary": "Check subdomain",
     "tags": [
      "Sites"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.sites.claim_site": {
@@ -6653,11 +6469,7 @@
     "summary": "Claim site",
     "tags": [
      "Sites"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.sites.create_trial_site": {
@@ -6703,11 +6515,7 @@
     "summary": "Create trial site",
     "tags": [
      "Sites"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.sites.create_trial_team": {
@@ -6753,11 +6561,7 @@
     "summary": "Create trial team",
     "tags": [
      "Sites"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.sites.get_open_trial": {
@@ -6814,11 +6618,7 @@
     "summary": "Get open trial",
     "tags": [
      "Sites"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.sites.get_site": {
@@ -6865,11 +6665,7 @@
     "summary": "Get site",
     "tags": [
      "Sites"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.sites.get_trial_app_install": {
@@ -6915,11 +6711,7 @@
     "summary": "Get trial app install",
     "tags": [
      "Sites"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.sites.install_trial_app": {
@@ -6965,11 +6757,7 @@
     "summary": "Install trial app",
     "tags": [
      "Sites"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.sites.login_site": {
@@ -7015,11 +6803,7 @@
     "summary": "Login site",
     "tags": [
      "Sites"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.sites.onboarding_status": {
@@ -7080,11 +6864,7 @@
     "summary": "Onboarding status",
     "tags": [
      "Sites"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.sites.site_domain": {
@@ -7145,11 +6925,7 @@
     "summary": "Site domain",
     "tags": [
      "Sites"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.sites.terminate_site": {
@@ -7195,11 +6971,7 @@
     "summary": "Terminate site",
     "tags": [
      "Sites"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.snapshots.delete_snapshots": {
@@ -7245,11 +7017,7 @@
     "summary": "Delete snapshots",
     "tags": [
      "Snapshots"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.snapshots.keep_snapshot": {
@@ -7295,11 +7063,7 @@
     "summary": "Keep snapshot",
     "tags": [
      "Snapshots"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.snapshots.list_snapshots": {
@@ -7360,11 +7124,7 @@
     "summary": "List snapshots",
     "tags": [
      "Snapshots"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.snapshots.set_automatic_snapshots": {
@@ -7410,11 +7170,7 @@
     "summary": "Set automatic snapshots",
     "tags": [
      "Snapshots"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.snapshots.snapshot_pricing": {
@@ -7475,11 +7231,7 @@
     "summary": "Snapshot pricing",
     "tags": [
      "Snapshots"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.snapshots.take_snapshot": {
@@ -7525,11 +7277,7 @@
     "summary": "Take snapshot",
     "tags": [
      "Snapshots"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.ssh_keys.create_team_ssh_key": {
@@ -7575,11 +7323,7 @@
     "summary": "Create team ssh key",
     "tags": [
      "SSH Keys"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.ssh_keys.delete_team_ssh_key": {
@@ -7610,11 +7354,7 @@
     "summary": "Delete team ssh key",
     "tags": [
      "SSH Keys"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.ssh_keys.list_team_ssh_keys": {
@@ -7664,11 +7404,7 @@
     "summary": "List team ssh keys",
     "tags": [
      "SSH Keys"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.ssh_keys.retry_team_ssh_key_sync": {
@@ -7699,11 +7435,7 @@
     "summary": "Retry team ssh key sync",
     "tags": [
      "SSH Keys"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.ssh_keys.rotate_team_ssh_key": {
@@ -7749,11 +7481,7 @@
     "summary": "Rotate team ssh key",
     "tags": [
      "SSH Keys"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.ssh_keys.set_server_ssh_keys": {
@@ -7784,11 +7512,7 @@
     "summary": "Set server ssh keys",
     "tags": [
      "SSH Keys"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.support.create_ticket": {
@@ -7834,11 +7558,7 @@
     "summary": "Create ticket",
     "tags": [
      "Support"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.support.find_related": {
@@ -7896,11 +7616,7 @@
     "summary": "Find related",
     "tags": [
      "Support"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.support.get_ticket_options": {
@@ -7953,11 +7669,7 @@
     "summary": "Get ticket options",
     "tags": [
      "Support"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.support.list_tickets": {
@@ -8010,11 +7722,7 @@
     "summary": "List tickets",
     "tags": [
      "Support"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.accept_invitation": {
@@ -8060,11 +7768,7 @@
     "summary": "Accept invitation",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.archive_team": {
@@ -8110,11 +7814,7 @@
     "summary": "Archive team",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.create_custom_role": {
@@ -8160,11 +7860,7 @@
     "summary": "Create custom role",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.create_team": {
@@ -8210,11 +7906,7 @@
     "summary": "Create team",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.decline_invitation": {
@@ -8260,11 +7952,7 @@
     "summary": "Decline invitation",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.delete_custom_role": {
@@ -8310,11 +7998,7 @@
     "summary": "Delete custom role",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.get_team_archive_checks": {
@@ -8361,11 +8045,7 @@
     "summary": "Get team archive checks",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.invite_team_member": {
@@ -8421,11 +8101,7 @@
     "summary": "Invite team member",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.leave_team": {
@@ -8471,11 +8147,7 @@
     "summary": "Leave team",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.list_team_members": {
@@ -8525,11 +8197,7 @@
     "summary": "List team members",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.list_team_roles": {
@@ -8579,11 +8247,7 @@
     "summary": "List team roles",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.remove_team_member": {
@@ -8629,11 +8293,7 @@
     "summary": "Remove team member",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.rename_team": {
@@ -8679,11 +8339,7 @@
     "summary": "Rename team",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.resend_invitation": {
@@ -8729,11 +8385,7 @@
     "summary": "Resend invitation",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.revoke_invitation": {
@@ -8779,11 +8431,7 @@
     "summary": "Revoke invitation",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": false
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.set_onboarding_step": {
@@ -8829,11 +8477,7 @@
     "summary": "Set onboarding step",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.set_team_logo": {
@@ -8879,11 +8523,7 @@
     "summary": "Set team logo",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.set_team_member_roles": {
@@ -8929,11 +8569,7 @@
     "summary": "Set team member roles",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.set_team_member_status": {
@@ -8979,11 +8615,7 @@
     "summary": "Set team member status",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.teams.transfer_team_ownership": {
@@ -9029,11 +8661,7 @@
     "summary": "Transfer team ownership",
     "tags": [
      "Teams"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.wireguard.create_wireguard_device": {
@@ -9079,11 +8707,7 @@
     "summary": "Create wireguard device",
     "tags": [
      "WireGuard"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.wireguard.delete_wireguard_device": {
@@ -9129,11 +8753,7 @@
     "summary": "Delete wireguard device",
     "tags": [
      "WireGuard"
-    ],
-    "x-mcp": {
-     "read_only": false,
-     "requires_team": true
-    }
+    ]
    }
   },
   "/api/method/central.api.wireguard.list_wireguard_devices": {
@@ -9180,11 +8800,7 @@
     "summary": "List wireguard devices",
     "tags": [
      "WireGuard"
-    ],
-    "x-mcp": {
-     "read_only": true,
-     "requires_team": true
-    }
+    ]
    }
   }
  },
