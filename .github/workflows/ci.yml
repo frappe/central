@@ -35,7 +35,7 @@ jobs:
         run: |
           # Billing tests never run these modules. A link from billing to one of them makes billing run anyway.
           skippable='investigator|www|oidc|support|geo'
-          unrelated="^(dashboard|docs|e2e|llm|\.claude)/|\.md\$|^central/($skippable)(/|\.py\$)"
+          unrelated="^(dashboard|docs|e2e|fcloud|llm|\.claude)/|\.md\$|^central/($skippable)(/|\.py\$)"
           if [ "${{ github.event_name }}" = pull_request ] \
             && ! git grep -qE "central[./]($skippable)([^a-z_]|$)" -- central/billing \
             && ! git diff --name-only HEAD^1 HEAD | grep -qvE "$unrelated"; then
@@ -150,3 +150,17 @@ jobs:
     steps:
       - name: Every server test build passed
         run: test "${{ needs.tests.result }}" = "success"
+
+  fcloud:
+    runs-on: ubuntu-latest
+    name: fcloud CLI tests
+    defaults:
+      run:
+        working-directory: fcloud
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - name: Install the locked dependencies
+        run: uv sync --locked
+      - name: Run the tests
+        run: uv run pytest
