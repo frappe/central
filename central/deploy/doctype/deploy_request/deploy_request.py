@@ -14,13 +14,12 @@ from frappe.query_builder.functions import IfNull
 from frappe.utils import ceil, now_datetime, time_diff_in_seconds
 from redis.exceptions import LockError
 
+from central.billing.catalog.subscriptions import begin_resize
 from central.deploy.billing import (
 	get_plan_specs,
 	get_size_plan,
 	open_vm_subscription,
-	update_vm_plan,
 	validate_vm_purchase,
-	validate_vm_resize,
 )
 from central.deploy.config import (
 	CONFIG_FILE,
@@ -31,6 +30,7 @@ from central.deploy.config import (
 )
 from central.deploy.notifications import notify
 from central.deploy.virtual_machine import DeployMachine
+from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
 from central.integrations import servers
 from central.integrations.github import GitHubApp
 from central.utils.units import mebibytes_to_gigabytes, millicores_to_vcpus
@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 	from cloudtoolkit.pipeline.doctype.pipeline.pipeline import Pipeline
 
 	from central.deploy.doctype.deploy_app.deploy_app import DeployApp
+	from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 	from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 
 # A newer push replaces a request in these states, unless its build succeeded: the agent then starts the release at
@@ -236,28 +237,48 @@ class DeployRequest(PipelineBuilder):
 
 	@task
 	def resize_virtual_machine(self, name: str) -> None:
-		"""Bring a reused VM to this deploy's specs and start it. Atlas resizes only a stopped VM."""
+		"""Bring a reused VM to this deploy's plan through the console's resize, then start it."""
 		atlas_vm_id = frappe.db.get_value("Virtual Machine", name, "atlas_vm_id")
 		machine = DeployMachine(frappe.get_doc("Deploy App", self.deploy_app))
 		vm = machine.get(atlas_vm_id)
-		state, current = vm.get("current_state"), machine.get_specs(vm)
-		self.keep_disk(current["disk_mib"])
-		disk_gigabytes = ceil(mebibytes_to_gigabytes(self.disk_mib))
+		self.keep_disk(machine.get_specs(vm)["disk_mib"])
 
-		if current == self.specs:
-			update_vm_plan(name, self.plan, disk_gigabytes)
-			if state == "stopped":
-				machine.start(atlas_vm_id)
-			elif state == "migrating":
-				self.wait(_("Atlas is moving {0} to a host that fits it.").format(name), for_=900)
+		if self.is_resizing(name):
+			self.wait(_("Resizing {0}.").format(name), for_=900)
 			return
 
-		validate_vm_resize(name, self.plan, disk_gigabytes)
-		if state == "running":
-			machine.stop(atlas_vm_id)
-		elif state == "stopped":
-			machine.resize(atlas_vm_id, self.specs)
-		self.wait(_("Resizing {0}.").format(name), for_=900)
+		subscription = frappe.db.get_value("Subscription", {"server_id": name}, "name")
+		disk_gigabytes = ceil(mebibytes_to_gigabytes(self.disk_mib))
+		resize_request = begin_resize(subscription, plan=self.plan, disk_gigabytes=disk_gigabytes)
+
+		if resize_request["queued"]:
+			self.wait(_("Resizing {0}.").format(name), for_=900)
+			return
+
+		state = vm.get("current_state")
+		if state == "stopped":
+			machine.start(atlas_vm_id)
+		elif state == "migrating":
+			self.wait(_("Atlas is moving {0} to a host that fits it.").format(name), for_=900)
+
+	def is_resizing(self, server: str) -> bool:
+		"""Whether the resize this step queued is still running. A resize that failed fails the deploy with its error."""
+		action = frappe.db.get_value(
+			"Resource Action",
+			{"server": server, "action": "resize", "creation": (">=", self.step_started)},
+			"name",
+			order_by="creation desc",
+		)
+		if not action:
+			return False
+
+		action: ResourceAction = frappe.get_doc("Resource Action", action)
+		if action.status in PENDING_STATES:
+			return True
+		if action.status != "Succeeded":
+			error = action.customer_status()["error"]
+			frappe.throw(error["message"] if error else _("Resizing {0} failed.").format(server))
+		return False
 
 	def keep_disk(self, disk_mib: int | None) -> None:
 		"""Keep the VM's disk when the plan's is smaller, since a disk never shrinks, and say so in the build log."""
@@ -267,7 +288,7 @@ class DeployRequest(PipelineBuilder):
 
 		# Otherwise we will keep the disk same as the machines current disk
 		self.disk_mib = disk_mib
-		self.append_log("build_log", "Preserving disk size as shrink is not allowed")
+		self.append_log("build_log", _("Preserving disk size as shrink is not allowed"))
 		self.save(ignore_permissions=True)
 
 	@task

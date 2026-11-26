@@ -2,16 +2,7 @@ import frappe
 from frappe import _
 
 from central.billing.catalog.server_plans import get_server_plans
-from central.billing.catalog.subscriptions import (
-	_plan_resize,
-	_relock_resize,
-	_require_offered_plan,
-	_resize_target,
-	_validate_resize_shape,
-	create_subscription,
-	get_plan_shape,
-	get_resize_profile,
-)
+from central.billing.catalog.subscriptions import create_subscription, get_plan_shape
 from central.billing.doctype.billing_profile.billing_profile import get_team_currency
 from central.resource_actions import validate_purchase
 from central.utils.units import gigabytes_to_mebibytes, vcpus_to_millicores
@@ -63,29 +54,3 @@ def open_vm_subscription(server: str, team: str, region: str, plan: str, rate: f
 		resource_id=server,
 		opening_quote=(rate, get_team_currency(team)) if rate is not None else None,
 	)
-
-
-def validate_vm_resize(server: str, plan: str, disk_gigabytes: int) -> None:
-	"""Run the checks a server moving to `plan` with `disk_gigabytes` passes (offered, headroom, a way to pay, no
-	shrink), before the VM stops."""
-	subscription = frappe.get_doc("Subscription", {"server_id": server})
-	machine = frappe.get_doc("Virtual Machine", server)
-	_require_offered_plan(subscription, plan, machine.region)
-
-	target = _resize_target(subscription, plan, None, None, disk_gigabytes)
-	if not target.plan:
-		profile = get_resize_profile(subscription, target.sub_category, target.preset_plan)
-		_validate_resize_shape(profile, target.includes, server, target.preset_plan)
-	_plan_resize(
-		subscription, machine, target.plan, target.includes, target.sub_category, target.override_rate
-	)
-
-
-def update_vm_plan(server: str, plan: str, disk_gigabytes: int) -> None:
-	"""Bill the VM at `plan` once it runs at that size, as the console's resize does: a disk larger than the plan's
-	adds the disk rate for the extra GB. Nothing changes while the size is the same."""
-	subscription = frappe.get_doc("Subscription", {"server_id": server})
-	target = _resize_target(subscription, plan, None, None, disk_gigabytes)
-	_relock_resize(subscription.name, target, None)
-	# The VM's plan is what its subscription follows each time Central sees it running; a kept disk has none.
-	frappe.db.set_value("Virtual Machine", server, "plan", target.plan)
