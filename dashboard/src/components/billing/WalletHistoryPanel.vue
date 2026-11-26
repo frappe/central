@@ -46,64 +46,58 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 		:subtitle="`Balance ${money(balance, currency)}`"
 	>
 		<!-- Ledger -->
-		<div class="min-h-0 flex-1 overflow-y-auto">
-			<LoadingText
-				v-if="ledger.loading && !ledger.data"
-				:lines="5"
-				class="p-4"
-			/>
-			<div
-				v-else-if="!ledger.data?.length"
-				class="px-4 py-12 text-center text-p-sm text-ink-gray-5"
+		<LoadingText v-if="ledger.loading && !ledger.data" :lines="5" class="p-4" />
+		<div
+			v-else-if="!ledger.data?.length"
+			class="px-4 py-12 text-center text-p-sm text-ink-gray-5"
+		>
+			No credit activity yet.
+		</div>
+		<ul v-else class="divide-y divide-outline-gray-1 px-4">
+			<li
+				v-for="e in ledger.data"
+				:key="e.name"
+				class="flex items-center gap-3 py-3"
 			>
-				No credit activity yet.
-			</div>
-			<ul v-else class="divide-y divide-outline-gray-1 px-4">
-				<li
-					v-for="e in ledger.data"
-					:key="e.name"
-					class="flex items-center gap-3 py-3"
+				<span
+					class="grid size-8 shrink-0 place-items-center rounded-full"
+					:class="isCredit(e) ? 'bg-surface-green-2' : 'bg-surface-gray-2'"
 				>
 					<span
-						class="grid size-8 shrink-0 place-items-center rounded-full"
-						:class="isCredit(e) ? 'bg-surface-green-2' : 'bg-surface-gray-2'"
-					>
-						<span
-							class="size-4"
-							:class="
+						class="size-4"
+						:class="
                 isCredit(e)
                   ? 'lucide-arrow-down-left text-ink-green-7'
                   : 'lucide-arrow-up-right text-ink-gray-6'
               "
-							aria-hidden="true"
-						/>
-					</span>
-					<div class="min-w-0 flex-1">
-						<p class="truncate text-sm text-ink-gray-8">
-							{{ e.note || e.entry_type }}
-						</p>
-						<p class="text-p-sm text-ink-gray-5">
-							{{ e.created_at }}
-							<span v-if="Number(e.tax_amount)"> · {{ gstPaid(e) }}</span>
-						</p>
-					</div>
-					<span
-						class="shrink-0 text-sm tabular-nums"
-						:class="isCredit(e) ? 'text-ink-green-7' : 'text-ink-gray-8'"
-					>
-						{{ signedMoney(e.amount, e.currency || currency, isCredit(e)) }}
-					</span>
-					<Button
-						v-if="e.has_receipt"
-						variant="ghost"
-						icon="lucide-download"
-						label="Download receipt"
-						title="Download receipt"
-						@click="downloadReceipt(e.name)"
+						aria-hidden="true"
 					/>
-				</li>
-			</ul>
-		</div>
+				</span>
+				<div class="min-w-0 flex-1">
+					<p class="truncate text-sm text-ink-gray-8">
+						{{ e.note || e.entry_type }}
+					</p>
+					<p class="text-p-sm text-ink-gray-5">
+						{{ e.created_at }}
+						<span v-if="Number(e.tax_amount)"> · {{ gstPaid(e) }}</span>
+					</p>
+				</div>
+				<span
+					class="shrink-0 text-sm tabular-nums"
+					:class="isCredit(e) ? 'text-ink-green-7' : 'text-ink-gray-8'"
+				>
+					{{ signedMoney(e.amount, e.currency || currency, isCredit(e)) }}
+				</span>
+				<Button
+					v-if="e.has_receipt"
+					variant="ghost"
+					icon="lucide-download"
+					label="Download receipt"
+					title="Download receipt"
+					@click="downloadReceipt(e.name)"
+				/>
+			</li>
+		</ul>
 
 		<TopupDialog v-model="showTopup" :currency="currency" @done="reloadMoney" />
 

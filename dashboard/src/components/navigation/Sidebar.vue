@@ -3,6 +3,7 @@ import {
 	Avatar,
 	Dropdown,
 	KeyboardShortcut,
+	ScrollArea,
 	Sidebar,
 	SidebarItem,
 	SidebarLabel,
@@ -72,59 +73,61 @@ const toggleSection = (label: string) => {
 	>
 		<TeamSwitcher :collapsed="sidebarCollapsed && !isMobile" />
 
-		<nav class="flex-1 overflow-y-auto px-2 pt-2">
-			<template
-				v-for="(section, index) in sidebarSections"
-				:key="section.label || index"
-			>
-				<SidebarLabel
-					v-if="
-						section.label &&
-						section.items.some((item) => item.condition !== false)
-					"
-					class="mt-2"
-					:class="section.collapsible ? 'cursor-pointer' : ''"
-					@click="section.collapsible ? toggleSection(section.label) : undefined"
-				>
-					{{ section.label }}
-					<span
-						v-if="section.collapsible && !sidebarCollapsed"
-						class="lucide-chevron-right absolute right-1 top-1.5 size-4 text-ink-gray-4 transition-transform"
-						:class="!collapsedSections[section.label] ? 'rotate-90' : ''"
-					/>
-				</SidebarLabel>
-
+		<ScrollArea class="min-h-0 flex-1">
+			<nav class="px-2 pt-2">
 				<template
-					v-if="!section.collapsible || !collapsedSections[section.label]"
+					v-for="(section, index) in sidebarSections"
+					:key="section.label || index"
 				>
-					<template
-						v-for="item in section.items.filter((i) => i.condition !== false)"
-						:key="item.label"
+					<SidebarLabel
+						v-if="
+							section.label &&
+							section.items.some((item) => item.condition !== false)
+						"
+						class="mt-2"
+						:class="section.collapsible ? 'cursor-pointer' : ''"
+						@click="section.collapsible ? toggleSection(section.label) : undefined"
 					>
-						<component :is="item.component" v-if="item.component" />
+						{{ section.label }}
+						<span
+							v-if="section.collapsible && !sidebarCollapsed"
+							class="lucide-chevron-right absolute right-1 top-1.5 size-4 text-ink-gray-4 transition-transform"
+							:class="!collapsedSections[section.label] ? 'rotate-90' : ''"
+						/>
+					</SidebarLabel>
 
-						<SidebarItem
-							v-else
-							:icon="item.icon"
-							:route="item.to"
-							:onclick="item.onClick"
-							class="mb-0.5"
-							:class="[item.class, isMobile ? '!h-10' : '']"
-							:active="!!item.to && item.to === activePath"
+					<template
+						v-if="!section.collapsible || !collapsedSections[section.label]"
+					>
+						<template
+							v-for="item in section.items.filter((i) => i.condition !== false)"
+							:key="item.label"
 						>
-							<span class="truncate md:text-sm">{{ item.label }}</span>
-							<template v-if="item.shortcut" #suffix>
-								<KeyboardShortcut
-									:combo="item.shortcut"
-									:show-plus="showShortcutPlus"
-									class="mr-2"
-								/>
-							</template>
-						</SidebarItem>
+							<component :is="item.component" v-if="item.component" />
+
+							<SidebarItem
+								v-else
+								:icon="item.icon"
+								:route="item.to"
+								:onclick="item.onClick"
+								class="mb-0.5"
+								:class="[item.class, isMobile ? '!h-10' : '']"
+								:active="!!item.to && item.to === activePath"
+							>
+								<span class="truncate md:text-sm">{{ item.label }}</span>
+								<template v-if="item.shortcut" #suffix>
+									<KeyboardShortcut
+										:combo="item.shortcut"
+										:show-plus="showShortcutPlus"
+										class="mr-2"
+									/>
+								</template>
+							</SidebarItem>
+						</template>
 					</template>
 				</template>
-			</template>
-		</nav>
+			</nav>
+		</ScrollArea>
 
 		<!-- user profile dropdown -->
 		<div class="mt-auto px-2 pb-2">

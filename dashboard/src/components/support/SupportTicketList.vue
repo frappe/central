@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button, Skeleton } from 'frappe-ui'
+import { Badge, Button, ScrollArea, Skeleton } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import SupportSearchInput from '@/components/support/SupportSearchInput.vue'
@@ -43,7 +43,10 @@ const ticketsLoadErrorTitle = __("Tickets couldn't load")
 			/>
 		</div>
 
-		<div class="-mx-2 min-h-0 flex-1 overflow-y-auto overscroll-contain">
+		<ScrollArea
+			class="-mx-2 min-h-0 flex-1"
+			viewport-class="overscroll-contain"
+		>
 			<div v-if="loading && !tickets" class="space-y-2 px-2" aria-busy="true">
 				<Skeleton v-for="index in 3" :key="index" class="h-12 rounded-4" />
 			</div>
@@ -120,6 +123,6 @@ const ticketsLoadErrorTitle = __("Tickets couldn't load")
 			<p v-else class="px-2 py-6 text-center text-p-sm text-ink-gray-5">
 				{{ __('No tickets match "{0}".', [filter.trim()]) }}
 			</p>
-		</div>
+		</ScrollArea>
 	</div>
 </template>

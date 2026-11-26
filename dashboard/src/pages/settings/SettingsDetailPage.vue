@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ScrollArea } from 'frappe-ui'
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
@@ -46,7 +47,7 @@ watch(
 </script>
 
 <template>
-	<div v-if="tab && allowed" class="h-full overflow-y-auto">
+	<ScrollArea v-if="tab && allowed" class="h-full">
 		<div class="mx-auto max-w-2xl p-3 md:p-4 lg:pt-8">
 			<header class="flex items-start justify-between gap-4">
 				<div class="min-w-0">
@@ -64,5 +65,5 @@ watch(
 
 			<component :is="tab.component" />
 		</div>
-	</div>
+	</ScrollArea>
 </template>

@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { Alert, Button, Dialog, Skeleton, TabButtons, Tooltip } from 'frappe-ui'
+import {
+	Alert,
+	Button,
+	Dialog,
+	ScrollArea,
+	Skeleton,
+	TabButtons,
+	Tooltip,
+} from 'frappe-ui'
 import { computed, ref } from 'vue'
 import CopyableValue from '@/components/common/CopyableValue.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -49,7 +57,7 @@ const enableAI = async (): Promise<void> => {
 </script>
 
 <template>
-	<div class="h-full overflow-y-auto">
+	<ScrollArea class="h-full">
 		<Teleport v-if="ai?.enabled && !ai.unavailable" defer to="#header-actions">
 			<Button
 				icon-left="lucide-code-xml"
@@ -196,5 +204,5 @@ const enableAI = async (): Promise<void> => {
 				</div>
 			</template>
 		</Dialog>
-	</div>
+	</ScrollArea>
 </template>

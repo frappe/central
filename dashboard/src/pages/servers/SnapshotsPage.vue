@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ScrollArea } from 'frappe-ui'
 import { useRoute } from 'vue-router'
 import SnapshotsPanel from '@/components/snapshots/SnapshotsPanel.vue'
 
@@ -8,10 +9,10 @@ const initialSearch =
 </script>
 
 <template>
-	<div class="h-full overflow-y-auto">
+	<ScrollArea class="h-full">
 		<SnapshotsPanel
 			:initial-search="initialSearch"
 			class="mx-auto w-full max-w-5xl px-6 pb-8 pt-3 md:pt-4 lg:pt-8"
 		/>
-	</div>
+	</ScrollArea>
 </template>

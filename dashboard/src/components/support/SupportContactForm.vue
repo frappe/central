@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Textarea, useCall } from 'frappe-ui'
+import { Alert, Button, ScrollArea, Textarea, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import SupportTargetFields from '@/components/support/SupportTargetFields.vue'
@@ -166,48 +166,51 @@ watch(
 
 <template>
 	<form class="flex min-h-0 flex-1 flex-col" @submit.prevent="submit">
-		<div
-			class="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-1 pb-3"
+		<ScrollArea
+			class="-mx-1 min-h-0 flex-1"
+			viewport-class="overscroll-contain px-1 pb-3"
 		>
-			<SupportTopicFields
-				v-model:category="category"
-				v-model:issue-type="issueType"
-				:options="props.options"
-				:loading="props.optionsLoading"
-				:finished="props.optionsFinished"
-				:error="props.optionsError"
-				@retry-options="emit('retryOptions')"
-			/>
+			<div class="flex flex-col gap-4">
+				<SupportTopicFields
+					v-model:category="category"
+					v-model:issue-type="issueType"
+					:options="props.options"
+					:loading="props.optionsLoading"
+					:finished="props.optionsFinished"
+					:error="props.optionsError"
+					@retry-options="emit('retryOptions')"
+				/>
 
-			<SupportTargetFields
-				ref="targets"
-				v-model:server-id="serverId"
-				v-model:site-name="siteName"
-				:context="props.context"
-				:category="category"
-				@selection="selection = $event"
-			/>
+				<SupportTargetFields
+					ref="targets"
+					v-model:server-id="serverId"
+					v-model:site-name="siteName"
+					:context="props.context"
+					:category="category"
+					@selection="selection = $event"
+				/>
 
-			<Textarea
-				v-model="description"
-				:rows="4"
-				:label="__('Details for support')"
-				:placeholder="__('What were you doing, what did you expect, and what error did you see?')"
-				required
-			/>
+				<Textarea
+					v-model="description"
+					:rows="4"
+					:label="__('Details for support')"
+					:placeholder="__('What were you doing, what did you expect, and what error did you see?')"
+					required
+				/>
 
-			<Alert
-				v-if="isCriticalIssue"
-				theme="amber"
-				:title="__('This is urgent, so support sees it first.')"
-			/>
+				<Alert
+					v-if="isCriticalIssue"
+					theme="amber"
+					:title="__('This is urgent, so support sees it first.')"
+				/>
 
-			<p v-if="sentLine" class="text-p-sm text-ink-gray-5">
-				{{ __('Sent as {0}', [sentLine]) }}
-			</p>
+				<p v-if="sentLine" class="text-p-sm text-ink-gray-5">
+					{{ __('Sent as {0}', [sentLine]) }}
+				</p>
 
-			<Alert v-if="formError" theme="red" :title="formError" />
-		</div>
+				<Alert v-if="formError" theme="red" :title="formError" />
+			</div>
+		</ScrollArea>
 
 		<div
 			class="flex items-center justify-between gap-2 border-t border-outline-gray-2 pt-3"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button, TextInput } from 'frappe-ui'
+import { Badge, Button, ScrollArea, TextInput } from 'frappe-ui'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
@@ -114,8 +114,9 @@ onBeforeUnmount(() => window.clearTimeout(cascadeTimer))
 			</button>
 		</div>
 
-		<div
-			class="min-h-0 flex-1 overflow-y-auto border-t border-outline-alpha-gray-1 px-2 pb-2 pt-1"
+		<ScrollArea
+			class="min-h-0 flex-1 border-t border-outline-alpha-gray-1"
+			viewport-class="px-2 pb-2 pt-1"
 		>
 			<div
 				v-for="(row, i) in rows"
@@ -216,7 +217,7 @@ onBeforeUnmount(() => window.clearTimeout(cascadeTimer))
 					/>
 				</template>
 			</EmptyState>
-		</div>
+		</ScrollArea>
 	</section>
 </template>
 

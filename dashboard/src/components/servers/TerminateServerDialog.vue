@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Checkbox, LoadingIndicator } from 'frappe-ui'
+import { Badge, Checkbox, LoadingIndicator, ScrollArea } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useServerHostnames } from '@/composables/useServerHostnames'
@@ -103,18 +103,21 @@ const snapshotNote = computed(() => {
 					These addresses will become unavailable and their routes will be
 					removed:
 				</p>
-				<ul
-					class="max-h-40 space-y-1 overflow-y-auto rounded-6 border border-outline-gray-2 px-3 py-2"
+				<ScrollArea
+					class="rounded-6 border border-outline-gray-2"
+					viewport-class="max-h-40"
 				>
-					<li
-						v-for="entry in hostnames"
-						:key="entry.hostname"
-						class="flex items-center justify-between gap-3 text-p-sm"
-					>
-						<span class="truncate text-ink-gray-9">{{ entry.hostname }}</span>
-						<Badge :label="entry.kind" theme="gray" size="sm" />
-					</li>
-				</ul>
+					<ul class="space-y-1 px-3 py-2">
+						<li
+							v-for="entry in hostnames"
+							:key="entry.hostname"
+							class="flex items-center justify-between gap-3 text-p-sm"
+						>
+							<span class="truncate text-ink-gray-9">{{ entry.hostname }}</span>
+							<Badge :label="entry.kind" theme="gray" size="sm" />
+						</li>
+					</ul>
+				</ScrollArea>
 			</div>
 
 			<div

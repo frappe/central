@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Alert, Button, Checkbox, Dialog, FormControl } from 'frappe-ui'
+import {
+	Alert,
+	Button,
+	Checkbox,
+	Dialog,
+	FormControl,
+	ScrollArea,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import CopyButton from '@/components/common/CopyButton.vue'
 import TranslatedText from '@/components/common/TranslatedText.vue'
@@ -145,9 +152,15 @@ const addDeviceErrorTitle = __("Couldn't add the device")
 					{{ __('If the device was created, close this dialog, open its settings, and paste this key.') }}
 				</p>
 				<div class="relative">
-					<pre
-						class="max-h-40 overflow-auto rounded-6 bg-surface-gray-1 p-3 pr-12 font-mono text-sm text-ink-gray-8"
-					>{{ generatedKey.privateKey }}</pre>
+					<ScrollArea
+						orientation="both"
+						class="rounded-6 bg-surface-gray-1"
+						viewport-class="max-h-40"
+					>
+						<pre
+							class="p-3 pr-12 font-mono text-sm text-ink-gray-8"
+						>{{ generatedKey.privateKey }}</pre>
+					</ScrollArea>
 					<CopyButton
 						class="absolute right-2 top-2"
 						size="sm"
