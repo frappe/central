@@ -17,13 +17,13 @@ from central.billing.revenue.usage_ledger import utc_day_start, utc_today
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import add_segment, make_plan, run_enqueued_inline, seed_running_resource
 from central.patches.v0_0 import bill_public_ipv4_per_day
-from central.patches.v0_0.bill_public_ipv4_per_day import close_address_subscriptions
 from central.services.doctype.service.service import NETWORK_SERVICE
 
 CLUSTER = "ap-south-1"
 VM_PLAN = "ipv4-days-vm-plan"
 ADDRESS = "203.0.113.20"
 JUNE = [f"2026-06-{day:02d}" for day in range(1, 31)]
+CUTOVER_DAY = datetime.date(2026, 6, 20)
 
 
 class IPv4DaysTestCase(IntegrationTestCase):
@@ -217,7 +217,7 @@ class TestIPv4DayBillingInUSD(IPv4DaysTestCase):
 	def test_the_cutover_bills_every_hour_once(self):
 		address = self.address_subscription(utc_day_start("2026-06-01"))
 
-		close_address_subscriptions(utc_day_start("2026-06-20"))
+		bill_public_ipv4_per_day.close_address_subscriptions(utc_day_start("2026-06-20"))
 		self.write(*JUNE[19:])
 
 		invoice = self.invoice()
@@ -233,12 +233,22 @@ class TestIPv4DayBillingInUSD(IPv4DaysTestCase):
 		opened = frappe.utils.add_to_date(utc_day_start("2026-06-20"), hours=3)
 		address = self.address_subscription(opened)
 
-		close_address_subscriptions(utc_day_start("2026-06-20"))
+		bill_public_ipv4_per_day.close_address_subscriptions(utc_day_start("2026-06-20"))
 
 		cancelled = frappe.db.get_value(
 			"Subscription Change", {"subscription": address, "change_type": "Cancelled"}, "effective_at"
 		)
 		self.assertEqual(cancelled, frappe.utils.get_datetime(opened))
+
+	def test_a_closed_address_subscription_is_invoiced_in_the_server_region(self):
+		subscription = frappe._dict(
+			name=self.address_subscription(utc_day_start("2026-06-20")),
+			server_id=None,
+			vm_snapshot=None,
+			public_ip_server=self.server,
+		)
+
+		self.assertEqual(_subscription_clusters([subscription]), {subscription.name: CLUSTER})
 
 	def fixed_lines(self, invoice) -> list:
 		return [li for li in invoice.items if li.resource_type == "bundle"]
@@ -288,10 +298,12 @@ class TestIPv4Cutover(IPv4DaysTestCase):
 
 	def setUp(self):
 		super().setUp()
-		# The patch rewrites catalog rows the sweep after a test would not put back.
+		# BillingTestCase's row sweep commits and would keep the patch's catalog rewrites; roll them back.
 		self.addCleanup(frappe.db.rollback)
 		self.keep_swept_day()
-		self.today = utc_today()
+		self.today = CUTOVER_DAY
+		self.enterContext(patch.object(bill_public_ipv4_per_day, "utc_today", return_value=self.today))
+		self.enterContext(patch.object(public_ipv4_usage, "utc_today", return_value=self.today))
 		self.cutover = utc_day_start(self.today)
 		self.old_rates = [
 			{"currency": "INR", "rate": 180, "cluster": None},
@@ -334,7 +346,7 @@ class TestIPv4Cutover(IPv4DaysTestCase):
 			frappe.db.get_value("Usage Day", {"subject": self.server, "day": yesterday}, "written_off")
 		)
 
-	def test_an_address_paused_after_the_cutover_bills_that_day_only_on_its_old_subscription(self):
+	def test_an_address_paused_on_the_cutover_day_bills_that_day_only_on_its_old_subscription(self):
 		address = self.address_subscription(utc_day_start("2026-06-01"))
 		paused_at = frappe.utils.add_to_date(self.cutover, minutes=1)
 		add_segment(address, "Paused", None, paused_at, currency=self.currency)
@@ -344,6 +356,40 @@ class TestIPv4Cutover(IPv4DaysTestCase):
 
 		self.assertEqual(self.cancelled_at(address), [paused_at])
 		self.assertNotIn(str(self.today), self.days())
+
+	def test_an_address_paused_and_resumed_on_the_cutover_day_bills_no_hour_after_the_resume(self):
+		"""The decided gap: the hours after the resume on day C are not billed, and none bill twice."""
+		address = self.address_subscription(utc_day_start("2026-06-01"))
+		add_segment(address, "Paused", None, frappe.utils.add_to_date(self.cutover, minutes=1))
+		resumed_at = frappe.utils.add_to_date(self.cutover, hours=2)
+		add_segment(address, "Resumed", 2, resumed_at, currency=self.currency)
+
+		bill_public_ipv4_per_day.execute()
+		self.sweep(str(self.today))
+
+		self.assertEqual(self.cancelled_at(address), [resumed_at])
+		self.assertNotIn(str(self.today), self.days())
+
+	def test_an_address_subscription_opened_after_the_cutover_still_bills_the_day(self):
+		address = self.address_subscription(frappe.utils.add_to_date(self.cutover, hours=3))
+
+		bill_public_ipv4_per_day.execute()
+		self.sweep(str(self.today))
+
+		# It opens and closes at the same moment, so it billed no hour of the day.
+		self.assertEqual(len(self.cancelled_at(address)), 1)
+		self.assertIn(str(self.today), self.days())
+
+	def test_a_day_after_the_cutover_never_reads_the_address_subscriptions(self):
+		self.address_subscription(utc_day_start("2026-06-01"))
+		bill_public_ipv4_per_day.execute()
+		tomorrow = str(self.today + datetime.timedelta(days=1))
+
+		with patch.object(public_ipv4_usage, "_address_changes") as address_changes:
+			self.write(tomorrow)
+
+		address_changes.assert_not_called()
+		self.assertIn(tomorrow, self.days())
 
 	def test_running_the_patch_again_changes_nothing(self):
 		address = self.address_subscription(utc_day_start("2026-06-01"))
@@ -355,16 +401,6 @@ class TestIPv4Cutover(IPv4DaysTestCase):
 		self.assertEqual(get_catalog_rates("Plan", "public-ipv4"), rates)
 		self.assertEqual(self.cancelled_at(address), [self.cutover])
 		self.assertEqual(self.days(), [str(self.today)])
-
-	def test_a_closed_address_subscription_is_invoiced_in_the_server_region(self):
-		subscription = frappe._dict(
-			name=self.address_subscription(self.cutover),
-			server_id=None,
-			vm_snapshot=None,
-			public_ip_server=self.server,
-		)
-
-		self.assertEqual(_subscription_clusters([subscription]), {subscription.name: CLUSTER})
 
 	def cancelled_at(self, subscription: str) -> list:
 		return frappe.get_all(

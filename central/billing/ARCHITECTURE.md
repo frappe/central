@@ -777,7 +777,12 @@ Public IPv4 (#197, #200): one Level Usage Day per server and UTC day on the serv
     day
   → a server whose per-address segment billed some hour of a day (it closed after 00:00 UTC on C,
     for example a pause or a detach) gets no Usage Day for that day from any writer
-    (public_ipv4_usage.billed_per_address), so those hours bill only on the old segment
+    (public_ipv4_usage.billed_per_address), so those hours bill only on the old segment. Only day
+    C is checked: every per-address segment is closed by C, so no later day overlaps one
+  → accepted gap: on C, a per-address subscription that paused or detached after 00:00 UTC and
+    then resumed or re-attached bills only its hours before the pause; the patch closes it at the
+    resume and the day is skipped, so the hours after go unbilled (at most one address-day per
+    such server, once). The opposite choice would bill some hours twice
 Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
   → while the service's central_reads is on, Central's own reading still bills it: every line is
     refused with retry true ("Central still reads this service; send it again after the switch")
