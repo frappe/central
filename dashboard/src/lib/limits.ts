@@ -1,5 +1,4 @@
 import { compactNumber } from '@/lib/format'
-import { __ } from '@/lib/translate'
 import type { AIRateLimit } from '@/types/ai'
 
 const METRIC_LETTERS: Record<string, string> = {
@@ -23,17 +22,6 @@ const WINDOW_WORDS: Record<string, string> = {
 	'1M': 'per month',
 }
 
-export const METRIC_OPTIONS = [
-	{ label: __('Requests'), value: 'requests' },
-	{ label: __('Tokens'), value: 'total_tokens' },
-]
-export const WINDOW_OPTIONS = [
-	{ label: __('Per minute'), value: '1m' },
-	{ label: __('Per hour'), value: '1h' },
-	{ label: __('Per day'), value: '1d' },
-	{ label: __('Per month'), value: '1M' },
-]
-
 export interface LimitChip {
 	key: string
 	label: string
@@ -41,13 +29,13 @@ export interface LimitChip {
 }
 
 // One chip per limit: `10 RPM gpt-6-luna`, the model's id when the row names one; the long form
-// goes in its tooltip.
+// goes in its tooltip. A row at 0 is no limit there: `∞ RPM gpt-6-luna`.
 export const limitChips = (limits: AIRateLimit[]): LimitChip[] =>
 	limits.map((limit) => {
 		const model = limit.model_key ? ` ${limit.model_key.split('/').pop()}` : ''
 		return {
 			key: `${limit.model_key}:${limit.metric}:${limit.window}`,
-			label: `${compactNumber(limit.value)} ${METRIC_LETTERS[limit.metric] ?? limit.metric}${WINDOW_LETTERS[limit.window] ?? ''}${model}`,
-			text: `${limit.value.toLocaleString()} ${METRIC_WORDS[limit.metric] ?? limit.metric} ${WINDOW_WORDS[limit.window] ?? limit.window} on ${limit.model_key || 'every model'}`,
+			label: `${limit.value ? compactNumber(limit.value) : '∞'} ${METRIC_LETTERS[limit.metric] ?? limit.metric}${WINDOW_LETTERS[limit.window] ?? ''}${model}`,
+			text: `${limit.value ? limit.value.toLocaleString() : 'No limit on'} ${METRIC_WORDS[limit.metric] ?? limit.metric} ${WINDOW_WORDS[limit.window] ?? limit.window} on ${limit.model_key || 'every model'}`,
 		}
 	})
