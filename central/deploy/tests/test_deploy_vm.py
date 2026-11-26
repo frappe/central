@@ -196,13 +196,13 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 			self.atlas_vm_id, {"cpu_millicores": 1000, "memory_mib": 2048, "disk_mib": 20480}
 		)
 		self.assertEqual(frappe.db.get_value("Deploy Request", self.request.name, "disk_mib"), 20480)
-		self.assertIn("Keeping the 20 GB disk.", self.request.get_log("build_log"))
+		self.assertIn("Preserving disk size", self.request.get_log("build_log"))
 
 		self.machine.get.return_value = make_vm("stopped", cpu=1000, memory=2048)
 		self.request.resize_virtual_machine(name)
 		self.machine.start.assert_called_once_with(self.atlas_vm_id)
 		self.update_plan.assert_called_once_with(name, self.request.plan, 20)
-		self.assertEqual(self.request.get_log("build_log").count("Keeping"), 1)
+		self.assertEqual(self.request.get_log("build_log").count("Preserving disk size"), 1)
 
 
 class IntegrationTestDeployMachine(IntegrationTestCase):
