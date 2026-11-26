@@ -1,8 +1,10 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.api.models.servers import Region, RegistryServer
 from central.api.servers import REGION_LIST_FIELDS, list_instances, registry
 from central.tests.test_iam import ensure_user
+from central.tests.utils import assert_matches_model
 
 # The exact key set list_instances returns: the non-secret fields of an Active Region.
 PUBLIC_FIELDS = REGION_LIST_FIELDS
@@ -66,6 +68,7 @@ class TestListInstances(IntegrationTestCase):
 		self.assertTrue(rows)
 		for row in rows:
 			self.assertEqual(set(row.keys()), set(PUBLIC_FIELDS))
+			assert_matches_model(self, row, Region)
 			for field in SECRET_FIELDS:
 				self.assertNotIn(field, row)
 
@@ -107,6 +110,7 @@ class TestListInstances(IntegrationTestCase):
 		servers = registry(team=self.team.name)["servers"]
 
 		self.assertEqual(len(servers), 1)
+		assert_matches_model(self, servers[0], RegistryServer)
 		for field in ("name", "resource_id", "plan", "status", "region", "has_wireguard_access"):
 			self.assertIn(field, servers[0])
 		self.assertEqual(servers[0].name, servers[0].resource_id)

@@ -1832,6 +1832,21 @@
       },
       "type": "array"
      },
+     "created_by": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "created_by_name": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "creation": {
+      "type": "string"
+     },
      "disk_gigabytes": {
       "type": "number"
      },
@@ -1875,6 +1890,9 @@
       ]
      },
      "is_access_locked": {
+      "type": "boolean"
+     },
+     "is_idle_sleep_available": {
       "type": "boolean"
      },
      "memory_megabytes": {
@@ -1925,6 +1943,12 @@
      "resource_id": {
       "type": "string"
      },
+     "sleep_state": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
      "state_observed_at": {
       "type": [
        "string",
@@ -1944,6 +1968,9 @@
     "required": [
      "atlas_vm_id",
      "capabilities",
+     "created_by",
+     "created_by_name",
+     "creation",
      "disk_gigabytes",
      "frappe_version",
      "gateway_url",
@@ -1953,6 +1980,7 @@
      "image_title",
      "ipv6_address",
      "is_access_locked",
+     "is_idle_sleep_available",
      "memory_megabytes",
      "name",
      "pending_action",
@@ -1963,6 +1991,7 @@
      "public_ipv6",
      "region",
      "resource_id",
+     "sleep_state",
      "state_observed_at",
      "status",
      "title",

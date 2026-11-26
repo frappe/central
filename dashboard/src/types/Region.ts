@@ -9,10 +9,12 @@ export type Region = Pick<
 	RegionDoc,
 	| 'region'
 	| 'status'
-	| 'reachable'
 	| 'display_name'
 	| 'provider'
 	| 'country_code'
 	| 'latitude'
 	| 'longitude'
->
+> & {
+	/** The API sends a boolean, not the doctype's 0 or 1. */
+	reachable: boolean
+}

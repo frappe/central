@@ -27,6 +27,11 @@ class RegistryServer(TypedDict):
 	pilot_audience: str | None
 	capabilities: list[str]
 	is_access_locked: bool
+	is_idle_sleep_available: bool
+	sleep_state: str | None
+	creation: str
+	created_by: str | None
+	created_by_name: str | None
 
 
 class RegistrySite(TypedDict):

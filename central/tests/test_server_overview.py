@@ -8,11 +8,12 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from frappe.tests import IntegrationTestCase
 from frappe.utils import get_system_timezone
 
+from central.api.models.servers import ServerDetails
 from central.api.servers import _metrics_window, server_metrics, server_overview
 from central.errors import AtlasConnectionError
 from central.integrations.servers import get_cached_metrics, get_metric_points
 from central.tests.test_iam import ensure_user
-from central.tests.utils import ensure_atlas_instance
+from central.tests.utils import assert_matches_model, ensure_atlas_instance
 
 START = datetime(2026, 10, 1, tzinfo=UTC)
 
@@ -71,6 +72,7 @@ class TestServerOverview(IntegrationTestCase):
 		finally:
 			frappe.set_user("Administrator")
 
+		assert_matches_model(self, result["server"], ServerDetails)
 		self.assertEqual(result["server"]["title"], "Overview server")
 		self.assertEqual(result["server"]["region"], self.region)
 		self.assertEqual(result["server"]["region_details"]["display_name"], self.region)
