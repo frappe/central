@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { Button, ScrollArea } from 'frappe-ui'
 import { computed, onMounted, useTemplateRef } from 'vue'
 import SupportAnswers from '@/components/support/SupportAnswers.vue'
 import SupportSearchInput from '@/components/support/SupportSearchInput.vue'
@@ -77,8 +77,9 @@ defineExpose({ focus })
 			</div>
 		</div>
 
-		<div
-			class="-mx-2 mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain py-2"
+		<ScrollArea
+			class="-mx-2 mt-2 min-h-0 flex-1"
+			viewport-class="overscroll-contain py-2"
 		>
 			<SupportAnswers
 				:query="query"
@@ -88,7 +89,7 @@ defineExpose({ focus })
 				:tickets="tickets"
 				:open-tickets="openTickets"
 			/>
-		</div>
+		</ScrollArea>
 
 		<div
 			class="flex items-center justify-between gap-2 border-t border-outline-gray-2 pt-3"

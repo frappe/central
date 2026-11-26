@@ -4,6 +4,7 @@ import {
 	Badge,
 	Button,
 	LoadingText,
+	ScrollArea,
 	Spinner,
 	TabButtons,
 } from 'frappe-ui'
@@ -151,7 +152,7 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 	<div class="relative flex h-full min-h-0">
 		<!-- LIST — capped and centered so rows stay scannable when the panel is
          closed; the cap matches the Limit tiers page. -->
-		<div class="min-w-0 flex-1 overflow-y-auto">
+		<ScrollArea class="min-w-0 flex-1">
 			<div
 				class="mx-auto flex w-full max-w-3xl flex-col gap-4 p-3 md:p-4 lg:pt-8"
 			>
@@ -187,7 +188,7 @@ const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
 					@retry="reports.statement.reload()"
 				/>
 			</div>
-		</div>
+		</ScrollArea>
 
 		<!-- Docked receipt panel — the shared SidePanel, slides in beside the
          list, never over it. Header carries all invoice identity: number +

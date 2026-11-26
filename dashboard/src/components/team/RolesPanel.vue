@@ -139,14 +139,15 @@ const { selectedKey, selected, select, clear } = useTeamRowSelection(
 					v-for="member in roleMembers(row).slice(0, 5)"
 					:key="member.user"
 					:label="member.full_name"
-					class="-ml-2 border-2 border-outline-base first:ml-0"
+					shape="circle"
+					class="-ml-2 ring-2 ring-[var(--surface-base)] first:ml-0"
 				/>
-				<div
+				<span
 					v-if="roleMembers(row).length > 5"
-					class="-ml-2 flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-outline-base bg-surface-gray-2 text-xs text-ink-gray-6"
+					class="relative -ml-2 flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-surface-gray-2 px-1 text-xs text-ink-gray-6 ring-2 ring-[var(--surface-base)]"
 				>
 					+{{ roleMembers(row).length - 5 }}
-				</div>
+				</span>
 			</div>
 		</template>
 

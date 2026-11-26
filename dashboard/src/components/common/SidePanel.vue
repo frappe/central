@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { Button, ScrollArea } from 'frappe-ui'
 
 interface Props {
 	title?: string
@@ -48,11 +48,9 @@ const open = defineModel<boolean>('open', { default: false })
 				</div>
 			</div>
 
-			<div
-				class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
-			>
+			<ScrollArea class="min-h-0 flex-1" viewport-class="overscroll-contain">
 				<slot />
-			</div>
+			</ScrollArea>
 
 			<div v-if="$slots.footer" class="border-t border-outline-gray-2 p-4">
 				<slot name="footer" />

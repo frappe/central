@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Avatar, Button, TabButtons } from 'frappe-ui'
+import { Avatar, Button, ScrollArea, TabButtons } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import ActivityFeed from '@/components/activity/ActivityFeed.vue'
 import MembersPanel from '@/components/team/MembersPanel.vue'
@@ -30,7 +30,7 @@ const memberCountText = computed(() => {
 
 <template>
 	<div class="relative flex h-full min-h-0">
-		<div class="min-w-0 flex-1 overflow-y-auto">
+		<ScrollArea class="min-w-0 flex-1">
 			<main
 				class="mx-auto flex max-w-3xl flex-col gap-3 md:gap-4 p-3 md:p-4 lg:pt-8"
 			>
@@ -91,7 +91,7 @@ const memberCountText = computed(() => {
 					</template>
 				</ActivityFeed>
 			</main>
-		</div>
+		</ScrollArea>
 
 		<div id="team-page-aside" class="contents" />
 	</div>

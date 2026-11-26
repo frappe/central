@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ScrollArea } from 'frappe-ui'
 import { computed } from 'vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import type { VMSnapshotRow } from '@/types/snapshots'
@@ -43,18 +44,21 @@ const title = computed(() =>
 				A deleted snapshot cannot be restored, and its storage stops costing
 				money.
 			</p>
-			<ul
-				class="max-h-40 space-y-1 overflow-y-auto rounded-6 border border-outline-gray-2 px-3 py-2"
+			<ScrollArea
+				class="rounded-6 border border-outline-gray-2"
+				viewport-class="max-h-40"
 			>
-				<li
-					v-for="snapshot in target"
-					:key="snapshot.name"
-					class="truncate text-p-sm text-ink-gray-9"
-				>
-					{{ snapshot.title }}
-					<span class="text-ink-gray-5">· {{ snapshot.server_title }}</span>
-				</li>
-			</ul>
+				<ul class="space-y-1 px-3 py-2">
+					<li
+						v-for="snapshot in target"
+						:key="snapshot.name"
+						class="truncate text-p-sm text-ink-gray-9"
+					>
+						{{ snapshot.title }}
+						<span class="text-ink-gray-5">· {{ snapshot.server_title }}</span>
+					</li>
+				</ul>
+			</ScrollArea>
 		</div>
 	</ConfirmDialog>
 </template>

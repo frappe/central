@@ -20,8 +20,7 @@
 	"src/components/billing/MeteredServicesCard.vue": 10,
 	"src/components/billing/OutstandingAlert.vue": 5,
 	"src/components/billing/PayingForCard.vue": 12,
-	"src/components/billing/PayingForPanel.vue": 1,
-	"src/components/billing/PayingForTable.vue": 12,
+	"src/components/billing/PayingForTable.vue": 11,
 	"src/components/billing/PaymentMethodRowActions.vue": 5,
 	"src/components/billing/PaymentMethodsCard.vue": 14,
 	"src/components/billing/ProjectRowActions.vue": 5,
@@ -49,7 +48,7 @@
 	"src/components/common/list-view/ListViewState.vue": 2,
 	"src/components/navigation/ImpersonationBanner.vue": 3,
 	"src/components/navigation/Sidebar.vue": 2,
-	"src/components/navigation/list.ts": 11,
+	"src/components/navigation/list.ts": 12,
 	"src/components/notifications/NotificationsPanel.vue": 21,
 	"src/components/onboarding/BillingStep.vue": 13,
 	"src/components/onboarding/OpenTrialCard.vue": 21,
@@ -165,5 +164,5 @@
 	"src/pages/settings/SettingsPage.vue": 1,
 	"src/pages/team/AccessPage.vue": 7,
 	"src/pages/team/JoinTeamPage.vue": 19,
-	"src/router/index.ts": 14
+	"src/router/index.ts": 15
 }

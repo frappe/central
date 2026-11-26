@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Skeleton } from 'frappe-ui'
+import { Button, ScrollArea, Skeleton } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import BucketCard from '@/components/addons/storage/BucketCard.vue'
 import CreateBucketDialog from '@/components/addons/storage/CreateBucketDialog.vue'
@@ -37,7 +37,7 @@ const canCreate = computed(
 </script>
 
 <template>
-	<div class="h-full overflow-y-auto">
+	<ScrollArea class="h-full">
 		<Teleport defer to="#header-actions">
 			<Button
 				v-if="canCreate && buckets.length"
@@ -109,5 +109,5 @@ const canCreate = computed(
 
 		<CreateBucketDialog v-model="createOpen" @created="credentials = $event" />
 		<CredentialsDialog v-model="credentials" />
-	</div>
+	</ScrollArea>
 </template>

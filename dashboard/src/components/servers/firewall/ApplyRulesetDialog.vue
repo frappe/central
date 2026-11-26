@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Alert, Button, Checkbox, Dialog, TextInput } from 'frappe-ui'
+import {
+	Alert,
+	Button,
+	Checkbox,
+	Dialog,
+	ScrollArea,
+	TextInput,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import FirewallRulesTable from '@/components/servers/firewall/FirewallRulesTable.vue'
 import { openSettings } from '@/composables/useSettings'
@@ -301,120 +308,130 @@ function openSettingsAfterClose(): void {
 						</template>
 					</TextInput>
 
-					<div class="min-h-0 flex-1 space-y-3 overflow-y-auto">
-						<button
-							v-if="rulesets.length"
-							type="button"
-							class="flex w-full items-center justify-between gap-2 rounded-4 px-2 py-1.5 text-start text-base text-ink-gray-8 focus-visible:focus-ring"
-							:class="previewed ? 'hover:bg-surface-gray-1' : 'bg-surface-gray-2'"
-							@click="previewed = ''"
-						>
-							{{ __('Selected rules') }}
-							<span class="tabular-nums text-ink-gray-5">
-								{{ checked.length }}
-							</span>
-						</button>
-
-						<div v-for="group in groups" :key="group.label">
-							<p class="px-2 pb-1 text-sm text-ink-gray-5">{{ group.label }}</p>
-							<div
-								v-for="choice in group.choices"
-								:key="choice.value"
-								class="flex items-center gap-2 rounded-4 px-2"
-								:class="choice.value === previewed ? 'bg-surface-gray-2' : 'hover:bg-surface-gray-1'"
+					<ScrollArea class="min-h-0 flex-1">
+						<div class="space-y-3">
+							<button
+								v-if="rulesets.length"
+								type="button"
+								class="flex w-full items-center justify-between gap-2 rounded-4 px-2 py-1.5 text-start text-base text-ink-gray-8 focus-visible:focus-ring"
+								:class="previewed ? 'hover:bg-surface-gray-1' : 'bg-surface-gray-2'"
+								@click="previewed = ''"
 							>
-								<!-- With rulesets in the list, the lane stays in every row, so the names keep one edge. -->
-								<span v-if="rulesets.length" class="flex w-4 shrink-0">
-									<Checkbox
-										v-if="!choice.isBuiltIn"
-										:model-value="checked.includes(choice.value)"
-										:disabled="busy"
-										:aria-label="__('Use {0}', [choice.title])"
-										@update:model-value="toggle(choice.value, $event)"
-									/>
+								{{ __('Selected rules') }}
+								<span class="tabular-nums text-ink-gray-5">
+									{{ checked.length }}
 								</span>
-								<button
-									type="button"
-									class="min-w-0 flex-1 truncate rounded-4 py-1.5 text-start text-base text-ink-gray-8 focus-visible:focus-ring"
-									@click="previewed = choice.value"
+							</button>
+
+							<div v-for="group in groups" :key="group.label">
+								<p class="px-2 pb-1 text-sm text-ink-gray-5">
+									{{ group.label }}
+								</p>
+								<div
+									v-for="choice in group.choices"
+									:key="choice.value"
+									class="flex items-center gap-2 rounded-4 px-2"
+									:class="choice.value === previewed ? 'bg-surface-gray-2' : 'hover:bg-surface-gray-1'"
 								>
-									{{ choice.title }}
-								</button>
+									<!-- With rulesets in the list, the lane stays in every row, so the names keep one edge. -->
+									<span v-if="rulesets.length" class="flex w-4 shrink-0">
+										<Checkbox
+											v-if="!choice.isBuiltIn"
+											:model-value="checked.includes(choice.value)"
+											:disabled="busy"
+											:aria-label="__('Use {0}', [choice.title])"
+											@update:model-value="toggle(choice.value, $event)"
+										/>
+									</span>
+									<button
+										type="button"
+										class="min-w-0 flex-1 truncate rounded-4 py-1.5 text-start text-base text-ink-gray-8 focus-visible:focus-ring"
+										@click="previewed = choice.value"
+									>
+										{{ choice.title }}
+									</button>
+								</div>
 							</div>
-						</div>
 
-						<p
-							v-if="!groups.length"
-							class="px-2 py-1.5 text-p-sm text-ink-gray-5"
-						>
-							{{ __('No ruleset matches “{0}”.', [search.trim()]) }}
-						</p>
-					</div>
-				</div>
-
-				<div
-					v-if="!previewed"
-					class="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto sm:pl-5"
-				>
-					<header class="space-y-1">
-						<h3 class="text-lg-semibold text-ink-gray-8">
-							{{ __('Selected rules') }}
-						</h3>
-						<p class="text-p-sm text-ink-gray-6">
-							{{ checked.length ? __('The rules this server gets from the rulesets you selected.') : __('No ruleset is selected. The server keeps its current rules as its own, and you can edit them.') }}
-						</p>
-					</header>
-
-					<div
-						v-for="group in [
-							{ texts: risks, icon: 'lucide-triangle-alert text-ink-amber-6' },
-							{ texts: notes, icon: 'lucide-info text-ink-gray-5' },
-						].filter((item) => item.texts.length)"
-						:key="group.icon"
-						class="flex gap-2 rounded-6 bg-surface-gray-1 px-3 py-2 text-p-sm text-ink-gray-7"
-					>
-						<span
-							class="mt-0.5 size-4 shrink-0"
-							:class="group.icon"
-							aria-hidden="true"
-						/>
-						<ul class="space-y-1">
-							<li v-for="text in group.texts" :key="text">{{ text }}</li>
-						</ul>
-					</div>
-
-					<FirewallRulesTable
-						v-if="checked.length"
-						:rules="combined"
-						:names="names"
-						:sources="checkedRulesets"
-					/>
-				</div>
-
-				<div
-					v-else-if="current"
-					class="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto sm:pl-5"
-				>
-					<header class="flex items-start justify-between gap-3">
-						<div class="min-w-0 space-y-1">
-							<h3 class="text-lg-semibold text-ink-gray-8">
-								{{ current.title }}
-							</h3>
-							<p class="text-p-sm text-ink-gray-6">
-								{{ current.isBuiltIn ? __('Copied to this server as its own rules, in place of any ruleset. Review them, then click Apply changes.') : __('The server allows what any of its rulesets allows. A change to a ruleset changes the server.') }}
+							<p
+								v-if="!groups.length"
+								class="px-2 py-1.5 text-p-sm text-ink-gray-5"
+							>
+								{{ __('No ruleset matches “{0}”.', [search.trim()]) }}
 							</p>
 						</div>
-						<Button
-							v-if="current.isBuiltIn"
-							class="shrink-0"
-							:label="__('Use these rules')"
-							:disabled="busy"
-							@click="useBuiltIn(current.rules)"
-						/>
-					</header>
-
-					<FirewallRulesTable :rules="current.rules" :names="names" />
+					</ScrollArea>
 				</div>
+
+				<ScrollArea
+					v-if="!previewed"
+					class="min-h-0 min-w-0 flex-1"
+					viewport-class="sm:pl-5"
+				>
+					<div class="space-y-4">
+						<header class="space-y-1">
+							<h3 class="text-lg-semibold text-ink-gray-8">
+								{{ __('Selected rules') }}
+							</h3>
+							<p class="text-p-sm text-ink-gray-6">
+								{{ checked.length ? __('The rules this server gets from the rulesets you selected.') : __('No ruleset is selected. The server keeps its current rules as its own, and you can edit them.') }}
+							</p>
+						</header>
+
+						<div
+							v-for="group in [
+								{ texts: risks, icon: 'lucide-triangle-alert text-ink-amber-6' },
+								{ texts: notes, icon: 'lucide-info text-ink-gray-5' },
+							].filter((item) => item.texts.length)"
+							:key="group.icon"
+							class="flex gap-2 rounded-6 bg-surface-gray-1 px-3 py-2 text-p-sm text-ink-gray-7"
+						>
+							<span
+								class="mt-0.5 size-4 shrink-0"
+								:class="group.icon"
+								aria-hidden="true"
+							/>
+							<ul class="space-y-1">
+								<li v-for="text in group.texts" :key="text">{{ text }}</li>
+							</ul>
+						</div>
+
+						<FirewallRulesTable
+							v-if="checked.length"
+							:rules="combined"
+							:names="names"
+							:sources="checkedRulesets"
+						/>
+					</div>
+				</ScrollArea>
+
+				<ScrollArea
+					v-else-if="current"
+					class="min-h-0 min-w-0 flex-1"
+					viewport-class="sm:pl-5"
+				>
+					<div class="space-y-4">
+						<header class="flex items-start justify-between gap-3">
+							<div class="min-w-0 space-y-1">
+								<h3 class="text-lg-semibold text-ink-gray-8">
+									{{ current.title }}
+								</h3>
+								<p class="text-p-sm text-ink-gray-6">
+									{{ current.isBuiltIn ? __('Copied to this server as its own rules, in place of any ruleset. Review them, then click Apply changes.') : __('The server allows what any of its rulesets allows. A change to a ruleset changes the server.') }}
+								</p>
+							</div>
+							<Button
+								v-if="current.isBuiltIn"
+								class="shrink-0"
+								:label="__('Use these rules')"
+								:disabled="busy"
+								@click="useBuiltIn(current.rules)"
+							/>
+						</header>
+
+						<FirewallRulesTable :rules="current.rules" :names="names" />
+					</div>
+				</ScrollArea>
 			</div>
 
 			<div class="flex flex-wrap items-center justify-between gap-2">

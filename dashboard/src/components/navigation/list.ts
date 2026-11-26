@@ -101,6 +101,12 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					condition: canViewBilling.value,
 				},
 				{
+					label: 'Subscriptions',
+					icon: 'lucide-server',
+					to: '/billing/subscriptions',
+					condition: canViewBilling.value,
+				},
+				{
 					label: 'Invoices',
 					icon: 'lucide-receipt',
 					to: '/billing/invoices',

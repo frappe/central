@@ -117,6 +117,12 @@ const routes = [
 				meta: { title: 'Billing' },
 			},
 			{
+				path: 'billing/subscriptions',
+				name: 'BillingSubscriptions',
+				component: () => import('@/pages/billing/BillingSubscriptionsPage.vue'),
+				meta: { title: 'Subscriptions' },
+			},
+			{
 				path: 'billing/invoices',
 				name: 'BillingInvoices',
 				component: () => import('@/pages/billing/BillingInvoicesPage.vue'),

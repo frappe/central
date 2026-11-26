@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Alert, Avatar, Button, Popover, TextInput } from 'frappe-ui'
+import {
+	Alert,
+	Avatar,
+	Button,
+	Popover,
+	ScrollArea,
+	TextInput,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 import { useMenuKeyboardNavigation } from '@/composables/useMenuKeyboardNavigation'
@@ -141,54 +148,55 @@ const loadTeamsErrorTitle = __("Couldn't load your teams")
 				<p v-if="switching" class="p-2 text-p-sm text-ink-gray-5" role="status">
 					{{ __('Switching team…') }}
 				</p>
-				<div
-					v-if="!loading && !switching"
-					class="max-h-64 overflow-y-auto flex flex-col gap-0.5"
-				>
-					<Button
-						v-for="team in visibleTeams"
-						:key="team.name"
-						variant="ghost"
-						size="sm"
-						:aria-label="team.identity"
-						:tooltip="team.identity"
-						:aria-pressed="team.name === activeTeam"
-						class="team-switcher-button w-full !justify-start !px-2 focus-visible:bg-surface-gray-3 focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-outline-gray-3"
-						:class="{
-                            '!h-auto !py-1.5': team.detail,
-                            '!bg-surface-gray-3': team.name === activeTeam,
-                        }"
-						@click="switchTeam(team.name)"
-					>
-						<template #prefix>
-							<Avatar
-								:image="team.logo ?? undefined"
-								:label="team.label"
-								size="sm"
-								shape="square"
-							/>
-						</template>
-						<span class="flex min-w-0 flex-col text-left">
-							<span class="truncate">{{ team.label }}</span>
-							<span v-if="team.detail" class="truncate text-sm text-ink-gray-6"
-								>{{ team.detail }}</span
-							>
-						</span>
-						<template #suffix>
-							<span
-								class="ml-auto size-4 shrink-0"
-								:class="team.name === activeTeam ? 'lucide-check' : ''"
-								aria-hidden="true"
-							/>
-						</template>
-					</Button>
-					<p
-						v-if="!visibleTeams.length && !error"
-						class="p-3 text-p-sm text-ink-gray-5"
-					>
-						{{ query ? __('No matching teams.') : __('You do not belong to a team yet.') }}
-					</p>
-				</div>
+				<ScrollArea v-if="!loading && !switching" viewport-class="max-h-64">
+					<div class="flex flex-col gap-0.5">
+						<Button
+							v-for="team in visibleTeams"
+							:key="team.name"
+							variant="ghost"
+							size="sm"
+							:aria-label="team.identity"
+							:tooltip="team.identity"
+							:aria-pressed="team.name === activeTeam"
+							class="team-switcher-button w-full !justify-start !px-2 focus-visible:bg-surface-gray-3 focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-outline-gray-3"
+							:class="{
+	                            '!h-auto !py-1.5': team.detail,
+	                            '!bg-surface-gray-3': team.name === activeTeam,
+	                        }"
+							@click="switchTeam(team.name)"
+						>
+							<template #prefix>
+								<Avatar
+									:image="team.logo ?? undefined"
+									:label="team.label"
+									size="sm"
+									shape="square"
+								/>
+							</template>
+							<span class="flex min-w-0 flex-col text-left">
+								<span class="truncate">{{ team.label }}</span>
+								<span
+									v-if="team.detail"
+									class="truncate text-sm text-ink-gray-6"
+									>{{ team.detail }}</span
+								>
+							</span>
+							<template #suffix>
+								<span
+									class="ml-auto size-4 shrink-0"
+									:class="team.name === activeTeam ? 'lucide-check' : ''"
+									aria-hidden="true"
+								/>
+							</template>
+						</Button>
+						<p
+							v-if="!visibleTeams.length && !error"
+							class="p-3 text-p-sm text-ink-gray-5"
+						>
+							{{ query ? __('No matching teams.') : __('You do not belong to a team yet.') }}
+						</p>
+					</div>
+				</ScrollArea>
 				<div class="mt-1 border-t border-outline-gray-2 pt-1">
 					<Button
 						variant="ghost"

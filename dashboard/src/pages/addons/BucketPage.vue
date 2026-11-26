@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Skeleton, TabButtons } from 'frappe-ui'
+import { Button, ScrollArea, Skeleton, TabButtons } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import BucketFiles from '@/components/addons/storage/BucketFiles.vue'
@@ -178,14 +178,14 @@ const copyEndpoint = async (endpoint: string): Promise<void> => {
 					class="mt-4 min-h-0 flex-1"
 				/>
 
-				<BucketSettings
-					v-else
-					:bucket="bucket"
-					:can-manage="canManageServices"
-					class="mt-4 min-h-0 overflow-y-auto"
-					@rotated="credentials = $event"
-					@deleted="router.push('/object-storage')"
-				/>
+				<ScrollArea v-else class="mt-4 min-h-0 flex-1">
+					<BucketSettings
+						:bucket="bucket"
+						:can-manage="canManageServices"
+						@rotated="credentials = $event"
+						@deleted="router.push('/object-storage')"
+					/>
+				</ScrollArea>
 			</template>
 		</div>
 

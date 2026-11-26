@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Dialog } from 'frappe-ui'
+import { Alert, Button, Dialog, ScrollArea } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type {
@@ -132,13 +132,13 @@ const finishStepErrorTitle = __("Couldn't finish this step")
 				<p class="text-p-base text-ink-gray-6">{{ current.description }}</p>
 				<!-- On a wider screen every step gets the same height, so the dialog never
              resizes between steps. A phone lets the step grow, so nothing is cut off. -->
-				<div class="-mx-1 mt-4 px-1 sm:h-96 sm:overflow-y-auto">
+				<ScrollArea class="-mx-1 mt-4 sm:h-96" viewport-class="px-1">
 					<component
 						:is="current.component"
 						ref="stepHandle"
 						@submit="runPrimary"
 					/>
-				</div>
+				</ScrollArea>
 			</div>
 		</Transition>
 

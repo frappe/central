@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert } from 'frappe-ui'
+import { Alert, ScrollArea } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import BillingDetailsCard from '@/components/billing/BillingDetailsCard.vue'
 import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
@@ -22,7 +22,7 @@ const setupFlow = ref<InstanceType<typeof PaymentMethodFlow> | null>(null)
 </script>
 
 <template>
-	<div class="h-full overflow-y-auto">
+	<ScrollArea class="h-full">
 		<div
 			class="mx-auto flex w-full max-w-3xl flex-col gap-4 p-3 md:p-4 lg:pt-8"
 		>
@@ -55,7 +55,7 @@ const setupFlow = ref<InstanceType<typeof PaymentMethodFlow> | null>(null)
 				@edit="setupDialogOpen = true"
 			/>
 		</div>
-	</div>
+	</ScrollArea>
 
 	<PaymentMethodFlow ref="setupFlow" @done="reloadMethods" />
 	<EditBillingProfileDialog v-model="setupDialogOpen" />

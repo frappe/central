@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Button, Skeleton, TabList, Tabs, TabTrigger } from 'frappe-ui'
+import {
+	Button,
+	ScrollArea,
+	Skeleton,
+	TabList,
+	Tabs,
+	TabTrigger,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -248,10 +255,9 @@ watch(
 </script>
 
 <template>
-	<div
-		class="h-full overflow-y-auto"
-		:class="{ 'lg:overflow-hidden': activeTab === 'overview' }"
-		style="scrollbar-gutter: stable"
+	<ScrollArea
+		class="h-full"
+		:viewport-class="activeTab === 'overview' ? 'lg:[&>div]:h-full' : ''"
 	>
 		<div
 			class="mx-auto w-full max-w-5xl p-3 md:p-4 lg:pt-8"
@@ -305,7 +311,7 @@ watch(
 					@protect="protect"
 				/>
 
-				<Tabs v-model="activeTab" class="mt-4 shrink-0 overflow-x-auto md:mt-8">
+				<Tabs v-model="activeTab" class="mt-4 shrink-0 md:mt-8">
 					<TabList variant="browser-tab" size="md">
 						<TabTrigger
 							v-for="tab in TABS"
@@ -423,7 +429,7 @@ watch(
 			:server="server ?? null"
 			@resized="reload(); reloadOverview()"
 		/>
-	</div>
+	</ScrollArea>
 </template>
 
 <style scoped>
