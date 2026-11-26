@@ -4,14 +4,18 @@
 
 ## Install
 
-Install it with uv or pip. It needs Python 3.11 or later.
+Install the `frappe-cloud` package with uv. It gives the `fcloud` command and needs Python 3.11 or later.
 
 ```bash
 uv tool install "git+https://github.com/frappe/central#subdirectory=fcloud"
-pip install "git+https://github.com/frappe/central#subdirectory=fcloud"
+fcloud --help
 ```
 
-From a checkout of this repository, use `uv tool install ./fcloud`.
+| Task | Command |
+|---|---|
+| Upgrade | `uv tool upgrade frappe-cloud` |
+| Uninstall | `uv tool uninstall frappe-cloud` |
+| Install from a checkout of this repository | `uv tool install ./fcloud` |
 
 ## Log in
 

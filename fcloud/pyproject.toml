@@ -1,5 +1,5 @@
 [project]
-name = "fcloud"
+name = "frappe-cloud"
 version = "0.1.0"
 description = "Command line client for Frappe Cloud."
 readme = "README.md"
