@@ -5,21 +5,28 @@ from typing import TYPE_CHECKING
 import frappe
 from frappe import _
 
-from central.billing.catalog.pricing import resolve_component_rate
+from central.billing.catalog.plan_setup import IP_RESOURCE_TYPE
+from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
 from central.billing.catalog.subscriptions import cancel_subscription
 from central.billing.doctype.billing_profile.billing_profile import get_team_currency
 
 if TYPE_CHECKING:
 	from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 
-IP_RESOURCE = "IP"
-
 
 def get_public_ipv4_rate(team: str, region: str) -> tuple[float | None, str]:
-	"""The team's monthly price for one public IPv4 in `region`, and its currency. The rate is
-	the `IP` Resource Type's Catalog Rate, so an operator changes it there. IPv6 is free."""
+	"""The team's monthly price for one public IPv4 in `region`, and its currency. IPv6 is free."""
 	currency = get_team_currency(team)
-	return resolve_component_rate(IP_RESOURCE, currency, region), currency
+	return resolve_rate(get_public_ipv4_rates(), currency, region), currency
+
+
+def get_public_ipv4_rates() -> list:
+	"""The Catalog Rates of the metered plan that bills public IPv4 addresses, empty while there is none."""
+	from central.billing.revenue.metering import _metered_plan_for
+
+	# The invoice reads this plan's rate too, so the console, the guards and the bill show one price.
+	plan = _metered_plan_for(IP_RESOURCE_TYPE)
+	return get_catalog_rates("Plan", plan.name) if plan else []
 
 
 def require_public_ipv4_rate(team: str, region: str) -> None:
@@ -48,7 +55,7 @@ def open_public_ipv4_subscription(server: VirtualMachine) -> None:
 			"team": server.team,
 			"public_ip_server": server.name,
 			"pricing_mode": "Composed",
-			"includes": [{"resource_type": IP_RESOURCE, "quantity": 1, "unit": "Nos"}],
+			"includes": [{"resource_type": IP_RESOURCE_TYPE, "quantity": 1, "unit": "Nos"}],
 			"billing_cycle": "Monthly",
 			"account_standing": "Current",
 			"enabled": 1,
