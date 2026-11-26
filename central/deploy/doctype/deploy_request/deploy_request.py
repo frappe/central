@@ -325,6 +325,24 @@ class DeployRequest(PipelineBuilder):
 				self.doctype, self.name, "update_github_commit_status", enqueue_after_commit=True
 			)
 
+		if self.has_value_changed("status") and self.status == "Succeeded":
+			frappe.enqueue_doc(
+				self.doctype, self.name, "update_github_deployment_status", enqueue_after_commit=True
+			)
+
+	def update_github_deployment_status(self) -> None:
+		"""Record the live deploy as a GitHub deployment, which shows the app's domain on the repository page."""
+		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)
+		if not app.domain:
+			return
+		GitHubApp().create_deployment(
+			app.get_installation_id(),
+			app.repository_id,
+			app.repository,
+			self.commit,
+			environment_url=f"https://{app.domain}",
+		)
+
 	def update_github_commit_status(self) -> None:
 		"""Show this deploy's current status on its commit in GitHub."""
 		app: DeployApp = frappe.get_doc("Deploy App", self.deploy_app)

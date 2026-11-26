@@ -216,8 +216,13 @@ def create_app_manifest(app_name: str, organization: str | None = None) -> dict:
 		"callback_urls": [GitHubApp.callback_url()],
 		"request_oauth_on_install": True,
 		"public": True,
-		# Tokens stay `contents: read` unless a call asks for more; only deploys write commit statuses.
-		"default_permissions": {"contents": "read", "metadata": "read", "statuses": "write"},
+		# Tokens stay `contents: read` unless a call asks for more; only deploys write statuses and deployments.
+		"default_permissions": {
+			"contents": "read",
+			"metadata": "read",
+			"statuses": "write",
+			"deployments": "write",
+		},
 		"default_events": ["repository", "push"],
 	}
 	owner = f"organizations/{urllib.parse.quote(organization)}/" if organization else ""

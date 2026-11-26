@@ -23,6 +23,8 @@ MAX_FILE_BYTES = 64 * 1024
 COMMIT_STATUS_CONTEXT = "Deploy"
 # GitHub refuses a longer status description.
 MAX_STATUS_DESCRIPTION = 140
+# The environment GitHub lists the app's deployments under, in the repository's sidebar.
+DEPLOYMENT_ENVIRONMENT = "production"
 
 
 class GitHubError(frappe.ValidationError):
@@ -202,6 +204,33 @@ class GitHubApp:
 			"target_url": target_url,
 		}
 		self._request("POST", f"{API_URL}/repos/{full_name}/statuses/{commit}", token=token, json=payload)
+
+	def create_deployment(
+		self, installation_id: str, repository_id: str, full_name: str, commit: str, environment_url: str
+	) -> None:
+		"""Record `commit` as live at `environment_url`. GitHub marks the earlier deployment inactive."""
+		permissions = {"deployments": "write"}
+		token = self.create_installation_token(installation_id, repository_id, permissions)["token"]
+
+		deployment = self._request(
+			"POST",
+			f"{API_URL}/repos/{full_name}/deployments",
+			token=token,
+			# The deploy already happened, so GitHub must not wait for checks or merge the base branch first.
+			json={
+				"ref": commit,
+				"environment": DEPLOYMENT_ENVIRONMENT,
+				"auto_merge": False,
+				"required_contexts": [],
+				"production_environment": True,
+			},
+		)
+		self._request(
+			"POST",
+			f"{API_URL}/repos/{full_name}/deployments/{deployment['id']}/statuses",
+			token=token,
+			json={"state": "success", "environment_url": environment_url},
+		)
 
 	def create_installation_token(
 		self, installation_id: str, repository_id: str | None = None, permissions: dict | None = None
