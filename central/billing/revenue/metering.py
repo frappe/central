@@ -27,7 +27,7 @@ from central.billing.revenue.metered_lines import line_description, rollups_in
 from central.billing.revenue.rollup_updates import apply_report, recount_allowance, rerate
 
 
-def _metered_plan_for(resource_type: str):
+def metered_plan_for(resource_type: str):
 	"""The active metered single-resource Plan for a resource_type, with its family's
 	`pricing_mode`. None if no metered Plan models the resource.
 
@@ -50,20 +50,19 @@ def _metered_plan_for(resource_type: str):
 	if not plans:
 		return None
 
-	includes = frappe.get_all(
-		"Plan Includes",
-		filters={"parent": ["in", [p.name for p in plans]]},
-		fields=["parent", "resource_type"],
-	)
-	by_plan: dict[str, list[str]] = {}
-	for inc in includes:
-		by_plan.setdefault(inc.parent, []).append(inc.resource_type)
-
+	by_plan = _resource_types_by_plan([p.name for p in plans])
 	for p in plans:
-		rts = by_plan.get(p.name, [])
-		if len(rts) == 1 and rts[0] == resource_type:
+		if by_plan.get(p.name, []) == [resource_type]:
 			return frappe._dict({"name": p.name, "pricing_mode": metered_cats[p.category]})
 	return None
+
+
+def _resource_types_by_plan(plans: list[str]) -> dict[str, list[str]]:
+	"""The resource types each plan includes, by plan."""
+	by_plan: dict[str, list[str]] = {}
+	for inc in frappe.get_all("Plan Includes", {"parent": ["in", plans]}, ["parent", "resource_type"]):
+		by_plan.setdefault(inc.parent, []).append(inc.resource_type)
+	return by_plan
 
 
 def _resolve_terms(meter: dict):
@@ -80,7 +79,7 @@ def _resolve_terms(meter: dict):
 	"""
 	if meter.get("locked_terms"):
 		return meter["locked_terms"]
-	plan = _metered_plan_for(meter.get("resource_type"))
+	plan = metered_plan_for(meter.get("resource_type"))
 	if plan and plan.pricing_mode == "Live":
 		return {
 			"team": meter.get("team"),
@@ -117,7 +116,7 @@ def _locked_terms(resource_id: str, resource_type: str):
 				break
 
 	rate = 0
-	plan = _metered_plan_for(resource_type)
+	plan = metered_plan_for(resource_type)
 	if plan:
 		rate = frappe.utils.flt(resolve_rate(get_catalog_rates("Plan", plan.name), seg.currency, seg.cluster))
 
@@ -134,7 +133,7 @@ def _reporting_mode_for(resource_type: str) -> str:
 	"""The reporting mode of the family that prices `resource_type` (ADR 0015), blank
 	resolving to Authoritative. A resource type maps to at most one active metered Plan
 	(ADR 0008), whose Plan Category carries the mode — so this is unambiguous."""
-	plan = _metered_plan_for(resource_type)
+	plan = metered_plan_for(resource_type)
 	if not plan:
 		return "Authoritative"
 	category = frappe.db.get_value("Plan", plan.name, "category")
@@ -145,7 +144,7 @@ def _settlement_mode_for(resource_type: str) -> str:
 	"""The settlement mode of the family that prices `resource_type` (ADR 0015), blank
 	resolving to Postpaid Overage. Prepaid Pack usage is not billed as overage — the
 	pack was paid up front and excess is blocked at the edge, not charged."""
-	return _settlement_from_plan(_metered_plan_for(resource_type))
+	return _settlement_from_plan(metered_plan_for(resource_type))
 
 
 def _settlement_from_plan(plan) -> str:
@@ -400,7 +399,7 @@ def _metered_lines(
 	# Resolve each family's pricing plan + settlement mode ONCE per resource_type — each
 	# resolution is several queries, and doing it per rollup row is the rating-path N+1.
 	types = {r.resource_type for r in rollups}
-	plan_by_type = {rt: _metered_plan_for(rt) for rt in types}
+	plan_by_type = {rt: metered_plan_for(rt) for rt in types}
 	settlement_by_type = {rt: _settlement_from_plan(plan_by_type[rt]) for rt in types}
 
 	lines = []
