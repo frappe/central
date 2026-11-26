@@ -136,27 +136,24 @@
    "read_only": 1
   },
   {
-   "description": "The VM size this deploy runs on, from the commit's frappe_cloud_deploy.toml or the defaults.",
+   "description": "The size Atlas reports the app's VM runs at, recorded once it runs at this deploy's plan.",
    "fieldname": "machine_section",
    "fieldtype": "Section Break",
    "label": "Machine"
   },
   {
-   "default": "2000",
    "fieldname": "cpu_millicores",
    "fieldtype": "Int",
    "label": "CPU (millicores)",
    "read_only": 1
   },
   {
-   "default": "4096",
    "fieldname": "memory_mib",
    "fieldtype": "Int",
    "label": "Memory (MiB)",
    "read_only": 1
   },
   {
-   "default": "20480",
    "fieldname": "disk_mib",
    "fieldtype": "Int",
    "label": "Disk (MiB)",
@@ -193,7 +190,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-25 18:00:00.000000",
+ "modified": "2026-11-26 16:04:54.003760",
  "modified_by": "Administrator",
  "module": "Deploy",
  "name": "Deploy Request",
