@@ -180,6 +180,12 @@ def utc_day_start(day) -> datetime.datetime:
 	return frappe.utils.convert_utc_to_system_timezone(start).replace(tzinfo=None)
 
 
+def utc_day_window(day) -> tuple[datetime.datetime, datetime.datetime]:
+	"""The start and end of a UTC day, in system time."""
+	day = frappe.utils.getdate(day)
+	return utc_day_start(day), utc_day_start(day + datetime.timedelta(days=1))
+
+
 def _estimate_day(day: datetime.date) -> int:
 	"""Copy each Level subject's last recent reading onto `day` when the subject is billed on it."""
 	# Not only yesterday's: a server paused until `day` has its last reading before the pause.
