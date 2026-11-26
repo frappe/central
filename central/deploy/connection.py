@@ -16,8 +16,8 @@ from central.infrastructure.doctype.github_installation.github_installation impo
 from central.integrations.github import GitHubApp
 
 STATE_TTL_SECONDS = 60 * 60
-# A deploy writes its status on the commit and starts from a push.
-DEPLOY_PERMISSION, DEPLOY_EVENT = ("statuses", "write"), "push"
+# A deploy writes its status on the commit, records a live deploy as a GitHub deployment, and starts from a push.
+DEPLOY_PERMISSIONS, DEPLOY_EVENT = {"statuses": "write", "deployments": "write"}, "push"
 # owner/name alone, or inside a github.com URL or SSH remote. GitHub owners are letters, digits and
 # hyphens; repository names may also have dots and underscores.
 REPOSITORY_PATTERN = re.compile(
@@ -159,8 +159,9 @@ class DeployConnectionAttempt:
 
 
 def has_deploy_permissions(installation: dict) -> bool:
-	name, level = DEPLOY_PERMISSION
-	return installation["permissions"].get(name) == level and DEPLOY_EVENT in installation["events"]
+	permissions = installation["permissions"]
+	has_permissions = all(permissions.get(name) == level for name, level in DEPLOY_PERMISSIONS.items())
+	return has_permissions and DEPLOY_EVENT in installation["events"]
 
 
 def require_deploy_access(user: str, team: str) -> None:
