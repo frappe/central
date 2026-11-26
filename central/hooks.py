@@ -233,6 +233,7 @@ doc_events = {
 			"Credit Ledger Entry",
 			"Credit Wallet",
 			"Usage Day",
+			"Usage Month",
 			"Usage Rollup",
 			"Usage Report",
 			"Webhook Event",
@@ -493,6 +494,7 @@ _BILLING_TEAM_RECORDS = (
 	"Subscription Change",
 	"Tax Profile",
 	"Top-up Order",
+	"Usage Month",
 	"Usage Rollup",
 )
 

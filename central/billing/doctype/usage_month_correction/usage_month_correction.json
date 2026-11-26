@@ -1,0 +1,122 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-11-26 12:00:00.000000",
+ "description": "A value that arrived for a day of a Usage Month after an invoice billed that day.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "day",
+  "billed_value",
+  "value",
+  "status",
+  "column_break_reports",
+  "original_report",
+  "report",
+  "as_of",
+  "section_billing",
+  "billable_delta",
+  "invoice",
+  "billed_invoice_date"
+ ],
+ "fields": [
+  {
+   "description": "The day of the month.",
+   "fieldname": "day",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Day",
+   "read_only": 1
+  },
+  {
+   "description": "The value the last invoice billed for the day.",
+   "fieldname": "billed_value",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Billed Value",
+   "read_only": 1
+  },
+  {
+   "fieldname": "value",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Value",
+   "read_only": 1
+  },
+  {
+   "default": "Open",
+   "description": "Open: billed on the next invoice. Credit Due: lower than billed; an operator issues the credit note.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Open\nBilled\nCredit Due\nWritten Off",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_reports",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "original_report",
+   "fieldtype": "Link",
+   "label": "Original Report",
+   "options": "Usage Report",
+   "read_only": 1
+  },
+  {
+   "fieldname": "report",
+   "fieldtype": "Link",
+   "label": "Report",
+   "options": "Usage Report",
+   "read_only": 1
+  },
+  {
+   "fieldname": "as_of",
+   "fieldtype": "Datetime",
+   "label": "Read At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_billing",
+   "fieldtype": "Section Break",
+   "label": "Billing"
+  },
+  {
+   "description": "What the correction adds to the month's billable quantity.",
+   "fieldname": "billable_delta",
+   "fieldtype": "Float",
+   "label": "Billable Delta",
+   "read_only": 1
+  },
+  {
+   "fieldname": "invoice",
+   "fieldtype": "Link",
+   "label": "Invoice",
+   "options": "Invoice",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The date of the invoice that billed the day. A correction bills only within 90 days of it.",
+   "fieldname": "billed_invoice_date",
+   "fieldtype": "Date",
+   "label": "Billed Invoice Date",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-26 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Usage Month Correction",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

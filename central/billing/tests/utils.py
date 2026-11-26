@@ -77,6 +77,7 @@ class BillingTestCase(IntegrationTestCase):
 		"Entitlement Token",
 		"Commitment",
 		"Usage Day",
+		"Usage Month",
 		"Deleted Bucket",
 		"Monthly Exchange Rate",
 		"Usage Rollup",
@@ -176,10 +177,7 @@ class BillingTestCase(IntegrationTestCase):
 				continue
 			if doctype == "Team":
 				removed_teams = added
-			if doctype == "Plan":
-				frappe.db.delete("Plan Includes", {"parent": ["in", added]})
-			if doctype == "Usage Report":
-				_delete_attached_files(doctype, added)
+			_delete_owned_rows(doctype, added)
 			frappe.db.delete(doctype, {"name": ["in", added]})
 		if removed_teams:
 			frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", removed_teams]})
@@ -187,6 +185,16 @@ class BillingTestCase(IntegrationTestCase):
 		comments = list(set(_payment_method_comments()) - before["Comment"])
 		if comments:
 			frappe.db.delete("Comment", {"name": ["in", comments]})
+
+
+def _delete_owned_rows(doctype: str, names: list[str]) -> None:
+	"""Delete the child rows and files these records own, which a raw delete leaves behind."""
+	if doctype == "Plan":
+		frappe.db.delete("Plan Includes", {"parent": ["in", names]})
+	if doctype == "Usage Report":
+		_delete_attached_files(doctype, names)
+	if doctype == "Usage Month":
+		frappe.db.delete("Usage Month Correction", {"parent": ["in", names]})
 
 
 def _delete_attached_files(doctype: str, names: list[str]) -> None:
