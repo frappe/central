@@ -124,7 +124,7 @@ Plan Configurator ─→ Category, Sub-Category, [C]base_rates, [C]rungs(─→P
 ```
 Subscription ──team, ──project─→ Project, ──plan, ──sub_category, ──includes─→ [C]Plan Includes,
              ──default_payment_method, ──gateway, ──server_id─→ Virtual Machine,
-             ──vm_snapshot─→ VM Snapshot, ──public_ip_server─→ Virtual Machine (its public IPv4),
+             ──vm_snapshot─→ VM Snapshot, ──public_ip_server─→ Virtual Machine (a public IPv4 billed before the per-day cutover; none opens now),
              cluster (read-only, from server_id.region), service_subject
 Subscription Change ──subscription, ──team, ──currency      (append-only history + locked_rate)
 Project ──team, ──title, ──enabled, ──spending_limit          (cost-tag + run-rate cap; see §2.1)
@@ -243,6 +243,7 @@ flowchart LR
     H1 --> CDI["collect_due_invoices → settle page jobs"]
     H1 --> RSU["storage_bridge.read_storage_usage → one job per page of 100 buckets"]
     H1 --> RAI["grove_bridge.read_ai_usage → one job per page of 200 AI teams"]
+    H1 --> RIP["public_ipv4_usage.read_public_ipv4 → today's IPv4 day per server"]
     H1 --> RCC["usage_recount.recount_changed → recount page jobs"]
 
     subgraph INSTALL["install/migrate/before_tests"]
@@ -279,6 +280,7 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, setup 
 | hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run once the draft tick has started it |
 | hourly | `revenue.storage_bridge.read_storage_usage` | until Cargo reports usage itself: read every billed bucket, and each billed server's backup bucket, in pages of 100, one job per page, and keep each UTC day's peak as a Usage Day; a failed bucket never stops its page, and the last page of a region writes one Error Log that names how many of the region's buckets the run could not read |
 | hourly | `revenue.grove_bridge.read_ai_usage` | until Grove reports usage itself: subscribe AI teams that now have a billing currency, then read each AI team's cost per model that landed at Grove from the team's `usage_read_until` day through today (UTC), at most 7 days a run, as one Usage Day per model and landing day; a team read in full moves its `usage_read_until` to the last day read, so a missed hour, an outage or a late subscription is caught up; a team never read starts at the later of `Service.bill_from` and the day AI was turned on; a correction lands as a negative day; one Error Log per page names the teams it could not read, and their day does not move |
+| hourly | `revenue.public_ipv4_usage.read_public_ipv4` | write today's Usage Day for every server that holds a public IPv4, is not Terminated, and whose subscription had an open segment at some moment of the day, in pages of 500 through `platform.jobs.each_isolated`; the first run of a UTC day also writes yesterday, so hours the scheduler missed still count, and sets the watermark default `public_ipv4_swept_day` only when every page of yesterday wrote |
 | hourly | `revenue.usage_recount.recount_changed` | recount the usage months whose Usage Days changed since the last run, as page jobs |
 | cron `30 17 * * *` (12:00 UTC) | `revenue.usage_checks.sample_storage` | only while Cargo pushes storage (`Service.central_reads` off): read every billed bucket and each billed server's backup bucket once, in pages of 100 queued as `sample_team_page` and `sample_bundled_page`, with the same readers `storage_bridge` bills with, and keep the reading as a Usage Check for the next day's comparison |
 | cron `30 7 * * *` (02:00 UTC) | `revenue.usage_checks.check_yesterday` | only for a service that pushes: mark a storage day whose stored peak is more than 1 % below Central's sample, read each AI team's landing day from Grove with `grove_bridge.read_days` (failures logged as "Usage check: N AI team(s) not read") and mark a model that differs by more than 0.01 USD, then delete Usage Checks older than 7 days; writes no Usage Day |
@@ -513,7 +515,7 @@ central.api.servers.create_server | create_composed_server
 
 Resize: `central.api.servers.resize_server` → `catalog.subscriptions.begin_resize` (validates, persists a Resource Action) → `central.integrations.resource_actions` → `apply_resize_billing` → `resize_composed_subscription` → new Subscription Change (re-prices).
 
-Pause and resume: `catalog.subscriptions.pause_billing` writes a `Paused` change on the server's subscription and its public IPv4 subscription, which closes their segments. `resume_billing` checks the team and project headroom, then writes `Resumed` changes that carry the rate locked before the pause. A Start on a paused server reopens its billing through the same headroom checks, and does not need `billing:manage`. A `Running` report from the region never enables a paused subscription again.
+Pause and resume: `catalog.subscriptions.pause_billing` writes a `Paused` change on the server's subscription, which closes its segment. A public IPv4 bills as a Usage Day only on a day the server's segment was open at some moment, so a day paused throughout bills no address. `resume_billing` checks the team and project headroom, then writes a `Resumed` change that carries the rate locked before the pause. A Start on a paused server reopens its billing through the same headroom checks, and does not need `billing:manage`. A `Running` report from the region never enables a paused subscription again.
 
 ### B. Bill a period (draft → open → collect)
 ```mermaid
@@ -744,6 +746,51 @@ Server bundles (#188): a server plan's Plan Includes row is the server's bundle 
     allowance (a Live family keeps its live rate and applies it)
   → storage: storage_bridge reads each server's backup bucket (bundled_buckets: tenant, region and
     server name it) beside the team buckets; a paused or ended server's bucket is not read
+Public IPv4 (#197, #200): one Level Usage Day per server and UTC day on the server's subscription
+  → service `network`, meter `public_ipv4` (Level, resource type IP, unit Nos); `central_reads`
+    stays on, because no other service reports addresses
+  → writers: VirtualMachine.sync_billing sees an address and queues
+    public_ipv4_usage.write_server_day after commit (job id per server and day) with the count it
+    saw, so an address released before the job runs still bills its day; and the hourly
+    read_public_ipv4 sweep (see the scheduled table). write_days keeps the highest count, so both
+    are idempotent
+  → no writer writes a day while Service `network` is missing or its bill_from is empty
+    (public_ipv4_usage.cutover_day is None): until the cutover patch runs (a deploy runs the new
+    code before migrate), the per-address subscriptions still bill. The writers write nothing
+    and raise nothing, and the sweep still marks the day before swept, because a day before
+    bill_from is written off
+  → a fresh install marks the cutover patch done without running it, so after_install
+    public_ipv4_usage.start_on_install sets bill_from to the install's UTC day when it is empty
+    (a fresh site holds no per-address subscription, so nothing bills twice)
+  → a day is written only when the server's subscription had an open segment at some moment of it
+    (public_ipv4_usage.billed_servers_on over catalog.subscriptions.server_segments, which
+    bundled_buckets also reads): a trial server (no subscription) is free until it converts, a
+    Stopped server bills, a day paused throughout does not
+  → included is always 0: no plan bundles an address. IPv6 is free
+  → usage_recount bills the month as count ÷ days in the month per day, at the current Catalog
+    Rate of the Live metered plan that models IP (`public-ipv4` under Live Metered Resources,
+    seeded by plan_setup.ensure_public_ipv4_plan with INR 170 / USD 2 when the plan does not exist;
+    an inactive plan is left as it is). public_ips.get_public_ipv4_rate
+    reads the same plan, so the console price, the attach and create guards and the invoice agree
+  → a day with no IP price for the team's currency and region is still written; the unpriced guard
+    in metering.metered_line_items fails the team's draft until an operator adds the rate, and the
+    next run bills every unbilled day of the open month
+  → readiness M3: a billed server that holds an address and has no IP price in its team's currency
+    for its region; a server with no address is never listed
+  → cutover (patch bill_public_ipv4_per_day): on the UTC day C it runs, it copies every IP
+    Resource Type Catalog Rate (regional ones too) onto the plan and deletes them, sets
+    Service.bill_from = C when empty, gives each enabled per-address subscription a Cancelled
+    change at 00:00 UTC on C (or at its own last change, if later) and disables it, and writes
+    day C for every holder; an hour before C bills on the old segment and every hour from C as a
+    day
+  → a server whose per-address segment billed some hour of a day (it closed after 00:00 UTC on C,
+    for example a pause or a detach) gets no Usage Day for that day from any writer
+    (public_ipv4_usage.billed_per_address), so those hours bill only on the old segment. Only day
+    C is checked: every per-address segment is closed by C, so no later day overlaps one
+  → accepted gap: on C, a per-address subscription that paused or detached after 00:00 UTC and
+    then resumed or re-attached bills only its hours before the pause; the patch closes it at the
+    resume and the day is skipped, so the hours after go unbilled (at most one address-day per
+    such server, once). The opposite choice would bill some hours twice
 Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
   → while the service's central_reads is on, Central's own reading still bills it: every line is
     refused with retry true ("Central still reads this service; send it again after the switch")
@@ -906,6 +953,8 @@ The team and the signed-in user are counted apart, and either one can lock. A us
 | A line's Project breakdown is missing/wrong | `generate._tag_projects`/`_resource_project_map` — is the resource's Subscription tagged, is its Project `enabled`? A disabled Project's lines carry no tag by design (§2.1); check `Invoice Line Item.project`/`project_title` on a real invoice, or the same fields on a forecast line |
 | Tagging a subscription into a Project is refused | `Subscription.validate_project` — same-team? Project `enabled`? `catalog.subscriptions.enforce_project_headroom` — would the tag push the Project's committed run-rate (`project_run_rate`) past its `spending_limit`? (blocks new tagging only, §2.1) |
 | ERPNext out of sync | `erpnext_sync` (async, never rolls back the invoice; check retry backoff) |
+| A server's public IPv4 is not on the invoice | readiness M3; is there a `network` Usage Day for the server and day (`subject` = server name)? Did the server's subscription have an open segment that day (a trial or a day paused throughout bills nothing)? Is the day before `Service.bill_from` (written off)? |
+| Draft fails with "unpriced metered usage: IP" | the `public-ipv4` plan has no Catalog Rate for the team's currency and the server's region; add it, then run the draft again: every unbilled IPv4 day of the open month bills |
 | Catalog masters missing | `taxonomy_setup.ensure_catalog_masters` (runs on install/migrate/before_tests) |
 | Money rounding off | money is float `Currency` (major units); check the rate field's decimal **precision** holds sub-cent rates, and that minor-unit conversion happens *only* in `gateways/` |
 

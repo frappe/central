@@ -12,7 +12,7 @@ from central.billing.doctype.billing_run_team.billing_run_team import FAILED
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue import usage_ledger
 from central.billing.revenue.exchange_rates import fix_month_rate
-from central.billing.revenue.metering import _metered_plan_for, ingest_rollup, live_rollup
+from central.billing.revenue.metering import ingest_rollup, live_rollup, metered_plan_for
 from central.billing.revenue.usage_ledger import DOCTYPE, LEVEL
 
 WATERMARK = "usage_recount_watermark"
@@ -340,7 +340,7 @@ def _has_carried_bundle(meter) -> bool:
 
 def _is_live(resource_type: str) -> bool:
 	"""Whether the resource's metered family reads its rate live."""
-	plan = _metered_plan_for(resource_type)
+	plan = metered_plan_for(resource_type)
 	return bool(plan and plan.pricing_mode == "Live")
 
 

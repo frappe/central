@@ -97,16 +97,6 @@ class TestPauseAndResume(PauseBillingTestBase):
 
 		self.assertEqual(subscriptions.current_segment_rate(self.subscription), 0.0)
 
-	def test_pause_and_resume_carry_the_servers_public_ipv4(self):
-		address = self._public_ipv4_subscription()
-
-		subscriptions.pause_billing(self.subscription)
-		self.assertEqual(self._changes(address)[-1].change_type, "Paused")
-
-		subscriptions.resume_billing(self.subscription)
-		resumed = self._changes(address)[-1]
-		self.assertEqual((resumed.change_type, resumed.locked_rate), ("Resumed", 170))
-
 	def test_resume_over_the_spending_limit_is_refused(self):
 		subscriptions.pause_billing(self.subscription)
 		set_team_tier(TEAM, max_spend=1000)
@@ -121,31 +111,11 @@ class TestPauseAndResume(PauseBillingTestBase):
 		with self.assertRaises(frappe.ValidationError):
 			subscriptions.pause_billing(self.subscription)
 
-	def test_resuming_the_public_ipv4_alone_is_refused(self):
-		address = self._public_ipv4_subscription()
-		subscriptions.pause_billing(self.subscription)
-
-		with self.assertRaises(frappe.ValidationError):
-			subscriptions.resume_billing(address)
-		self.assertEqual(self._changes(address)[-1].change_type, "Paused")
-
 	def test_resuming_a_cancelled_subscription_is_refused(self):
 		subscriptions.cancel_subscription(self.subscription)
 
 		with self.assertRaises(frappe.ValidationError):
 			subscriptions.resume_billing(self.subscription)
-
-	def test_the_project_limit_on_resume_leaves_out_the_public_ipv4(self):
-		self._public_ipv4_subscription()
-		project = frappe.get_doc(
-			{"doctype": "Project", "title": "Paused", "team": TEAM, "spending_limit": 3000}
-		).insert()
-		frappe.db.set_value("Subscription", self.subscription, "project", project.name)
-		subscriptions.pause_billing(self.subscription)
-
-		subscriptions.resume_billing(self.subscription)
-
-		self.assertEqual(subscriptions.current_segment_rate(self.subscription), 3000)
 
 	def test_terminating_a_paused_server_cancels_its_subscription(self):
 		subscriptions.pause_billing(self.subscription)
@@ -188,11 +158,3 @@ class TestPauseAndResume(PauseBillingTestBase):
 		frappe.db.set_value("Virtual Machine", self.server, {"status": "Stopped", "atlas_vm_id": "vm-paused"})
 		with patch("central.infrastructure.doctype.resource_action.resource_action.ResourceAction.enqueue"):
 			submit_command("start", TEAM, self.server)
-
-	def _public_ipv4_subscription(self) -> str:
-		address = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
-		frappe.db.set_value(
-			"Subscription", address, {"server_id": None, "public_ip_server": self.server, "enabled": 1}
-		)
-		add_segment(address, "Created", 170, "2026-06-01 00:00:00", plan=PLAN)
-		return address

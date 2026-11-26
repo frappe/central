@@ -205,9 +205,10 @@ def ensure_catalog_masters():
 
 	ensure_starter_plans()
 
-	from central.billing.catalog.plan_setup import ensure_ai_plan
+	from central.billing.catalog.plan_setup import ensure_ai_plan, ensure_public_ipv4_plan
 
 	ensure_ai_plan()
+	ensure_public_ipv4_plan()
 
 
 # The billing mechanics a category's spec is authoritative for — reconciled onto an

@@ -89,23 +89,50 @@ AI_PLAN = "ai-usage"
 AI_CATEGORY = "AI Tokens"
 AI_RESOURCE_TYPE = "AI Usage"
 
+PUBLIC_IPV4_PLAN = "public-ipv4"
+PUBLIC_IPV4_CATEGORY = "Live Metered Resources"
+IP_RESOURCE_TYPE = "IP"
+# One public IPv4 address per month. IPv6 is free, so it has no rate.
+STARTER_PUBLIC_IPV4_RATES = {"INR": 170, "USD": 2}
+
 
 def ensure_ai_plan() -> None:
 	"""Seed the plan every AI team is subscribed to. Safe to call repeatedly."""
 	# AI is billed at Grove's cost, converted at the month's rate, so the catalog rate stays 0.
 	if frappe.db.exists("Plan", AI_PLAN) or not frappe.db.exists("Plan Category", AI_CATEGORY):
 		return
+	_insert_metered_plan(AI_PLAN, "AI Usage", AI_CATEGORY, AI_RESOURCE_TYPE)
+	_ensure_rates(AI_PLAN, {"INR": 0, "USD": 0})
+
+
+def ensure_public_ipv4_plan() -> None:
+	"""Seed the plan that prices a public IPv4 per address-month. Safe to call repeatedly."""
+	from central.billing.revenue.metering import metered_plan_for
+
+	# An operator may deactivate the plan; migrate then leaves it as it is.
+	if frappe.db.exists("Plan", PUBLIC_IPV4_PLAN) or not frappe.db.exists(
+		"Plan Category", PUBLIC_IPV4_CATEGORY
+	):
+		return
+	if metered_plan_for(IP_RESOURCE_TYPE):
+		return
+	_insert_metered_plan(PUBLIC_IPV4_PLAN, "Public IPv4", PUBLIC_IPV4_CATEGORY, IP_RESOURCE_TYPE)
+	_ensure_rates(PUBLIC_IPV4_PLAN, STARTER_PUBLIC_IPV4_RATES)
+
+
+def _insert_metered_plan(name: str, title: str, category: str, resource_type: str) -> None:
 	doc = frappe.get_doc(
 		{
 			"doctype": "Plan",
-			"title": "AI Usage",
-			"category": AI_CATEGORY,
+			"title": title,
+			"category": category,
 			"billing_cycle": "Monthly",
 			"is_active": 1,
-			"includes": [{"resource_type": AI_RESOURCE_TYPE, "quantity": 0, "unit": "Nos"}],
+			"includes": [{"resource_type": resource_type, "quantity": 0, "unit": "Nos"}],
 		}
 	)
-	doc.name = AI_PLAN
+	# A readable name keeps the seed idempotent and its Catalog Rates legible.
+	doc.name = name
 	doc.flags.name_set = True
+	# Seeded by install and migrate, which run with no user.
 	doc.insert(ignore_permissions=True)
-	_ensure_rates(AI_PLAN, {"INR": 0, "USD": 0})

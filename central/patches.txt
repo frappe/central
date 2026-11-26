@@ -130,3 +130,5 @@ central.patches.v0_0.move_accounting_sync_to_billing_settings
 central.patches.v0_0.move_advance_and_income_accounts_to_currency_rows
 # Server grants and deploy apps share one GitHub Installation per team and installation.
 central.patches.v0_0.move_github_installations
+# Bill each public IPv4 per UTC day on its server: end the per-address subscriptions where today starts (UTC).
+central.patches.v0_0.bill_public_ipv4_per_day

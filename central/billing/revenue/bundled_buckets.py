@@ -11,13 +11,13 @@ import datetime
 import frappe
 from frappe.query_builder import Order
 
-from central.billing.catalog.subscriptions import active_segments
+from central.billing.catalog.subscriptions import server_segments
 from central.billing.doctype.subscription_change.subscription_change import (
 	RATED_CHANGE_TYPES,
 	SEGMENT_CHANGE_TYPES,
 )
 from central.billing.revenue.bundles import Bundles
-from central.billing.revenue.usage_ledger import utc_day_start
+from central.billing.revenue.usage_ledger import utc_day_start, utc_day_window
 from central.services.doctype.service.service import STORAGE_SERVICE
 from central.services.doctype.team_service.team_service import billed_subjects, bucket_name_for
 
@@ -54,11 +54,7 @@ def billed_subjects_of(service: str, day=None, names: list[str] | None = None) -
 
 def _bundled_buckets_on(day, servers: list[str] | None = None) -> dict[str, frappe._dict]:
 	"""The backup buckets of servers billing now, or at any point of the UTC day `day`."""
-	if day is None:
-		return _all_bundled_buckets(servers=servers)
-	day = frappe.utils.getdate(day)
-	start, end = utc_day_start(day), utc_day_start(day + datetime.timedelta(days=1))
-	return _all_bundled_buckets((start, end), servers)
+	return _all_bundled_buckets(None if day is None else utc_day_window(day), servers)
 
 
 def _all_bundled_buckets(during=None, servers: list[str] | None = None) -> dict[str, frappe._dict]:
@@ -72,8 +68,7 @@ def _all_bundled_buckets(during=None, servers: list[str] | None = None) -> dict[
 
 def _segments_with_storage(during, servers: list[str] | None) -> tuple[list, dict[str, float]]:
 	"""The server segments open now, or at some moment of `during`, with a storage bundle; and the bundles."""
-	server_id = ["is", "set"] if servers is None else ["in", servers]
-	segments = active_segments({"server_id": server_id}, during=during)
+	segments = server_segments(servers, during)
 	included = _bundles_now(segments) if during is None else _bundles_during(segments, during)
 	return [segment for segment in segments if included.get(segment.subscription)], included
 

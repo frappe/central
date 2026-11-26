@@ -376,6 +376,23 @@ def check_converted_usage_has_a_rate() -> list[Violation]:
 	]
 
 
+def check_public_ipv4_is_billed() -> list[Violation]:
+	"""Every billed server that holds a public IPv4 has a price for it in its team's currency and region."""
+	from central.billing.revenue.public_ipv4_usage import find_unbilled_addresses
+
+	return [
+		Violation(
+			check="M3",
+			team=segment.team,
+			currency=segment.currency,
+			subject_doctype="Virtual Machine",
+			subject=segment.server_id,
+			detail=detail,
+		)
+		for segment, detail in find_unbilled_addresses()
+	]
+
+
 def _has_month_rate(currency: str, month: datetime.date) -> bool:
 	try:
 		month_rate("USD", currency, month)
@@ -651,6 +668,7 @@ CHECKS = {
 	"S4": ("Subscriptions name a known region", check_subscriptions_name_a_known_region),
 	"M1": ("Storage usage is read daily", check_storage_usage_is_recorded),
 	"M2": ("Converted usage has an exchange rate", check_converted_usage_has_a_rate),
+	"M3": ("Public IPv4 is billed", check_public_ipv4_is_billed),
 	"W1": ("Billed teams can pay", check_billed_teams_can_pay),
 	"W2": ("Promotional credit expires", check_promotional_credit_expires),
 	"X1": ("No staging trials outside staging", check_no_staging_trials_outside_staging),
