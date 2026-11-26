@@ -36,7 +36,6 @@ LISTED = {
 	"geography": "eu",
 	"gateway_url": "https://eu.llm.frappe.cloud",
 	"cap": 5.0,
-	"limits": LIMITS,
 }
 MODELS = [
 	{
@@ -407,8 +406,8 @@ class TestAI(IntegrationTestCase):
 			[listed] = api.list_api_keys(self.team)
 		self.assertNotIn("key_hash", listed)
 		self.assertEqual(
-			(listed["masked"], listed["geography"], listed["cap"], listed["limits"]),
-			(LISTED["masked"], "eu", 5.0, LIMITS),
+			(listed["masked"], listed["geography"], listed["cap"]),
+			(LISTED["masked"], "eu", 5.0),
 		)
 
 		with patch.object(GroveClient, "update_caps", return_value=[{**LISTED, "cap": 8}]) as update_caps:
@@ -417,12 +416,6 @@ class TestAI(IntegrationTestCase):
 				with self.subTest(cap=cap), self.assertRaises(frappe.ValidationError):
 					api.set_api_key_caps(self.team, {"k1": cap})
 		update_caps.assert_called_once_with(self.team, {"k1": 8})
-
-		own = [{"model_key": "acme/m", "metric": "requests", "window": "1m", "value": 5}]
-		with patch.object(GroveClient, "update_key", return_value={**LISTED, "limits": own}) as update_key:
-			self.assertEqual(api.set_api_key_limits(self.team, "k1", own)["limits"], own)
-			self.assertNotIn("key_hash", api.set_api_key_limits(self.team, "k1", []))
-		update_key.assert_called_with(self.team, "k1", limits=[])
 
 		with patch.object(GroveClient, "revoke_key") as revoke_key:
 			api.revoke_api_key(self.team, "k1")

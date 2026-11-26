@@ -22,7 +22,8 @@ export interface AIModel {
 }
 
 // One rate limit: a metric over a window, on every model (blank `model_key`, each model counted
-// on its own) or on one model alone, which then stands in for the blank row there.
+// on its own) or on one model alone, which then stands in for the blank row there. A `value` of
+// 0 is no limit.
 export interface AIRateLimit {
 	model_key: string
 	metric: 'requests' | 'total_tokens' | string
@@ -39,8 +40,8 @@ export interface AISpend {
 	capped: number
 	committed: number
 	spend_limit: number
-	// The plan's rate limits, counted per model for the team as a whole however many keys it
-	// holds; a key's own rows sit beneath them. None: uncapped.
+	// The team's rate limits, counted per model for the team as a whole however many keys it
+	// holds. None: uncapped.
 	limits: AIRateLimit[]
 	suspended: boolean
 	// Whether the gateways keep the team's prompts and outputs for a short time, for support.
@@ -137,8 +138,6 @@ export interface AIApiKey {
 	// USD: what the key may spend a month and what it spent this month.
 	cap: number
 	month_spent: number
-	// The key's own rate limits, a second gate under the plan's; none leaves the plan's alone.
-	limits: AIRateLimit[]
 }
 
 // What a new key is minted with.

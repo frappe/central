@@ -377,7 +377,7 @@ const refresh = async (): Promise<void> => {
 				<dt class="flex items-center gap-1.5 text-ink-gray-5">
 					{{ __('Rate limits') }}
 					<Tooltip
-						:text="__('Counted for the whole team on each model, however many keys you hold. A key\'s own limits sit beneath these.')"
+						:text="__('Counted for the whole team on each model, however many keys you hold.')"
 					>
 						<span
 							class="lucide-info size-3.5 text-ink-gray-4"
