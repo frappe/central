@@ -112,6 +112,13 @@ class TestStorageCorrections(StorageMonthsFixture, BillingTestCase):
 			pluck="content",
 		)
 		self.assertTrue(any("needs no invoice line" in note for note in notes))
+		# A closed correction is never replaced; a later value is a new one against the billed value.
+		self.read("2026-06-30", 300)
+		corrections = frappe.get_doc("Usage Month", row.month_row).corrections
+		self.assertEqual(
+			[(c.status, c.billed_value, c.value) for c in corrections],
+			[("No Charge", correction.billed_value, 120), ("Open", correction.billed_value, 300)],
+		)
 
 	def test_a_month_below_the_minimum_keeps_the_correction_open(self):
 		self.read_team_bucket("2026-06-30", 60)
@@ -179,9 +186,12 @@ class TestAICorrections(AIBillingCase):
 	def test_a_lower_value_is_credit_due_and_raises_a_readiness_row(self):
 		self.read_later("2026-06-10", 1.5)
 		correction, row = self.correction()
-		self.assertEqual(correction.status, "Credit Due")
+		self.assertEqual(correction.status, "Open")
+		self.assertEqual(credit_due_rows(row.month_row), [])
 
 		self.assertEqual([line.amount for line in self.july_lines()], [85.0])
+		correction.reload()
+		self.assertEqual((correction.status, correction.billable_delta), ("Credit Due", -0.5))
 		[violation] = credit_due_rows(row.month_row)
 		self.assertEqual(violation.team, TEAM_INR)
 		self.assertIn(correction.name, violation.detail)
@@ -191,4 +201,19 @@ class TestAICorrections(AIBillingCase):
 		self.assertEqual(len(gaps), 1)
 
 		usage_corrections.mark_credited(correction.name, "credit note CN-1")
+		self.assertEqual(credit_due_rows(row.month_row), [])
+
+	def test_a_lower_value_inside_the_allowance_closes_with_no_charge(self):
+		# June's month had 5 USD included, so 2 USD and 1.5 USD both bill nothing.
+		[june] = frappe.get_all(
+			"Usage Month", filters={"team": TEAM_INR, "counted_at": ["is", "set"]}, pluck="name"
+		)
+		frappe.db.set_value("Usage Month", june, "locked_allowance", 5)
+		self.read_later("2026-06-10", 1.5)
+		correction, row = self.correction()
+
+		self.assertEqual([line.amount for line in self.july_lines()], [85.0])
+
+		correction.reload()
+		self.assertEqual((correction.status, correction.billable_delta), ("No Charge", 0))
 		self.assertEqual(credit_due_rows(row.month_row), [])

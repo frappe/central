@@ -293,7 +293,8 @@ class MonthRow:
 				"report": report,
 				"as_of": row.get("as_of"),
 				"billed_invoice_date": frappe.utils.getdate(billed_on) if billed_on else None,
-				"status": OPEN if frappe.utils.flt(row["quantity"]) > billed_value else CREDIT_DUE,
+				# Higher or lower, the next draft rates it: only a value that lowers the bill is Credit Due.
+				"status": OPEN,
 			}
 		)
 		correction.db_insert()

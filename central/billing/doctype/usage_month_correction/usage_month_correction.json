@@ -46,7 +46,7 @@
   },
   {
    "default": "Open",
-   "description": "Open: billed on the next invoice. Billed: on the invoice named below. Credit Due: it would lower the bill; an operator issues the credit note, then marks it Credited. No Charge: it stays inside the bundle or allowance, so the bill does not change. Written Off: no invoice billed it within 90 days of the invoice that billed the day.",
+   "description": "Open: rated on the next draft invoice. Billed: on the invoice named below. Credit Due: it lowers the bill; an operator issues the credit note, then marks it Credited. No Charge: it stays inside the bundle or allowance, so the bill does not change. Written Off: no invoice billed it within 90 days of the invoice that billed the day.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -109,7 +109,7 @@
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-11-26 19:00:00.000000",
+ "modified": "2026-11-26 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Month Correction",

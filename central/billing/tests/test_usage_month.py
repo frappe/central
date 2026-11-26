@@ -8,7 +8,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.revenue import usage_month
-from central.billing.revenue.usage_month import CREDIT_DUE, OPEN, bit
+from central.billing.revenue.usage_month import OPEN, bit
 from central.billing.tests.test_credits import run_workers
 from central.billing.tests.utils import BillingTestCase, ensure_team
 
@@ -120,11 +120,12 @@ class TestUsageMonth(BillingTestCase):
 		)
 		self.assertEqual((correction.original_report, correction.report), ("report-1", "report-2"))
 
-	def test_a_lower_value_of_a_billed_sum_day_is_credit_due(self):
+	def test_a_lower_value_of_a_billed_sum_day_is_an_open_correction(self):
 		self.write(line(14, 30, "Sum"))
 		self.bill(14)
 		self.write(line(14, 20, "Sum", as_of=datetime.datetime(2026, 6, 15)))
-		self.assertEqual([c.status for c in self.month().corrections], [CREDIT_DUE])
+		# The next draft decides whether it lowers the bill.
+		self.assertEqual([c.status for c in self.month().corrections], [OPEN])
 
 	def test_a_billed_day_keeps_one_pending_correction_and_a_resend_adds_none(self):
 		self.write(line(14, 30))
