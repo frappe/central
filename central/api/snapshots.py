@@ -4,6 +4,13 @@ import frappe
 from frappe import _
 from frappe.utils.translations import _lt
 
+from central.api.models.servers import (
+	AutomaticSnapshots,
+	DeleteSnapshotsResponse,
+	SnapshotList,
+	SnapshotName,
+	SnapshotPricing,
+)
 from central.billing.catalog.snapshots import get_snapshot_rate
 from central.billing.doctype.billing_profile.billing_profile import get_team_currency
 from central.billing.settings import daily_snapshot_retention_hours, free_snapshots_per_server
@@ -37,7 +44,7 @@ SNAPSHOT_FIELDS = (
 	_lt("You can't view this team's snapshots. Ask a team admin to review your access."),
 	server="resource_id",
 )
-def list_snapshots(team: str | None = None, resource_id: str | None = None) -> dict:
+def list_snapshots(team: str | None = None, resource_id: str | None = None) -> SnapshotList:
 	"""The team's snapshots, newest first, each with what it costs. Pass `resource_id` for
 	one server's snapshots and its automatic setting. Gated on `server:view`."""
 	filters = {"team": team, "status": ["!=", "Deleted"]}
@@ -74,7 +81,7 @@ def list_snapshots(team: str | None = None, resource_id: str | None = None) -> d
 @require_capability(
 	"server:view", _lt("You can't view this team's snapshots. Ask a team admin to review your access.")
 )
-def snapshot_pricing(team: str | None = None, region: str | None = None) -> dict:
+def snapshot_pricing(team: str | None = None, region: str | None = None) -> SnapshotPricing:
 	"""The price per GB-month of a snapshot in `region`, shown before the customer commits."""
 	rate, currency = get_snapshot_rate(team, region)
 	return {"rate_per_gib": rate, "currency": currency, **_allowance()}
@@ -86,7 +93,9 @@ def snapshot_pricing(team: str | None = None, region: str | None = None) -> dict
 	_lt("You can't manage this team's snapshots. Ask a team admin to review your access."),
 	server="resource_id",
 )
-def take_snapshot(team: str | None = None, resource_id: str | None = None, title: str | None = None) -> dict:
+def take_snapshot(
+	team: str | None = None, resource_id: str | None = None, title: str | None = None
+) -> SnapshotName:
 	"""Take a paid snapshot of a server now. Gated on `server:snapshot`. A free trial has none,
 	because a server made from it gives server access."""
 	server = _team_server(team, resource_id)
@@ -110,7 +119,7 @@ def take_snapshot(team: str | None = None, resource_id: str | None = None, title
 @require_capability(
 	"server:snapshot", _lt("You can't manage this team's snapshots. Ask a team admin to review your access.")
 )
-def keep_snapshot(team: str | None = None, name: str | None = None) -> dict:
+def keep_snapshot(team: str | None = None, name: str | None = None) -> SnapshotName:
 	"""Keep a daily snapshot past its deletion time. Gated on `server:snapshot`."""
 	_team_snapshot(team, name).keep()
 	return {"name": name}
@@ -120,7 +129,9 @@ def keep_snapshot(team: str | None = None, name: str | None = None) -> dict:
 @require_capability(
 	"server:snapshot", _lt("You can't manage this team's snapshots. Ask a team admin to review your access.")
 )
-def delete_snapshots(team: str | None = None, names: list[str] | str | None = None) -> dict:
+def delete_snapshots(
+	team: str | None = None, names: list[str] | str | None = None
+) -> DeleteSnapshotsResponse:
 	"""Delete snapshots from their region. One failure does not stop the others; each
 	reason comes back by name. Gated on `server:snapshot`."""
 	names = frappe.parse_json(names)
@@ -147,7 +158,7 @@ def delete_snapshots(team: str | None = None, names: list[str] | str | None = No
 )
 def set_automatic_snapshots(
 	team: str | None = None, resource_id: str | None = None, enabled: bool | int | str = True
-) -> dict:
+) -> AutomaticSnapshots:
 	"""Turn the daily free snapshot of one server on or off. Gated on `server:snapshot`."""
 	server = _team_server(team, resource_id)
 	server.skip_automatic_snapshot = 0 if frappe.utils.cint(enabled) else 1
@@ -215,5 +226,7 @@ def _snapshot_row(row, servers: dict[str, str], rates: dict[str, float | None]) 
 		"server_title": servers.get(row.server, row.server),
 		"size_gib": size_gib,
 		"is_billed": bool(row.subscription),
+		"is_free": bool(row.is_free),
+		"is_restorable": bool(row.is_restorable),
 		"monthly_cost": size_gib * rate if rate is not None else None,
 	}

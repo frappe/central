@@ -1,6 +1,7 @@
 import frappe
 from frappe import _
 
+from central.api.models.servers import RotateTeamSshKeyResponse, TeamSshKey
 from central.errors import handle_resource_operation
 from central.iam import can_on_any_server
 from central.infrastructure.doctype.virtual_machine.virtual_machine import get_team_server
@@ -17,7 +18,7 @@ def require_access(team: str, capability: str) -> None:
 
 
 @frappe.whitelist(methods=["GET"])
-def list_team_ssh_keys(team: str) -> list[dict]:
+def list_team_ssh_keys(team: str) -> list[TeamSshKey]:
 	"""Return the public keys that this Team can select for servers."""
 	require_access(team, "server:view")
 	keys = frappe.get_list(
@@ -41,7 +42,7 @@ def list_team_ssh_keys(team: str) -> list[dict]:
 
 
 @frappe.whitelist(methods=["POST"])
-def create_team_ssh_key(team: str, title: str, public_key: str) -> dict:
+def create_team_ssh_key(team: str, title: str, public_key: str) -> TeamSshKey:
 	"""Create one public key for a Team."""
 	require_access(team, "server:ssh-key")
 	key = frappe.get_doc(
@@ -58,7 +59,7 @@ def create_team_ssh_key(team: str, title: str, public_key: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def rotate_team_ssh_key(team: str, name: str, public_key: str) -> dict:
+def rotate_team_ssh_key(team: str, name: str, public_key: str) -> RotateTeamSshKeyResponse:
 	"""Save a new public key and queue replacement on selected servers."""
 	require_access(team, "server:ssh-key")
 	key = frappe.get_doc("Team SSH Key", name)

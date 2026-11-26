@@ -57,7 +57,7 @@ export type VirtualMachineRow = Pick<
 		plan_title?: string | null
 		image_title?: string | null
 		image_description?: string | null
-		has_wireguard_access?: 0 | 1
+		has_wireguard_access?: boolean
 		creation?: string
 		created_by?: string | null
 		created_by_name?: string | null

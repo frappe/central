@@ -9,10 +9,27 @@ from central.api.openapi import build_document, document
 SPEC = Path(__file__).resolve().parents[2] / "central" / "public" / "openapi.json"
 
 
-def _declared_names(operation: dict) -> set:
-	names = {parameter["name"] for parameter in operation.get("parameters", [])}
+def _request_properties(document: dict, operation: dict) -> dict:
 	body = operation.get("requestBody", {}).get("content", {}).get("application/json", {})
-	return names | set(body.get("schema", {}).get("properties", {}))
+	if not body:
+		return {}
+
+	name = body["schema"]["$ref"].rsplit("/", 1)[1]
+	return document["components"]["schemas"][name]["properties"]
+
+
+def _declared_names(document: dict, operation: dict) -> set:
+	names = {parameter["name"] for parameter in operation.get("parameters", [])}
+	return names | set(_request_properties(document, operation))
+
+
+def _is_named_model(schema: dict) -> bool:
+	"""A model, a list of models, a mapping or a scalar: anything but a bare object."""
+	if "anyOf" in schema:
+		return all(_is_named_model(member) for member in schema["anyOf"])
+	item = schema.get("items", {}) if schema.get("type") == "array" else schema
+
+	return "$ref" in item or "additionalProperties" in item or item.get("type") not in (None, "object")
 
 
 class TestOpenAPI(IntegrationTestCase):
@@ -42,11 +59,18 @@ class TestOpenAPI(IntegrationTestCase):
 				responses = operation["responses"]
 				self.assertEqual({"200", "401", "403"}, set(responses), path)
 				self.assertEqual("OK", responses["200"]["description"], path)
-				self.assertEqual(
-					{"type": "object", "properties": {"message": {}}},
-					responses["200"]["content"]["application/json"]["schema"],
-					path,
-				)
+
+	def test_every_response_and_request_is_a_named_model(self):
+		document = build_document()
+		for path, methods in document["paths"].items():
+			for operation in methods.values():
+				content = operation["responses"]["200"].get("content")
+				if content:
+					message = content["application/json"]["schema"]["properties"]["message"]
+					self.assertTrue(_is_named_model(message), path)
+				body = operation.get("requestBody")
+				if body:
+					self.assertIn("$ref", body["content"]["application/json"]["schema"], path)
 
 	def test_every_operation_declares_its_mcp_behavior(self):
 		for path, methods in build_document()["paths"].items():
@@ -64,9 +88,10 @@ class TestOpenAPI(IntegrationTestCase):
 	def test_requires_team_matches_a_declared_team_parameter(self):
 		requires_team = 0
 		declares_team = 0
-		for path, methods in build_document()["paths"].items():
+		document = build_document()
+		for path, methods in document["paths"].items():
 			for operation in methods.values():
-				names = _declared_names(operation)
+				names = _declared_names(document, operation)
 				counted = operation["x-mcp"]["requires_team"]
 				requires_team += counted
 				declares_team += "team" in names
@@ -80,11 +105,11 @@ class TestOpenAPI(IntegrationTestCase):
 		self.assertGreaterEqual(count, 60)
 
 	def test_every_argument_has_a_type(self):
-		for path, methods in build_document()["paths"].items():
+		document = build_document()
+		for path, methods in document["paths"].items():
 			for operation in methods.values():
 				schemas = [parameter["schema"] for parameter in operation.get("parameters", [])]
-				body = operation.get("requestBody", {}).get("content", {}).get("application/json", {})
-				schemas += body.get("schema", {}).get("properties", {}).values()
+				schemas += _request_properties(document, operation).values()
 				self.assertNotIn({}, schemas, path)
 
 	def test_operator_actions_stay_out_of_the_document(self):

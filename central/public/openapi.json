@@ -1,5 +1,3993 @@
 {
  "components": {
+  "schemas": {
+   "AcceptInvitationRequest": {
+    "properties": {
+     "invitation": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "invitation"
+    ],
+    "type": "object"
+   },
+   "AcceptInvitationResponse": {
+    "properties": {
+     "accepted": {
+      "type": "boolean"
+     },
+     "role": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "accepted",
+     "role",
+     "team"
+    ],
+    "type": "object"
+   },
+   "ActionStatus": {
+    "properties": {
+     "action": {
+      "type": "string"
+     },
+     "error": {
+      "type": [
+       "object",
+       "null"
+      ]
+     },
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "status": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "action",
+     "error",
+     "resource_id",
+     "status",
+     "title"
+    ],
+    "type": "object"
+   },
+   "ActivityActor": {
+    "properties": {
+     "image": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "kind": {
+      "type": "string"
+     },
+     "label": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "image",
+     "kind",
+     "label"
+    ],
+    "type": "object"
+   },
+   "ActivityEvent": {
+    "properties": {
+     "actor": {
+      "$ref": "#/components/schemas/ActivityActor"
+     },
+     "category": {
+      "type": "string"
+     },
+     "details": {
+      "items": {
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "error": {
+      "type": [
+       "object",
+       "null"
+      ]
+     },
+     "event": {
+      "type": "string"
+     },
+     "id": {
+      "type": "string"
+     },
+     "initiator": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ActivityActor"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "occurred_at": {
+      "type": "string"
+     },
+     "resource": {
+      "$ref": "#/components/schemas/ActivityResource"
+     },
+     "sentence": {
+      "type": "string"
+     },
+     "status": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "actor",
+     "category",
+     "details",
+     "error",
+     "event",
+     "id",
+     "initiator",
+     "occurred_at",
+     "resource",
+     "sentence",
+     "status"
+    ],
+    "type": "object"
+   },
+   "ActivityFeed": {
+    "description": "Newest first. Pass `next_cursor` as `cursor` for the next page while it is set.",
+    "properties": {
+     "events": {
+      "items": {
+       "$ref": "#/components/schemas/ActivityEvent"
+      },
+      "type": "array"
+     },
+     "next_cursor": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "events",
+     "next_cursor"
+    ],
+    "type": "object"
+   },
+   "ActivityResource": {
+    "properties": {
+     "label": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "type": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "label",
+     "name",
+     "type"
+    ],
+    "type": "object"
+   },
+   "AppInput": {
+    "description": "One entry of `inputs` in an app's template.yaml, as Cargo sends it.",
+    "properties": {
+     "description": {
+      "type": "string"
+     },
+     "label": {
+      "type": "string"
+     },
+     "max_length": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string"
+     },
+     "pattern": {
+      "type": "string"
+     },
+     "required": {
+      "type": "boolean"
+     },
+     "type": {
+      "enum": [
+       "string",
+       "email",
+       "domain",
+       "password"
+      ],
+      "type": "string"
+     }
+    },
+    "required": [
+     "description",
+     "label",
+     "max_length",
+     "name",
+     "pattern",
+     "required",
+     "type"
+    ],
+    "type": "object"
+   },
+   "AppInstallProgress": {
+    "properties": {
+     "error": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "queue_position": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "started_at": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "status": {
+      "enum": [
+       "queued",
+       "running",
+       "success",
+       "failed",
+       "unreachable"
+      ],
+      "type": "string"
+     }
+    },
+    "required": [
+     "error",
+     "queue_position",
+     "started_at",
+     "status"
+    ],
+    "type": "object"
+   },
+   "AppMinimumSize": {
+    "properties": {
+     "cpu_millicores": {
+      "type": "integer"
+     },
+     "disk_mib": {
+      "type": "integer"
+     },
+     "memory_mib": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "cpu_millicores",
+     "disk_mib",
+     "memory_mib"
+    ],
+    "type": "object"
+   },
+   "AppPort": {
+    "properties": {
+     "port": {
+      "type": "integer"
+     },
+     "protocol": {
+      "enum": [
+       "tcp",
+       "udp"
+      ],
+      "type": "string"
+     }
+    },
+    "required": [
+     "port",
+     "protocol"
+    ],
+    "type": "object"
+   },
+   "AppRequirements": {
+    "description": "What Cargo's `get_one_click_image_requirements` returns for an app.",
+    "properties": {
+     "documentation": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "inputs": {
+      "items": {
+       "$ref": "#/components/schemas/AppInput"
+      },
+      "type": "array"
+     },
+     "minimum_size": {
+      "$ref": "#/components/schemas/AppMinimumSize"
+     },
+     "ports": {
+      "items": {
+       "$ref": "#/components/schemas/AppPort"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "documentation",
+     "inputs",
+     "minimum_size",
+     "ports"
+    ],
+    "type": "object"
+   },
+   "ArchiveCheck": {
+    "properties": {
+     "count": {
+      "type": "integer"
+     },
+     "key": {
+      "type": "string"
+     },
+     "passed": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "count",
+     "key",
+     "passed"
+    ],
+    "type": "object"
+   },
+   "ArchiveChecks": {
+    "properties": {
+     "checks": {
+      "items": {
+       "$ref": "#/components/schemas/ArchiveCheck"
+      },
+      "type": "array"
+     },
+     "credit_balances": {
+      "items": {
+       "$ref": "#/components/schemas/CreditBalance"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "checks",
+     "credit_balances"
+    ],
+    "type": "object"
+   },
+   "ArchiveTeamRequest": {
+    "properties": {
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team"
+    ],
+    "type": "object"
+   },
+   "ArchiveTeamResponse": {
+    "properties": {
+     "archived": {
+      "type": "boolean"
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "archived",
+     "team"
+    ],
+    "type": "object"
+   },
+   "AutomaticSnapshots": {
+    "properties": {
+     "automatic": {
+      "type": "boolean"
+     },
+     "region_automatic": {
+      "type": "boolean"
+     },
+     "resource_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "automatic",
+     "region_automatic",
+     "resource_id"
+    ],
+    "type": "object"
+   },
+   "ClaimSiteRequest": {
+    "properties": {
+     "name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "type": "object"
+   },
+   "CreateComposedServerRequest": {
+    "properties": {
+     "app_inputs": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": [
+       "object",
+       "null"
+      ]
+     },
+     "has_public_ipv4": {
+      "type": "boolean"
+     },
+     "has_public_ipv6": {
+      "type": "boolean"
+     },
+     "hostname": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "image_id": {
+      "type": "string"
+     },
+     "includes": {
+      "items": {
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "is_firewall_enabled": {
+      "type": "boolean"
+     },
+     "offering": {
+      "type": "string"
+     },
+     "region": {
+      "type": "string"
+     },
+     "request_key": {
+      "type": "string"
+     },
+     "snapshot": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "ssh_key_ids": {
+      "items": {
+       "type": "string"
+      },
+      "type": [
+       "array",
+       "null"
+      ]
+     },
+     "ssh_keys": {
+      "items": {
+       "type": "string"
+      },
+      "type": [
+       "array",
+       "null"
+      ]
+     },
+     "sub_category": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "user_data": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "region",
+     "title",
+     "request_key",
+     "includes",
+     "sub_category"
+    ],
+    "type": "object"
+   },
+   "CreateCustomRoleRequest": {
+    "properties": {
+     "capabilities": {
+      "type": "array"
+     },
+     "role_name": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "role_name",
+     "capabilities"
+    ],
+    "type": "object"
+   },
+   "CreateServerRequest": {
+    "properties": {
+     "app_inputs": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": [
+       "object",
+       "null"
+      ]
+     },
+     "has_public_ipv4": {
+      "type": "boolean"
+     },
+     "has_public_ipv6": {
+      "type": "boolean"
+     },
+     "hostname": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "image_id": {
+      "type": "string"
+     },
+     "is_firewall_enabled": {
+      "type": "boolean"
+     },
+     "offering": {
+      "type": "string"
+     },
+     "plan": {
+      "type": "string"
+     },
+     "region": {
+      "type": "string"
+     },
+     "request_key": {
+      "type": "string"
+     },
+     "snapshot": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "ssh_key_ids": {
+      "items": {
+       "type": "string"
+      },
+      "type": [
+       "array",
+       "null"
+      ]
+     },
+     "ssh_keys": {
+      "items": {
+       "type": "string"
+      },
+      "type": [
+       "array",
+       "null"
+      ]
+     },
+     "team": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "user_data": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "region",
+     "title",
+     "request_key",
+     "plan"
+    ],
+    "type": "object"
+   },
+   "CreateTeamRequest": {
+    "properties": {
+     "team_name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team_name"
+    ],
+    "type": "object"
+   },
+   "CreateTeamSshKeyRequest": {
+    "properties": {
+     "public_key": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "title",
+     "public_key"
+    ],
+    "type": "object"
+   },
+   "CreateTicketRequest": {
+    "properties": {
+     "category": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "issue_type": {
+      "type": "string"
+     },
+     "server": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "site": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "subject": {
+      "type": "string"
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "CreateTrialSiteRequest": {
+    "properties": {
+     "product": {
+      "type": "string"
+     },
+     "request_key": {
+      "type": "string"
+     },
+     "subdomain": {
+      "type": "string"
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "subdomain",
+     "request_key",
+     "product"
+    ],
+    "type": "object"
+   },
+   "CreateTrialTeamRequest": {
+    "properties": {
+     "product": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "referrer": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "utm_campaign": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "utm_medium": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "utm_source": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "CreateTrialTeamResponse": {
+    "properties": {
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team"
+    ],
+    "type": "object"
+   },
+   "CreateWireguardDeviceRequest": {
+    "properties": {
+     "public_key": {
+      "type": "string"
+     },
+     "region": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "region",
+     "title",
+     "public_key"
+    ],
+    "type": "object"
+   },
+   "CreditBalance": {
+    "properties": {
+     "balance": {
+      "type": "number"
+     },
+     "currency": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "balance",
+     "currency"
+    ],
+    "type": "object"
+   },
+   "CustomRole": {
+    "properties": {
+     "role": {
+      "type": "string"
+     },
+     "role_name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "role",
+     "role_name"
+    ],
+    "type": "object"
+   },
+   "DeclineInvitationRequest": {
+    "properties": {
+     "invitation": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "invitation"
+    ],
+    "type": "object"
+   },
+   "DeclineInvitationResponse": {
+    "properties": {
+     "declined": {
+      "type": "boolean"
+     },
+     "invitation": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "declined",
+     "invitation"
+    ],
+    "type": "object"
+   },
+   "DeleteCustomRoleRequest": {
+    "properties": {
+     "role": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "role"
+    ],
+    "type": "object"
+   },
+   "DeleteCustomRoleResponse": {
+    "properties": {
+     "deleted": {
+      "type": "boolean"
+     },
+     "role": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "deleted",
+     "role"
+    ],
+    "type": "object"
+   },
+   "DeleteFirewallRulesetRequest": {
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "name"
+    ],
+    "type": "object"
+   },
+   "DeleteSnapshotsRequest": {
+    "properties": {
+     "names": {
+      "items": {
+       "type": "string"
+      },
+      "type": [
+       "array",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "DeleteSnapshotsResponse": {
+    "description": "`failed` maps each snapshot that was not deleted to the reason.",
+    "properties": {
+     "deleted": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "failed": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object"
+     }
+    },
+    "required": [
+     "deleted",
+     "failed"
+    ],
+    "type": "object"
+   },
+   "DeleteTeamSshKeyRequest": {
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "name"
+    ],
+    "type": "object"
+   },
+   "DeleteWireguardDeviceRequest": {
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "name"
+    ],
+    "type": "object"
+   },
+   "DeleteWireguardDeviceResponse": {
+    "properties": {
+     "is_removed": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "is_removed"
+    ],
+    "type": "object"
+   },
+   "FirewallRulesetSummary": {
+    "properties": {
+     "last_sync_error": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "name": {
+      "type": "string"
+     },
+     "rules": {
+      "type": "object"
+     },
+     "server_count": {
+      "type": "integer"
+     },
+     "title": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "last_sync_error",
+     "name",
+     "rules",
+     "server_count",
+     "title"
+    ],
+    "type": "object"
+   },
+   "GetTrialAppInstallRequest": {
+    "properties": {
+     "product": {
+      "type": "string"
+     },
+     "site": {
+      "type": "string"
+     },
+     "task_id": {
+      "type": "string"
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "site",
+     "task_id",
+     "product"
+    ],
+    "type": "object"
+   },
+   "HelpArticle": {
+    "properties": {
+     "category": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "excerpt": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "url": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "category",
+     "excerpt",
+     "name",
+     "title",
+     "url"
+    ],
+    "type": "object"
+   },
+   "Hostname": {
+    "properties": {
+     "hostname": {
+      "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "Site",
+       "Custom domain"
+      ],
+      "type": "string"
+     }
+    },
+    "required": [
+     "hostname",
+     "kind"
+    ],
+    "type": "object"
+   },
+   "IdleSleep": {
+    "properties": {
+     "sleep_after_idle_seconds": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "sleep_after_idle_seconds"
+    ],
+    "type": "object"
+   },
+   "ImageOffering": {
+    "properties": {
+     "available_in": {
+      "type": "string"
+     },
+     "description": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "logo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "name": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "available_in",
+     "description",
+     "logo",
+     "name",
+     "title"
+    ],
+    "type": "object"
+   },
+   "ImagePage": {
+    "description": "One page of a region's images. Ask again with `next_offset` while it is set.",
+    "properties": {
+     "items": {
+      "items": {
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "next_offset": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "items",
+     "next_offset"
+    ],
+    "type": "object"
+   },
+   "InstallTrialAppRequest": {
+    "properties": {
+     "product": {
+      "type": "string"
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "product"
+    ],
+    "type": "object"
+   },
+   "InstallTrialAppResponse": {
+    "properties": {
+     "site": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     },
+     "task_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "site",
+     "status",
+     "task_id"
+    ],
+    "type": "object"
+   },
+   "InviteTeamMemberRequest": {
+    "properties": {
+     "email": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "invitations": {
+      "items": {
+       "type": "object"
+      },
+      "type": [
+       "array",
+       "null"
+      ]
+     },
+     "resource_name": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "resource_type": {
+      "type": "string"
+     },
+     "role": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team"
+    ],
+    "type": "object"
+   },
+   "JourneyRegion": {
+    "properties": {
+     "country_code": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "latitude": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "longitude": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "title": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "country_code",
+     "latitude",
+     "longitude",
+     "title"
+    ],
+    "type": "object"
+   },
+   "KeepSnapshotRequest": {
+    "properties": {
+     "name": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "KeepTrialSiteRequest": {
+    "properties": {
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "KeepTrialSiteResponse": {
+    "properties": {
+     "site": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "site"
+    ],
+    "type": "object"
+   },
+   "LeaveTeamRequest": {
+    "properties": {
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team"
+    ],
+    "type": "object"
+   },
+   "LeaveTeamResponse": {
+    "properties": {
+     "left": {
+      "type": "boolean"
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "left",
+     "team"
+    ],
+    "type": "object"
+   },
+   "LoginSiteRequest": {
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "product": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "type": "object"
+   },
+   "OnboardingStatus": {
+    "description": "`site` once the site exists, `creation` while it is being made or after it failed.",
+    "properties": {
+     "creation": {
+      "type": [
+       "object",
+       "null"
+      ]
+     },
+     "is_free_trial": {
+      "type": "boolean"
+     },
+     "journey": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/SetupJourney"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "site": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/SiteState"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "creation",
+     "is_free_trial",
+     "journey",
+     "site"
+    ],
+    "type": "object"
+   },
+   "OpenConsoleRequest": {
+    "properties": {
+     "mode": {
+      "enum": [
+       "ssh",
+       "tty"
+      ],
+      "type": "string"
+     },
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "mode"
+    ],
+    "type": "object"
+   },
+   "OpenConsoleResponse": {
+    "properties": {
+     "url": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "url"
+    ],
+    "type": "object"
+   },
+   "OpenTrial": {
+    "description": "The owner's open trial. The site fields are left out for a caller who cannot view its team.",
+    "properties": {
+     "address": {
+      "type": "string"
+     },
+     "deletes_on": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "ends_on": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "product": {
+      "type": "string"
+     },
+     "product_logo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "product_title": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "server": {
+      "type": "string"
+     },
+     "site": {
+      "type": "string"
+     },
+     "state": {
+      "type": "string"
+     },
+     "url": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "product",
+     "product_logo",
+     "product_title",
+     "state"
+    ],
+    "type": "object"
+   },
+   "OperatorLinks": {
+    "description": "Desk and Atlas form links, shown to operators only.",
+    "properties": {
+     "atlas_url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "desk_url": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "atlas_url",
+     "desk_url"
+    ],
+    "type": "object"
+   },
+   "PlanCatalog": {
+    "description": "The plans a new server can take, grouped by plan family, with the image they apply to.",
+    "properties": {
+     "currency": {
+      "type": "string"
+     },
+     "image_id": {
+      "type": "string"
+     },
+     "plans": {
+      "additionalProperties": {
+       "items": {
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "type": "object"
+     },
+     "profiles": {
+      "items": {
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "rate_card": {
+      "type": "object"
+     }
+    },
+    "required": [
+     "currency",
+     "image_id",
+     "plans",
+     "profiles",
+     "rate_card"
+    ],
+    "type": "object"
+   },
+   "Profile": {
+    "properties": {
+     "email": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "full_name": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "user": {
+      "type": "string"
+     },
+     "user_image": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "email",
+     "full_name",
+     "user",
+     "user_image"
+    ],
+    "type": "object"
+   },
+   "PublicIpv4Price": {
+    "properties": {
+     "currency": {
+      "type": "string"
+     },
+     "rate": {
+      "type": [
+       "number",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "currency",
+     "rate"
+    ],
+    "type": "object"
+   },
+   "ReadyApp": {
+    "description": "A ready-to-run application the region's Cargo has built an image of.",
+    "properties": {
+     "application": {
+      "type": "string"
+     },
+     "documentation": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "information": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "logo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "os_version": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "snapshot_id": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "application",
+     "documentation",
+     "information",
+     "logo",
+     "os_version",
+     "snapshot_id",
+     "title"
+    ],
+    "type": "object"
+   },
+   "ReceivedInvitation": {
+    "description": "A pending invitation addressed to the signed-in user.",
+    "properties": {
+     "creation": {
+      "type": "string"
+     },
+     "expires_on": {
+      "type": "string"
+     },
+     "invited_by": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "name": {
+      "type": "string"
+     },
+     "role": {
+      "type": "string"
+     },
+     "role_name": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     },
+     "team_name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "creation",
+     "expires_on",
+     "invited_by",
+     "name",
+     "role",
+     "role_name",
+     "team",
+     "team_name"
+    ],
+    "type": "object"
+   },
+   "RefreshServersRequest": {
+    "properties": {
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "RefreshServersResponse": {
+    "properties": {
+     "queued": {
+      "type": "integer"
+     },
+     "stale": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "synced": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "queued",
+     "stale",
+     "synced"
+    ],
+    "type": "object"
+   },
+   "Region": {
+    "properties": {
+     "country_code": {
+      "type": "string"
+     },
+     "display_name": {
+      "type": "string"
+     },
+     "latitude": {
+      "type": "number"
+     },
+     "longitude": {
+      "type": "number"
+     },
+     "provider": {
+      "type": "string"
+     },
+     "reachable": {
+      "type": "boolean"
+     },
+     "region": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "country_code",
+     "display_name",
+     "latitude",
+     "longitude",
+     "provider",
+     "reachable",
+     "region",
+     "status"
+    ],
+    "type": "object"
+   },
+   "RegionDetails": {
+    "properties": {
+     "country_code": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "display_name": {
+      "type": "string"
+     },
+     "has_wireguard_gateway": {
+      "type": "boolean"
+     },
+     "provider": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "country_code",
+     "display_name",
+     "has_wireguard_gateway",
+     "provider"
+    ],
+    "type": "object"
+   },
+   "Registry": {
+    "description": "A team's servers, self-serve sites and unfinished creations.",
+    "properties": {
+     "creations": {
+      "items": {
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "servers": {
+      "items": {
+       "$ref": "#/components/schemas/RegistryServer"
+      },
+      "type": "array"
+     },
+     "sites": {
+      "items": {
+       "$ref": "#/components/schemas/RegistrySite"
+      },
+      "type": "array"
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "creations",
+     "servers",
+     "sites",
+     "team"
+    ],
+    "type": "object"
+   },
+   "RegistryServer": {
+    "properties": {
+     "atlas_vm_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "capabilities": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "disk_gigabytes": {
+      "type": "number"
+     },
+     "frappe_version": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "gateway_url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "has_wireguard_access": {
+      "type": "boolean"
+     },
+     "image_description": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "image_offering": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "image_title": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "ipv6_address": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "is_access_locked": {
+      "type": "boolean"
+     },
+     "memory_megabytes": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string"
+     },
+     "pending_action": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "pilot_audience": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "plan": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "plan_title": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "public_ipv4": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "public_ipv6": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "region": {
+      "type": "string"
+     },
+     "resource_id": {
+      "type": "string"
+     },
+     "state_observed_at": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "status": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "vcpus": {
+      "type": "number"
+     }
+    },
+    "required": [
+     "atlas_vm_id",
+     "capabilities",
+     "disk_gigabytes",
+     "frappe_version",
+     "gateway_url",
+     "has_wireguard_access",
+     "image_description",
+     "image_offering",
+     "image_title",
+     "ipv6_address",
+     "is_access_locked",
+     "memory_megabytes",
+     "name",
+     "pending_action",
+     "pilot_audience",
+     "plan",
+     "plan_title",
+     "public_ipv4",
+     "public_ipv6",
+     "region",
+     "resource_id",
+     "state_observed_at",
+     "status",
+     "title",
+     "vcpus"
+    ],
+    "type": "object"
+   },
+   "RegistrySite": {
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "pending_action": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "region": {
+      "type": "string"
+     },
+     "server": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     },
+     "subdomain": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "url": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "pending_action",
+     "region",
+     "server",
+     "status",
+     "subdomain",
+     "url"
+    ],
+    "type": "object"
+   },
+   "RelatedHelp": {
+    "properties": {
+     "articles": {
+      "items": {
+       "$ref": "#/components/schemas/HelpArticle"
+      },
+      "type": "array"
+     },
+     "tickets": {
+      "items": {
+       "$ref": "#/components/schemas/RelatedTicket"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "articles",
+     "tickets"
+    ],
+    "type": "object"
+   },
+   "RelatedTicket": {
+    "description": "`url` is empty for a teammate's ticket, which the portal opens only for the person who raised it.",
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "raised_by": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     },
+     "subject": {
+      "type": "string"
+     },
+     "url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "name",
+     "raised_by",
+     "status",
+     "subject",
+     "url"
+    ],
+    "type": "object"
+   },
+   "RemoveTeamMemberRequest": {
+    "properties": {
+     "team": {
+      "type": "string"
+     },
+     "user": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "user"
+    ],
+    "type": "object"
+   },
+   "RemoveTeamMemberResponse": {
+    "properties": {
+     "removed": {
+      "type": "boolean"
+     },
+     "team": {
+      "type": "string"
+     },
+     "user": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "removed",
+     "team",
+     "user"
+    ],
+    "type": "object"
+   },
+   "RenameServerRequest": {
+    "properties": {
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "title": {
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "RenameServerResponse": {
+    "properties": {
+     "title": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "title"
+    ],
+    "type": "object"
+   },
+   "RenameTeamRequest": {
+    "properties": {
+     "team": {
+      "type": "string"
+     },
+     "team_name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "team_name"
+    ],
+    "type": "object"
+   },
+   "RescueState": {
+    "properties": {
+     "is_in_rescue_mode": {
+      "type": [
+       "boolean",
+       "null"
+      ]
+     },
+     "is_rescue_mode_enabled": {
+      "type": [
+       "boolean",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "is_in_rescue_mode",
+     "is_rescue_mode_enabled"
+    ],
+    "type": "object"
+   },
+   "ResendInvitationRequest": {
+    "properties": {
+     "invitation": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "invitation"
+    ],
+    "type": "object"
+   },
+   "ResendInvitationResponse": {
+    "properties": {
+     "expires_on": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "expires_on",
+     "name"
+    ],
+    "type": "object"
+   },
+   "ResizeServerRequest": {
+    "properties": {
+     "disk_gigabytes": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "includes": {
+      "type": [
+       "array",
+       "null"
+      ]
+     },
+     "plan": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "sub_category": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "ResizeServerResponse": {
+    "description": "`queued` is false when nothing had to change. The action fields come with a queued resize.",
+    "properties": {
+     "action": {
+      "type": "string"
+     },
+     "error": {
+      "type": [
+       "object",
+       "null"
+      ]
+     },
+     "queued": {
+      "type": "boolean"
+     },
+     "resized": {
+      "type": "boolean"
+     },
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "status": {
+      "type": "string"
+     },
+     "subscription": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "title": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "queued",
+     "resized"
+    ],
+    "type": "object"
+   },
+   "RestartServerRequest": {
+    "properties": {
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "RetryActionRequest": {
+    "properties": {
+     "name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "type": "object"
+   },
+   "RetryTeamSshKeySyncRequest": {
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "name"
+    ],
+    "type": "object"
+   },
+   "RevokeInvitationRequest": {
+    "properties": {
+     "invitation": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "invitation"
+    ],
+    "type": "object"
+   },
+   "RevokeInvitationResponse": {
+    "properties": {
+     "invitation": {
+      "type": "string"
+     },
+     "revoked": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "invitation",
+     "revoked"
+    ],
+    "type": "object"
+   },
+   "RoleGrant": {
+    "properties": {
+     "resource_name": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "resource_type": {
+      "type": "string"
+     },
+     "role": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "resource_name",
+     "resource_type",
+     "role"
+    ],
+    "type": "object"
+   },
+   "RotateTeamSshKeyRequest": {
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "public_key": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "name",
+     "public_key"
+    ],
+    "type": "object"
+   },
+   "RotateTeamSshKeyResponse": {
+    "properties": {
+     "fingerprint": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "fingerprint",
+     "name"
+    ],
+    "type": "object"
+   },
+   "SaveFirewallRulesetRequest": {
+    "properties": {
+     "name": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "rules": {
+      "type": "object"
+     },
+     "team": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "title",
+     "rules"
+    ],
+    "type": "object"
+   },
+   "SentInvitation": {
+    "description": "One row of a bulk invite. `invitation` is empty and `error` says why when the row was refused.",
+    "properties": {
+     "email": {
+      "type": "string"
+     },
+     "error": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "invitation": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "email",
+     "error",
+     "invitation"
+    ],
+    "type": "object"
+   },
+   "ServerDetails": {
+    "description": "One server as its page shows it. `operator_links` is set only for staff.",
+    "properties": {
+     "application": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "atlas_vm_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "created_by": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "created_by_name": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "creation": {
+      "type": "string"
+     },
+     "disk_gigabytes": {
+      "type": "number"
+     },
+     "documentation_url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "firewall_rules": {
+      "type": "object"
+     },
+     "firewall_rulesets": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "frappe_version": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "gateway_url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "has_ipv4_internet": {
+      "type": "boolean"
+     },
+     "has_public_ipv6": {
+      "type": "boolean"
+     },
+     "has_wireguard_access": {
+      "type": "boolean"
+     },
+     "image_offering": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "ipv6_address": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "is_firewall_enabled": {
+      "type": "boolean"
+     },
+     "is_termination_protected": {
+      "type": "boolean"
+     },
+     "memory_megabytes": {
+      "type": "integer"
+     },
+     "operator_links": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/OperatorLinks"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "plan": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "plan_billing_cycle": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "plan_currency": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "plan_rate": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "plan_title": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "public_ipv4": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "public_ipv6": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "region": {
+      "type": "string"
+     },
+     "region_details": {
+      "$ref": "#/components/schemas/RegionDetails"
+     },
+     "resource_id": {
+      "type": "string"
+     },
+     "ssh_command": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "ssh_keys": {
+      "items": {
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "status": {
+      "type": "string"
+     },
+     "team_name": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "vcpus": {
+      "type": "number"
+     }
+    },
+    "required": [
+     "application",
+     "atlas_vm_id",
+     "created_by",
+     "created_by_name",
+     "creation",
+     "disk_gigabytes",
+     "documentation_url",
+     "firewall_rules",
+     "firewall_rulesets",
+     "frappe_version",
+     "gateway_url",
+     "has_ipv4_internet",
+     "has_public_ipv6",
+     "has_wireguard_access",
+     "image_offering",
+     "ipv6_address",
+     "is_firewall_enabled",
+     "is_termination_protected",
+     "memory_megabytes",
+     "operator_links",
+     "plan",
+     "plan_billing_cycle",
+     "plan_currency",
+     "plan_rate",
+     "plan_title",
+     "public_ipv4",
+     "public_ipv6",
+     "region",
+     "region_details",
+     "resource_id",
+     "ssh_command",
+     "ssh_keys",
+     "status",
+     "team_name",
+     "title",
+     "vcpus"
+    ],
+    "type": "object"
+   },
+   "ServerMetrics": {
+    "description": "Usage samples. `points` and `sample_interval_seconds` are present only when `available`.",
+    "properties": {
+     "available": {
+      "type": "boolean"
+     },
+     "points": {
+      "items": {
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "sample_interval_seconds": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "available"
+    ],
+    "type": "object"
+   },
+   "ServerOverview": {
+    "properties": {
+     "server": {
+      "$ref": "#/components/schemas/ServerDetails"
+     }
+    },
+    "required": [
+     "server"
+    ],
+    "type": "object"
+   },
+   "SetAutomaticSnapshotsRequest": {
+    "properties": {
+     "enabled": {
+      "type": "boolean"
+     },
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "SetIdleSleepRequest": {
+    "properties": {
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "seconds": {
+      "type": "integer"
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "seconds"
+    ],
+    "type": "object"
+   },
+   "SetOnboardingStepRequest": {
+    "properties": {
+     "status": {
+      "type": "string"
+     },
+     "step": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "step",
+     "status"
+    ],
+    "type": "object"
+   },
+   "SetOnboardingStepResponse": {
+    "properties": {
+     "status": {
+      "type": "string"
+     },
+     "step": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "status",
+     "step"
+    ],
+    "type": "object"
+   },
+   "SetProfilePhotoRequest": {
+    "properties": {
+     "file_url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "SetProfilePhotoResponse": {
+    "properties": {
+     "user_image": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "user_image"
+    ],
+    "type": "object"
+   },
+   "SetRescueModeRequest": {
+    "properties": {
+     "enabled": {
+      "type": "boolean"
+     },
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "enabled"
+    ],
+    "type": "object"
+   },
+   "SetServerFirewallRulesetsRequest": {
+    "properties": {
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "rulesets": {
+      "items": {
+       "type": "string"
+      },
+      "type": [
+       "array",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "SetServerIpv4InternetRequest": {
+    "properties": {
+     "enabled": {
+      "type": "boolean"
+     },
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "SetServerPublicIpRequest": {
+    "properties": {
+     "is_attached": {
+      "type": "boolean"
+     },
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "version": {
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   },
+   "SetServerPublicIpResponse": {
+    "properties": {
+     "is_pending": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "is_pending"
+    ],
+    "type": "object"
+   },
+   "SetServerSshKeysRequest": {
+    "properties": {
+     "resource_id": {
+      "type": "string"
+     },
+     "ssh_keys": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "resource_id",
+     "ssh_keys"
+    ],
+    "type": "object"
+   },
+   "SetServerWireguardAccessRequest": {
+    "properties": {
+     "enabled": {
+      "type": "boolean"
+     },
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "SetTeamLogoRequest": {
+    "properties": {
+     "file_url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team"
+    ],
+    "type": "object"
+   },
+   "SetTeamLogoResponse": {
+    "properties": {
+     "team_logo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "team_logo"
+    ],
+    "type": "object"
+   },
+   "SetTeamMemberRolesRequest": {
+    "properties": {
+     "roles": {
+      "items": {
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "team": {
+      "type": "string"
+     },
+     "user": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "user",
+     "roles"
+    ],
+    "type": "object"
+   },
+   "SetTeamMemberRolesResponse": {
+    "properties": {
+     "roles": {
+      "items": {
+       "$ref": "#/components/schemas/RoleGrant"
+      },
+      "type": "array"
+     },
+     "team": {
+      "type": "string"
+     },
+     "user": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "roles",
+     "team",
+     "user"
+    ],
+    "type": "object"
+   },
+   "SetTeamMemberStatusRequest": {
+    "properties": {
+     "status": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     },
+     "user": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "user",
+     "status"
+    ],
+    "type": "object"
+   },
+   "SetTeamMemberStatusResponse": {
+    "properties": {
+     "status": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     },
+     "user": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "status",
+     "team",
+     "user"
+    ],
+    "type": "object"
+   },
+   "SetTerminationProtectionRequest": {
+    "properties": {
+     "enabled": {
+      "type": "boolean"
+     },
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "SetupJourney": {
+    "properties": {
+     "domain": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "eta_seconds": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "phase": {
+      "type": "string"
+     },
+     "reference": {
+      "type": "string"
+     },
+     "region": {
+      "$ref": "#/components/schemas/JourneyRegion"
+     },
+     "started_at": {
+      "type": "string"
+     },
+     "subdomain": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "domain",
+     "eta_seconds",
+     "phase",
+     "reference",
+     "region",
+     "started_at",
+     "subdomain"
+    ],
+    "type": "object"
+   },
+   "SiteDomain": {
+    "properties": {
+     "domain": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "domain"
+    ],
+    "type": "object"
+   },
+   "SiteState": {
+    "properties": {
+     "claimed": {
+      "type": "boolean"
+     },
+     "login_pending": {
+      "type": "boolean"
+     },
+     "login_url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "name": {
+      "type": "string"
+     },
+     "ready": {
+      "type": "boolean"
+     },
+     "status": {
+      "type": "string"
+     },
+     "url": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "claimed",
+     "login_pending",
+     "login_url",
+     "name",
+     "ready",
+     "status",
+     "url"
+    ],
+    "type": "object"
+   },
+   "Snapshot": {
+    "properties": {
+     "atlas_image_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "capabilities": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "creation": {
+      "type": "string"
+     },
+     "error_detail": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "expires_at": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "image_offering": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "is_billed": {
+      "type": "boolean"
+     },
+     "is_free": {
+      "type": "boolean"
+     },
+     "is_restorable": {
+      "type": "boolean"
+     },
+     "monthly_cost": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "name": {
+      "type": "string"
+     },
+     "region": {
+      "type": "string"
+     },
+     "server": {
+      "type": "string"
+     },
+     "server_title": {
+      "type": "string"
+     },
+     "size_gib": {
+      "type": "integer"
+     },
+     "size_mib": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "snapshot_type": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     },
+     "title": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "atlas_image_id",
+     "capabilities",
+     "creation",
+     "error_detail",
+     "expires_at",
+     "image_offering",
+     "is_billed",
+     "is_free",
+     "is_restorable",
+     "monthly_cost",
+     "name",
+     "region",
+     "server",
+     "server_title",
+     "size_gib",
+     "size_mib",
+     "snapshot_type",
+     "status",
+     "title"
+    ],
+    "type": "object"
+   },
+   "SnapshotList": {
+    "description": "`server` is set when the list is for one server.",
+    "properties": {
+     "currency": {
+      "type": "string"
+     },
+     "daily_retention_hours": {
+      "type": "integer"
+     },
+     "free_per_server": {
+      "type": "integer"
+     },
+     "rates": {
+      "additionalProperties": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "type": "object"
+     },
+     "server": {
+      "$ref": "#/components/schemas/AutomaticSnapshots"
+     },
+     "snapshots": {
+      "items": {
+       "$ref": "#/components/schemas/Snapshot"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "currency",
+     "daily_retention_hours",
+     "free_per_server",
+     "rates",
+     "snapshots"
+    ],
+    "type": "object"
+   },
+   "SnapshotName": {
+    "properties": {
+     "name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "type": "object"
+   },
+   "SnapshotPricing": {
+    "properties": {
+     "currency": {
+      "type": "string"
+     },
+     "daily_retention_hours": {
+      "type": "integer"
+     },
+     "free_per_server": {
+      "type": "integer"
+     },
+     "rate_per_gib": {
+      "type": [
+       "number",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "currency",
+     "daily_retention_hours",
+     "free_per_server",
+     "rate_per_gib"
+    ],
+    "type": "object"
+   },
+   "StartServerRequest": {
+    "properties": {
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "StopServerRequest": {
+    "properties": {
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "SubdomainAvailability": {
+    "properties": {
+     "available": {
+      "type": "boolean"
+     },
+     "reason": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "subdomain": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "available",
+     "reason",
+     "subdomain"
+    ],
+    "type": "object"
+   },
+   "TakeSnapshotRequest": {
+    "properties": {
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "title": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "TeamMember": {
+    "properties": {
+     "full_name": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "is_owner": {
+      "type": "boolean"
+     },
+     "roles": {
+      "items": {
+       "$ref": "#/components/schemas/RoleGrant"
+      },
+      "type": "array"
+     },
+     "status": {
+      "type": "string"
+     },
+     "user": {
+      "type": "string"
+     },
+     "user_image": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "full_name",
+     "is_owner",
+     "roles",
+     "status",
+     "user",
+     "user_image"
+    ],
+    "type": "object"
+   },
+   "TeamName": {
+    "properties": {
+     "name": {
+      "type": "string"
+     },
+     "team_name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "team_name"
+    ],
+    "type": "object"
+   },
+   "TeamRole": {
+    "properties": {
+     "capabilities": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "is_system": {
+      "type": "boolean"
+     },
+     "name": {
+      "type": "string"
+     },
+     "role_name": {
+      "type": "string"
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "capabilities",
+     "is_system",
+     "name",
+     "role_name",
+     "team"
+    ],
+    "type": "object"
+   },
+   "TeamSshKey": {
+    "properties": {
+     "fingerprint": {
+      "type": "string"
+     },
+     "last_sync_error": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "name": {
+      "type": "string"
+     },
+     "public_key": {
+      "type": "string"
+     },
+     "server_count": {
+      "type": "integer"
+     },
+     "title": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "fingerprint",
+     "name",
+     "public_key",
+     "server_count",
+     "title"
+    ],
+    "type": "object"
+   },
+   "TeamSummary": {
+    "description": "A team the signed-in user can switch to.",
+    "properties": {
+     "created": {
+      "type": "string"
+     },
+     "label": {
+      "type": "string"
+     },
+     "logo": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "members": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string"
+     },
+     "onboarding": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "owner": {
+      "type": "string"
+     },
+     "role": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "created",
+     "label",
+     "logo",
+     "members",
+     "name",
+     "onboarding",
+     "owner",
+     "role",
+     "status"
+    ],
+    "type": "object"
+   },
+   "TeamTicket": {
+    "description": "`url` is empty for a teammate's ticket, which the portal opens only for the person who raised it.",
+    "properties": {
+     "creation": {
+      "type": "string"
+     },
+     "modified": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "priority": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "raised_by": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     },
+     "status_category": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "subject": {
+      "type": "string"
+     },
+     "ticket_type": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "url": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "creation",
+     "modified",
+     "name",
+     "priority",
+     "raised_by",
+     "status",
+     "status_category",
+     "subject",
+     "ticket_type",
+     "url"
+    ],
+    "type": "object"
+   },
+   "TerminateServerRequest": {
+    "properties": {
+     "resource_id": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "take_snapshot": {
+      "type": "boolean"
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "TerminateSiteRequest": {
+    "properties": {
+     "name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "type": "object"
+   },
+   "Ticket": {
+    "properties": {
+     "creation": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "name": {
+      "type": "string"
+     },
+     "priority": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "status": {
+      "type": "string"
+     },
+     "subject": {
+      "type": "string"
+     },
+     "url": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "creation",
+     "name",
+     "priority",
+     "status",
+     "subject",
+     "url"
+    ],
+    "type": "object"
+   },
+   "TicketCategory": {
+    "description": "Pass `key` as `category` and an issue `label` as `issue_type` to `create_ticket`.",
+    "properties": {
+     "issues": {
+      "items": {
+       "$ref": "#/components/schemas/TicketIssue"
+      },
+      "type": "array"
+     },
+     "key": {
+      "type": "string"
+     },
+     "label": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "issues",
+     "key",
+     "label"
+    ],
+    "type": "object"
+   },
+   "TicketIssue": {
+    "properties": {
+     "is_critical": {
+      "type": "boolean"
+     },
+     "label": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "is_critical",
+     "label"
+    ],
+    "type": "object"
+   },
+   "TransferTeamOwnershipRequest": {
+    "properties": {
+     "team": {
+      "type": "string"
+     },
+     "user": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "team",
+     "user"
+    ],
+    "type": "object"
+   },
+   "TransferTeamOwnershipResponse": {
+    "properties": {
+     "owner": {
+      "type": "string"
+     },
+     "team": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "owner",
+     "team"
+    ],
+    "type": "object"
+   },
+   "UpdateProfileRequest": {
+    "properties": {
+     "full_name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "full_name"
+    ],
+    "type": "object"
+   },
+   "UpdateProfileResponse": {
+    "properties": {
+     "full_name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "full_name"
+    ],
+    "type": "object"
+   },
+   "UpdateServerFirewallRequest": {
+    "properties": {
+     "firewall": {
+      "type": [
+       "object",
+       "null"
+      ]
+     },
+     "resource_ids": {
+      "items": {
+       "type": "string"
+      },
+      "type": [
+       "array",
+       "null"
+      ]
+     },
+     "team": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "WireGuardDevice": {
+    "description": "`added_by_name` and `can_delete` come with the device list.",
+    "properties": {
+     "added_by": {
+      "type": "string"
+     },
+     "added_by_name": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "address": {
+      "type": "string"
+     },
+     "allowed_ips": {
+      "type": "string"
+     },
+     "can_delete": {
+      "type": "boolean"
+     },
+     "creation": {
+      "type": "string"
+     },
+     "endpoint": {
+      "type": "string"
+     },
+     "gateway_public_key": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "public_key": {
+      "type": "string"
+     },
+     "region": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "added_by",
+     "address",
+     "allowed_ips",
+     "creation",
+     "endpoint",
+     "gateway_public_key",
+     "name",
+     "public_key",
+     "region",
+     "status",
+     "title"
+    ],
+    "type": "object"
+   },
+   "WireGuardDevices": {
+    "properties": {
+     "devices": {
+      "items": {
+       "$ref": "#/components/schemas/WireGuardDevice"
+      },
+      "type": "array"
+     },
+     "regions": {
+      "items": {
+       "$ref": "#/components/schemas/WireGuardRegion"
+      },
+      "type": "array"
+     },
+     "servers": {
+      "items": {
+       "$ref": "#/components/schemas/WireGuardServer"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "devices",
+     "regions",
+     "servers"
+    ],
+    "type": "object"
+   },
+   "WireGuardRegion": {
+    "properties": {
+     "display_name": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "display_name",
+     "name"
+    ],
+    "type": "object"
+   },
+   "WireGuardServer": {
+    "properties": {
+     "has_wireguard_access": {
+      "type": "boolean"
+     },
+     "ipv6_address": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "is_blocked_by_firewall": {
+      "type": "boolean"
+     },
+     "region": {
+      "type": "string"
+     },
+     "resource_id": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "has_wireguard_access",
+     "ipv6_address",
+     "is_blocked_by_firewall",
+     "region",
+     "resource_id",
+     "title"
+    ],
+    "type": "object"
+   }
+  },
   "securitySchemes": {
    "apiKey": {
     "description": "`token <api key>:<api secret>`. The caller's own capabilities apply.",
@@ -97,8 +4085,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ActivityFeed"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -195,8 +4188,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ActivityFeed"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -229,35 +4227,13 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "name": {
-          "type": "string"
-         },
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "name"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/DeleteFirewallRulesetRequest"
        }
       }
      }
     },
     "responses": {
      "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
       "description": "OK"
      },
      "401": {
@@ -298,8 +4274,16 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "items": {
+            "$ref": "#/components/schemas/FirewallRulesetSummary"
+           },
+           "type": "array"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -332,29 +4316,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "name": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "rules": {
-          "type": "object"
-         },
-         "team": {
-          "type": "string"
-         },
-         "title": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "title",
-         "rules"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/SaveFirewallRulesetRequest"
        }
       }
      }
@@ -365,8 +4327,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "type": "string"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -399,46 +4366,13 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "rulesets": {
-          "items": {
-           "type": "string"
-          },
-          "type": [
-           "array",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/SetServerFirewallRulesetsRequest"
        }
       }
      }
     },
     "responses": {
      "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
       "description": "OK"
      },
      "401": {
@@ -482,8 +4416,16 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "items": {
+            "type": "string"
+           },
+           "type": "array"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -519,8 +4461,16 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "items": {
+            "$ref": "#/components/schemas/ReceivedInvitation"
+           },
+           "type": "array"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -556,8 +4506,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/Profile"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -605,8 +4560,16 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "items": {
+            "$ref": "#/components/schemas/TeamSummary"
+           },
+           "type": "array"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -639,15 +4602,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "file_url": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/SetProfilePhotoRequest"
        }
       }
      }
@@ -658,8 +4613,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SetProfilePhotoResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -692,15 +4652,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "full_name": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "full_name"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/UpdateProfileRequest"
        }
       }
      }
@@ -711,8 +4663,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/UpdateProfileResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -792,8 +4749,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/PlanCatalog"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -854,8 +4816,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/AppRequirements"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -908,8 +4875,16 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "items": {
+            "$ref": "#/components/schemas/ReadyApp"
+           },
+           "type": "array"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -986,8 +4961,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ImagePage"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1040,8 +5020,16 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "items": {
+            "$ref": "#/components/schemas/ImageOffering"
+           },
+           "type": "array"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1086,8 +5074,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ActionStatus"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1120,92 +5113,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "app_inputs": {
-          "type": [
-           "object",
-           "null"
-          ]
-         },
-         "has_public_ipv4": {
-          "type": "boolean"
-         },
-         "has_public_ipv6": {
-          "type": "boolean"
-         },
-         "hostname": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "image_id": {
-          "type": "string"
-         },
-         "includes": {
-          "items": {
-           "type": "object"
-          },
-          "type": "array"
-         },
-         "is_firewall_enabled": {
-          "type": "boolean"
-         },
-         "offering": {
-          "type": "string"
-         },
-         "region": {
-          "type": "string"
-         },
-         "request_key": {
-          "type": "string"
-         },
-         "snapshot": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "ssh_key_ids": {
-          "items": {
-           "type": "string"
-          },
-          "type": [
-           "array",
-           "null"
-          ]
-         },
-         "ssh_keys": {
-          "items": {
-           "type": "string"
-          },
-          "type": [
-           "array",
-           "null"
-          ]
-         },
-         "sub_category": {
-          "type": "string"
-         },
-         "team": {
-          "type": "string"
-         },
-         "title": {
-          "type": "string"
-         },
-         "user_data": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "region",
-         "title",
-         "request_key",
-         "includes",
-         "sub_category"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/CreateComposedServerRequest"
        }
       }
      }
@@ -1216,8 +5124,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ActionStatus"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1250,85 +5163,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "app_inputs": {
-          "type": [
-           "object",
-           "null"
-          ]
-         },
-         "has_public_ipv4": {
-          "type": "boolean"
-         },
-         "has_public_ipv6": {
-          "type": "boolean"
-         },
-         "hostname": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "image_id": {
-          "type": "string"
-         },
-         "is_firewall_enabled": {
-          "type": "boolean"
-         },
-         "offering": {
-          "type": "string"
-         },
-         "plan": {
-          "type": "string"
-         },
-         "region": {
-          "type": "string"
-         },
-         "request_key": {
-          "type": "string"
-         },
-         "snapshot": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "ssh_key_ids": {
-          "items": {
-           "type": "string"
-          },
-          "type": [
-           "array",
-           "null"
-          ]
-         },
-         "ssh_keys": {
-          "items": {
-           "type": "string"
-          },
-          "type": [
-           "array",
-           "null"
-          ]
-         },
-         "team": {
-          "type": "string"
-         },
-         "title": {
-          "type": "string"
-         },
-         "user_data": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "region",
-         "title",
-         "request_key",
-         "plan"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/CreateServerRequest"
        }
       }
      }
@@ -1339,8 +5174,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ActionStatus"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1399,8 +5239,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/IdleSleep"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1459,8 +5304,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/RescueState"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1493,21 +5343,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/KeepTrialSiteRequest"
        }
       }
      }
@@ -1518,8 +5354,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/KeepTrialSiteResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1567,8 +5408,16 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "items": {
+            "$ref": "#/components/schemas/Region"
+           },
+           "type": "array"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1601,31 +5450,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "mode": {
-          "enum": [
-           "ssh",
-           "tty"
-          ],
-          "type": "string"
-         },
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "required": [
-         "mode"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/OpenConsoleRequest"
        }
       }
      }
@@ -1636,8 +5461,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/OpenConsoleResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1696,8 +5526,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/PublicIpv4Price"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1730,15 +5565,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/RefreshServersRequest"
        }
       }
      }
@@ -1749,8 +5576,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/RefreshServersResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1798,8 +5630,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/Registry"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1832,24 +5669,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "title": {
-          "type": "string"
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/RenameServerRequest"
        }
       }
      }
@@ -1860,8 +5680,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/RenameServerResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1894,45 +5719,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "disk_gigabytes": {
-          "type": [
-           "integer",
-           "null"
-          ]
-         },
-         "includes": {
-          "type": [
-           "array",
-           "null"
-          ]
-         },
-         "plan": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "sub_category": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/ResizeServerRequest"
        }
       }
      }
@@ -1943,8 +5730,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ResizeServerResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -1977,21 +5769,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/RestartServerRequest"
        }
       }
      }
@@ -2002,8 +5780,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ActionStatus"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -2036,15 +5819,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "name": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "name"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/RetryActionRequest"
        }
       }
      }
@@ -2055,8 +5830,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ActionStatus"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -2115,8 +5895,16 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "items": {
+            "$ref": "#/components/schemas/Hostname"
+           },
+           "type": "array"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -2205,8 +5993,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ServerMetrics"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -2265,8 +6058,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ServerOverview"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -2299,43 +6097,13 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "seconds": {
-          "type": "integer"
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "required": [
-         "seconds"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/SetIdleSleepRequest"
        }
       }
      }
     },
     "responses": {
      "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
       "description": "OK"
      },
      "401": {
@@ -2364,43 +6132,13 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "enabled": {
-          "type": "boolean"
-         },
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "required": [
-         "enabled"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/SetRescueModeRequest"
        }
       }
      }
     },
     "responses": {
      "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
       "description": "OK"
      },
      "401": {
@@ -2429,40 +6167,13 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "enabled": {
-          "type": "boolean"
-         },
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/SetServerIpv4InternetRequest"
        }
       }
      }
     },
     "responses": {
      "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
       "description": "OK"
      },
      "401": {
@@ -2491,27 +6202,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "is_attached": {
-          "type": "boolean"
-         },
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "version": {
-          "type": "integer"
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/SetServerPublicIpRequest"
        }
       }
      }
@@ -2522,8 +6213,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SetServerPublicIpResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -2556,40 +6252,13 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "enabled": {
-          "type": "boolean"
-         },
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/SetServerWireguardAccessRequest"
        }
       }
      }
     },
     "responses": {
      "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
       "description": "OK"
      },
      "401": {
@@ -2618,40 +6287,13 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "enabled": {
-          "type": "boolean"
-         },
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/SetTerminationProtectionRequest"
        }
       }
      }
     },
     "responses": {
      "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
       "description": "OK"
      },
      "401": {
@@ -2680,21 +6322,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/StartServerRequest"
        }
       }
      }
@@ -2705,8 +6333,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ActionStatus"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -2739,21 +6372,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/StopServerRequest"
        }
       }
      }
@@ -2764,8 +6383,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ActionStatus"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -2798,24 +6422,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "take_snapshot": {
-          "type": "boolean"
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/TerminateServerRequest"
        }
       }
      }
@@ -2826,8 +6433,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ActionStatus"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -2860,30 +6472,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "firewall": {
-          "type": [
-           "object",
-           "null"
-          ]
-         },
-         "resource_ids": {
-          "items": {
-           "type": "string"
-          },
-          "type": [
-           "array",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/UpdateServerFirewallRequest"
        }
       }
      }
@@ -2894,8 +6483,19 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "additionalProperties": {
+            "type": [
+             "string",
+             "null"
+            ]
+           },
+           "type": "object"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -2951,8 +6551,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SubdomainAvailability"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -2985,15 +6590,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "name": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "name"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/ClaimSiteRequest"
        }
       }
      }
@@ -3004,8 +6601,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SiteState"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3038,29 +6640,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "product": {
-          "type": "string"
-         },
-         "request_key": {
-          "type": "string"
-         },
-         "subdomain": {
-          "type": "string"
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "required": [
-         "subdomain",
-         "request_key",
-         "product"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/CreateTrialSiteRequest"
        }
       }
      }
@@ -3071,8 +6651,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ActionStatus"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3105,45 +6690,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "product": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "referrer": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "utm_campaign": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "utm_medium": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "utm_source": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/CreateTrialTeamRequest"
        }
       }
      }
@@ -3154,8 +6701,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/CreateTrialTeamResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3203,8 +6755,20 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "anyOf": [
+            {
+             "$ref": "#/components/schemas/OpenTrial"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3249,8 +6813,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SiteState"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3283,29 +6852,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "product": {
-          "type": "string"
-         },
-         "site": {
-          "type": "string"
-         },
-         "task_id": {
-          "type": "string"
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "required": [
-         "site",
-         "task_id",
-         "product"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/GetTrialAppInstallRequest"
        }
       }
      }
@@ -3316,8 +6863,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/AppInstallProgress"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3350,21 +6902,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "product": {
-          "type": "string"
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "required": [
-         "product"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/InstallTrialAppRequest"
        }
       }
      }
@@ -3375,8 +6913,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/InstallTrialAppResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3409,21 +6952,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "name": {
-          "type": "string"
-         },
-         "product": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "required": [
-         "name"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/LoginSiteRequest"
        }
       }
      }
@@ -3434,8 +6963,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SiteState"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3494,8 +7028,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/OnboardingStatus"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3554,8 +7093,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SiteDomain"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3588,15 +7132,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "name": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "name"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/TerminateSiteRequest"
        }
       }
      }
@@ -3607,8 +7143,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ActionStatus"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3641,24 +7182,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "names": {
-          "items": {
-           "type": "string"
-          },
-          "type": [
-           "array",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/DeleteSnapshotsRequest"
        }
       }
      }
@@ -3669,8 +7193,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/DeleteSnapshotsResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3703,21 +7232,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "name": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/KeepSnapshotRequest"
        }
       }
      }
@@ -3728,8 +7243,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SnapshotName"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3788,8 +7308,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SnapshotList"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3822,24 +7347,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "enabled": {
-          "type": "boolean"
-         },
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/SetAutomaticSnapshotsRequest"
        }
       }
      }
@@ -3850,8 +7358,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/AutomaticSnapshots"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3910,8 +7423,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SnapshotPricing"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -3944,27 +7462,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "resource_id": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "title": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/TakeSnapshotRequest"
        }
       }
      }
@@ -3975,8 +7473,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SnapshotName"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4009,23 +7512,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "public_key": {
-          "type": "string"
-         },
-         "team": {
-          "type": "string"
-         },
-         "title": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "title",
-         "public_key"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/CreateTeamSshKeyRequest"
        }
       }
      }
@@ -4036,8 +7523,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/TeamSshKey"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4070,35 +7562,13 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "name": {
-          "type": "string"
-         },
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "name"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/DeleteTeamSshKeyRequest"
        }
       }
      }
     },
     "responses": {
      "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
       "description": "OK"
      },
      "401": {
@@ -4139,8 +7609,16 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "items": {
+            "$ref": "#/components/schemas/TeamSshKey"
+           },
+           "type": "array"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4173,35 +7651,13 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "name": {
-          "type": "string"
-         },
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "name"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/RetryTeamSshKeySyncRequest"
        }
       }
      }
     },
     "responses": {
      "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
       "description": "OK"
      },
      "401": {
@@ -4230,23 +7686,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "name": {
-          "type": "string"
-         },
-         "public_key": {
-          "type": "string"
-         },
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "name",
-         "public_key"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/RotateTeamSshKeyRequest"
        }
       }
      }
@@ -4257,8 +7697,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/RotateTeamSshKeyResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4291,42 +7736,13 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "resource_id": {
-          "type": "string"
-         },
-         "ssh_keys": {
-          "items": {
-           "type": "string"
-          },
-          "type": "array"
-         },
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "resource_id",
-         "ssh_keys"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/SetServerSshKeysRequest"
        }
       }
      }
     },
     "responses": {
      "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "properties": {
-          "message": {}
-         },
-         "type": "object"
-        }
-       }
-      },
       "description": "OK"
      },
      "401": {
@@ -4355,39 +7771,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "category": {
-          "type": "string"
-         },
-         "description": {
-          "type": "string"
-         },
-         "issue_type": {
-          "type": "string"
-         },
-         "server": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "site": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "subject": {
-          "type": "string"
-         },
-         "team": {
-          "type": [
-           "string",
-           "null"
-          ]
-         }
-        },
-        "type": "object"
+        "$ref": "#/components/schemas/CreateTicketRequest"
        }
       }
      }
@@ -4398,8 +7782,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/Ticket"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4455,8 +7844,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/RelatedHelp"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4504,8 +7898,16 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "items": {
+            "$ref": "#/components/schemas/TicketCategory"
+           },
+           "type": "array"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4553,8 +7955,16 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "items": {
+            "$ref": "#/components/schemas/TeamTicket"
+           },
+           "type": "array"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4587,15 +7997,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "invitation": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "invitation"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/AcceptInvitationRequest"
        }
       }
      }
@@ -4606,8 +8008,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/AcceptInvitationResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4640,15 +8047,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/ArchiveTeamRequest"
        }
       }
      }
@@ -4659,8 +8058,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ArchiveTeamResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4693,23 +8097,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "capabilities": {
-          "type": "array"
-         },
-         "role_name": {
-          "type": "string"
-         },
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "role_name",
-         "capabilities"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/CreateCustomRoleRequest"
        }
       }
      }
@@ -4720,8 +8108,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/CustomRole"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4754,15 +8147,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "team_name": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team_name"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/CreateTeamRequest"
        }
       }
      }
@@ -4773,8 +8158,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/TeamName"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4807,15 +8197,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "invitation": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "invitation"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/DeclineInvitationRequest"
        }
       }
      }
@@ -4826,8 +8208,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/DeclineInvitationResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4860,15 +8247,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "role": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "role"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/DeleteCustomRoleRequest"
        }
       }
      }
@@ -4879,8 +8258,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/DeleteCustomRoleResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4925,8 +8309,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ArchiveChecks"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -4959,45 +8348,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "email": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "invitations": {
-          "items": {
-           "type": "object"
-          },
-          "type": [
-           "array",
-           "null"
-          ]
-         },
-         "resource_name": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "resource_type": {
-          "type": "string"
-         },
-         "role": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/InviteTeamMemberRequest"
        }
       }
      }
@@ -5008,8 +8359,23 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "anyOf": [
+            {
+             "type": "string"
+            },
+            {
+             "items": {
+              "$ref": "#/components/schemas/SentInvitation"
+             },
+             "type": "array"
+            }
+           ]
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5042,15 +8408,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/LeaveTeamRequest"
        }
       }
      }
@@ -5061,8 +8419,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/LeaveTeamResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5107,8 +8470,16 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "items": {
+            "$ref": "#/components/schemas/TeamMember"
+           },
+           "type": "array"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5153,8 +8524,16 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "items": {
+            "$ref": "#/components/schemas/TeamRole"
+           },
+           "type": "array"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5187,19 +8566,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "team": {
-          "type": "string"
-         },
-         "user": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "user"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/RemoveTeamMemberRequest"
        }
       }
      }
@@ -5210,8 +8577,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/RemoveTeamMemberResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5244,19 +8616,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "team": {
-          "type": "string"
-         },
-         "team_name": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "team_name"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/RenameTeamRequest"
        }
       }
      }
@@ -5267,8 +8627,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/TeamName"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5301,15 +8666,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "invitation": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "invitation"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/ResendInvitationRequest"
        }
       }
      }
@@ -5320,8 +8677,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/ResendInvitationResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5354,15 +8716,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "invitation": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "invitation"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/RevokeInvitationRequest"
        }
       }
      }
@@ -5373,8 +8727,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/RevokeInvitationResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5407,23 +8766,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "status": {
-          "type": "string"
-         },
-         "step": {
-          "type": "string"
-         },
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "step",
-         "status"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/SetOnboardingStepRequest"
        }
       }
      }
@@ -5434,8 +8777,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SetOnboardingStepResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5468,21 +8816,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "file_url": {
-          "type": [
-           "string",
-           "null"
-          ]
-         },
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/SetTeamLogoRequest"
        }
       }
      }
@@ -5493,8 +8827,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SetTeamLogoResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5527,26 +8866,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "roles": {
-          "items": {
-           "type": "object"
-          },
-          "type": "array"
-         },
-         "team": {
-          "type": "string"
-         },
-         "user": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "user",
-         "roles"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/SetTeamMemberRolesRequest"
        }
       }
      }
@@ -5557,8 +8877,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SetTeamMemberRolesResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5591,23 +8916,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "status": {
-          "type": "string"
-         },
-         "team": {
-          "type": "string"
-         },
-         "user": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "user",
-         "status"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/SetTeamMemberStatusRequest"
        }
       }
      }
@@ -5618,8 +8927,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/SetTeamMemberStatusResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5652,19 +8966,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "team": {
-          "type": "string"
-         },
-         "user": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "user"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/TransferTeamOwnershipRequest"
        }
       }
      }
@@ -5675,8 +8977,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/TransferTeamOwnershipResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5709,27 +9016,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "public_key": {
-          "type": "string"
-         },
-         "region": {
-          "type": "string"
-         },
-         "team": {
-          "type": "string"
-         },
-         "title": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "region",
-         "title",
-         "public_key"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/CreateWireguardDeviceRequest"
        }
       }
      }
@@ -5740,8 +9027,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/WireGuardDevice"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5774,19 +9066,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "properties": {
-         "name": {
-          "type": "string"
-         },
-         "team": {
-          "type": "string"
-         }
-        },
-        "required": [
-         "team",
-         "name"
-        ],
-        "type": "object"
+        "$ref": "#/components/schemas/DeleteWireguardDeviceRequest"
        }
       }
      }
@@ -5797,8 +9077,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/DeleteWireguardDeviceResponse"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }
@@ -5843,8 +9128,13 @@
        "application/json": {
         "schema": {
          "properties": {
-          "message": {}
+          "message": {
+           "$ref": "#/components/schemas/WireGuardDevices"
+          }
          },
+         "required": [
+          "message"
+         ],
          "type": "object"
         }
        }

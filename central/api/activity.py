@@ -6,6 +6,7 @@ from frappe import _
 from frappe.utils import cint, convert_utc_to_system_timezone, get_datetime
 from frappe.utils.translations import _lt
 
+from central.api.models.teams import ActivityFeed
 from central.central.doctype.activity_event.activity_event import ActivityEvent, get_initiators
 from central.central.doctype.activity_event.tracked import get_sentence
 from central.iam import user_has_operator_bypass
@@ -33,7 +34,7 @@ def server_activity(
 	category: str | None = None,
 	since: str | None = None,
 	until: str | None = None,
-) -> dict:
+) -> ActivityFeed:
 	"""One server's activity, including its sites, domains and snapshots, newest first."""
 	server = get_team_server_name(team, resource_id)
 	return get_activity(team, cursor, limit, category, since, until, server=server)
@@ -48,7 +49,7 @@ def team_activity(
 	category: str | None = None,
 	since: str | None = None,
 	until: str | None = None,
-) -> dict:
+) -> ActivityFeed:
 	"""The team's activity, newest first. Each member sees the events their capabilities allow."""
 	return get_activity(team, cursor, limit, category, since, until)
 

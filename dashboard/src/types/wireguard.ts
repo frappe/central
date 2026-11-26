@@ -27,7 +27,7 @@ export interface WireGuardServer {
 	title: string
 	region: string
 	ipv6_address: string | null
-	has_wireguard_access: 0 | 1
+	has_wireguard_access: boolean
 	/** The firewall is on and no rule lets a WireGuard VPN device in. */
 	is_blocked_by_firewall: boolean
 }

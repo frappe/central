@@ -3,6 +3,16 @@ from frappe import _
 from frappe.rate_limiter import rate_limit
 from frappe.utils.translations import _lt
 
+from central.api.models.sites import (
+	AppInstallProgress,
+	CreateTrialTeamResponse,
+	InstallTrialAppResponse,
+	OnboardingStatus,
+	OpenTrial,
+	SiteDomain,
+	SiteState,
+	SubdomainAvailability,
+)
 from central.errors import handle_resource_operation
 from central.iam import can
 from central.infrastructure.doctype.resource_action.resource_action import (
@@ -12,6 +22,7 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 )
 from central.infrastructure.doctype.site.site import Site
 from central.integrations.pilot import PilotLoginPending, is_site_reachable
+from central.server_models import ActionStatus
 from central.signups.journey import ACTION_FIELDS, SetupJourney
 from central.utils.guards import require_capability
 
@@ -20,7 +31,7 @@ from central.utils.guards import require_capability
 @require_capability(
 	"server:create", _lt("You can't create sites for this Team. Ask a team admin to review your access.")
 )
-def site_domain(team: str | None = None, product: str | None = None) -> dict:
+def site_domain(team: str | None = None, product: str | None = None) -> SiteDomain:
 	"""The zone a new site of this product is named in, so the console can show the suffix as
 	they type. It is the zone of the region that the trial is then created in."""
 	from central.signups.doctype.product.product import get_signup_product
@@ -34,7 +45,7 @@ def site_domain(team: str | None = None, product: str | None = None) -> dict:
 @require_capability(
 	"server:create", _lt("You can't create sites for this Team. Ask a team admin to review your access.")
 )
-def get_open_trial(team: str | None = None) -> dict | None:
+def get_open_trial(team: str | None = None) -> OpenTrial | None:
 	"""The owner's open free trial, so the signup page offers that site before it asks for a new one."""
 	from central.signups.eligibility import get_open_trial_summary
 
@@ -45,7 +56,7 @@ def get_open_trial(team: str | None = None) -> dict | None:
 @require_capability(
 	"server:create", _lt("You can't create sites for this Team. Ask a team admin to review your access.")
 )
-def install_trial_app(product: str, team: str | None = None) -> dict:
+def install_trial_app(product: str, team: str | None = None) -> InstallTrialAppResponse:
 	"""Install a product's app on the owner's open trial site, instead of a second free trial.
 	Returns `site`, the bench's name for it, and `task_id` for `get_trial_app_install`."""
 	from central.signups.app_install import TrialAppInstall
@@ -58,7 +69,9 @@ def install_trial_app(product: str, team: str | None = None) -> dict:
 @require_capability(
 	"server:create", _lt("You can't create sites for this Team. Ask a team admin to review your access.")
 )
-def get_trial_app_install(site: str, task_id: str, product: str, team: str | None = None) -> dict:
+def get_trial_app_install(
+	site: str, task_id: str, product: str, team: str | None = None
+) -> AppInstallProgress:
 	"""The progress of an app install on the owner's open trial site. See `TrialAppInstall.get_progress`."""
 	from central.signups.app_install import TrialAppInstall
 
@@ -81,7 +94,7 @@ def authorized_open_trial(team: str):
 @require_capability(
 	"server:create", _lt("You can't create sites for this Team. Ask a team admin to review your access.")
 )
-def check_subdomain(subdomain: str, team: str | None = None) -> dict:
+def check_subdomain(subdomain: str, team: str | None = None) -> SubdomainAvailability:
 	"""Whether a name is free, while the customer is still typing it."""
 	from central.site_provisioning import subdomain_availability
 
@@ -96,7 +109,7 @@ def create_trial_team(
 	referrer: str | None = None,
 	product: str | None = None,
 	team: str | None = None,
-) -> dict:
+) -> CreateTrialTeamResponse:
 	"""The team the trial funnel uses, before it asks for a site name: `team` when the caller can
 	create servers there, else another such team, else a new one. The browser sends how the
 	signup first arrived, which a new team keeps."""
@@ -120,7 +133,7 @@ def create_trial_site(
 	request_key: str,
 	product: str,
 	team: str | None = None,
-) -> dict:
+) -> ActionStatus:
 	"""Start a product's trial site under a name the customer chose. Gated on `server:create`."""
 	from central.site_provisioning import create_trial_site as start
 
@@ -129,7 +142,7 @@ def create_trial_site(
 
 @frappe.whitelist(methods=["POST"])
 @handle_resource_operation
-def claim_site(name: str) -> dict:
+def claim_site(name: str) -> SiteState:
 	"""Return a login for the new site and schedule its rename to the customer's hostname.
 	A failed login leaves the site unclaimed, so the console can try again."""
 	site = authorized_site(name, "server:console")
@@ -154,13 +167,13 @@ def plan_change_progress(action: str, site: str, signature: str) -> dict:
 
 
 @frappe.whitelist(methods=["GET"])
-def get_site(name: str) -> dict:
+def get_site(name: str) -> SiteState:
 	"""Return one site's state without creating a remote Administrator session."""
 	return site_state(authorized_site(name, "server:view"), with_login=False)
 
 
 @frappe.whitelist(methods=["POST"])
-def login_site(name: str, product: str | None = None) -> dict:
+def login_site(name: str, product: str | None = None) -> SiteState:
 	"""Create a one-time site login. It signs in as Administrator, so it needs `server:console`.
 	It lands on the page of `product` when given, such as an app just installed on the site."""
 	return site_state(authorized_site(name, "server:console"), with_login=True, product=product)
@@ -170,7 +183,7 @@ def login_site(name: str, product: str | None = None) -> dict:
 @require_capability(
 	"server:view", _lt("You can't view this team's sites. Ask a team admin to review your access.")
 )
-def onboarding_status(team: str | None = None, product: str | None = None) -> dict:
+def onboarding_status(team: str | None = None, product: str | None = None) -> OnboardingStatus:
 	"""Resume this product's site or creation within the authorized team, with the journey the
 	waiting page follows, and whether a new site of this product would be a free trial."""
 	from central.signups.doctype.product.product import get_signup_product
@@ -238,7 +251,7 @@ def latest_creation(filters: dict) -> frappe._dict | None:
 
 @frappe.whitelist(methods=["POST"])
 @handle_resource_operation
-def terminate_site(name: str) -> dict:
+def terminate_site(name: str) -> ActionStatus:
 	"""Terminate a site by terminating the machine it is. Gated on `server:terminate`."""
 	from central.resource_actions import submit_command
 

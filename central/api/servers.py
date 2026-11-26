@@ -8,6 +8,22 @@ from frappe.utils import get_system_timezone
 from frappe.utils.translations import _lt
 from pydantic import ValidationError
 
+from central.api.models.servers import (
+	Hostname,
+	IdleSleep,
+	KeepTrialSiteResponse,
+	OpenConsoleResponse,
+	PublicIpv4Price,
+	RefreshServersResponse,
+	Region,
+	Registry,
+	RenameServerResponse,
+	RescueState,
+	ResizeServerResponse,
+	ServerMetrics,
+	ServerOverview,
+	SetServerPublicIpResponse,
+)
 from central.errors import handle_resource_operation
 from central.iam import can, get_server_capabilities, user_has_operator_bypass
 from central.infrastructure.doctype.resource_action.resource_action import (
@@ -23,7 +39,7 @@ from central.infrastructure.doctype.virtual_machine.virtual_machine import (
 )
 from central.integrations.atlas import ConsoleMode
 from central.integrations.servers import get_cached_metrics, get_console_url, reconcile
-from central.server_models import FirewallChange
+from central.server_models import ActionStatus, FirewallChange
 from central.signups.access import get_locked_servers
 from central.utils.guards import require_capability
 
@@ -47,7 +63,7 @@ REGION_LIST_FIELDS = (
 @require_capability(
 	"server:view", _lt("You can't view this team's servers. Ask a team admin to review your access.")
 )
-def registry(team: str | None = None) -> dict:
+def registry(team: str | None = None) -> Registry:
 	"""List a team's servers and self-serve sites in one read, for the console map and panel.
 	Gated on `server:view`. Terminated sites are left out."""
 	servers = frappe.get_list(
@@ -102,6 +118,7 @@ def registry(team: str | None = None) -> dict:
 		server["capabilities"] = get_server_capabilities(frappe.session.user, team, server["name"])
 		# A free trial gives the site, not the server: the console hides SSH, the console and Pilot.
 		server["is_access_locked"] = server["name"] in locked
+		server["has_wireguard_access"] = bool(server["has_wireguard_access"])
 		server["is_idle_sleep_available"] = is_idle_sleep_available
 
 	# A creation has no server row until the region accepts it, so it cannot be overlaid
@@ -164,7 +181,7 @@ def _sites(rows: list[dict], servers: list[dict], pending: dict[str, str]) -> li
 	_lt("You can't view this team's servers. Ask a team admin to review your access."),
 	server="resource_id",
 )
-def server_overview(team: str | None = None, resource_id: str | None = None) -> dict:
+def server_overview(team: str | None = None, resource_id: str | None = None) -> ServerOverview:
 	"""One server's details and status, by its `resource_id` from `servers.registry`."""
 	if not resource_id:
 		frappe.throw(_("Select a server to continue."), frappe.ValidationError)
@@ -203,12 +220,12 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			"ipv6_address": row.ipv6_address,
 			"public_ipv4": row.public_ipv4,
 			"public_ipv6": row.public_ipv6,
-			"has_public_ipv6": row.has_public_ipv6,
-			"is_firewall_enabled": row.is_firewall_enabled,
+			"has_public_ipv6": bool(row.has_public_ipv6),
+			"is_firewall_enabled": bool(row.is_firewall_enabled),
 			"firewall_rulesets": firewall_rulesets,
-			"is_termination_protected": row.is_termination_protected,
-			"has_ipv4_internet": row.has_ipv4_internet,
-			"has_wireguard_access": row.has_wireguard_access,
+			"is_termination_protected": bool(row.is_termination_protected),
+			"has_ipv4_internet": bool(row.has_ipv4_internet),
+			"has_wireguard_access": bool(row.has_wireguard_access),
 			"firewall_rules": frappe.parse_json(row.firewall_rules) if row.firewall_rules else None,
 			"ssh_command": _ssh_command(row),
 			"ssh_keys": _server_ssh_keys(row.resource_id),
@@ -229,7 +246,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 				"display_name": row.region_display_name or server.region,
 				"provider": row.region_provider,
 				"country_code": row.region_country_code,
-				"has_wireguard_gateway": row.region_has_wireguard_gateway,
+				"has_wireguard_gateway": bool(row.region_has_wireguard_gateway),
 			},
 		},
 	}
@@ -247,7 +264,7 @@ def server_metrics(
 	period: str = "1h",
 	start: str | None = None,
 	end: str | None = None,
-) -> dict:
+) -> ServerMetrics:
 	"""One server's samples from its region over a preset `period`, or from `start` to `end`
 	when `period` is custom. The region measures a server only while it runs."""
 	window_start, window_end = _metrics_window(period, start, end)
@@ -304,7 +321,7 @@ def _metrics_window(period: str, start: str | None, end: str | None) -> tuple[da
 	_lt("You can't view this team's servers. Ask a team admin to review your access."),
 	server="resource_id",
 )
-def server_hostnames(team: str | None = None, resource_id: str | None = None) -> list[dict]:
+def server_hostnames(team: str | None = None, resource_id: str | None = None) -> list[Hostname]:
 	"""The site and custom-domain hostnames a server answers. They stop working when the
 	server is terminated, so the console lists them before it asks. Gated on `server:view`."""
 	server = get_team_server_name(team, resource_id)
@@ -487,7 +504,7 @@ def _overview_plan(server: dict, team: str) -> dict:
 @require_capability(
 	"cluster:view", _lt("You can't view clusters for this team. Ask a team admin to review your access.")
 )
-def list_instances(team: str | None = None) -> list[dict]:
+def list_instances(team: str | None = None) -> list[Region]:
 	"""The Active regions a team can place a new server in. It does not list servers: use
 	`servers.registry` for that. Gated on `cluster:view`, the same as `registry`. The team only
 	resolves the gate, because every team sees the same regions."""
@@ -495,19 +512,23 @@ def list_instances(team: str | None = None) -> list[dict]:
 	# so the DocType is locked to System Manager. `cluster:view` already authorizes
 	# this read, so we bypass DocType RBAC and read only the non-secret allowlist —
 	# otherwise a Central User (e.g. a team Owner) gets an empty list.
-	return frappe.get_all(
+	regions = frappe.get_all(
 		"Region",
 		filters={"status": "Active"},
 		fields=list(REGION_LIST_FIELDS),
 		order_by="region asc",
 	)
+	for region in regions:
+		region["reachable"] = bool(region["reachable"])
+
+	return regions
 
 
 @frappe.whitelist(methods=["POST"])
 @require_capability(
 	"server:view", _lt("You can't refresh this team's servers. Ask a team admin to review your access.")
 )
-def refresh_servers(team: str | None = None) -> dict:
+def refresh_servers(team: str | None = None) -> RefreshServersResponse:
 	"""Manually reconcile this team's mirror from every Active Atlas — the on-demand
 	twin of the scheduled reconcile. Gated on `server:view`."""
 	return reconcile(team)
@@ -520,7 +541,9 @@ def refresh_servers(team: str | None = None) -> dict:
 	_lt("You can't open this server's console. Ask a team admin to review your access."),
 	server="resource_id",
 )
-def open_console(team: str | None = None, resource_id: str | None = None, *, mode: ConsoleMode) -> dict:
+def open_console(
+	team: str | None = None, resource_id: str | None = None, *, mode: ConsoleMode
+) -> OpenConsoleResponse:
 	"""Return a single-use web console URL for one server in SSH or TTY mode.
 	Gated on `server:console`."""
 	# Frappe skips type checks on a Literal of strings, so check the mode here.
@@ -534,21 +557,21 @@ def open_console(team: str | None = None, resource_id: str | None = None, *, mod
 
 @frappe.whitelist(methods=["POST"])
 @handle_resource_operation
-def start_server(team: str | None = None, resource_id: str | None = None) -> dict:
+def start_server(team: str | None = None, resource_id: str | None = None) -> ActionStatus:
 	"""Start a stopped server. Gated on `server:power`."""
 	return _run_command("start", team, resource_id)
 
 
 @frappe.whitelist(methods=["POST"])
 @handle_resource_operation
-def stop_server(team: str | None = None, resource_id: str | None = None) -> dict:
+def stop_server(team: str | None = None, resource_id: str | None = None) -> ActionStatus:
 	"""Stop a running server. Gated on `server:power`."""
 	return _run_command("stop", team, resource_id)
 
 
 @frappe.whitelist(methods=["POST"])
 @handle_resource_operation
-def restart_server(team: str | None = None, resource_id: str | None = None) -> dict:
+def restart_server(team: str | None = None, resource_id: str | None = None) -> ActionStatus:
 	"""Restart a running server. Gated on `server:power`."""
 	return _run_command("restart", team, resource_id)
 
@@ -567,7 +590,7 @@ def resize_server(
 	includes: list | str | None = None,
 	sub_category: str | None = None,
 	disk_gigabytes: int | None = None,
-) -> dict:
+) -> ResizeServerResponse:
 	"""Resize a server's CPU, memory and disk. Gated on `server:resize`.
 	A compute change stops the server first. A larger disk does not, and a smaller disk is refused.
 	On an open trial it keeps the paid plan the site moves to when the trial converts."""
@@ -612,7 +635,9 @@ def resize_server(
 	_lt("You can't rename this server. Ask a team admin to review your access."),
 	server="resource_id",
 )
-def rename_server(team: str | None = None, resource_id: str | None = None, title: str = "") -> dict:
+def rename_server(
+	team: str | None = None, resource_id: str | None = None, title: str = ""
+) -> RenameServerResponse:
 	"""Rename one server. Gated on `server:resize`, the capability to change a server."""
 	server = get_team_server(team, resource_id, for_update=True)
 	server.title = title
@@ -641,7 +666,7 @@ def set_termination_protection(
 @require_capability(
 	"server:view", _lt("You can't view this team's servers. Ask a team admin to review your access.")
 )
-def public_ipv4_pricing(team: str | None = None, region: str | None = None) -> dict:
+def public_ipv4_pricing(team: str | None = None, region: str | None = None) -> PublicIpv4Price:
 	"""The monthly price of one public IPv4 in `region`, shown before the customer commits."""
 	from central.billing.catalog.public_ips import get_public_ipv4_rate
 
@@ -661,7 +686,7 @@ def set_server_public_ip(
 	resource_id: str | None = None,
 	version: int | str = 4,
 	is_attached: bool | int | str = True,
-) -> dict:
+) -> SetServerPublicIpResponse:
 	"""Attach or detach the public IPv4 or IPv6 address. Gated on `server:network`. Returns
 	`is_pending` when Atlas is still applying the change."""
 	version = frappe.utils.cint(version)
@@ -757,7 +782,7 @@ def _update_one_firewall(team: str, resource_id: str, change: FirewallChange) ->
 @require_capability(
 	"billing:manage", _lt("You can't manage this team's billing. Ask a team admin to review your access.")
 )
-def keep_trial_site(team: str | None = None, resource_id: str | None = None) -> dict:
+def keep_trial_site(team: str | None = None, resource_id: str | None = None) -> KeepTrialSiteResponse:
 	"""Keep the ended trial on a server: it moves to its paid plan and starts again."""
 	from central.signups.trial import Trial
 
@@ -774,7 +799,7 @@ def keep_trial_site(team: str | None = None, resource_id: str | None = None) -> 
 @handle_resource_operation
 def terminate_server(
 	team: str | None = None, resource_id: str | None = None, take_snapshot: bool | int | str = False
-) -> dict:
+) -> ActionStatus:
 	"""Terminate a server. Gated on `server:terminate`. With `take_snapshot`, it first takes
 	a final snapshot, which also needs `server:snapshot`."""
 	return _run_command("terminate", team, resource_id, take_snapshot=bool(frappe.utils.cint(take_snapshot)))
@@ -805,7 +830,7 @@ def create_server(
 	user_data: str = "",
 	app_inputs: dict[str, str] | None = None,
 	snapshot: str | None = None,
-) -> dict:
+) -> ActionStatus:
 	"""Create a server from an image, or restore one from a `snapshot`."""
 	from central.resource_actions import submit_request
 
@@ -849,7 +874,7 @@ def create_composed_server(
 	user_data: str = "",
 	app_inputs: dict[str, str] | None = None,
 	snapshot: str | None = None,
-) -> dict:
+) -> ActionStatus:
 	"""Create a custom-sized server from an image, or restore one from a `snapshot`."""
 	from central.resource_actions import submit_request
 
@@ -875,7 +900,7 @@ def create_composed_server(
 
 
 @frappe.whitelist(methods=["GET"])
-def action_status(name: str) -> dict:
+def action_status(name: str) -> ActionStatus:
 	from central.resource_actions import get_status
 
 	return get_status(name)
@@ -883,7 +908,7 @@ def action_status(name: str) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 @handle_resource_operation
-def retry_action(name: str) -> dict:
+def retry_action(name: str) -> ActionStatus:
 	"""Send a failed creation again on its own record. Gated on `server:create`."""
 	from central.resource_actions import retry
 
@@ -893,7 +918,7 @@ def retry_action(name: str) -> dict:
 @frappe.whitelist(methods=["GET"])
 @handle_resource_operation
 @require_capability("server:view", _lt("You cannot view this server."), server="resource_id")
-def get_rescue_state(team: str | None = None, resource_id: str | None = None) -> dict:
+def get_rescue_state(team: str | None = None, resource_id: str | None = None) -> RescueState:
 	"""Read the region's boot selection and last boot mode for this server."""
 	from central.integrations.servers import get_rescue_state
 
@@ -914,7 +939,7 @@ def set_rescue_mode(enabled: bool, team: str | None = None, resource_id: str | N
 @frappe.whitelist(methods=["GET"])
 @handle_resource_operation
 @require_capability("server:view", _lt("You cannot view this server."), server="resource_id")
-def get_idle_sleep(team: str | None = None, resource_id: str | None = None) -> dict:
+def get_idle_sleep(team: str | None = None, resource_id: str | None = None) -> IdleSleep:
 	"""Read how long this server stays idle before it sleeps. Zero means it never sleeps."""
 	server = get_team_server(team, resource_id)
 	return {"sleep_after_idle_seconds": server.get_idle_sleep_seconds()}

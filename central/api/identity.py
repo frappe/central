@@ -5,6 +5,13 @@ from frappe.query_builder import Order
 from frappe.query_builder.functions import Count
 from frappe.utils import escape_html
 
+from central.api.models.teams import (
+	Profile,
+	ReceivedInvitation,
+	SetProfilePhotoResponse,
+	TeamSummary,
+	UpdateProfileResponse,
+)
 from central.iam import (
 	get_all_capabilities,
 	resolve_user_grants,
@@ -29,7 +36,7 @@ def my_capabilities(team: str | None = None) -> list[str]:
 
 
 @frappe.whitelist(methods=["GET"])
-def my_teams(view_as: str | None = None) -> list[dict[str, Any]]:
+def my_teams(view_as: str | None = None) -> list[TeamSummary]:
 	"""Teams the signed-in user can switch between in the console — the teams they
 	are an active member of, each with a display label, the owner email, the
 	caller's own role, how many people are in it, when it was created, and the
@@ -160,7 +167,7 @@ def _role_rank(role: str | None) -> int:
 
 
 @frappe.whitelist(methods=["GET"])
-def my_invitations() -> list[dict[str, Any]]:
+def my_invitations() -> list[ReceivedInvitation]:
 	"""Pending, unexpired invitations addressed to the signed-in user — the invitee's
 	inbox. Each carries the inviting team's and the role's labels, because a custom role
 	belongs to the inviting team and the console cannot resolve it."""
@@ -202,7 +209,7 @@ def my_invitations() -> list[dict[str, Any]]:
 
 
 @frappe.whitelist(methods=["GET"])
-def my_profile() -> dict[str, Any]:
+def my_profile() -> Profile:
 	"""The signed-in user's own profile — email, display name, photo."""
 	user = frappe.session.user
 	row = frappe.db.get_value("User", user, ["email", "full_name", "user_image"], as_dict=True)
@@ -216,7 +223,7 @@ def my_profile() -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
-def update_profile(full_name: str) -> dict[str, Any]:
+def update_profile(full_name: str) -> UpdateProfileResponse:
 	"""Update the signed-in user's display name. Only ever operates on the
 	session user — there is no user parameter to abuse. The whole string goes
 	into first_name (frappe recomputes full_name from the parts)."""
@@ -234,7 +241,7 @@ def update_profile(full_name: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
-def set_profile_photo(file_url: str | None = None) -> dict[str, Any]:
+def set_profile_photo(file_url: str | None = None) -> SetProfilePhotoResponse:
 	"""Set the signed-in user's photo to an uploaded image, or clear it."""
 	user = frappe.session.user
 	doc = frappe.get_doc("User", user)

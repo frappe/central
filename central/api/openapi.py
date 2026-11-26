@@ -40,11 +40,7 @@ OPERATOR_METHODS = frozenset(
 
 _SCHEMA_TYPES = {str: "string", int: "integer", float: "number", bool: "boolean"}
 
-_RESPONSES = {
-	"200": {
-		"description": "OK",
-		"content": {"application/json": {"schema": {"type": "object", "properties": {"message": {}}}}},
-	},
+_ERROR_RESPONSES = {
 	"401": {"description": "Missing or invalid API key"},
 	"403": {"description": "The token user lacks the capability"},
 }
@@ -54,14 +50,14 @@ _CHANGES_DATA_NOTE = "Changes data."
 
 
 def build_document() -> dict:
-	paths = {}
+	paths, models = {}, {}
 	for module_name in DOCUMENTED_MODULES:
 		module = importlib.import_module(f"central.api.{module_name}")
 		for function, hints in _documented_functions(module):
 			if f"{module_name}.{function.__name__}" in OPERATOR_METHODS:
 				continue
 			path = f"/api/method/{module.__name__}.{function.__name__}"
-			paths[path] = {_http_method(function): _operation(module_name, function, hints)}
+			paths[path] = {_http_method(function): _operation(module_name, function, hints, models)}
 
 	return {
 		"openapi": "3.1.0",
@@ -78,7 +74,8 @@ def build_document() -> dict:
 					"name": "Authorization",
 					"description": ("`token <api key>:<api secret>`. The caller's own capabilities apply."),
 				}
-			}
+			},
+			"schemas": {name: schema for name, (_model, schema) in sorted(models.items())},
 		},
 		"security": [{"apiKey": []}],
 		"tags": [{"name": name, "description": about} for name, about in DOCUMENTED_MODULES.values()],
@@ -104,7 +101,7 @@ def _is_json_return(annotation) -> bool:
 	if annotation in (None, type(None)):
 		return True
 
-	return bool(_schema(annotation))
+	return bool(_schema(annotation, {}))
 
 
 def _type_hints(function) -> dict:
@@ -120,8 +117,8 @@ def _http_method(function) -> str:
 	return "get" if "GET" in methods else "post"
 
 
-def _operation(module_name: str, function, hints: dict) -> dict:
-	properties, required = _arguments(function, hints)
+def _operation(module_name: str, function, hints: dict, models: dict) -> dict:
+	properties, required = _arguments(function, hints, models)
 	method = _http_method(function)
 	docstring = inspect.getdoc(function) or ""
 	summary = function.__name__.replace("_", " ").capitalize()
@@ -132,27 +129,54 @@ def _operation(module_name: str, function, hints: dict) -> dict:
 		"summary": summary,
 		"description": f"{docstring or summary}\n\n{note}",
 		"deprecated": False,
-		"responses": _RESPONSES,
+		"responses": _responses(hints.get("return"), models),
 		"x-mcp": {"requires_team": "team" in properties, "read_only": method == "get"},
 	}
-	operation.update(_payload(method, properties, required))
+	operation.update(_payload(method, properties, required, _request_model_name(function), models))
 
 	return operation
 
 
-def _arguments(function, hints: dict) -> tuple[dict, list]:
+def _responses(answer, models: dict) -> dict:
+	"""Frappe wraps the return value in `message`, and leaves it out when the function returns None."""
+	ok = {"description": "OK"}
+	if answer not in (None, type(None)):
+		message = {
+			"type": "object",
+			"properties": {"message": _answer_schema(answer, models)},
+			"required": ["message"],
+		}
+		ok["content"] = {"application/json": {"schema": message}}
+
+	return {"200": ok, **_ERROR_RESPONSES}
+
+
+def _answer_schema(answer, models: dict) -> dict:
+	"""A returned union is one of its types; only an argument's `str` member is a form fallback."""
+	members = typing.get_args(answer) if typing.get_origin(answer) in (typing.Union, types.UnionType) else ()
+	if len([member for member in members if member is not type(None)]) < 2:
+		return _schema(answer, models)
+
+	return {"anyOf": [_schema(member, models) or {"type": "null"} for member in members]}
+
+
+def _request_model_name(function) -> str:
+	return "".join(word.capitalize() for word in function.__name__.split("_")) + "Request"
+
+
+def _arguments(function, hints: dict, models: dict) -> tuple[dict, list]:
 	properties, required = {}, []
 	for name, parameter in inspect.signature(function).parameters.items():
 		if parameter.kind in (parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD):
 			continue
-		properties[name] = _schema(hints.get(name, parameter.annotation))
+		properties[name] = _schema(hints.get(name, parameter.annotation), models)
 		if parameter.default is inspect.Parameter.empty:
 			required.append(name)
 
 	return properties, required
 
 
-def _payload(method: str, properties: dict, required: list) -> dict:
+def _payload(method: str, properties: dict, required: list, name: str, models: dict) -> dict:
 	if method == "get":
 		return {
 			"parameters": [
@@ -164,44 +188,88 @@ def _payload(method: str, properties: dict, required: list) -> dict:
 	schema = {"type": "object", "properties": properties}
 	if required:
 		schema["required"] = required
+	_add_model(models, name, name, schema)
 
-	return {"requestBody": {"content": {"application/json": {"schema": schema}}}}
+	return {"requestBody": {"content": {"application/json": {"schema": _reference(name)}}}}
 
 
-def _schema(annotation) -> dict:
+def _schema(annotation, models: dict) -> dict:
 	"""The JSON schema of a type hint, or `{}` for a missing hint or `Any`."""
+	if typing.is_typeddict(annotation):
+		return _model_schema(annotation, models)
+
 	origin = typing.get_origin(annotation) or annotation
 	arguments = typing.get_args(annotation)
 	if origin in (typing.Union, types.UnionType):
-		return _union_schema(arguments)
+		return _union_schema(arguments, models)
 	if origin is typing.Literal:
 		return {"type": "string", "enum": list(arguments)}
 	if origin in (list, tuple):
-		return _array_schema(arguments)
+		return _array_schema(arguments, models)
 	if origin is dict:
-		return {"type": "object"}
+		return _mapping_schema(arguments, models)
 
 	return {"type": _SCHEMA_TYPES[annotation]} if annotation in _SCHEMA_TYPES else {}
 
 
-def _array_schema(arguments: tuple) -> dict:
+def _array_schema(arguments: tuple, models: dict) -> dict:
 	schema = {"type": "array"}
 	if arguments and arguments[0] is not Ellipsis:
-		items = _schema(arguments[0])
+		items = _schema(arguments[0], models)
 		if items:
 			schema["items"] = items
 
 	return schema
 
 
-def _union_schema(arguments: tuple) -> dict:
+def _union_schema(arguments: tuple, models: dict) -> dict:
 	# `str` beside another type is the form-encoded fallback; a JSON caller sends the other type.
 	members = [member for member in arguments if member not in (str, type(None))] or [str]
-	schema = _schema(members[0])
+	schema = _schema(members[0], models)
 	if schema and type(None) in arguments:
-		schema["type"] = [schema["type"], "null"]
+		return _nullable(schema)
 
 	return schema
+
+
+def _nullable(schema: dict) -> dict:
+	if "type" in schema:
+		return {**schema, "type": [schema["type"], "null"]}
+
+	return {"anyOf": [schema, {"type": "null"}]}
+
+
+def _mapping_schema(arguments: tuple, models: dict) -> dict:
+	values = _schema(arguments[1], models) if len(arguments) == 2 else {}
+	return {"type": "object", "additionalProperties": values} if values else {"type": "object"}
+
+
+def _model_schema(model, models: dict) -> dict:
+	"""A reference to `model`, a TypedDict, whose schema is added to `models` the first time."""
+	name = model.__name__
+	if name not in models:
+		_add_model(models, name, model, {})
+		hints = typing.get_type_hints(model)
+		schema = {"type": "object", "properties": {key: _schema(hint, models) for key, hint in hints.items()}}
+		if model.__required_keys__:
+			schema["required"] = sorted(model.__required_keys__)
+		if model.__doc__:
+			schema["description"] = inspect.cleandoc(model.__doc__)
+		models[name] = (model, schema)
+	elif models[name][0] is not model:
+		raise TypeError(f"Two response models are named {name}.")
+
+	return _reference(name)
+
+
+def _add_model(models: dict, name: str, owner, schema: dict) -> None:
+	if name in models and models[name][0] is not owner:
+		raise TypeError(f"Two models are named {name}.")
+	models[name] = (owner, schema)
+
+
+def _reference(name: str) -> dict:
+	return {"$ref": f"#/components/schemas/{name}"}
 
 
 @frappe.whitelist(methods=["GET"])
