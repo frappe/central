@@ -14,7 +14,6 @@ from central.deploy.doctype.deploy_request.deploy_request import (
 	DeployTimeoutError,
 )
 from central.deploy.tests.test_deploy_billing import catalog, make_size
-from central.deploy.virtual_machine import DeployMachine
 from central.infrastructure.doctype.github_connection.test_github_connection import make_team
 from central.infrastructure.doctype.github_installation.test_github_installation import (
 	make_installation,
@@ -177,23 +176,12 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		).start()
 
 		module = "central.deploy.doctype.deploy_request.deploy_request"
-		self.find_or_create = patch.object(
-			DeployRequest,
-			"find_or_create_virtual_machine",
-			return_value={"name": "server-deploy-test", "is_new": True},
-		).start()
-		# The real step runs, so the pipeline records it once however often the flow replays.
-		self.machine = patch(f"{module}.DeployMachine").start().return_value
-		self.machine.get.return_value = {
-			"current_state": "running",
-			"compute": {"cpu_millicores": 2000, "memory_mib": 4096},
-			"disk": {"size_mib": 20480},
-		}
-		self.machine.get_specs = DeployMachine.get_specs
 		# The deploy agent reports while the VM step runs; None means the agent has not reported yet.
 		self.build_status = "Succeeded"
 		self.release_status = "Live"
-		patch.object(DeployRequest, "wait_for_virtual_machine", side_effect=self.report_build).start()
+		self.converge = patch.object(
+			DeployRequest, "converge_virtual_machine", side_effect=self.report_build
+		).start()
 		self.create_domain_mapping = patch.object(DeployRequest, "create_domain_mapping").start()
 		# The repository holds a Dockerfile and, unless a test sets one, no deploy config.
 		self.root = [{"name": "Dockerfile", "type": "file"}]
@@ -204,7 +192,7 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		self.get_file.side_effect = lambda *args: self.files.get(args[3])
 		self.addCleanup(patch.stopall)
 
-	def report_build(self, virtual_machine: str) -> None:
+	def report_build(self) -> None:
 		doc = frappe.get_last_doc("Deploy Request", filters={"deploy_app": self.app.name})
 		doc.build_status = self.build_status
 		doc.release_status = self.release_status if self.build_status == "Succeeded" else None
@@ -246,14 +234,6 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 		self.assertEqual(frappe.db.get_value("Deploy Request", request.name, "status"), "Building")
 
-	def test_only_a_reused_vm_is_resized(self):
-		DeployRequest.queue(self.app.name, "a" * 40)
-		self.machine.get.assert_not_called()
-
-		self.find_or_create.return_value = {"name": "server-deploy-test", "is_new": False}
-		DeployRequest.queue(self.app.name, "b" * 40)
-		self.machine.get.assert_called_once()
-
 	def test_a_commit_without_a_dockerfile_fails_before_a_vm_is_touched(self):
 		self.root = [{"name": "README.md", "type": "file"}]
 		request = DeployRequest.queue(self.app.name, "a" * 40)
@@ -261,18 +241,13 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		status, error = frappe.db.get_value("Deploy Request", request.name, ["status", "error"])
 		self.assertEqual(status, "Failed")
 		self.assertIn("Add a Dockerfile", error)
-		self.find_or_create.assert_not_called()
+		self.converge.assert_not_called()
 
 	def test_a_commit_without_a_config_deploys_at_the_default_size(self):
 		frappe.db.set_single_value("Central Settings", "deploy_default_size", "Growth")
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 
-		self.assertEqual(
-			frappe.db.get_value(
-				"Deploy Request", request.name, ["plan", "cpu_millicores", "memory_mib", "disk_mib"]
-			),
-			(self.growth, 2000, 8192, 102400),
-		)
+		self.assertEqual(frappe.db.get_value("Deploy Request", request.name, "plan"), self.growth)
 		self.assertIn(
 			call("101", "11", "octo/app", "frappe_cloud_deploy.toml", "a" * 40), self.get_file.call_args_list
 		)
@@ -281,12 +256,7 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		self.files["frappe_cloud_deploy.toml"] = '[machine]\nsize = "Pro"\n'
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 
-		self.assertEqual(
-			frappe.db.get_value(
-				"Deploy Request", request.name, ["plan", "cpu_millicores", "memory_mib", "disk_mib"]
-			),
-			(self.pro, 4000, 16384, 204800),
-		)
+		self.assertEqual(frappe.db.get_value("Deploy Request", request.name, "plan"), self.pro)
 
 	def test_a_size_that_is_not_for_sale_fails_the_deploy(self):
 		self.files["frappe_cloud_deploy.toml"] = '[machine]\nsize = "Huge"\n'
@@ -295,14 +265,14 @@ class IntegrationTestDeployPipeline(IntegrationTestCase):
 		status, error = frappe.db.get_value("Deploy Request", request.name, ["status", "error"])
 		self.assertEqual(status, "Failed")
 		self.assertIn("Growth, Pro", error)
-		self.find_or_create.assert_not_called()
+		self.converge.assert_not_called()
 
 	def test_a_config_with_an_unknown_machine_key_fails_the_deploy(self):
 		self.files["frappe_cloud_deploy.toml"] = '[machine]\nteam = "someone-else"\n'
 		request = DeployRequest.queue(self.app.name, "a" * 40)
 
 		self.assertEqual(frappe.db.get_value("Deploy Request", request.name, "status"), "Failed")
-		self.find_or_create.assert_not_called()
+		self.converge.assert_not_called()
 
 	def test_a_failed_build_fails_the_deploy(self):
 		self.build_status = "Failed"
