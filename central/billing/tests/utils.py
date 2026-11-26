@@ -118,7 +118,7 @@ class BillingTestCase(IntegrationTestCase):
 
 	def run(self, result=None):
 		before = {doctype: set(frappe.get_all(doctype, pluck="name")) for doctype in self._TRACKED}
-		before["Comment"] = set(_payment_method_comments())
+		before["Comment"] = set(_swept_comments())
 		gateways = self._snapshot_gateways()
 		try:
 			# Billing Settings may point at a real accounting site. A test opts into the sync
@@ -182,8 +182,8 @@ class BillingTestCase(IntegrationTestCase):
 			frappe.db.delete(doctype, {"name": ["in", added]})
 		if removed_teams:
 			frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", removed_teams]})
-		# Notices, refund and release notes, and the "Deleted" note of a deleted method.
-		comments = list(set(_payment_method_comments()) - before["Comment"])
+		# Notices, refund and release notes, the "Deleted" note of a deleted method, and usage month notes.
+		comments = list(set(_swept_comments()) - before["Comment"])
 		if comments:
 			frappe.db.delete("Comment", {"name": ["in", comments]})
 
@@ -233,8 +233,10 @@ def _delete_attached_files(doctype: str, names: list[str]) -> None:
 		frappe.delete_doc("File", file, ignore_permissions=True, force=True)
 
 
-def _payment_method_comments() -> list[str]:
-	return frappe.get_all("Comment", filters={"reference_doctype": "Payment Method"}, pluck="name")
+def _swept_comments() -> list[str]:
+	return frappe.get_all(
+		"Comment", filters={"reference_doctype": ["in", ["Payment Method", "Usage Month"]]}, pluck="name"
+	)
 
 
 # frappe.enqueue doesn't run inline in tests unless now=True, so patch it with this to

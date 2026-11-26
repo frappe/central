@@ -174,6 +174,19 @@ COMMITMENT = StateMachine(
 	},
 )
 
+# A later value for a day an invoice already billed (ADR 0028).
+USAGE_MONTH_CORRECTION = StateMachine(
+	"Usage Month Correction",
+	"status",
+	{
+		"Open": {"Billed", "Credit Due", "Written Off"},
+		"Billed": {"Open"},  # a reissued invoice gives it back, so the replacement bills it again
+		"Credit Due": {"Credited"},  # an operator issued the credit note
+		"Credited": set(),  # terminal
+		"Written Off": set(),  # terminal — no invoice billed it within its window
+	},
+)
+
 _MACHINES = {
 	m.doctype: m
 	for m in (
@@ -187,6 +200,7 @@ _MACHINES = {
 		BILLING_RUN,
 		RERATING_RUN,
 		COMMITMENT,
+		USAGE_MONTH_CORRECTION,
 	)
 }
 

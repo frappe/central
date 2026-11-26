@@ -267,7 +267,8 @@ class MonthRow:
 			frappe.db.delete(CORRECTION, {"name": pending.name})
 			self.corrections.remove(pending)
 		if frappe.utils.flt(row["quantity"]) != frappe.utils.flt(billed_value):
-			self._add_correction(day, row, report, billed_value, billed.report if billed else current.report)
+			original = billed.report if billed else current.report
+			self._add_correction(day, row, report, billed_value, original, current.invoice)
 		return CORRECTED
 
 	def _correction(self, day: int, statuses: tuple):
@@ -275,7 +276,9 @@ class MonthRow:
 		found = [c for c in self.corrections if c.day == day and c.status in statuses]
 		return found[-1] if found else None
 
-	def _add_correction(self, day: int, row: dict, report, billed_value: float, original) -> None:
+	def _add_correction(self, day: int, row: dict, report, billed_value: float, original, invoice) -> None:
+		# The dispute window runs from the invoice that billed the day, whichever invoice bills the correction.
+		billed_on = frappe.db.get_value("Invoice", invoice, "creation")
 		correction = frappe.get_doc(
 			{
 				"doctype": CORRECTION,
@@ -289,6 +292,7 @@ class MonthRow:
 				"original_report": original,
 				"report": report,
 				"as_of": row.get("as_of"),
+				"billed_invoice_date": frappe.utils.getdate(billed_on) if billed_on else None,
 				"status": OPEN if frappe.utils.flt(row["quantity"]) > billed_value else CREDIT_DUE,
 			}
 		)

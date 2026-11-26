@@ -285,6 +285,7 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, setup 
 | hourly | `revenue.usage_recount.recount_changed` | fold Usage Days and recounted rollups an older worker wrote after the fold patch (`usage_fold.fold_stragglers`), then recount the usage months whose day slots changed since the last run, as page jobs |
 | cron `30 17 * * *` (12:00 UTC) | `revenue.usage_checks.sample_storage` | only while Cargo pushes storage (`Service.central_reads` off): read every billed bucket and each billed server's backup bucket once, in pages of 100 queued as `sample_team_page` and `sample_bundled_page`, with the same readers `storage_bridge` bills with, and keep the reading as a Usage Check for the next day's comparison |
 | cron `30 7 * * *` (02:00 UTC) | `revenue.usage_checks.check_yesterday` | only for a service that pushes: mark a storage day whose stored peak is more than 1 % below Central's sample, read each AI team's landing day from Grove with `grove_bridge.read_days` (failures logged as "Usage check: N AI team(s) not read") and mark a model that differs by more than 0.01 USD, then delete Usage Checks older than 7 days; writes no day value |
+| daily | `revenue.usage_corrections.write_off_expired` | mark Written Off each Open Usage Month Correction whose day was billed more than 90 days ago, in pages of 500 through `platform.jobs.each_isolated`, with a comment on its Usage Month |
 | daily | `revenue.usage_ledger.fill_missing_days` | give a Level subject with no reading for a UTC day that ended 48 hours ago its last reading, marked estimated, under one Estimated Usage Report per service and run |
 | hourly | `ingester.erpnext_sync.retry_failed_syncs` | Automatic mode only: retry Sales Invoice push (backoff window elapsed), and send at most 100 paid invoices that no sync tried, paid more than an hour ago |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
@@ -724,7 +725,20 @@ Usage months (ADR 0028, #207): every writer stores a line in the day slot of its
   → usage_month.write_lines locks the batch's rows in name order; a lock refused under snapshot
     isolation returns the whole batch as conflicts, which the service sends again
   → an unbilled day takes a newer value under ADR 0026's rules; a billed day never changes: a
-    later value is kept as a Usage Month Correction (Open when higher, Credit Due when lower)
+    later value is kept as a Usage Month Correction (Open when higher, Credit Due when lower);
+    a newer value replaces an Open or Credit Due correction of the same day
+  → the draft (usage_corrections.rate_open) rates each Open correction against the rated row
+    that billed its day: billable quantity with the new value minus billable quantity with the
+    values billed, at that row's locked rate, allowance and AI rate (a live-priced family takes
+    the rate on the invoice line); a positive delta is one line on the next invoice, "Correction
+    · <subject> · 14 Mar 2026 · report <original> → <new>", with charge_date the corrected day,
+    and the invoice stamps the correction Billed; a reissue reopens it and bills it again
+  → a delta of 0 or less goes Credit Due and never makes a negative line: readiness M4 lists it
+    until an operator issues the credit note and marks it Credited (Usage Month form, Mark
+    Credited); nothing lowers a bill automatically
+  → a correction bills only within 90 days of the invoice that billed its day
+    (billed_invoice_date); a month below the minimum keeps it Open; the daily
+    write_off_expired marks one past the window Written Off and comments on the Usage Month
   → a reused subject name bills each day on the subscription whose row first held it
   → usage_recount rates one row per subscription, resource type, dimension and month (the
     rated row, counted_at set) from the open day slots; invoicing reads rated rows and Usage
@@ -968,6 +982,7 @@ The team and the signed-in user are counted apart, and either one can lock. A us
 | A line's Project breakdown is missing/wrong | `generate._tag_projects`/`_resource_project_map` — is the resource's Subscription tagged, is its Project `enabled`? A disabled Project's lines carry no tag by design (§2.1); check `Invoice Line Item.project`/`project_title` on a real invoice, or the same fields on a forecast line |
 | Tagging a subscription into a Project is refused | `Subscription.validate_project` — same-team? Project `enabled`? `catalog.subscriptions.enforce_project_headroom` — would the tag push the Project's committed run-rate (`project_run_rate`) past its `spending_limit`? (blocks new tagging only, §2.1) |
 | ERPNext out of sync | `erpnext_sync` (async, never rolls back the invoice; check retry backoff) |
+| A late usage value was not billed | the Usage Month's Corrections tab: Open waits for the next invoice (a month below the minimum keeps it Open); Credit Due did not raise the bill (readiness M4, an operator issues the credit note); Written Off came more than 90 days after the invoice that billed the day; Billed names the invoice. A day a reissue gave back is billed with its own value first |
 | A server's public IPv4 is not on the invoice | readiness M3; is there a `network` Usage Month for the server with that day filled (`subject` = server name)? Did the server's subscription have an open segment that day (a trial or a day paused throughout bills nothing)? Is the day before `Service.bill_from` (written off)? |
 | Draft fails with "unpriced metered usage: IP" | the `public-ipv4` plan has no Catalog Rate for the team's currency and the server's region; add it, then run the draft again: every unbilled IPv4 day of the open month bills |
 | Catalog masters missing | `taxonomy_setup.ensure_catalog_masters` (runs on install/migrate/before_tests) |

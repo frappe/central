@@ -11,7 +11,7 @@ from frappe.query_builder import Case
 from central.billing.doctype.billing_profile.billing_profile import get_team_currency
 from central.billing.doctype.billing_run_team.billing_run_team import FAILED
 from central.billing.platform.jobs import each_isolated
-from central.billing.revenue import usage_fold, usage_month
+from central.billing.revenue import usage_corrections, usage_fold, usage_month
 from central.billing.revenue.exchange_rates import fix_month_rate
 from central.billing.revenue.metering import metered_plan_for, rollup_terms
 from central.billing.revenue.rollup_updates import recounted_allowance, rerated
@@ -36,10 +36,11 @@ class MonthCount:
 
 @dataclass
 class Counted:
-	"""The rated month rows and the days, as a mask per month row, that a draft billed."""
+	"""The rated month rows, the days as a mask per month row, and the corrections that a draft billed."""
 
 	months: list[str] = field(default_factory=list)
 	days: dict[str, int] = field(default_factory=dict)
+	corrections: usage_corrections.Corrections = field(default_factory=usage_corrections.Corrections)
 
 	def add(self, written: MonthCount) -> None:
 		self.months.append(written.carrier)
@@ -79,11 +80,12 @@ def recount_team(team: str, period_end) -> Counted:
 		# A month below zero bills nothing. Its days stay unbilled, so the credit goes into the next month.
 		if written and written.month == month and written.quantity >= 0:
 			counted.add(written)
+	counted.corrections = usage_corrections.rate_open(team)
 	return counted
 
 
-def stamp_invoice(counted: Counted, invoice: str) -> None:
-	"""Mark the months and days the invoice billed."""
+def stamp_invoice(counted: Counted, invoice: str, team: str) -> None:
+	"""Mark the months, days and corrections the invoice billed."""
 	if counted.months:
 		table = frappe.qb.DocType(DOCTYPE)
 		# What the line billed: the quantity above the allowance, never below zero.
@@ -95,6 +97,7 @@ def stamp_invoice(counted: Counted, invoice: str) -> None:
 			.where(table.name.isin(counted.months) & table.invoice.isnull())
 		).run()
 	usage_month.stamp_days(counted.days, invoice)
+	usage_corrections.stamp(counted.corrections, invoice, team)
 
 
 def release_invoice(invoice: str) -> None:
@@ -108,6 +111,7 @@ def release_invoice(invoice: str) -> None:
 	).run()
 	team, created = frappe.db.get_value("Invoice", invoice, ["team", "creation"])
 	usage_month.release_days(invoice, team, created)
+	usage_corrections.release(invoice, team)
 
 
 def recount_month(
@@ -174,7 +178,7 @@ def _write_month(meter, month: datetime.date, closed: set, final: bool) -> Month
 	rows = usage_month.locked_meter_months(meter.subscription, meter.resource_type, meter.dimension, month)
 	days = [day for row in rows for day in row.get_open_days() if _month_of(day.day) in (closed | {month})]
 	currency = get_team_currency(meter.team)
-	quantity = sum(_weight(day) for day in days)
+	quantity = sum(day_weight(day) for day in days)
 	counted = {
 		**_bundle(meter, days, quantity),
 		"resource_id": meter.subject,
@@ -342,7 +346,7 @@ def _next_month(month: datetime.date) -> datetime.date:
 	return _month_end(month) + datetime.timedelta(days=1)
 
 
-def _weight(day) -> float:
+def day_weight(day) -> float:
 	"""A Level day counts as its peak over the days in its own month; a Sum day as its total."""
 	quantity = frappe.utils.flt(day.quantity)
 	if day.aggregation != LEVEL:
@@ -355,7 +359,7 @@ def _bundle(meter, days: list, quantity: float) -> dict:
 	# A meter that records a daily bundle is billed by it, by design: it replaces a plan's
 	# monthly allowance, so a plan that ran part of the month or changed mid-month bills its days.
 	if any(frappe.utils.flt(day.included) for day in days):
-		return {"counted_allowance": quantity - _billable(days, quantity)}
+		return {"counted_allowance": quantity - billable_above_bundle(days, quantity)}
 	# A live-priced server meter has no allowance of its own, and one that has carried a daily
 	# bundle was billed by it, so a bundle gone to none clears either.
 	if meter.on_server and (_is_live(meter.resource_type) or _has_carried_bundle(meter)):
@@ -384,7 +388,7 @@ def _is_live(resource_type: str) -> bool:
 	return bool(plan and plan.pricing_mode == "Live")
 
 
-def _billable(days: list, quantity: float) -> float:
+def billable_above_bundle(days: list, quantity: float) -> float:
 	"""The month's quantity above the bundle: each Level day above its own, a Sum month above its share."""
 	if all(day.aggregation == LEVEL for day in days):
 		return sum(

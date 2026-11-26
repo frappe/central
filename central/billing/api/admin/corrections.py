@@ -49,3 +49,20 @@ def refund_part(invoice: str, amount: float, destination: str, reason: str) -> d
 	if not (reason or "").strip():
 		frappe.throw(_("Give a reason for the refund."), frappe.ValidationError)
 	return refund(invoice, amount, reason.strip(), destination=destination)
+
+
+@frappe.whitelist(methods=["POST"])
+def mark_usage_credited(correction: str, reason: str) -> dict:
+	"""Record that the credit note a lower usage value asked for was issued."""
+	authz.require_operator()
+	from central.billing.revenue.usage_corrections import mark_credited
+
+	if not (reason or "").strip():
+		frappe.throw(
+			_("Name the credit note or refund that settled this correction."), frappe.ValidationError
+		)
+	mark_credited(correction, reason.strip())
+	return {
+		"correction": correction,
+		"status": frappe.db.get_value("Usage Month Correction", correction, "status"),
+	}

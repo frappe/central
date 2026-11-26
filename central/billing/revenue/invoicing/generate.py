@@ -272,6 +272,7 @@ def rate_team_period(
 	metered: list[dict] | None = None,
 	explain: bool = False,
 	changes=None,
+	adjustments: list[dict] | None = None,
 ):
 	"""What the team would bill for the period, across every cluster. Reads only.
 
@@ -282,6 +283,8 @@ def rate_team_period(
 	unset and bills the rollups that landed; a projection supplies estimated usage,
 	because a period that has not happened has no rollups and would otherwise be rated
 	as though the team used nothing.
+
+	`adjustments` are corrections of days an earlier invoice billed, each its own line.
 	"""
 	from central.billing.revenue.metering import metered_line_items_for_clusters
 
@@ -295,6 +298,7 @@ def rate_team_period(
 		)
 	else:
 		lines += list(metered)
+	lines += list(adjustments or [])
 	if not lines:
 		return None
 	return _rate(team, lines, period_start, period_end)
@@ -318,7 +322,7 @@ def _generate_team_invoice(team: str, period_start, period_end):
 
 	# Usage months are recomputed from the days first; the invoice then marks exactly what it billed.
 	counted = usage_recount.recount_team(team, period_end)
-	rated = rate_team_period(team, period_start, period_end)
+	rated = rate_team_period(team, period_start, period_end, adjustments=counted.corrections.lines)
 	if not rated:
 		record_outcome(team, period_end, NOTHING_TO_BILL, reason="Nothing billable in this month.")
 		return None
@@ -327,7 +331,7 @@ def _generate_team_invoice(team: str, period_start, period_end):
 		return None
 
 	name = _insert_invoice(rated.payload)
-	usage_recount.stamp_invoice(counted, name)
+	usage_recount.stamp_invoice(counted, name, team)
 	commitments.mark_breached(rated.commitment)
 	record_outcome(team, period_end, INVOICED, invoice=name)
 	record_team_event(team, "Invoice Generated", "Invoice", reason=name, amount=rated.payload["total"])
