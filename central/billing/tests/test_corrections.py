@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 """Cancelling a paid invoice: a credit note, and each part of the payment given back."""
 
+import json
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -15,6 +16,7 @@ from central.billing.tests.accounting_fake import (
 	billing_team,
 	configure_accounting,
 	requires_accounting_system,
+	sync_mode,
 )
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
@@ -25,7 +27,7 @@ SALES_INVOICE = "SINV-ORIGINAL"
 @requires_accounting_system
 class CorrectionsTestCase(IntegrationTestCase):
 	def setUp(self):
-		conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
+		conf = sync_mode()
 		conf.start()
 		self.addCleanup(conf.stop)
 		configure_accounting()
@@ -307,6 +309,8 @@ class TestRefundPart(CorrectionsTestCase):
 		self.assertEqual((note["return_against"], note["naming_series"]), (SALES_INVOICE, "CN/.TFY./.#####"))
 		self.assertEqual([(i["qty"], i["rate"]) for i in note["items"]], [(-1, 1000)])
 		self.assertTrue(note["taxes"])
+		printed = json.loads(note["frappe_cloud_invoice"])
+		self.assertEqual((printed["type"], printed["items"][0]["amount"]), ("Refund", 1000))
 		self.assertEqual(refund.credit_note_id, self.remote.posted[0][1])
 
 		out = next(p for p in self.remote.posts("Payment Entry") if p.get("reference_no") == refund.name)
@@ -447,10 +451,10 @@ class TestLateCaptureRefund(CorrectionsTestCase):
 		self.assertEqual(self._payment_entries_for(refund), [])
 
 	def test_the_card_payment_in_the_books_is_never_it(self):
-		from central.billing.ingester.erpnext_sync import _card_attempt
+		from central.billing.ingester.payment_records import card_attempt
 
 		inv, _refund = self._late_refund(status="Failed")
-		paid_by = _card_attempt(frappe.get_doc("Invoice", inv))
+		paid_by = card_attempt(frappe.get_doc("Invoice", inv))
 		self.assertEqual(paid_by.gateway_transaction_id, "pi_card")
 
 	def test_a_part_back_to_the_card_never_takes_it_after_its_refund_failed(self):

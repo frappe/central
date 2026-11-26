@@ -121,6 +121,7 @@ def get_user_preferences(team: str) -> dict:
 		"digest_hour": NotificationDigestSetting.get_hour(user, team),
 		"preferences": preferences,
 		"catalog": _event_catalog(user, team),
+		"is_team_owner": frappe.db.get_value("Team", team, "owner_user") == user,
 	}
 
 

@@ -4,7 +4,13 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.activity import server_activity
-from central.api.servers import get_rescue_state, set_rescue_mode, set_termination_protection
+from central.api.servers import (
+	get_idle_sleep,
+	get_rescue_state,
+	set_idle_sleep,
+	set_rescue_mode,
+	set_termination_protection,
+)
 from central.api.ssh_keys import set_server_ssh_keys
 from central.errors import AtlasConnectionError, AtlasRejected
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
@@ -112,7 +118,9 @@ class TestServerAccess(IntegrationTestCase):
 		self.server_client.set_termination_protection.return_value = {"is_termination_protected": True}
 		frappe.set_user(self.developer)
 
-		set_termination_protection(self.team, self.server.name, enabled=1)
+		# Frappe skips Versions under tests unless a save asks for them.
+		with patch.object(frappe, "in_test", False):
+			set_termination_protection(self.team, self.server.name, enabled=1)
 
 		events = server_activity(team=self.team, resource_id=self.server.resource_id)["events"]
 		self.assertEqual(events[0]["event"], "server.updated")
@@ -228,3 +236,93 @@ class TestServerAccess(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self.server.set_rescue_mode(True)
 		self.server_client.set_rescue_mode.assert_not_called()
+
+	def _remote_compute(self, is_internal: bool = True, **changes) -> None:
+		self.enterContext(patch.object(VirtualMachine, "is_idle_sleep_available", return_value=is_internal))
+		self.server_client.tenant_id = 42
+		self.server_client.get_vm.return_value = {
+			"id": "vm-access",
+			"tenant_id": 42,
+			"compute": {
+				"sleep_after_idle_seconds": 0,
+				"deep_sleep_after_idle_seconds": 0,
+				"coma_after_idle_seconds": 0,
+				"is_burstable": False,
+				"baseline_cpu_millicores": 0,
+				"sliding_window_minutes": 0,
+				**changes,
+			},
+		}
+
+	def test_idle_sleep_sends_only_the_idle_time(self):
+		self._remote_compute(deep_sleep_after_idle_seconds=7200)
+		frappe.set_user(self.developer)
+
+		set_idle_sleep(seconds=1800, team=self.team, resource_id=self.server.name)
+
+		self.server_client.set_compute_settings.assert_called_once_with(
+			"vm-access", {"sleep_after_idle_seconds": 1800}
+		)
+		self.server_client.vm_action.assert_not_called()
+
+	def test_idle_sleep_off_also_turns_deep_sleep_and_coma_off(self):
+		self._remote_compute(
+			sleep_after_idle_seconds=1800, deep_sleep_after_idle_seconds=7200, coma_after_idle_seconds=86400
+		)
+		frappe.set_user(self.developer)
+
+		set_idle_sleep(seconds=0, team=self.team, resource_id=self.server.name)
+
+		self.server_client.set_compute_settings.assert_called_once_with(
+			"vm-access",
+			{"sleep_after_idle_seconds": 0, "deep_sleep_after_idle_seconds": 0, "coma_after_idle_seconds": 0},
+		)
+
+	def test_a_viewer_reads_idle_sleep_but_cannot_change_it(self):
+		self._remote_compute(sleep_after_idle_seconds=3600)
+		frappe.set_user(self.viewer)
+
+		self.assertEqual(
+			get_idle_sleep(team=self.team, resource_id=self.server.name), {"sleep_after_idle_seconds": 3600}
+		)
+		with self.assertRaises(frappe.PermissionError):
+			set_idle_sleep(seconds=1800, team=self.team, resource_id=self.server.name)
+		self.server_client.set_compute_settings.assert_not_called()
+
+	def test_idle_sleep_refuses_another_team(self):
+		frappe.set_user(self.developer)
+		with self.assertRaises(frappe.PermissionError):
+			set_idle_sleep(seconds=1800, team=self.other_team, resource_id=self.server.name)
+		self.server_client.set_compute_settings.assert_not_called()
+
+	def test_idle_sleep_refuses_a_time_outside_the_range(self):
+		self._remote_compute()
+		frappe.set_user(self.developer)
+		for seconds in (60, 25 * 60 * 60, True):
+			with self.subTest(seconds=seconds), self.assertRaises(frappe.ValidationError):
+				set_idle_sleep(seconds=seconds, team=self.team, resource_id=self.server.name)
+		self.server_client.set_compute_settings.assert_not_called()
+
+	def test_idle_sleep_is_refused_outside_internal_teams(self):
+		"""Customers get sleep when idle once a sleeping server costs them less."""
+		self._remote_compute(is_internal=False)
+		frappe.set_user(self.developer)
+		for request in (
+			lambda: get_idle_sleep(team=self.team, resource_id=self.server.name),
+			lambda: set_idle_sleep(seconds=1800, team=self.team, resource_id=self.server.name),
+		):
+			with self.assertRaises(frappe.PermissionError):
+				request()
+		self.server_client.get_vm.assert_not_called()
+		self.server_client.set_compute_settings.assert_not_called()
+
+	def test_a_free_trial_owner_cannot_change_idle_sleep(self):
+		"""A trial server's sleep belongs to the trial, and conversion turns it off."""
+		self._remote_compute(sleep_after_idle_seconds=900)
+		frappe.set_user(self.developer)
+		with (
+			patch.object(VirtualMachine, "is_access_locked", return_value=True),
+			self.assertRaises(frappe.PermissionError),
+		):
+			set_idle_sleep(seconds=0, team=self.team, resource_id=self.server.name)
+		self.server_client.set_compute_settings.assert_not_called()

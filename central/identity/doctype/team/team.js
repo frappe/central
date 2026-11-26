@@ -42,6 +42,7 @@ frappe.ui.form.on("Team", {
 		if (frappe.user.has_role("System Manager")) {
 			frm.add_custom_button(__("Grant Credit"), () => grant_credit(frm), actions);
 			frm.add_custom_button(__("Adjust Credit"), () => adjust_credit(frm), actions);
+			frm.add_custom_button(__("Sync to Helpdesk"), () => sync_helpdesk_customer(frm), actions);
 			frm.add_custom_button(__("Impersonate Team Owner"), () => impersonate_team_owner(frm), actions);
 			if (frm.doc.status === "Active") {
 				frm.add_custom_button(__("Suspend Team"), () => suspend_team(frm), actions);
@@ -56,6 +57,12 @@ frappe.ui.form.on("Team", {
 		}
 	},
 });
+
+function sync_helpdesk_customer(frm) {
+	frm.call("sync_helpdesk_customer", {}, () => {
+		frappe.show_alert({ message: __("Team synced to Helpdesk"), indicator: "green" }, 5);
+	});
+}
 
 function impersonate_team_owner(frm) {
 	frappe.prompt(

@@ -48,7 +48,7 @@ website_user_home_page = "dashboard"
 # Apps
 # ------------------
 
-# required_apps = []
+required_apps = ["cloudtoolkit"]
 
 add_to_apps_screen = [
 	{
@@ -82,6 +82,11 @@ add_to_apps_screen = [
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+	"Billing Profile": "public/js/accounting_sync.js",
+	"Credit Ledger Entry": "public/js/accounting_sync.js",
+	"Invoice": "public/js/accounting_sync.js",
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -135,6 +140,8 @@ after_install = [
 	"central.infrastructure.doctype.blocked_domain.blocked_domain.seed_regional_domains",
 	"central.infrastructure.doctype.image_offering.image_offering.ensure_default_offerings",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.services.doctype.service.service.ensure_services",
+	"central.billing.revenue.public_ipv4_usage.start_on_install",
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
@@ -190,11 +197,16 @@ after_install = [
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }
 
+persistent_cache_keys = ["deploy-log:*"]
+
 # Document Events
 # ---------------
 # Hook on document methods and events
 
 doc_events = {
+	"Notification Log": {
+		"after_insert": "central.notification.failed_email.email_admins_when_owner_email_fails",
+	},
 	"User": {
 		"validate": "central.users.validate_user_image",
 		"after_insert": "central.users.grant_central_user_role",
@@ -220,6 +232,7 @@ doc_events = {
 			"Refund",
 			"Credit Ledger Entry",
 			"Credit Wallet",
+			"Usage Day",
 			"Usage Rollup",
 			"Webhook Event",
 			"Billing Event",
@@ -280,6 +293,12 @@ scheduler_events = {
 		],
 		# 09:00 system time (Asia/Kolkata): remind INR teams to top up before the payment date.
 		"0 9 * * *": ["central.billing.payments.top_up_reminders.run_top_up_reminders"],
+		# 17:30 IST is 12:00 UTC: Central samples each bucket once a day to check what Cargo pushes.
+		"30 17 * * *": ["central.billing.revenue.usage_checks.sample_storage"],
+		# 07:30 IST is 02:00 UTC: yesterday has closed and Grove's late commits have landed.
+		"30 7 * * *": ["central.billing.revenue.usage_checks.check_yesterday"],
+		# 08:00 IST on the 1st: usage days are UTC, and the UTC month closes at 05:30 IST.
+		"0 8 1 * *": ["central.billing.revenue.invoicing.draft_monthly_invoices"],
 		"*/5 * * * *": [
 			# Credit a recent top-up whose callback and webhook are late.
 			"central.billing.payments.reconciliation.reconcile_recent_top_up_orders",
@@ -287,6 +306,7 @@ scheduler_events = {
 			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",
 			"central.infrastructure.doctype.site.site.record_ready_sites",
 			"central.infrastructure.doctype.site.site.poll_site_renames",
+			"central.infrastructure.doctype.site.site.retry_refused_renames",
 			"central.infrastructure.doctype.vm_snapshot.vm_snapshot.sync_pending_snapshots",
 			"central.infrastructure.doctype.frappemail_service.frappemail_service.refill_mailboxes",
 			"central.services.doctype.ai_trial_key.ai_trial_key.refill_trial_keys",
@@ -314,12 +334,18 @@ scheduler_events = {
 		"central.billing.revenue.gst_status.run_gst_status_refresh",
 		"central.billing.ingester.customer.sync_pending_profiles",
 		"central.billing.ingester.advance.sync_pending_advances",
-		"central.billing.revenue.storage_usage.record_storage_usage",
+		"central.billing.revenue.usage_ledger.fill_missing_days",
+		"central.billing.revenue.usage_ledger.prune_old_days",
+		"central.services.doctype.deleted_bucket.deleted_bucket.prune_deleted_buckets",
 		"central.billing.platform.invariants.run_invariant_audit",
 		"central.billing.payments.reconciliation.recheck_completed_refunds",
 	],
 	"hourly": [
 		"central.billing.revenue.invoicing.collect_due_invoices",
+		"central.billing.revenue.storage_bridge.read_storage_usage",
+		"central.billing.revenue.grove_bridge.read_ai_usage",
+		"central.billing.revenue.public_ipv4_usage.read_public_ipv4",
+		"central.billing.revenue.usage_recount.recount_changed",
 		"central.billing.payments.collection.collect_on_payment_date",
 		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
 		"central.billing.payments.reconciliation.run_reconciliation",
@@ -331,7 +357,6 @@ scheduler_events = {
 		"central.notification.digest.send_due_digests",
 	],
 	"monthly": [
-		"central.billing.revenue.invoicing.draft_monthly_invoices",
 		"central.billing.payments.payments.expire_payment_methods",
 	],
 }
@@ -339,6 +364,7 @@ scheduler_events = {
 after_migrate = [
 	"central.infrastructure.doctype.blocked_domain.blocked_domain.seed_regional_domains",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.services.doctype.service.service.ensure_services",
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.gateways.setup.ensure_gateway_records",
@@ -357,6 +383,7 @@ after_migrate = [
 # fixtures depend on — and apply the money constraints — before the suite runs.
 before_tests = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.services.doctype.service.service.ensure_services",
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
@@ -486,6 +513,8 @@ permission_query_conditions = {
 	"Team Service": "central.permissions.team_service_query_conditions",
 	"User Notification Preference": "central.permissions.user_notification_preference_query_conditions",
 	"VM Snapshot": "central.permissions.vm_snapshot_query_conditions",
+	"Deploy App": "central.permissions.deploy_app_query_conditions",
+	"Deploy Request": "central.permissions.deploy_request_query_conditions",
 	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_query_conditions"),
 }
 
@@ -507,6 +536,8 @@ has_permission = {
 	"Team Service": "central.permissions.team_service_has_permission",
 	"User Notification Preference": "central.permissions.user_notification_preference_has_permission",
 	"VM Snapshot": "central.permissions.vm_snapshot_has_permission",
+	"Deploy App": "central.permissions.deploy_app_has_permission",
+	"Deploy Request": "central.permissions.deploy_request_has_permission",
 	**dict.fromkeys(_BILLING_TEAM_RECORDS, "central.permissions.billing_record_has_permission"),
 }
 

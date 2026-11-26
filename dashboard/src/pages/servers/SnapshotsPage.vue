@@ -12,7 +12,7 @@ const initialSearch =
 	<ScrollArea class="h-full">
 		<SnapshotsPanel
 			:initial-search="initialSearch"
-			class="mx-auto w-full max-w-5xl px-6 pb-8 pt-3 md:pt-4 lg:pt-8"
+			class="mx-auto w-full max-w-5xl px-3 pb-8 pt-3 md:px-4 md:pt-4 lg:pt-8"
 		/>
 	</ScrollArea>
 </template>

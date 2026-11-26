@@ -1,7 +1,8 @@
 import type { CSSProperties } from 'vue'
 import type { VirtualMachineRow } from '@/composables/useServers'
-import { displayStatus } from '@/lib/status'
-import { formatMemory } from '@/lib/units'
+import { displayStatus, isSleeping } from '@/lib/status'
+import { __ } from '@/lib/translate'
+import { formatMemory, gigabytesToMegabytes } from '@/lib/units'
 import type { Region } from '@/types/Region'
 
 // Display mapping for the servers map: one place that turns a Virtual Machine's mirror
@@ -19,6 +20,7 @@ export interface ServerVisual {
 		| 'active'
 		| 'settingUp'
 		| 'paused'
+		| 'sleeping'
 		| 'stopped'
 		| 'broken'
 		| 'resizing'
@@ -27,6 +29,10 @@ export interface ServerVisual {
 	badgeTheme: BadgeTheme
 	/** CSS variable for the status dot, and for the motion ring around a pin. */
 	dot: string
+	/** Icon class shown in place of the status dot where there is room for it. */
+	icon?: string
+	/** The server rests, so its avatar fades. */
+	isDimmed?: boolean
 	motion: ServerMotion
 }
 
@@ -50,6 +56,15 @@ const VISUALS: Record<ServerVisual['key'], ServerVisual> = {
 		label: 'Paused',
 		badgeTheme: 'gray',
 		dot: 'var(--ink-gray-5)',
+		motion: 'none',
+	},
+	sleeping: {
+		key: 'sleeping',
+		label: __('Sleeping'),
+		badgeTheme: 'gray',
+		dot: 'var(--ink-gray-5)',
+		icon: 'lucide-moon',
+		isDimmed: true,
 		motion: 'none',
 	},
 	stopped: {
@@ -119,11 +134,15 @@ const STATUS_VISUAL: Record<string, ServerVisual> = {
 	Provisioning: VISUALS.settingUp,
 	Deploying: VISUALS.settingUp,
 	Paused: VISUALS.paused,
+	Sleeping: VISUALS.sleeping,
 	Stopped: VISUALS.stopped,
 	Failed: VISUALS.broken,
 }
 
 export function statusVisual(server: VirtualMachineRow): ServerVisual {
+	// A start restores a sleeping server's saved memory instead of booting it.
+	if (server.pending_action === 'Starting' && isSleeping(server))
+		return { ...VISUALS.settingUp, label: __('Waking') }
 	// A live action wins, so the row never looks like nothing happened.
 	if (server.pending_action) return pendingVisual(server.pending_action)
 	return STATUS_VISUAL[displayStatus(server)] ?? VISUALS.settingUp
@@ -135,6 +154,7 @@ export const STATUS_FILTERS: ServerVisual[] = [
 	VISUALS.settingUp,
 	VISUALS.resizing,
 	VISUALS.paused,
+	VISUALS.sleeping,
 	VISUALS.stopped,
 	VISUALS.broken,
 ]
@@ -145,7 +165,10 @@ export function specLine(server: VirtualMachineRow): string {
 	if (server.vcpus) parts.push(`${server.vcpus} vCPU`)
 	if (server.memory_megabytes)
 		parts.push(`${formatMemory(server.memory_megabytes)} RAM`)
-	if (server.disk_gigabytes) parts.push(`${server.disk_gigabytes} GB Disk`)
+	if (server.disk_gigabytes)
+		parts.push(
+			`${formatMemory(gigabytesToMegabytes(server.disk_gigabytes))} Disk`,
+		)
 	return parts.join(', ')
 }
 
@@ -517,4 +540,15 @@ export const hasCrowdedRegion = (rows: { cluster: string }[]): boolean => {
 		counts.set(row.cluster, (counts.get(row.cluster) ?? 0) + 1)
 
 	return [...counts.values()].some((count) => count > CROWDED_REGION_SIZE)
+}
+
+/** The image a server runs, with the Frappe release its build tracks, such as "Pilot · Version 16". */
+export function imageLabel(server?: VirtualMachineRow): string {
+	const branch = server?.frappe_version
+	if (!branch) return server?.image_title ?? ''
+	const release =
+		branch === 'develop'
+			? 'Nightly'
+			: `Version ${branch.match(/^version-(\d+)/)?.[1] ?? branch}`
+	return [server?.image_title, release].filter(Boolean).join(' · ')
 }

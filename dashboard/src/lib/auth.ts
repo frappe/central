@@ -56,6 +56,7 @@ type FrappeError = Error & {
 	messages?: unknown[]
 	status?: number
 	exc_type?: string
+	type?: string
 }
 
 export function frappeErrorMessage(error: unknown, fallback: string): string {
@@ -70,8 +71,11 @@ export function frappeErrorMessage(error: unknown, fallback: string): string {
 	return message || error.message || fallback
 }
 
+/** The server's exception class. A `call()` error names it `exc_type`, a `useCall` error `type`. */
 export function frappeErrorType(error: unknown): string | undefined {
-	return error instanceof Error ? (error as FrappeError).exc_type : undefined
+	if (!(error instanceof Error)) return undefined
+	const { exc_type, type } = error as FrappeError
+	return exc_type ?? type
 }
 
 export function queryString(value: unknown): string {

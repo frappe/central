@@ -68,6 +68,8 @@ export const API = {
 	renameServer: 'central.api.servers.rename_server',
 	getRescueState: 'central.api.servers.get_rescue_state',
 	setRescueMode: 'central.api.servers.set_rescue_mode',
+	getIdleSleep: 'central.api.servers.get_idle_sleep',
+	setIdleSleep: 'central.api.servers.set_idle_sleep',
 	setTerminationProtection: 'central.api.servers.set_termination_protection',
 	updateServerFirewall: 'central.api.servers.update_server_firewall',
 	listFirewallRulesets: 'central.api.firewall_rulesets.list_firewall_rulesets',

@@ -600,6 +600,7 @@ export interface NotificationCatalogEvent {
 export interface UserNotificationPreferences {
 	time_zone: string
 	digest_hour: number
+	is_team_owner: boolean
 	preferences: NotificationPreference[]
 	catalog: {
 		category: NotificationCategory

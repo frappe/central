@@ -31,11 +31,11 @@ async function copy(): Promise<void> {
 		<button
 			v-bind="$attrs"
 			type="button"
-			class="min-w-0 cursor-pointer break-all rounded-4 text-left font-mono text-ink-gray-9 hover:bg-surface-gray-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+			class="min-w-0 cursor-copy break-all rounded-4 text-left font-mono hover:bg-surface-gray-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
 			:class="
 				block
-					? 'w-full bg-surface-gray-2 px-3 py-2 text-p-sm hover:bg-surface-gray-3'
-					: '-mx-1 px-1 text-sm'
+					? 'w-full bg-surface-gray-2 px-3 py-2 text-p-sm text-ink-gray-9 hover:bg-surface-gray-3'
+					: '-mx-1 px-1 text-sm text-ink-gray-7 hover:text-ink-gray-9'
 			"
 			:aria-label="`Copy ${label.toLowerCase()} ${value}`"
 			@click="copy"

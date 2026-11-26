@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Button, Spinner, TabButtons } from 'frappe-ui'
+import { Alert, Button, Spinner, TabButtons, Tooltip } from 'frappe-ui'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -171,20 +171,14 @@ const loadServersErrorTitle = __("Couldn't load your servers")
 				:options="FLEET_VIEW_OPTIONS"
 			/>
 
-			<Button
-				v-if="activeTeam && isMobile"
-				icon="lucide-refresh-cw"
-				:label="__('Refresh')"
-				:loading="refreshing"
-				@click="refresh"
-			/>
-			<Button
-				v-else-if="activeTeam"
-				:label="__('Refresh')"
-				icon-left="lucide-refresh-cw"
-				:loading="refreshing"
-				@click="refresh"
-			/>
+			<Tooltip v-if="activeTeam" :text="__('Refresh')">
+				<Button
+					icon="lucide-refresh-cw"
+					:label="__('Refresh')"
+					:loading="refreshing"
+					@click="refresh"
+				/>
+			</Tooltip>
 			<!-- An empty fleet's list carries the one New-server button instead. -->
 			<Button
 				v-if="activeTeam && canCreateServer && !isFleetEmpty"
@@ -261,7 +255,7 @@ const loadServersErrorTitle = __("Couldn't load your servers")
 			<!-- The map card, inset beside the list. Filters and alerts float above it;
 			     `isolate` keeps their z-indexes from leaking above body-portaled menus. -->
 			<div
-				class="vt-server-map relative isolate m-2 h-72 shrink-0 overflow-hidden rounded-6 border border-outline-gray-1 lg:h-auto lg:flex-1"
+				class="vt-server-map group/map relative isolate m-2 h-72 shrink-0 overflow-hidden rounded-6 border border-outline-gray-1 lg:h-auto lg:flex-1"
 			>
 				<ServerMap
 					class="absolute inset-0"
@@ -318,6 +312,7 @@ const loadServersErrorTitle = __("Couldn't load your servers")
 				/>
 
 				<ServerFilters
+					class="group-has-[[data-map-card]]/map:invisible"
 					v-model:status-filter="statusFilter"
 					v-model:region-selection="regionSelection"
 					:status-options="statusOptions"
@@ -327,7 +322,7 @@ const loadServersErrorTitle = __("Couldn't load your servers")
 				<!-- Names what the map frames, so a fleet in one region is a choice, not a hidden crop. -->
 				<div
 					v-if="hasMapViewChoice"
-					class="absolute bottom-2 right-2 rounded-5 border border-outline-gray-2 bg-surface-base"
+					class="absolute bottom-2 right-2 rounded-5 border border-outline-gray-2 bg-surface-base group-has-[[data-map-card]]/map:invisible"
 				>
 					<TabButtons
 						v-model="mapView"

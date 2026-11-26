@@ -720,6 +720,7 @@ _PROFILE_FIELDS = (
 )
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def get_billing_profile() -> dict:
@@ -763,11 +764,12 @@ def get_billing_summary(site: str | None = None) -> dict:
 	(+ spec labels for the usage meters), the cycle estimate, the credit balance (with
 	an insufficient-balance flag), this server's next bill with its breakdown and what
 	would stop the charge, whether a payment method / profile exist, and the site's open
-	trial. `site` names the site on a server with several. Usage percentages are filled
+	trial and AI credit. `site` names the site on a server with several. Usage percentages are filled
 	in by the bench (host-local)."""
 	from central.billing.api.dashboard._shared import _profile_complete
 	from central.billing.api.dashboard.invoices import get_forecast
 	from central.billing.revenue import credits
+	from central.services.doctype.ai_trial_key.ai_trial_key import AITrialKey
 	from central.signups.doctype.product.product import get_server_product
 	from central.signups.trial import get_trial_status
 
@@ -792,6 +794,10 @@ def get_billing_summary(site: str | None = None) -> dict:
 		default = next((m for m in methods if m["is_default"]), methods[0] if methods else None)
 		next_bill = server_billing.get_next_bill(team, server, forecast, currency)
 
+	# The figures are cached and shared across products, so the product's note goes on a copy.
+	if ai_credits := AITrialKey.get_server_credits(server):
+		ai_credits = {**ai_credits, "note": product.ai_credit_note if product else None}
+
 	return {
 		"currency": currency,
 		"plan": {"name": plan_title or row.plan, "subtitle": subtitle, "specs": specs},
@@ -806,6 +812,7 @@ def get_billing_summary(site: str | None = None) -> dict:
 		"payment_method": {"label": default["label"], "name": default["name"]} if default else None,
 		"profile_complete": _profile_complete(team),
 		"trial": get_trial_status(server, site),
+		"ai_credits": ai_credits,
 		"plan_change": _pending_plan_change(server),
 	}
 

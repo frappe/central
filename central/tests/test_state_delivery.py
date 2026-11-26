@@ -218,6 +218,21 @@ class TestStateDelivery(IntegrationTestCase):
 		self.apply(report)
 		self.assertEqual(self.server.reload().atlas_host_id, "host-2")
 
+	def test_a_sleep_state_change_is_applied_when_the_status_is_unchanged(self):
+		self.server.db_set("sleep_state", "Sleeping")
+
+		report = self.state_report(status="stopped", sleep_state="deep-sleeping")
+		self.assertEqual(self.deliver(report), {"queued": True, "resource_id": self.server.name})
+		self.apply(report)
+		self.assertEqual(self.server.reload().sleep_state, "Deep Sleeping")
+
+	def test_a_wake_clears_the_sleep_state(self):
+		self.server.db_set("sleep_state", "Sleeping")
+
+		self.apply(self.state_report(status="running", sleep_state=""))
+		self.server.reload()
+		self.assertEqual((self.server.status, self.server.sleep_state), ("Running", ""))
+
 	def test_an_unchanged_state_is_ignored(self):
 		self.server.db_set("status", "Running")
 

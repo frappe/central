@@ -25,6 +25,7 @@ RESOURCE_TYPES = [
 	"IP",
 	"Snapshot",
 	"Tokens",
+	"AI Usage",
 	"Storage",
 	"Backup",
 	"Emails",
@@ -103,7 +104,7 @@ CATEGORIES = [
 		"pricing_mode": "Grandfathered",
 		"settlement_mode": "Postpaid Overage",
 		"reporting_mode": "Authoritative",
-		"allowed": ["Tokens"],
+		"allowed": ["Tokens", "AI Usage"],
 		"sub_categories": [],
 	},
 	{
@@ -147,13 +148,13 @@ CATEGORIES = [
 		"configurator_builder": "Simple",
 		"sub_category_label": "Storage purpose",
 		"description": "Frappe Box remote storage — data, backups, or snapshots (live-priced).",
-		# Billed by the GB-month at the current rate: a daily reading of what the team's
-		# buckets hold adds that day's share of the month (storage_usage.py).
+		# Billed by the GB-month at the current rate: the month is recomputed from each
+		# bucket's daily peak (Usage Day), so each recount replaces the figure.
 		"billing_type": "Metered",
 		"billing_interval": "Monthly",
 		"pricing_mode": "Live",
 		"settlement_mode": "Postpaid Overage",
-		"reporting_mode": "Incremental",
+		"reporting_mode": "Authoritative",
 		"allowed": ["Storage", "Backup"],
 		"sub_categories": [{"name": "Data"}, {"name": "Backups"}, {"name": "Snapshots"}],
 	},
@@ -204,6 +205,11 @@ def ensure_catalog_masters():
 
 	ensure_starter_plans()
 
+	from central.billing.catalog.plan_setup import ensure_ai_plan, ensure_public_ipv4_plan
+
+	ensure_ai_plan()
+	ensure_public_ipv4_plan()
+
 
 # The billing mechanics a category's spec is authoritative for — reconciled onto an
 # existing Plan Category on every seed run so a family seeded before it carried these
@@ -243,10 +249,7 @@ def _ensure_category(spec):
 			}
 		).insert(ignore_permissions=True)
 	else:
-		doc = frappe.get_doc("Plan Category", spec["category_name"])
-		if any(doc.get(f) != behaviour[f] for f in _CATEGORY_BEHAVIOUR):
-			doc.update(behaviour)
-			doc.save(ignore_permissions=True)
+		_reconcile_category(frappe.get_doc("Plan Category", spec["category_name"]), spec, behaviour)
 	for sub in spec["sub_categories"]:
 		if not frappe.db.exists("Plan Sub-Category", sub["name"]):
 			ram_ratio = sub.get("ram_ratio")
@@ -263,3 +266,16 @@ def _ensure_category(spec):
 					"memory_ratio": f"1:{ram_ratio}" if ram_ratio else None,
 				}
 			).insert(ignore_permissions=True)
+
+
+def _reconcile_category(doc, spec, behaviour) -> None:
+	"""Bring an existing family's billing mechanics and resource types up to its spec."""
+	allowed = {row.resource_type for row in doc.allowed_resource_types}
+	missing = [rt for rt in spec["allowed"] if rt not in allowed]
+	if not missing and all(doc.get(f) == behaviour[f] for f in _CATEGORY_BEHAVIOUR):
+		return
+	doc.update(behaviour)
+	for rt in missing:
+		doc.append("allowed_resource_types", {"resource_type": rt})
+	# Seeded by install and migrate, which run with no user.
+	doc.save(ignore_permissions=True)

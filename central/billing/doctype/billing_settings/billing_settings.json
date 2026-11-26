@@ -38,6 +38,8 @@
   "gst_status_daily_limit",
   "section_break_reports",
   "reporting_usd_to_inr",
+  "section_break_exchange_rates",
+  "exchange_rate_url",
   "tab_operator_alerts",
   "section_operator_alerts",
   "operator_alert_channel",
@@ -51,14 +53,18 @@
   "section_muted_alerts",
   "muted_operator_alerts",
   "tab_accounting",
+  "section_connection",
+  "accounting_sync_mode",
+  "accounting_url",
+  "column_break_connection",
+  "accounting_api_key",
+  "accounting_api_secret",
   "section_company",
   "company",
   "company_address",
   "column_break_company",
   "section_accounts",
-  "advance_account",
   "column_break_accounts",
-  "income_account",
   "cost_center",
   "promotional_credit_account",
   "section_receivables",
@@ -81,6 +87,7 @@
   "section_print",
   "invoice_print_format",
   "invoice_letter_head",
+  "invoice_terms",
   "column_break_print",
   "receipt_voucher_print_format"
  ],
@@ -126,7 +133,7 @@
   },
   {
    "default": "0",
-   "description": "Create every new team as a staging trial \u2014 it provisions servers on welcome credits without a full billing profile. For staging deployments.",
+   "description": "Create every new team as a staging trial — it provisions servers on welcome credits without a full billing profile. For staging deployments.",
    "fieldname": "provision_teams_as_trial",
    "fieldtype": "Check",
    "label": "Provision Teams as Trial"
@@ -301,6 +308,19 @@
    "description": "Margin reports and dashboards turn USD revenue into INR at this rate, to compare it with the INR bare metal cost. Leave 0 to leave USD revenue out."
   },
   {
+   "fieldname": "section_break_exchange_rates",
+   "fieldtype": "Section Break",
+   "label": "Exchange Rates"
+  },
+  {
+   "default": "https://api.frankfurter.dev/v2",
+   "description": "The rate API that gives billing the USD rate of the 1st of each month, for usage billed in another currency.",
+   "fieldname": "exchange_rate_url",
+   "fieldtype": "Data",
+   "label": "Exchange Rate API URL",
+   "options": "URL"
+  },
+  {
    "fieldname": "tab_operator_alerts",
    "fieldtype": "Tab Break",
    "label": "Operator Alerts"
@@ -364,8 +384,46 @@
    "fieldname": "tab_accounting",
    "fieldtype": "Tab Break",
    "label": "Accounting",
-   "depends_on": "eval:doc.__onload && doc.__onload.accounting_sync_enabled",
    "description": "Names Central reads from the accounting system. Central does not create them."
+  },
+  {
+   "fieldname": "section_connection",
+   "fieldtype": "Section Break",
+   "label": "Connection",
+   "description": "Off sends nothing. Manual reads from the accounting system, and an operator sends each record from its form. Automatic also sends every record as it is made, and the daily jobs send what was missed."
+  },
+  {
+   "fieldname": "accounting_sync_mode",
+   "fieldtype": "Select",
+   "label": "Sync Mode",
+   "options": "Off\nManual\nAutomatic",
+   "default": "Off",
+   "reqd": 1
+  },
+  {
+   "fieldname": "accounting_url",
+   "fieldtype": "Data",
+   "options": "URL",
+   "label": "Site URL",
+   "description": "The accounting site, for example https://erp.example.com.",
+   "mandatory_depends_on": "eval:doc.accounting_sync_mode != 'Off'"
+  },
+  {
+   "fieldname": "column_break_connection",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "accounting_api_key",
+   "fieldtype": "Data",
+   "label": "API Key",
+   "description": "Of the user Central signs in as. That user needs access to the records on this tab.",
+   "mandatory_depends_on": "eval:doc.accounting_sync_mode != 'Off'"
+  },
+  {
+   "fieldname": "accounting_api_secret",
+   "fieldtype": "Password",
+   "label": "API Secret",
+   "mandatory_depends_on": "eval:doc.accounting_sync_mode != 'Off'"
   },
   {
    "fieldname": "section_company",
@@ -395,19 +453,8 @@
    "description": "Full account names, for example Debtors - ABBR."
   },
   {
-   "fieldname": "advance_account",
-   "fieldtype": "Data",
-   "label": "Advance Account",
-   "description": "Where customer advances are booked. The company must book advances in a separate account, this one."
-  },
-  {
    "fieldname": "column_break_accounts",
    "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "income_account",
-   "fieldtype": "Data",
-   "label": "Income Account"
   },
   {
    "fieldname": "cost_center",
@@ -424,7 +471,7 @@
    "fieldname": "section_receivables",
    "fieldtype": "Section Break",
    "label": "Accounts per Currency",
-   "description": "Each invoice is booked to the receivable in its own currency."
+   "description": "Each invoice, top-up and refund is booked to the accounts of its own currency. The customer in the accounting system gets the receivable and advance account of its currency."
   },
   {
    "fieldname": "receivable_accounts",
@@ -536,6 +583,12 @@
    "label": "Invoice Letter Head"
   },
   {
+   "fieldname": "invoice_terms",
+   "fieldtype": "Data",
+   "label": "Invoice Terms",
+   "description": "The Terms and Conditions record in the accounting system that the invoice and credit note print."
+  },
+  {
    "fieldname": "column_break_print",
    "fieldtype": "Column Break"
   },
@@ -561,7 +614,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-06 17:30:00.000000",
+ "modified": "2026-11-25 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",

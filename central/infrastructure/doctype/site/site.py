@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
 
 import frappe
+import requests
 from frappe import _
 from frappe.model.document import Document
 
@@ -33,7 +34,7 @@ class Site(Document):
 		rename_completed_at: DF.Datetime | None
 		rename_diagnostic: DF.Code | None
 		rename_error: DF.SmallText | None
-		rename_status: DF.Literal["", "queued", "running", "success", "failed", "killed"]
+		rename_status: DF.Literal["", "queued", "refused", "running", "success", "failed", "killed"]
 		rename_task: DF.Data | None
 		renamed_at: DF.Datetime | None
 		server: DF.Link
@@ -241,11 +242,14 @@ class Site(Document):
 		try:
 			task = rename_site(self.server, IMAGE_SITE_NAME, self.rename_target, make_primary=True)
 		# This worker boundary records every failure so an operator can retry it safely.
-		except Exception:
-			self.record_rename_failure(
-				_("Pilot did not accept the site rename. Retry it from this Site."),
-				frappe.get_traceback(with_context=False),
-			)
+		except Exception as exception:
+			if is_unauthorized(exception):
+				self.record_rename_refusal(frappe.get_traceback(with_context=False))
+			else:
+				self.record_rename_failure(
+					_("Pilot did not accept the site rename. Retry it from this Site."),
+					frappe.get_traceback(with_context=False),
+				)
 			return
 
 		task_id = task.get("task_id") if isinstance(task, dict) else None
@@ -281,9 +285,11 @@ class Site(Document):
 				rename_completed_at=frappe.utils.now_datetime(), rename_error=None, rename_diagnostic=None
 			)
 		elif task["status"] in {"failed", "killed"}:
+			diagnostic = frappe.as_json(task.get("failure"))
+			self.log_error(title="Pilot site rename failed", message=diagnostic)
 			updates.update(
 				rename_error=_("Pilot did not complete the site rename. Inspect the task in Pilot."),
-				rename_diagnostic=frappe.as_json(task.get("failure")),
+				rename_diagnostic=diagnostic,
 			)
 		frappe.db.set_value(
 			"Site",
@@ -296,6 +302,27 @@ class Site(Document):
 		self.log_error(title="Pilot site rename failed", message=diagnostic)
 		self.db_set(
 			{"rename_error": reason, "rename_diagnostic": f"Pilot site rename failed\n\n{diagnostic}"}
+		)
+
+	def record_rename_refusal(self, diagnostic: str) -> None:
+		"""Keep a 401 for `retry_refused_renames`. It writes no Error Log, because a retry usually
+		succeeds once Pilot trusts Central."""
+		self.db_set(
+			{
+				"rename_status": "refused",
+				"rename_error": _("Pilot is not ready to rename the site yet. Central retries it."),
+				"rename_diagnostic": f"Pilot refused the site rename\n\n{diagnostic}",
+			}
+		)
+
+	def stop_rename_retries(self) -> None:
+		"""Hand a rename that Pilot kept refusing to an operator."""
+		self.log_error(title="Pilot site rename failed", message=self.rename_diagnostic)
+		self.db_set(
+			{
+				"rename_status": "",
+				"rename_error": _("Pilot did not accept the site rename. Retry it from this Site."),
+			}
 		)
 
 	@frappe.whitelist(methods=["POST"])
@@ -482,6 +509,37 @@ def poll_site_renames() -> None:
 			frappe.log_error(
 				title="Could not read Pilot rename task", reference_doctype="Site", reference_name=name
 			)
+
+
+def retry_refused_renames() -> None:
+	"""Scheduled job: send each refused rename again, at least a minute after the last try. A site
+	claimed more than an hour ago stops retrying and goes to an operator."""
+	now = frappe.utils.now_datetime()
+	retry_until = frappe.utils.add_to_date(now, hours=-1)
+
+	for site in frappe.get_all(
+		"Site",
+		filters={
+			"rename_status": "refused",
+			"modified": ["<", frappe.utils.add_to_date(now, minutes=-1)],
+		},
+		fields=["name", "claimed_at"],
+	):
+		document = frappe.get_doc("Site", site.name)
+		if site.claimed_at and site.claimed_at > retry_until:
+			document.enqueue_subdomain_rename()
+		else:
+			document.stop_rename_retries()
+
+
+def is_unauthorized(exception: Exception) -> bool:
+	"""Pilot answers 401 for a short time after boot, before it trusts Central. It does nothing
+	with the request, so the rename is safe to send again."""
+	return (
+		isinstance(exception, requests.HTTPError)
+		and exception.response is not None
+		and exception.response.status_code == 401
+	)
 
 
 def on_host(url: str, host: str, path: str | None = None) -> str:

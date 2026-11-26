@@ -5,6 +5,7 @@ const CORRECTIONS_API = "central.billing.api.admin.corrections";
 
 frappe.ui.form.on("Invoice", {
 	refresh(frm) {
+		central.billing.add_accounting_sync_actions(frm);
 		if (["Outstanding", "Overdue"].includes(frm.doc.status)) {
 			frm.add_custom_button(__("Cancel"), () =>
 				ask_reason(frm, __("Cancel Invoice"), "cancel_invoice", __("Invoice cancelled"))

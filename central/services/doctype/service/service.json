@@ -1,0 +1,190 @@
+{
+ "actions": [],
+ "autoname": "field:service_name",
+ "creation": "2026-11-17 12:00:00.000000",
+ "description": "A system that reports usage to Central, and the meters it reports.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "service_name",
+  "title",
+  "plan_category",
+  "column_break_state",
+  "enabled",
+  "central_reads",
+  "expected_cadence",
+  "bill_from",
+  "last_report_at",
+  "last_report_as_of",
+  "connection_section",
+  "report_secret",
+  "column_break_delivery",
+  "secret_delivery_status",
+  "secret_run",
+  "secret_deliveries_section",
+  "secret_deliveries",
+  "meters_section",
+  "meters"
+ ],
+ "fields": [
+  {
+   "fieldname": "service_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Service Name",
+   "reqd": 1,
+   "set_only_once": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "plan_category",
+   "fieldtype": "Link",
+   "label": "Plan Category",
+   "options": "Plan Category"
+  },
+  {
+   "fieldname": "column_break_state",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Accept signed usage reports from this service.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "default": "0",
+   "description": "Central reads usage from the service itself, until the service reports it.",
+   "fieldname": "central_reads",
+   "fieldtype": "Check",
+   "label": "Central Reads Usage"
+  },
+  {
+   "default": "Hourly",
+   "description": "How often the service reports. Silence for twice this long is an alert.",
+   "fieldname": "expected_cadence",
+   "fieldtype": "Select",
+   "label": "Expected Cadence",
+   "options": "Hourly\nDaily"
+  },
+  {
+   "description": "The first UTC day that bills. Usage before it is kept as written off. Blank: every day bills.",
+   "fieldname": "bill_from",
+   "fieldtype": "Date",
+   "label": "Bill From"
+  },
+  {
+   "description": "When Central last accepted a signed report from this service.",
+   "fieldname": "last_report_at",
+   "fieldtype": "Datetime",
+   "label": "Last Report At",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "The time the service measured its last accepted report.",
+   "fieldname": "last_report_as_of",
+   "fieldtype": "Datetime",
+   "label": "Last Report As Of",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "connection_section",
+   "fieldtype": "Section Break",
+   "label": "Connection"
+  },
+  {
+   "description": "The service signs each usage report with this key (HMAC-SHA256).",
+   "fieldname": "report_secret",
+   "fieldtype": "Password",
+   "label": "Report Secret"
+  },
+  {
+   "fieldname": "column_break_delivery",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Failed when a host refused the last saved secret, Pending while a host has not answered, and Delivered when every host holds it.",
+   "fieldname": "secret_delivery_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Secret Delivery",
+   "no_copy": 1,
+   "options": "\nPending\nDelivered\nFailed",
+   "read_only": 1
+  },
+  {
+   "description": "Set on each save of a new secret, so a send of an older secret does not change this save's rows.",
+   "fieldname": "secret_run",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Secret Run",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "secret_deliveries_section",
+   "fieldtype": "Section Break",
+   "label": "Secret Delivery"
+  },
+  {
+   "description": "One row for each host that signs reports with the secret. Fix a Failed host, then enter the secret again and save to resend it.",
+   "fieldname": "secret_deliveries",
+   "fieldtype": "Table",
+   "label": "Secret Deliveries",
+   "no_copy": 1,
+   "options": "Report Secret Delivery",
+   "read_only": 1
+  },
+  {
+   "fieldname": "meters_section",
+   "fieldtype": "Section Break",
+   "label": "Meters"
+  },
+  {
+   "fieldname": "meters",
+   "fieldtype": "Table",
+   "label": "Meters",
+   "options": "Service Meter"
+  }
+ ],
+ "grid_page_length": 50,
+ "links": [],
+ "modified": "2026-11-25 16:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Services",
+ "name": "Service",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

@@ -63,7 +63,7 @@ Read top-to-bottom — each layer calls the one below it.
 | **Catalog** | `catalog/` | The product & pricing authority: taxonomy masters, Plan Configurator, composed-config pricing, rate resolution, subscriptions (intent + state), trust tiers, entitlement signing. |
 | **Revenue** | `revenue/` | Turning usage into money: `invoicing/` (draft→open→collect), `metering`, `credits`, `tax`, `commitments` discount, `dunning`, `pricelock`. |
 | **Payments** | `payments/` | Moving the money: `charges`, `collection` (fallback), `collection_mode` (INR ₹15k gate), `mandates` (UPI), `emandate` (RBI), `payments` (cards), `webhooks`, `reconciliation`, `refunds`, `settlement`, `profile`. |
-| **Ingester** | `ingester/` | Every sync with the accounting system: `connection` (HTTP client), `customer` (customer, address, contact), `erpnext_sync` (Sales Invoice push). |
+| **Ingester** | `ingester/` | Every sync with the accounting system: `connection` (HTTP client and sync mode), `customer` (customer, address, contact), `advance` (top-up advance), `erpnext_sync` (Sales Invoice push), `payment_records` (card payment and promotional credit against a Sales Invoice), `push` (operator preview and send). |
 | **Gateways** | `gateways/` | The adapter seam: `base.GatewayAdapter` + `stripe`/`razorpay`/`paypal` + `registry`. |
 | **Platform** | `platform/` | `notifications` (sole sender), `sync` (record the runtime billed from), `alerts` (operator alerts, including `held_invoices`), `invariants` (money audit), `constraints` (DB constraints), `metrics`. |
 | **Projection** | `projection/` | Cost projection and scenario engine for the admin `projection` API. |
@@ -124,7 +124,7 @@ Plan Configurator ─→ Category, Sub-Category, [C]base_rates, [C]rungs(─→P
 ```
 Subscription ──team, ──project─→ Project, ──plan, ──sub_category, ──includes─→ [C]Plan Includes,
              ──default_payment_method, ──gateway, ──server_id─→ Virtual Machine,
-             ──vm_snapshot─→ VM Snapshot, ──public_ip_server─→ Virtual Machine (its public IPv4),
+             ──vm_snapshot─→ VM Snapshot, ──public_ip_server─→ Virtual Machine (a public IPv4 billed before the per-day cutover; none opens now),
              cluster (read-only, from server_id.region), service_subject
 Subscription Change ──subscription, ──team, ──currency      (append-only history + locked_rate)
 Project ──team, ──title, ──enabled, ──spending_limit          (cost-tag + run-rate cap; see §2.1)
@@ -141,9 +141,12 @@ Credit Ledger Entry ──team, ──currency                        (append-on
 Credit Wallet ──team                           (lock anchor / cached balance — one per (team,currency))
 Commitment ──team, ──currency              (spend floor)
 Usage Rollup ──team                            (metered aggregation)
+Usage Day ──team, ──subscription, ──invoice    (one subject's metered value for one UTC day, per dimension such as the AI model)
+Usage Check                                    (Central's own reading of a pushed service's day, against the stored day; kept 7 days)
+Monthly Exchange Rate                          (the USD rate one month bills converted usage at: the rate API's rate for the 1st, kept from the 2nd or at the month's draft)
 ```
 
-Money records (Invoice, Payment Attempt, Refund, Credit Ledger Entry, Credit Wallet, Usage Rollup, Webhook Event, Billing Event, Top-up Order) are read-only in Desk and keep a change history. `platform.records` refuses an edit or delete that billing code did not make through `save_billing_record` or `delete_billing_record`, Administrator included. The `ignore_permissions` flag alone does not allow the change. A `db_set` or `frappe.db.set_value` write does not run validation, so it needs no mark. A person changes them through the action that owns the change: cancel, refund, retry.
+Money records (Invoice, Payment Attempt, Refund, Credit Ledger Entry, Credit Wallet, Usage Day, Usage Rollup, Webhook Event, Billing Event, Top-up Order) are read-only in Desk and keep a change history, except Usage Day, which billing writes in bulk. `platform.records` refuses an edit or delete that billing code did not make through `save_billing_record` or `delete_billing_record`, Administrator included. The `ignore_permissions` flag alone does not allow the change. A `db_set` or `frappe.db.set_value` write does not run validation, so it needs no mark. A person changes them through the action that owns the change: cancel, refund, retry.
 
 **Payment plumbing**
 ```
@@ -218,6 +221,7 @@ flowchart LR
         D1["daily"]
         H1["hourly"]
         M1["monthly"]
+        C1["cron 0 8 1 * * (08:00 IST on the 1st)"]
     end
     D1 --> RD["run_dunning"]
     D1 --> CP["cleanup_payment_logs"]
@@ -227,14 +231,20 @@ flowchart LR
     D1 --> BR["run_billing_details_reminder"]
     D1 --> CE["run_credit_expiry"]
     D1 --> IA["run_invariant_audit"]
+    D1 --> FMD["usage_ledger.fill_missing_days"]
+    D1 --> POD["usage_ledger.prune_old_days"]
     H1 --> RF["retry_failed_syncs (ERPNext)"]
     H1 --> RR["run_reconciliation"]
     H1 --> OA["run_operator_alerts"]
     H1 --> SE["expire_unfinished_setups"]
     H1 --> SR["retry_unfinished_releases"]
-    M1 --> DMI["draft_monthly_invoices → draft page jobs"]
+    C1 --> DMI["draft_monthly_invoices → draft page jobs"]
     M1 --> EX["expire_payment_methods"]
     H1 --> CDI["collect_due_invoices → settle page jobs"]
+    H1 --> RSU["storage_bridge.read_storage_usage → one job per page of 100 buckets"]
+    H1 --> RAI["grove_bridge.read_ai_usage → one job per page of 200 AI teams"]
+    H1 --> RIP["public_ipv4_usage.read_public_ipv4 → today's IPv4 day per server"]
+    H1 --> RCC["usage_recount.recount_changed → recount page jobs"]
 
     subgraph INSTALL["install/migrate/before_tests"]
         ECM["ensure_catalog_masters, ensure_constraints, ..."]
@@ -265,10 +275,18 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, setup 
 | hourly | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan and Pending refunds |
 | hourly | `payments.setup_expiry.expire_unfinished_setups` | settle card and UPI (not PayPal) setups left Pending Validation for `SETUP_EXPIRES_HOURS` (24), oldest first, at most `SETUPS_PER_RUN`: activate a Razorpay mandate the gateway proves, remove and expire a Stripe card saved but never confirmed, expire the rest, and release anything older than `SETUP_RELEASE_DAYS` (7) without a notice; one `payment_method_setup_expired` notice per team per run, at most one per team in `NOTICE_COOLDOWN_HOURS` (24) |
 | hourly | `payments.setup_expiry.retry_unfinished_releases` | queue `release_late_setup` again for released setups with no `setup_released_at` (a cancelled setup only once `CANCELLED_SETUP_RELEASE_DELAY_MINUTES` (30) old), oldest first, at most `SETUPS_PER_RUN`, for `RELEASE_RETRY_DAYS` (7); then leave one comment for an operator and stop |
-| hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs) |
-| monthly | `revenue.invoicing.draft_monthly_invoices` | waive internal teams' unpaid invoices, then draft the just-closed month as page jobs on the `billing` queue |
-| hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run |
-| hourly | `ingester.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
+| hourly | `platform.alerts.run_operator_alerts` | alert operators (invariants, readiness, failed webhooks, stale attempts, unsettled captures, held invoices, failed refunds, failed accounting syncs, silent services, usage mismatches) |
+| cron `0 8 1 * *` (08:00 IST on the 1st) | `revenue.invoicing.draft_monthly_invoices` | after the UTC month closes at 05:30 IST: waive internal teams' unpaid invoices, start the month's Billing Run, then draft the just-closed month as page jobs on the `billing` queue |
+| hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run once the draft tick has started it |
+| hourly | `revenue.storage_bridge.read_storage_usage` | until Cargo reports usage itself: read every billed bucket, and each billed server's backup bucket, in pages of 100, one job per page, and keep each UTC day's peak as a Usage Day; a failed bucket never stops its page, and the last page of a region writes one Error Log that names how many of the region's buckets the run could not read |
+| hourly | `revenue.grove_bridge.read_ai_usage` | until Grove reports usage itself: subscribe AI teams that now have a billing currency, then read each AI team's cost per model that landed at Grove from the team's `usage_read_until` day through today (UTC), at most 7 days a run, as one Usage Day per model and landing day; a team read in full moves its `usage_read_until` to the last day read, so a missed hour, an outage or a late subscription is caught up; a team never read starts at the later of `Service.bill_from` and the day AI was turned on; a correction lands as a negative day; one Error Log per page names the teams it could not read, and their day does not move |
+| hourly | `revenue.public_ipv4_usage.read_public_ipv4` | write today's Usage Day for every server that holds a public IPv4, is not Terminated, and whose subscription had an open segment at some moment of the day, in pages of 500 through `platform.jobs.each_isolated`; the first run of a UTC day also writes yesterday, so hours the scheduler missed still count, and sets the watermark default `public_ipv4_swept_day` only when every page of yesterday wrote |
+| hourly | `revenue.usage_recount.recount_changed` | recount the usage months whose Usage Days changed since the last run, as page jobs |
+| cron `30 17 * * *` (12:00 UTC) | `revenue.usage_checks.sample_storage` | only while Cargo pushes storage (`Service.central_reads` off): read every billed bucket and each billed server's backup bucket once, in pages of 100 queued as `sample_team_page` and `sample_bundled_page`, with the same readers `storage_bridge` bills with, and keep the reading as a Usage Check for the next day's comparison |
+| cron `30 7 * * *` (02:00 UTC) | `revenue.usage_checks.check_yesterday` | only for a service that pushes: mark a storage day whose stored peak is more than 1 % below Central's sample, read each AI team's landing day from Grove with `grove_bridge.read_days` (failures logged as "Usage check: N AI team(s) not read") and mark a model that differs by more than 0.01 USD, then delete Usage Checks older than 7 days; writes no Usage Day |
+| daily | `revenue.usage_ledger.fill_missing_days` | give a Level subject with no reading for a UTC day that ended 48 hours ago its last reading, marked estimated |
+| daily | `revenue.usage_ledger.prune_old_days` | delete billed or written-off Usage Days older than 13 months |
+| hourly | `ingester.erpnext_sync.retry_failed_syncs` | Automatic mode only: retry Sales Invoice push (backoff window elapsed), and send at most 100 paid invoices that no sync tried, paid more than an hour ago |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
 
 **Unfinished setups expire.** The hourly job takes Card and UPI Autopay Payment Methods that are Pending Validation 24 hours after they started, oldest first, at most `SETUPS_PER_RUN` (500). PayPal setups are left alone: the console does not offer them, and PayPal makes no payment token until the confirm, so there is nothing to remove. Card expiry also uses Expired, so `payment_method.is_expired_setup` (Expired with no `validated_at`) tells the two apart: the console list and the Pilot list hide an expired setup, the Payment Method Mix report counts it under Setup Expired, and a late confirm answers "This setup expired. Start again to add it." For each setup with a `setup_reference`, the job asks the gateway with the read-only `adapter.read_finished_setup` (Stripe: the SetupIntent or setup Checkout Session; Razorpay: a token-bearing authorised, captured or refunded payment on the setup order), and then:
@@ -284,9 +302,9 @@ The team gets one `payment_method_setup_expired` notice per run, in-app and by e
 - If a sweep batch rolls back after an activation, the ₹1 refund still runs, and the setup is released after `SETUP_RELEASE_DAYS` (7).
 - A Stripe setup cancelled by a new setup and finished later in an old tab stays attached at Stripe. It is never charged, because only Active methods are charged.
 
-**The scheduled run is paged.** On the 1st, `draft_monthly_invoices` drafts the closed month as page jobs. Every hour, `collect_due_invoices` collects whatever has drafted and updates the **Billing Run** row for the month (start, counts, failures, completion). A lost worker stops one page only; the next hourly sweep picks up the rest. `run_monthly_billing` does both phases inline in one job; use it only for a small site or a test.
+**The scheduled run is paged.** At 08:00 IST on the 1st, after the UTC month closes, `draft_monthly_invoices` starts the **Billing Run** row for the month and drafts the closed month as page jobs. Every hour, `collect_due_invoices` collects whatever has drafted and, once the run has started, updates its row (counts, failures, completion). A lost worker stops one page only; the next hourly sweep picks up the rest. `run_monthly_billing` starts the same Billing Run row and does both phases inline in one job; use it only for a small site or a test.
 
-The readiness check B5 flags a month with billing but no Billing Run, and drafts that waited more than 3 hours to be collected. It feeds the hourly operator alerts.
+The readiness check B5 flags a month with billing but no Billing Run after the draft tick has fired (its time is read from the cron in `hooks.py`), and drafts that waited more than 3 hours to be collected. It feeds the hourly operator alerts.
 
 **The fan-out is two orchestrators, and neither of them does the work.** Each keyset-pages its subjects and enqueues a **page job** per slice: `draft_team_page(after, until)` / `settle_draft_page(cutoff, after, until)`, deduplicated on the slice's upper bound. A page job re-derives its slice from the bounds and works it in order. It commits after **each team / each invoice**. The page is the unit of *scheduling* and the team is still the unit of *work*, so a job killed at team 300 of 500 keeps the 299 it finished.
 
@@ -384,11 +402,31 @@ Every billing step adds a **Billing Event**: profile, subscription, customer syn
 
 ### Accounting records
 
+**Sync mode.** Billing Settings holds the connection to the accounting system (Accounting tab): `accounting_url`, `accounting_api_key` and `accounting_api_secret` (a Password field). `accounting_sync_mode` sets what Central sends:
+
+| Mode | Reads (GSTIN lookup, company state, setup check, GST state backfill) | Sends on change, daily sweeps, hourly retry | Invoice held as "Accounting Sync" | Operator Preview and Send Now |
+|---|---|---|---|---|
+| Off | No | No | No | No |
+| Manual | Yes | No | No | Yes |
+| Automatic | Yes | Yes | Yes | Yes |
+
+`connection.enabled()` is true in Manual and Automatic. `connection.is_automatic()` gates every trigger: `customer.enqueue_sync`, `enqueue_for`, `awaiting_records`, `sync_pending_profiles`, `advance.enqueue_sync`, `sync_pending_advances`, `erpnext_sync.enqueue_invoice_sync`, `retry_failed_syncs`, and the accounting steps of `corrections.run_cancellation`. Records made while the mode was Off or Manual are sent when it becomes Automatic: the daily sweeps and the hourly never-sent sweep pick them up.
+
+**Operator send.** Billing Profile, Credit Ledger Entry (a paid top-up) and Invoice have an Accounting group on the form for an operator while the mode is not Off. Preview shows the payloads a send would post and writes nothing (`push.preview`). Send Now (`push.push`) sends the record and what it needs first: the team's customer, address and contact, then every top-up of the team without an advance, then the Sales Invoice and card payment, then the credit notes and payments of its refunds (`corrections.next_accounting_step`). Each step runs through `platform.jobs.each_isolated` and commits on its own, so a failure keeps what was made and a retry does not make it twice. The send stops at the first step that fails and shows its error; the Error Log links to the record. A lock per customer, advance, invoice and cancellation keeps an operator send and a job apart.
+
 A team gets a customer in the accounting system only when it has an enabled subscription, a live invoice or a paid top-up. A waived invoice is never sent, and its sync status is Not Required.
+
+**Existing customers.** Before the customer sync makes a Customer, it looks for the team's customer that is already in the accounting system (`customer_match.find_existing`), because Press v1 made most of them. A customer is the team's when a contact with the team owner's or the billing email is linked to it, its name is the same as the legal name (ignoring case and spaces), its currency is the same, and one of its addresses is in the same city and country (ignoring case). One such customer is used with that address and contact, and a Billing Event "Customer Reused" names it; the sync then makes only what is missing. None makes a new customer. More than one stops the sync with an error that names them, and an operator picks one with **Use Existing Customer** on the Billing Profile (`customer.use_customer`, which refuses another currency and a team that already has a customer). The update pass re-enables a disabled customer, and keeps the address's and contact's other links, emails and phones: it adds what Central sends and drops nothing.
+
+**What the Sales Invoice carries for the print.** The print format on frappe.io (Billing Settings' `invoice_print_format`) reads two custom fields of Sales Invoice, which `ingester/invoice_snapshot.py` fills. `frappe_cloud_invoice_id` is the Central invoice name; the sync finds an issued Sales Invoice by it (not a credit note, which carries the same id) before it makes one. `frappe_cloud_invoice` is the invoice as JSON in the shape Press v1 sent: `type` "Subscription", the billing period and due date, one item per invoice line (`document_name`, `plan`, `description`, `rate`, `quantity`, `amount`, none of them null) and `applied_credits`, the promotional credit the Sales Invoice leaves out, so the lines less it give the Sales Invoice total. A credit note carries `type` "Refund" and one line for the amount it gives back. Each Sales Invoice and partial credit note also carries Billing Settings' `invoice_letter_head`, and `invoice_terms` as `tc_name` with that record's text as `terms`, since the accounting system does not fill the text in on a save through its API. The setup check reports a missing custom field, because the API drops an unknown field without an error.
+
+**Invoice and receipt PDFs.** The accounting system renders a PDF slowly, so Central asks for one only when someone downloads it: the console's invoice and top-up receipt downloads and `server_billing.get_server_invoice_pdf` go through `pdfs.stored_pdf`. The first download renders it with the configured print format and keeps it as a private File on the record (`Invoice.pdf_url`, `Credit Ledger Entry.receipt_url`); every later download is served from that file. A GET request commits only when it sets `frappe.local.flags.commit`, which the first download does. Two first downloads at once both render; a row lock keeps one file. An operator's **Fetch PDF Again** (Invoice or Credit Ledger Entry form) drops the file, so the next download renders it again, for example after a print format change. When an invoice is synced in Automatic mode, the team gets an "Invoice Ready" notice (`invoice_ready`) that links to its invoices; in Manual mode it gets none, so a test sync does not reach a customer.
+
+**Accounts per currency.** Each row of Billing Settings' Accounts per Currency names the receivable, advance, income and wallet clearing account of one currency (`settings.receivable_account`, `advance_account`, `income_account`, `wallet_clearing_account`). INR is the customer in India and USD the customer outside it. The customer sync puts the receivable and advance account of the team's currency on the Customer's Party Account row (`customer._party_accounts`), because ERPNext books an advance to the advance account it finds on the customer, else the company's one, whatever the Payment Entry names. The Sales Invoice lines and a credit note's lines use the income account of the invoice's currency; a top-up advance and a refund's new advance use the advance account of its currency. The setup check (`ingester/setup.py`) checks that each account is in the company, is not a group, is in its row's currency (not the income account), and is of the kind ERPNext accepts there: a receivable is Receivable under Assets, an advance is Receivable under Liabilities, an income account is under Income.
 
 **GST on documents.** `ingester/gst.treatment` gives the GST category, place of supply and tax template that the Sales Invoice and the top-up advance carry. It decides SEZ zero-rating with `tax.has_zero_rating`, the same rule `tax.resolve_tax` uses, so an SEZ team whose GSTIN lapsed is filed with the GST it was charged. An Indian profile with no state has no place of supply and gets the out-of-state template (IGST). The console asks a member with `billing:manage` for the state and shows the IGST rate charged meanwhile (`gst_state_missing` and `igst_rate` on `get_billing_profile`). A customer save of an Indian billing address (`payments/profile.create_or_update_billing_profile`, with any address field) must name the state. Other saves of an existing profile without a state still go through.
 
-**GST state on the invoice.** An issued invoice records the team's billing state in `Invoice.gst_state`, so a team that adds or changes its state later does not change how old invoices are filed or labelled. `gst_state_recorded` is set with it, so an invoice issued to a team with no state (blank `gst_state`, recorded) differs from one not recorded yet. `lifecycle._retax` records both at issue through `tax.gst_state_at_issue`, only when the invoice charges GST in India; SEZ and untaxed invoices are not recorded. `gst.treatment(team, invoice=...)` takes the place of supply and the template from the recorded state and the company's live state, so the two always agree; an invoice not recorded yet uses the team's current state. `erpnext_sync._build_sales_invoice` and the GST returned to the wallet by a refund (`corrections._advance_again`) use it. A top-up advance is a separate supply and uses the team's current state. `tax.TaxNames` names the split to show ("CGST 9% + SGST 9%" or "IGST 18%") from the same state and the cached company state. The daily long-queue `ingester.gst_state_backfill.record_missing_gst_states` job records the state on issued GST invoices from before: a synced invoice takes the place of supply on its Sales Invoice, an unsynced one the team's state at issue from the Billing Profile's Version history (issue time from the invoice's Billing Event), else the current state. It reads at most 1000 invoices a run in pages of 100. When sync is off or the accounting system cannot be read, it pages only unsynced invoices and the synced ones wait. A filed place of supply it cannot map is left unrecorded with a warning, not recorded as no state.
+**GST state on the invoice.** An issued invoice records the team's billing state in `Invoice.gst_state`, so a team that adds or changes its state later does not change how old invoices are filed or labelled. `gst_state_recorded` is set with it, so an invoice issued to a team with no state (blank `gst_state`, recorded) differs from one not recorded yet. `lifecycle._retax` records both at issue through `tax.gst_state_at_issue`, only when the invoice charges GST in India; SEZ and untaxed invoices are not recorded. `gst.treatment(team, invoice=...)` takes the place of supply and the template from the recorded state and the company's live state, so the two always agree; an invoice not recorded yet uses the team's current state. `erpnext_sync.build_sales_invoice` and the GST returned to the wallet by a refund (`corrections._advance_again`) use it. A top-up advance is a separate supply and uses the team's current state. `tax.TaxNames` names the split to show ("CGST 9% + SGST 9%" or "IGST 18%") from the same state and the cached company state. The daily long-queue `ingester.gst_state_backfill.record_missing_gst_states` job records the state on issued GST invoices from before: a synced invoice takes the place of supply on its Sales Invoice, an unsynced one the team's state at issue from the Billing Profile's Version history (issue time from the invoice's Billing Event), else the current state. It reads at most 1000 invoices a run in pages of 100. When sync is off or the accounting system cannot be read, it pages only unsynced invoices and the synced ones wait. A filed place of supply it cannot map is left unrecorded with a warning, not recorded as no state.
 
 ### Operator alerts
 
@@ -402,7 +440,7 @@ Configure it in **Billing Settings → Operator Alerts**:
 | Alert Email Addresses | One address per line. Required when the channel includes Email. Central never mails the System Manager role. |
 | Raven Site URL, Raven Channel ID | The Raven site and the channel that gets the alerts. |
 | Bot API Key, Bot API Secret | The API key of a bot user that is a member of the channel. The alert is posted as this user through `raven.api.raven_message.send_message`. |
-| Muted Alerts | Billing alerts the hourly digest does not send. Choose a **Category**: Payments, Invoicing, Dunning, Money checks or Readiness checks. Leave **Alert** empty to mute the whole category, or choose one alert or one check in it. **Until** is when the alert is sent again; leave it empty to mute until the row is removed. Enter the reason, for example the ticket of the known issue. `platform/kinds.py` owns the categories. |
+| Muted Alerts | Billing alerts the hourly digest does not send. Choose a **Category**: Payments, Invoicing, Dunning, Money checks, Readiness checks or Metering. Leave **Alert** empty to mute the whole category, or choose one alert or one check in it. **Until** is when the alert is sent again; leave it empty to mute until the row is removed. Enter the reason, for example the ticket of the known issue. `platform/kinds.py` owns the categories. |
 
 When a Raven post fails, or Raven is not configured, the alert goes to the email addresses once and the failure is written to the Error Log. Use **Send Test Alert** on the form to check the saved settings. The hourly digest keeps one Error Log row for each digest it sends, and it does not send the same digest again for `REPEAT_AFTER_HOURS`. A muted alert is left out of the digest and counted as `muted` in the `billing.alerts` metric. Muting applies only to the hourly billing digest (`run_operator_alerts`). Signup alerts, the setup lockout alert and **Send Test Alert** are never muted. The message groups the alerts under a readable name, such as `B1 · Billing currency matches the country` or `Failed webhook`, and says what each group means: the first paragraph of the check's docstring, after `Expected:`, or of the alert source's docstring. Keep that first paragraph in plain words, because operators read it.
 
@@ -477,16 +515,17 @@ central.api.servers.create_server | create_composed_server
 
 Resize: `central.api.servers.resize_server` → `catalog.subscriptions.begin_resize` (validates, persists a Resource Action) → `central.integrations.resource_actions` → `apply_resize_billing` → `resize_composed_subscription` → new Subscription Change (re-prices).
 
-Pause and resume: `catalog.subscriptions.pause_billing` writes a `Paused` change on the server's subscription and its public IPv4 subscription, which closes their segments. `resume_billing` checks the team and project headroom, then writes `Resumed` changes that carry the rate locked before the pause. A Start on a paused server reopens its billing through the same headroom checks, and does not need `billing:manage`. A `Running` report from the region never enables a paused subscription again.
+Pause and resume: `catalog.subscriptions.pause_billing` writes a `Paused` change on the server's subscription, which closes its segment. A public IPv4 bills as a Usage Day only on a day the server's segment was open at some moment, so a day paused throughout bills no address. `resume_billing` checks the team and project headroom, then writes a `Resumed` change that carries the rate locked before the pause. A Start on a paused server reopens its billing through the same headroom checks, and does not need `billing:manage`. A `Running` report from the region never enables a paused subscription again.
 
 ### B. Bill a period (draft → open → collect)
 ```mermaid
 flowchart TD
-    TICK(["monthly · draft_monthly_invoices"]) --> GDI["generate_draft_invoices (pages teams)"]
+    TICK(["08:00 IST on the 1st · draft_monthly_invoices"]) --> GDI["generate_draft_invoices (pages teams)"]
     GDI --> DTI["draft_team_invoice<br/>(per team, isolated, committed)"]
     DTI --> GTI["generate_team_invoice<br/>(per team: one consolidated invoice)"]
     GTI --> RS["reconcile_subscription (fix drift)"]
     GTI --> LINES["lines.compute_line_items<br/>day-weighted from Sub Change segments"]
+    GTI --> URC["usage_recount.recount_team<br/>usage months from Usage Days; stamp_invoice marks what was billed"]
     GTI --> MET["+ metering.metered_line_items<br/>max(0, qty−allowance)×rate"]
     GTI --> TAG["_tag_projects: stamp each line's Project, if any"]
     GTI --> DISC["+ commitments discount"]
@@ -509,19 +548,23 @@ flowchart TD
     PAID --> SYNC["erpnext_sync.enqueue_invoice_sync"]
 ```
 ```
-[monthly]  revenue.invoicing.draft_monthly_invoices   (settle_internal_teams, then page jobs)
+[cron 0 8 1 * *]  revenue.invoicing.draft_monthly_invoices   (settle_internal_teams, start the Billing Run, then page jobs)
   → generate_draft_invoices (pages teams)
   → draft_team_invoice (one team = one transaction = one commit)
     → generate_team_invoice (per team, aggregates every cluster it runs in)
       → reconcile_subscription (correct drift if stale)
       → lines.compute_line_items  (day-weighted, from Subscription Change rate-snapshot segments)
+      → usage_recount.recount_team (usage months from the unbilled Usage Days; a month whose draft
+        billed nothing is closed, and its late days go on the next month)
       → + metering.metered_line_items   (max(0, qty−allowance) × rate)
+      → usage_recount.stamp_invoice marks exactly the rollups and days it counted; only
+        reissue_invoice releases them, a cancel alone keeps them billed
       → _rate → _tag_projects stamps each line's Project (if its resource is tagged
         into one that's enabled, §2.1), then + commitments discount, + tax.resolve_tax
         (GST additive / SEZ zero / TDS withhold)
   → Invoice (Outstanding, no due date), one per team, same period, `period_key` keyed on (team, period)
 
-[hourly]   revenue.invoicing.collect_due_invoices   (snapshot the Billing Run, then page jobs)
+[hourly]   revenue.invoicing.collect_due_invoices   (snapshot a started Billing Run, then page jobs)
   → open_drafts (every Outstanding invoice with no due date and period_end ≤ the closed month)
   → settle_draft → open_and_collect (per invoice)
       → billing-details hold: a Billable invoice keeps no due date if the team has no billing
@@ -673,6 +716,133 @@ Billing stops and starts a server as the system (`resource_actions.submit_billin
 platform.sync.record_meter_rollups  (Central writes the runtime it bills)
   → revenue.metering.ingest_rollup → Usage Rollup
   → metering.metered_line_items at invoice time → line items
+
+AI (ADR 0027): grove_bridge.read_ai_usage (hourly) → Usage Day per team, model, landing day (USD)
+  → usage_recount → one Usage Rollup per subscription, month and model, at
+    exchange_rates.fix_month_rate (1 for a USD team, the month's USD rate otherwise)
+  → the rate is the rate API's (exchange_rate_feed, Billing Settings.exchange_rate_url, default
+    Frankfurter) for the month's 1st; it is kept (Monthly Exchange Rate) and locked on the rollup
+    (rate_date) from the 2nd (UTC) or by the month's draft, whichever is first; on the 1st the
+    recount uses it unlocked (read at most once an hour) and re-rates later
+  → with no rate from the API, the recount uses the latest earlier kept month's rate unlocked;
+    the draft keeps it as the month's rate with its own date (source "fallback: <month>"); with
+    no rate ever kept an INR draft fails
+  → one invoice line per model: quantity in USD × rate, described with the model and, when
+    converted, the rate and its date (from the rollup)
+  → a model below zero for the month bills no line: its days stay unbilled, so the credit nets
+    into that model's next month (and on, while it stays below zero)
+  → a day before Service.bill_from is stored written off and never billed; backfill(since)
+    reads explicit days written off and does not move usage_read_until
+  → forecasts, re-rating and the draft add the team's blank-cluster AI rollups in one place
+    (metered_lines.rollups_in); other services' blank-cluster rollups are not billed
+  → readiness M2: a non-USD billing currency of an AI team with no kept rate for the month, none
+    from the rate API and no earlier kept rate
+
+Server bundles (#188): a server plan's Plan Includes row is the server's bundle of that resource
+  → a meter writes the server's Usage Day on its subscription: quantity measured, `included` the
+    plan's amount that day (from the open segment, so a resize applies from that day)
+  → usage_recount: a Level day bills above its own bundle; a Sum month bills above the bundle
+    scaled to its days; the rollup keeps the measured quantity and the covered part as its
+    allowance (a Live family keeps its live rate and applies it)
+  → storage: storage_bridge reads each server's backup bucket (bundled_buckets: tenant, region and
+    server name it) beside the team buckets; a paused or ended server's bucket is not read
+Public IPv4 (#197, #200): one Level Usage Day per server and UTC day on the server's subscription
+  → service `network`, meter `public_ipv4` (Level, resource type IP, unit Nos); `central_reads`
+    stays on, because no other service reports addresses
+  → writers: VirtualMachine.sync_billing sees an address and queues
+    public_ipv4_usage.write_server_day after commit (job id per server and day) with the count it
+    saw, so an address released before the job runs still bills its day; and the hourly
+    read_public_ipv4 sweep (see the scheduled table). write_days keeps the highest count, so both
+    are idempotent
+  → no writer writes a day while Service `network` is missing or its bill_from is empty
+    (public_ipv4_usage.cutover_day is None): until the cutover patch runs (a deploy runs the new
+    code before migrate), the per-address subscriptions still bill. The writers write nothing
+    and raise nothing, and the sweep still marks the day before swept, because a day before
+    bill_from is written off
+  → a fresh install marks the cutover patch done without running it, so after_install
+    public_ipv4_usage.start_on_install sets bill_from to the install's UTC day when it is empty
+    (a fresh site holds no per-address subscription, so nothing bills twice)
+  → a day is written only when the server's subscription had an open segment at some moment of it
+    (public_ipv4_usage.billed_servers_on over catalog.subscriptions.server_segments, which
+    bundled_buckets also reads): a trial server (no subscription) is free until it converts, a
+    Stopped server bills, a day paused throughout does not
+  → included is always 0: no plan bundles an address. IPv6 is free
+  → usage_recount bills the month as count ÷ days in the month per day, at the current Catalog
+    Rate of the Live metered plan that models IP (`public-ipv4` under Live Metered Resources,
+    seeded by plan_setup.ensure_public_ipv4_plan with INR 170 / USD 2 when the plan does not exist;
+    an inactive plan is left as it is). public_ips.get_public_ipv4_rate
+    reads the same plan, so the console price, the attach and create guards and the invoice agree
+  → a day with no IP price for the team's currency and region is still written; the unpriced guard
+    in metering.metered_line_items fails the team's draft until an operator adds the rate, and the
+    next run bills every unbilled day of the open month
+  → readiness M3: a billed server that holds an address and has no IP price in its team's currency
+    for its region; a server with no address is never listed
+  → cutover (patch bill_public_ipv4_per_day): on the UTC day C it runs, it copies every IP
+    Resource Type Catalog Rate (regional ones too) onto the plan and deletes them, sets
+    Service.bill_from = C when empty, gives each enabled per-address subscription a Cancelled
+    change at 00:00 UTC on C (or at its own last change, if later) and disables it, and writes
+    day C for every holder; an hour before C bills on the old segment and every hour from C as a
+    day
+  → a server whose per-address segment billed some hour of a day (it closed after 00:00 UTC on C,
+    for example a pause or a detach) gets no Usage Day for that day from any writer
+    (public_ipv4_usage.billed_per_address), so those hours bill only on the old segment. Only day
+    C is checked: every per-address segment is closed by C, so no later day overlaps one
+  → accepted gap: on C, a per-address subscription that paused or detached after 00:00 UTC and
+    then resumed or re-attached bills only its hours before the pause; the patch closes it at the
+    resume and the day is skipped, so the hours after go unbilled (at most one address-day per
+    such server, once). The opposite choice would bill some hours twice
+Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
+  → while the service's central_reads is on, Central's own reading still bills it: every line is
+    refused with retry true ("Central still reads this service; send it again after the switch")
+    and no Usage Day is written, so the service holds its lines until the switch
+  → Central's own page jobs (storage_bridge.read_page, read_bundled_page, grove_bridge.read_page)
+    read central_reads again under the same Service row lock right before they write, and write
+    nothing once it is off: a page queued before the switch never writes a day a report owns.
+    A Usage Day is written by Central's reading only while central_reads is on, and by a pushed
+    report only while it is off
+  → service_reports.accept_report stores each line as a Usage Day; a refused line comes back
+    with its subject, meter, day, dimension ("" when it has none) and `retry`. It is true for an
+    unknown subject (the team may subscribe later), a day in the future (the service's clock may
+    be ahead) and a day written by another worker at the same time; the service sends these
+    again. It is false for a malformed line, an unknown meter and a bad value, dimension, amount,
+    currency or day format; the service never sends these again
+  → report_subjects.subjects_by_day resolves the subjects once per distinct day in the report
+    with bundled_buckets.billed_subjects_of(service, day, names): the service's Team Services
+    with a subscription, made by the end of that UTC day; for storage, a server's backup bucket on a day its server billed, with
+    that day's bundle set as Usage Day.included, as storage_bridge._bundled_reading sets it (a
+    backup bucket wins a name it shares with a Team Service, as in Central's own reading; only
+    the servers whose name ends a reported name are looked up); and a subject Central no longer
+    bills on that day (a deleted bucket), resolved day by day: a name billed on one reported
+    day can still resolve this way on another, and a day gets the same answer whatever other
+    days the report holds. Deleting a team's bucket (TeamService.on_trash, before Cargo deletes
+    it and the subscription is released) writes a Deleted Bucket row: external_id, team,
+    subscription, region, deleted_at. Central reads the rows for the name whose deleted_at is
+    within the last 2 UTC days (today or the 2 days before), in one query for every name not
+    billed on some day. A line for a day goes on the team and subscription of the latest of
+    those rows made before that UTC day ended and deleted on or after it began, the bucket that
+    held the name most recently that day (a name deleted, made again and deleted again bills
+    each day on its own bucket), a backlog day too; a day after the UTC date of the latest
+    deletion is unknown. Cargo keeps one daily peak per bucket name, so a day two buckets of one
+    name shared cannot be split: Central bills it to the bucket alive most recently that day, a
+    live (billed) bucket first, then the latest deletion. The old team is never charged for the
+    new bucket's data; at most the earlier bucket's last part-day goes unbilled. No Usage Day is consulted, so lines accepted
+    after the delete never extend the window, and a server's backup bucket is never resolved
+    this way (only a Team Service delete writes a row). A daily job deletes rows older than 30
+    days. A real reading replaces an estimated day that is not invoiced. Any other subject is
+    "unknown subject"
+  → every signed report sets Service.last_report_at and last_report_as_of
+  → the report secret: saving a new Service.report_secret queues it after commit
+    (integrations.report_secret). storage: one job per Registered region calls
+    cargo.api.webhooks.configure with the region's webhook secret and `report_secret`; region
+    enrolment (register_cargo) sends it too. ai: one job calls grove.api.control.set_report_secret.
+    Each job reads the secret itself; a failed send (AI Settings without Grove control
+    credentials too) logs "Report secret not sent to Cargo/Grove" with no secret and no
+    traceback, and other regions still get theirs. A secret that changes during each of 3
+    sends is logged once and a fresh job is queued after commit for the newest one, one job id
+    per service and region, so a queued or running resend is never queued again
+  → once Central stops reading a service (central_reads off): alert `silent_service` after
+    twice its expected_cadence with no report; usage_checks compares Central's own reading with
+    the pushed days and raises `usage_mismatch` (a check never writes a Usage Day)
 ```
 
 ### F. Credits waterfall & wallet gating
@@ -783,6 +953,8 @@ The team and the signed-in user are counted apart, and either one can lock. A us
 | A line's Project breakdown is missing/wrong | `generate._tag_projects`/`_resource_project_map` — is the resource's Subscription tagged, is its Project `enabled`? A disabled Project's lines carry no tag by design (§2.1); check `Invoice Line Item.project`/`project_title` on a real invoice, or the same fields on a forecast line |
 | Tagging a subscription into a Project is refused | `Subscription.validate_project` — same-team? Project `enabled`? `catalog.subscriptions.enforce_project_headroom` — would the tag push the Project's committed run-rate (`project_run_rate`) past its `spending_limit`? (blocks new tagging only, §2.1) |
 | ERPNext out of sync | `erpnext_sync` (async, never rolls back the invoice; check retry backoff) |
+| A server's public IPv4 is not on the invoice | readiness M3; is there a `network` Usage Day for the server and day (`subject` = server name)? Did the server's subscription have an open segment that day (a trial or a day paused throughout bills nothing)? Is the day before `Service.bill_from` (written off)? |
+| Draft fails with "unpriced metered usage: IP" | the `public-ipv4` plan has no Catalog Rate for the team's currency and the server's region; add it, then run the draft again: every unbilled IPv4 day of the open month bills |
 | Catalog masters missing | `taxonomy_setup.ensure_catalog_masters` (runs on install/migrate/before_tests) |
 | Money rounding off | money is float `Currency` (major units); check the rate field's decimal **precision** holds sub-cent rates, and that minor-unit conversion happens *only* in `gateways/` |
 

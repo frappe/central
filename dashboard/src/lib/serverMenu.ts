@@ -4,7 +4,14 @@ import { useSupport } from '@/composables/useSupport'
 import { ACCESS_LOCKED_REASON, type ServerActions } from '@/lib/capabilities'
 import { copyToClipboard } from '@/lib/clipboard'
 import { reportError, successToast } from '@/lib/feedback'
-import { canChange, canStart, canStop, isSettingUp } from '@/lib/status'
+import {
+	canChange,
+	canStart,
+	canStop,
+	isAwakeOrSleeping,
+	isSettingUp,
+	isSleeping,
+} from '@/lib/status'
 
 export type ServerMenuVerb =
 	| 'overview'
@@ -119,6 +126,7 @@ function getViewItems(
 ): DropdownOption[] {
 	const opensSite = !!site
 	const isRunning = server.status === 'Running'
+	const isOpenable = isAwakeOrSleeping(server)
 	const isBusy = !!server.pending_action
 	const canOpen = allowed.open && !isBusy && !isSettingUp(server.status)
 	const items: DropdownOption[] = []
@@ -134,7 +142,7 @@ function getViewItems(
 					opensSite ? 'Visit site' : 'Open server',
 					opensSite ? 'lucide-globe' : 'lucide-server',
 				),
-				disabled: !isRunning || !(opensSite || server.gateway_url),
+				disabled: !isOpenable || !(opensSite || server.gateway_url),
 			}),
 		)
 
@@ -143,7 +151,7 @@ function getViewItems(
 		items.push(
 			...lockable(allowed, true, {
 				...entry('pilot', 'Open server', 'lucide-server'),
-				disabled: !isRunning || !server.gateway_url,
+				disabled: !isOpenable || !server.gateway_url,
 			}),
 		)
 
@@ -203,6 +211,7 @@ function getPowerItems(
 ): DropdownOption[] {
 	if (!allowed.power) return []
 
+	if (isSleeping(server)) return [entry('start', 'Wake', 'lucide-sunrise')]
 	if (canStart(server.status)) return [entry('start', 'Start', 'lucide-play')]
 
 	// Only a running server can stop or restart; the API refuses both otherwise.

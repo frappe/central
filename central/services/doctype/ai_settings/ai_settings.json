@@ -89,14 +89,14 @@
   },
   {
    "default": "0",
-   "description": "Stops the 5-minute job from minting new keys. The pool keeps its size and its ready keys; retries of revokes and hand-overs still run.",
+   "description": "Stops the 5-minute job from minting new keys. The pool keeps its size and its ready keys; retries of revokes and hand-overs still run, and a creation that finds its pool empty still mints its own key.",
    "fieldname": "pause_pool_refill",
    "fieldtype": "Check",
    "label": "Pause Pool Refill"
   },
   {
    "default": "0",
-   "description": "Stops a new free-trial server from taking a key from the pool. It boots without one, as with an empty pool; a server that already holds a key keeps it.",
+   "description": "Stops a new free-trial server from taking a key from the pool or minting its own. It boots without one; a server that already holds a key keeps it.",
    "fieldname": "pause_key_assignment",
    "fieldtype": "Check",
    "label": "Pause Key Assignment"
@@ -116,7 +116,7 @@
  "grid_page_length": 50,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-01 19:00:00.000000",
+ "modified": "2026-11-25 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "AI Settings",

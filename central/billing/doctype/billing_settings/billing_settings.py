@@ -17,6 +17,9 @@ from frappe.model.document import Document
 from central.billing.platform import kinds
 from central.billing.settings import GATEWAY_MINIMUM_CHARGES
 
+# The account names on each row of Accounts per Currency.
+ACCOUNT_FIELDS = ("account", "advance_account", "income_account", "wallet_clearing_account")
+
 # The last day that exists in every month.
 LAST_SUSPENSION_DAY = 28
 
@@ -87,8 +90,10 @@ class BillingSettings(Document):
 		for field in self.meta.get("fields", {"fieldtype": "Data"}):
 			if isinstance(self.get(field.fieldname), str):
 				self.set(field.fieldname, self.get(field.fieldname).strip())
-		for row in self.gateways:
-			for field in ("mode_of_payment", "clearing_account"):
+		rows = [(row, ("mode_of_payment", "clearing_account")) for row in self.gateways]
+		rows += [(row, ACCOUNT_FIELDS) for row in self.receivable_accounts]
+		for row, fields in rows:
+			for field in fields:
 				row.set(field, (row.get(field) or "").strip())
 
 	def validate_dunning_ladder(self):

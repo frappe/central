@@ -2,8 +2,8 @@
 import {
 	Alert,
 	Button,
+	Combobox,
 	ScrollArea,
-	Select,
 	Skeleton,
 	TextInput,
 } from 'frappe-ui'
@@ -288,7 +288,7 @@ const loadListErrorTitle = __("Couldn't load this list")
 
 			<div
 				v-else-if="showListControls || $slots['controls-start']"
-				class="flex min-w-0 flex-1 flex-wrap items-center gap-2"
+				class="flex min-w-0 flex-1 basis-full flex-wrap items-center gap-2 sm:basis-0"
 			>
 				<slot name="controls-start" />
 
@@ -305,13 +305,15 @@ const loadListErrorTitle = __("Couldn't load this list")
 					</template>
 				</TextInput>
 
-				<Select
-					side="bottom"
+				<Combobox
 					v-for="filter in filters"
 					:key="filter.key"
+					trigger="button"
+					side="bottom"
+					align="start"
 					:model-value="query.filters[filter.key] || ''"
-					class="w-36"
-					:placeholder="filter.allLabel || __('All {0}', [filter.label.toLowerCase()])"
+					class="min-w-36 max-w-60"
+					:placeholder="__('Search…')"
 					:options="[
 						{ label: filter.allLabel || __('All {0}', [filter.label.toLowerCase()]), value: '' },
 						...filter.options,

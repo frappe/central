@@ -23,15 +23,22 @@ GST_ROWS = {
 }
 
 
+SYNC_MODE = "central.billing.ingester.connection.sync_mode"
+ACCOUNTING_URL = "central.billing.ingester.connection._url"
+
+
+def sync_mode(mode: str = "Automatic"):
+	"""Patch the accounting sync mode of Billing Settings for a test."""
+	return patch(SYNC_MODE, return_value=mode)
+
+
 def requires_accounting_system(cls):
 	"""Skip a test class on a site with no accounting system configured, such as CI.
 
 	The tests fake every call, but they exercise an integration the site does not use.
 	"""
-	configured = frappe.conf.get("erpnext_url") or frappe.conf.get("enable_erpnext_sync")
-	return unittest.skipUnless(
-		configured, "no accounting system configured (erpnext_url, enable_erpnext_sync)"
-	)(cls)
+	configured = frappe.db.get_single_value("Billing Settings", "accounting_url")
+	return unittest.skipUnless(configured, "no accounting Site URL in Billing Settings")(cls)
 
 
 class FakeAccountingSystem:
@@ -40,6 +47,7 @@ class FakeAccountingSystem:
 	def __init__(self):
 		self.records = {
 			("Address", COMPANY_ADDRESS): {"gstin": COMPANY_GSTIN},
+			("Terms and Conditions", "Frappe Cloud"): {"terms": "Pay on time."},
 			**{("Sales Taxes and Charges Template", t): {"taxes": rows} for t, rows in GST_ROWS.items()},
 		}
 		self.posted = []
@@ -51,6 +59,8 @@ class FakeAccountingSystem:
 		return frappe._dict(record, name=name) if record is not None else None
 
 	def find(self, doctype, filters, fields=None):
+		if any(len(condition) == 4 for condition in filters):
+			return []  # a child table filter, such as a contact by email: nothing made by hand here
 		return [
 			frappe._dict(name=name)
 			for (dt, name), record in self.records.items()
@@ -140,6 +150,8 @@ class FakeAccountingSystem:
 			return value.strip("%") in (actual or "")
 		if field == "docstatus" and actual is None:
 			actual = 1  # everything Central posts is submitted
+		if field == "is_return" and actual is None:
+			actual = 0
 		return actual == value
 
 
@@ -150,9 +162,8 @@ def configure_accounting(**values) -> None:
 		{
 			"company": COMPANY,
 			"company_address": COMPANY_ADDRESS,
-			"advance_account": "Customer Advances - TC",
-			"income_account": "Sales - TC",
 			"cost_center": "Main - TC",
+			"invoice_terms": "Frappe Cloud",
 			"promotional_credit_account": "Promotional Credit - TC",
 			"in_state_template": IN_STATE,
 			"out_state_template": OUT_STATE,
@@ -160,12 +171,17 @@ def configure_accounting(**values) -> None:
 		}
 	)
 	doc.set("receivable_accounts", [])
-	for currency, account in (("INR", "Debtors - TC"), ("USD", "Debtors USD - TC")):
+	for currency, account, region in (
+		("INR", "Debtors - TC", "India"),
+		("USD", "Debtors USD - TC", "Global"),
+	):
 		doc.append(
 			"receivable_accounts",
 			{
 				"currency": currency,
 				"account": account,
+				"advance_account": f"Customer Advances {currency} - TC",
+				"income_account": f"Sales {region} - TC",
 				"wallet_clearing_account": f"Wallet Clearing {currency} - TC",
 			},
 		)

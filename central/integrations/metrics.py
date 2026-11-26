@@ -5,23 +5,30 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import frappe
+from frappe.core.doctype.rq_job.rq_job import serialize_job
 from frappe.utils import get_datetime, get_system_timezone, now_datetime
 from frappe.utils.background_jobs import get_queue, get_queue_list
 from frappe.utils.file_lock import LockTimeoutError
 from frappe.utils.synchronization import filelock
+from rq.job import Job
+from rq.queue import Queue
 
 from central.integrations.datum import get_central_telemetry_region, send_to_datum
 
 REQUEST_COUNTS_KEY = "central:telemetry:request_counts"
 OPEN_ACTION_STATUSES = ("Queued", "Dispatching", "Sent", "In Progress", "Uncertain")
 FINISHED_ACTION_STATUSES = ("Succeeded", "Failed", "Timed Out")
+# The SLO files in beacon/services/ pick their target from these buckets, so a target change needs no release.
+LATENCY_BUCKETS_SECONDS = (30, 60, 120, 300, 600)
 # Only these groups of /api/method/central.api.<group> get their own label, so the label set stays small.
+FAILURES_NAMED = 20
 API_GROUPS = {"auth", "identity", "jwks", "oidc", "pilot", "servers", "signups", "sites", "sso", "teams"}
 
 
 class CentralMetrics:
-	"""The gauges that show whether Central does its work: customer requests, resource actions, payments,
-	billing, domains, snapshots, emails and background jobs. Each is a count or an age, never a label per record."""
+	"""The gauges that show whether Central does its work: customer requests, signups, resource actions, payments,
+	billing, domains, snapshots, emails and background jobs. Each is a count or an age. Only failures get a
+	label per record, at most FAILURES_NAMED of each kind, so Beacon can name what failed."""
 
 	def __init__(self) -> None:
 		self.now = now_datetime()
@@ -32,6 +39,7 @@ class CentralMetrics:
 	def collect(self) -> list[dict]:
 		for add in (
 			self.add_requests,
+			self.add_signups,
 			self.add_resource_actions,
 			self.add_payments,
 			self.add_billing,
@@ -66,6 +74,15 @@ class CentralMetrics:
 			group, status_class = field.split("|", 1)
 			self.add("central_requests", count, group=group, status_class=status_class)
 
+	def add_signups(self) -> None:
+		"""The signup funnel, card setups and trial conversions. The signups module owns these gauges."""
+		# Imported here, because the signups gauges import this module.
+		from central.signups import metrics as signup_metrics
+
+		signup_metrics.add_signup_metrics(self)
+		signup_metrics.add_card_setup_metrics(self)
+		signup_metrics.add_conversion_metrics(self)
+
 	def add_resource_actions(self) -> None:
 		"""Open actions and the oldest open one, and actions that finished in the last hour, for each region and action."""
 		open_actions = frappe.get_all(
@@ -87,8 +104,35 @@ class CentralMetrics:
 				"status": ("in", FINISHED_ACTION_STATUSES),
 				"completed_at": (">", self.now - timedelta(hours=1)),
 			},
-			fields=["region", "resource_type", "action", "status"],
+			fields=[
+				"region",
+				"resource_type",
+				"action",
+				"status",
+				"title",
+				"subdomain",
+				"resource_id",
+				"error_code",
+				"creation",
+				"completed_at",
+			],
+			order_by="completed_at desc",
 		)
+		named = Counter()
+		for row in finished:
+			key = (row.region or "none", row.resource_type, row.action)
+			if row.status == "Succeeded" or named[key] >= FAILURES_NAMED:
+				continue
+			named[key] += 1
+			self.add(
+				"central_resource_action_failed",
+				1,
+				region=key[0],
+				resource_type=row.resource_type,
+				action=row.action,
+				resource=row.title or row.subdomain or row.resource_id or "none",
+				error=row.error_code or row.status,
+			)
 		for (region, resource_type, action, status), count in Counter(
 			(row.region or "none", row.resource_type, row.action, row.status) for row in finished
 		).items():
@@ -100,6 +144,18 @@ class CentralMetrics:
 				action=action,
 				status=status,
 			)
+		self.add_action_durations([row for row in finished if row.status == "Succeeded"])
+
+	def add_action_durations(self, succeeded: list[frappe._dict]) -> None:
+		"""Succeeded actions of the last hour that finished within each latency bucket, from request to finish."""
+		within = Counter()
+		for row in succeeded:
+			seconds = (get_datetime(row.completed_at) - get_datetime(row.creation)).total_seconds()
+			for bucket in get_buckets_within(seconds):
+				within[(row.region or "none", row.resource_type, row.action, bucket)] += 1
+		for (region, resource_type, action, bucket), count in within.items():
+			labels = {"region": region, "resource_type": resource_type, "action": action, "le": str(bucket)}
+			self.add("central_resource_actions_finished_within_last_hour", count, **labels)
 
 	def add_payments(self) -> None:
 		"""Payment attempts of the last hour, the age of the newest capture, and gateway webhooks not processed yet."""
@@ -208,10 +264,22 @@ class CentralMetrics:
 		add_webhook_requests(self, self.now)
 
 	def add_jobs(self) -> None:
-		"""Queue backlogs, failed jobs, and how late each scheduled Central job is."""
+		"""Queue backlogs, background jobs that failed in the last hour, scheduler runs by status, and how late
+		each scheduled Central job is."""
+		hour_ago = self.now - timedelta(hours=1)
 		for queue_name in get_queue_list():
 			queue = get_queue(queue_name)
 			self.add("central_job_queue_length", queue.count, queue=queue_name)
+			for method, count in get_failed_jobs(queue, hour_ago).items():
+				self.add("central_jobs_failed_last_hour", count, queue=queue_name, method=method)
+
+		runs = frappe.get_all(
+			"Scheduled Job Log",
+			filters={"creation": (">", hour_ago)},
+			fields=["scheduled_job_type", "status"],
+		)
+		for (job, status), count in Counter((row.scheduled_job_type, row.status) for row in runs).items():
+			self.add("central_scheduled_job_runs_last_hour", count, job=job, status=status)
 
 		for name in frappe.get_all(
 			"Scheduled Job Type", filters={"stopped": 0, "method": ("like", "central.%")}, pluck="name"
@@ -221,16 +289,51 @@ class CentralMetrics:
 			self.add("central_scheduled_job_late_seconds", max(late, 0), job=job.method)
 
 
+def get_buckets_within(seconds: float) -> list[int]:
+	"""The latency buckets that a duration fits in. The counts are cumulative, as in a Prometheus histogram."""
+	return [bucket for bucket in LATENCY_BUCKETS_SECONDS if seconds <= bucket]
+
+
+def get_failed_jobs(queue: Queue, since: datetime) -> Counter:
+	"""Background jobs of the queue that failed since the given time, by job name. The failed registry keeps
+	failures for days, so only its newest 100 are read."""
+	since_utc = since.replace(tzinfo=ZoneInfo(get_system_timezone())).astimezone(UTC)
+	job_ids = queue.failed_job_registry.get_job_ids(-100, -1)
+	failed = Counter()
+	for job in Job.fetch_many(job_ids, connection=queue.connection):
+		# RQ stores times in UTC, without a time zone in older versions.
+		ended_at = job and job.ended_at and job.ended_at.replace(tzinfo=job.ended_at.tzinfo or UTC)
+		if ended_at and ended_at > since_utc:
+			failed[serialize_job(job).job_name] += 1
+	return failed
+
+
 def add_webhook_requests(metrics: CentralMetrics, now: datetime) -> None:
+	"""Count the requests by webhook and status, and name the newest Exhausted ones with their first error line."""
 	rows = frappe.get_all(
 		"Webhook Request Log",
 		filters={"creation": (">", now - timedelta(days=1))},
-		fields=["webhook", "status"],
+		fields=["webhook", "status", "reference_doctype", "reference_document", "error"],
+		order_by="creation desc",
 	)
 	for (webhook, status), count in Counter(
 		(row.webhook or "none", row.status or "none") for row in rows
 	).items():
 		metrics.add("frappe_webhook_requests_last_day", count, webhook=webhook, status=status)
+
+	named = Counter()
+	for row in rows:
+		webhook = row.webhook or "none"
+		if row.status != "Exhausted" or named[webhook] >= FAILURES_NAMED:
+			continue
+		named[webhook] += 1
+		metrics.add(
+			"frappe_webhook_request_exhausted",
+			1,
+			webhook=webhook,
+			document=f"{row.reference_doctype} {row.reference_document}",
+			error=((row.error or "").strip().splitlines() or ["no error"])[-1][:120],
+		)
 
 
 def count_request(request, response) -> None:

@@ -1,0 +1,235 @@
+# Copyright (c) 2026, frappe and contributors
+# For license information, please see license.txt
+
+from __future__ import annotations
+
+import hmac
+import re
+
+import frappe
+from frappe import _
+from frappe.model.document import Document
+
+from central.infrastructure.doctype.blocked_domain.blocked_domain import BlockedDomain
+from central.infrastructure.doctype.github_installation.github_installation import GitHubInstallation
+from central.infrastructure.doctype.region.atlas_connection import is_auto_routed_label
+from central.infrastructure.doctype.region.region import Region
+from central.integrations.github import GitHubApp
+
+DOMAIN_SUFFIX_LENGTH = 6
+DOMAIN_ATTEMPTS = 5
+MAX_LABEL_LENGTH = 63
+# The deploy agent writes each secret as one NAME=value line of the container's environment file.
+SECRET_NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# The agent sets these in the same file, so a secret must not replace them.
+RESERVED_SECRET_NAMES = ("IMAGE", "PORT", "DEPLOY_REQUEST")
+
+
+class DeployApp(Document):
+	"""One repository and branch a team deploys. A push to that branch deploys it."""
+
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		from central.deploy.doctype.deploy_app_secret.deploy_app_secret import DeployAppSecret
+
+		agent_token: DF.Password | None
+		branch: DF.Data
+		domain: DF.Data | None
+		installation: DF.Link
+		region: DF.Link | None
+		repository: DF.Data
+		repository_id: DF.Data
+		secrets: DF.Table[DeployAppSecret]
+		status: DF.Literal["Active", "Disabled"]
+		team: DF.Link
+		virtual_machine: DF.Link | None
+	# end: auto-generated types
+
+	def before_insert(self):
+		self.agent_token = frappe.generate_hash(length=32)
+
+	def validate(self):
+		self.validate_secrets()
+
+	def validate_secrets(self) -> None:
+		"""Refuse a secret the deploy agent would refuse, so the save fails instead of the next deploy."""
+		names = set()
+		for secret in self.secrets:
+			if not SECRET_NAME_PATTERN.fullmatch(secret.key or "") or secret.key in RESERVED_SECRET_NAMES:
+				frappe.throw(
+					_(
+						"{0} can't be a secret name. Use letters, digits and underscores, and don't start with a digit."
+					).format(secret.key)
+				)
+			if secret.key in names:
+				frappe.throw(_("Secret {0} is set twice.").format(secret.key))
+			if "\n" in (secret.value or "") or "\r" in (secret.value or ""):
+				frappe.throw(_("Secret {0} can't have a line break.").format(secret.key))
+			names.add(secret.key)
+
+	@staticmethod
+	def get_for_agent(credential: str) -> DeployApp:
+		"""The app whose deploy agent sent `credential`, written `<app>:<token>`."""
+		name, _separator, token = credential.partition(":")
+		if name and token and frappe.db.exists("Deploy App", name):
+			app: DeployApp = frappe.get_doc("Deploy App", name)
+			expected = app.get_password("agent_token", raise_exception=False)
+			if expected and hmac.compare_digest(expected, token):
+				return app
+
+		frappe.throw(_("This deploy agent token is not valid."), frappe.AuthenticationError)
+
+	@staticmethod
+	def validate_region(team: str, repository: str, branch: str | None, region: str) -> None:
+		"""An app's VM lives in its region's Atlas, so an app that has one cannot move to another region.
+		Without a branch, the default branch is unknown until GitHub returns, so `add` checks it then."""
+		if not branch:
+			return
+		current = frappe.db.get_value(
+			"Deploy App",
+			{"team": team, "repository": repository, "branch": branch, "virtual_machine": ["is", "set"]},
+			"region",
+		)
+		if current and current != region:
+			throw_region_change(repository, current)
+
+	@staticmethod
+	def add(
+		installation: GitHubInstallation, found: dict, region: str, branch: str | None = None
+	) -> DeployApp:
+		"""Deploy a repository the installation lists in `region`, from `branch` or else its default branch.
+		The caller has checked that the user adding it is admin on the repository."""
+		app = GitHubApp()
+		team = installation.team
+		branch = branch or found["default_branch"]
+		if not app.has_branch(
+			installation.installation_id, found["repository_id"], found["full_name"], branch
+		):
+			frappe.throw(_("Branch {0} does not exist in {1}.").format(branch, found["full_name"]))
+
+		name = frappe.db.get_value(
+			"Deploy App",
+			{"team": team, "repository_id": found["repository_id"], "branch": branch},
+			for_update=True,
+		)
+		doc = frappe.get_doc("Deploy App", name) if name else frappe.new_doc("Deploy App")
+		# Checked again here, since the repository may have been renamed while the user was on GitHub.
+		if doc.virtual_machine and doc.region != region:
+			throw_region_change(found["full_name"], doc.region)
+		# The domain lives under its region's zone; an app without a VM has no route yet to move.
+		if not doc.domain or doc.region != region:
+			doc.domain = get_new_domain(found["full_name"], region)
+		doc.update(
+			{
+				"team": team,
+				"installation": installation.name,
+				"repository": found["full_name"],
+				"repository_id": found["repository_id"],
+				"branch": branch,
+				"region": region,
+				"status": "Active",
+			}
+		)
+		# Central saves the app for a team; only System Manager has Desk access.
+		doc.save(ignore_permissions=True)
+		return doc
+
+	def get_installation_id(self) -> str:
+		return GitHubInstallation.get_installation_id(self.installation)
+
+	@staticmethod
+	def get_for_push(installation_id: str, repository_id: str, branch: str) -> list[str]:
+		"""The active apps a push to `branch` deploys. Several teams, or none, can deploy one push."""
+		installations = frappe.get_all(
+			"GitHub Installation",
+			filters={"installation_id": installation_id, "status": "Active"},
+			pluck="name",
+		)
+		if not installations:
+			return []
+
+		return frappe.get_all(
+			"Deploy App",
+			filters={
+				"installation": ["in", installations],
+				"repository_id": repository_id,
+				"branch": branch,
+				"status": "Active",
+			},
+			pluck="name",
+		)
+
+	@staticmethod
+	def disable_for_server(server: str) -> None:
+		"""Called when a server is removed cleans up the deploy app"""
+		frappe.db.set_value(
+			"Deploy App",
+			{"virtual_machine": server},
+			{"status": "Disabled", "virtual_machine": None, "domain": None},
+		)
+
+	@staticmethod
+	def disable_for_installation(installation: str) -> None:
+		"""Stop deploying the apps of an installation removed on GitHub. They keep their VM and domain, and
+		connecting the repository again through a new installation makes them active."""
+		names = frappe.get_all(
+			"Deploy App", filters={"installation": installation, "status": "Active"}, pluck="name"
+		)
+		for name in names:
+			frappe.get_doc("Deploy App", name, for_update=True).disable()
+
+	def update_secrets(self, secrets: dict[str, str], unset: list[str]) -> None:
+		"""Set each of `secrets` and remove each name in `unset`. A deploy reads them when it builds, so the container
+		gets them on the next push."""
+		if missing := set(unset) - {secret.key for secret in self.secrets}:
+			frappe.throw(_("The app has no secret {0}.").format(", ".join(sorted(missing))))
+
+		self.set("secrets", [secret for secret in self.secrets if secret.key not in unset])
+		rows = {secret.key: secret for secret in self.secrets}
+		for name, value in secrets.items():
+			if name in rows:
+				rows[name].value = value
+			else:
+				self.append("secrets", {"key": name, "value": value})
+		# A team member with app:deploy changes the app's secrets through the deploy API; users can't write it.
+		self.save(ignore_permissions=True)
+
+	def disable(self) -> None:
+		self.status = "Disabled"
+		# Central disables the app for a GitHub webhook or a team member with app:deploy; users can't write it.
+		self.save(ignore_permissions=True)
+
+
+def on_doctype_update() -> None:
+	frappe.db.add_unique("Deploy App", ["team", "repository_id", "branch"])
+	frappe.db.add_index("Deploy App", ["installation", "repository_id", "branch"])
+
+
+def throw_region_change(repository: str, region: str) -> None:
+	frappe.throw(_("{0} already runs in {1}. Its region cannot change.").format(repository, region))
+
+
+def get_new_domain(repository: str, region: str) -> str:
+	"""`<repository name>-<6 random characters>` under the region's zone, unused and not reserved."""
+	name = re.sub(r"[^a-z0-9]+", "-", repository.rpartition("/")[2].lower()).strip("-")
+	name = name[: MAX_LABEL_LENGTH - DOMAIN_SUFFIX_LENGTH - 1].strip("-")
+	# The proxy routes `site-*` and `*-vm-*` labels from the label itself, so they cannot be mapped.
+	if not name or is_auto_routed_label(f"{name}-"):
+		name = "app"
+
+	zone = Region.get_zone(region)
+	for _attempt in range(DOMAIN_ATTEMPTS):
+		domain = f"{name}-{frappe.generate_hash(length=DOMAIN_SUFFIX_LENGTH)}.{zone}"
+		if not (
+			BlockedDomain.is_blocked(domain)
+			or frappe.db.exists("Site Domain", domain)
+			or frappe.db.exists("Deploy App", {"domain": domain})
+		):
+			return domain
+	frappe.throw(_("Could not find a free domain for {0}. Try again.").format(repository))

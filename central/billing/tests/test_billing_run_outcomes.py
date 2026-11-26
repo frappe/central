@@ -102,7 +102,8 @@ class TestBillingRunOutcomes(IntegrationTestCase):
 
 		self.assertFalse(frappe.db.exists("Invoice", {"team": TEAM, "period_end": PERIOD[1]}))
 		self.assertEqual(_outcome().outcome, "Below Minimum")
-		self.assertIn("written off", _outcome().reason)
+		self.assertIn("fixed charges were written off", _outcome().reason)
+		self.assertIn("usage carries to the next invoice", _outcome().reason)
 		self.assertEqual(self._events("Invoice Skipped Below Minimum"), 1)
 
 	def test_a_month_at_or_above_the_minimum_is_invoiced(self):

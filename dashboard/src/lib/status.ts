@@ -6,16 +6,35 @@ import type { ActionStatus } from '@/types/serverCreation'
 export type VirtualMachineStatus =
 	| NonNullable<VirtualMachine['status']>
 	| 'Resizing'
+	| 'Sleeping'
 
 export type BadgeTheme = 'green' | 'gray' | 'amber' | 'red' | 'blue' | 'violet'
 
 /** The status to show for a row: a live action's transitional label takes precedence. */
 export function displayStatus(server: {
 	status?: VirtualMachineStatus
+	sleep_state?: VirtualMachine['sleep_state']
 	pending_action?: string | null
 }): string {
 	if (server.pending_action) return server.pending_action
+	if (isSleeping(server)) return 'Sleeping'
 	return server.status ?? 'Pending'
+}
+
+/** A sleeping server reports Stopped. The next request or a start wakes it. */
+export function isSleeping(server: {
+	status?: VirtualMachineStatus
+	sleep_state?: VirtualMachine['sleep_state']
+}): boolean {
+	return server.status === 'Stopped' && !!server.sleep_state
+}
+
+/** Opening the bench or the site wakes a sleeping server, so it opens like a running one. */
+export function isAwakeOrSleeping(server: {
+	status?: VirtualMachineStatus
+	sleep_state?: VirtualMachine['sleep_state']
+}): boolean {
+	return server.status === 'Running' || isSleeping(server)
 }
 
 /** States a stopped server can be powered on from (mirrors central/api/servers.py). */

@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
@@ -5,6 +7,7 @@ from frappe.tests import IntegrationTestCase
 from central.api.jwks import jwks_document
 from central.api.sso import get_bench_link, open_bench
 from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
+from central.errors import PilotStarting
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import central_url
 from central.tests.test_iam import ensure_user
@@ -30,6 +33,9 @@ class TestOpenBench(IntegrationTestCase):
 		self.pcid = "pcred-open-1"
 		self._credential(self.pcid, "vm-open-1")
 		CentralSSOSettings.instance().initialize_signing_key("pilot")
+		self.pilot_reachable = patch("central.integrations.pilot.is_pilot_reachable", return_value=True)
+		self.pilot_reachable.start()
+		self.addCleanup(self.pilot_reachable.stop)
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -172,10 +178,25 @@ class TestOpenBench(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self._open(self.dev, server="vm-open-1")
 
+	def test_a_sleeping_vm_opens_after_the_health_check_wakes_it(self):
+		self._server("vm-open-1", "Stopped")
+		frappe.db.set_value("Virtual Machine", "vm-open-1", "sleep_state", "Deep Sleeping")
+
+		with patch("central.integrations.pilot.is_pilot_reachable", return_value=False):
+			with self.assertRaises(PilotStarting):
+				self._open(self.dev, server="vm-open-1")
+
+		self.assertTrue(self._open(self.dev, server="vm-open-1")["url"].startswith(f"{GATEWAY}/?sid="))
+
 	def test_missing_gateway_refused(self):
 		self._server("vm-open-1", "Running", gateway=None)
 		with self.assertRaises(frappe.ValidationError):
 			self._open(self.dev, server="vm-open-1")
+
+	def test_a_starting_pilot_refuses_the_link(self):
+		with patch("central.integrations.pilot.is_pilot_reachable", return_value=False):
+			with self.assertRaises(PilotStarting):
+				self._open(self.dev, server="vm-open-1")
 
 	def test_disabled_cluster_refused(self):
 		frappe.db.set_value("Region", self.cluster, "status", "Disabled")
@@ -203,3 +224,10 @@ class TestOpenBench(IntegrationTestCase):
 			self._redirect(self.dev, "pcred-missing"),
 			"/dashboard/servers?pilot=pcred-missing&action=open-bench",
 		)
+
+	def test_open_bench_sends_a_starting_pilot_to_the_dashboard(self):
+		with patch("central.integrations.pilot.is_pilot_reachable", return_value=False):
+			self.assertEqual(
+				self._redirect(self.dev, self.pcid),
+				f"/dashboard/servers?pilot={self.pcid}&action=open-bench",
+			)

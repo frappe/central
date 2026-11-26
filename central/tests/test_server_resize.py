@@ -5,6 +5,7 @@ import frappe
 from frappe.tests import UnitTestCase
 
 from central.errors import AtlasConnectionError, AtlasRejected
+from central.integrations.atlas import OFFLOAD_OFF_SETTINGS, SLEEP_OFF_SETTINGS
 from central.integrations.servers import resize_server
 
 SHAPE = {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 50}
@@ -12,7 +13,10 @@ SHAPE = {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 50}
 
 class TestServerResize(UnitTestCase):
 	def setUp(self):
-		self.server = SimpleNamespace(atlas_vm_id="vm-00001")
+		self.server = SimpleNamespace(atlas_vm_id="vm-00001", plan="paid-plan")
+		self.is_trial_plan = self.enterContext(
+			patch("central.billing.catalog.trials.is_trial_plan", return_value=False)
+		)
 		self.client = MagicMock()
 		self.enterContext(patch("central.integrations.servers.get_client", return_value=self.client))
 		self.observe = self.enterContext(patch("central.integrations.servers.observe_server"))
@@ -25,13 +29,17 @@ class TestServerResize(UnitTestCase):
 		memory_mib: int = 2048,
 		disk_mib: int = 25600,
 		sleep_after_idle_seconds: int = 0,
+		deep_sleep_after_idle_seconds: int = 0,
+		desired_state: str | None = None,
 	):
 		return {
 			"current_state": state,
+			"desired_state": desired_state or ("stopped" if state == "stopped" else "running"),
 			"compute": {
 				"cpu_millicores": cpu_millicores,
 				"memory_mib": memory_mib,
 				"sleep_after_idle_seconds": sleep_after_idle_seconds,
+				"deep_sleep_after_idle_seconds": deep_sleep_after_idle_seconds,
 			},
 			"disk": {"size_mib": disk_mib},
 		}
@@ -85,29 +93,64 @@ class TestServerResize(UnitTestCase):
 		self.client.resize.assert_not_called()
 		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
 
-	def test_a_resize_ends_idle_sleep_without_stopping_the_server(self):
-		"""Clearing the idle timeout alone needs no stop: Atlas takes it in any state."""
-		self.client.get_vm.return_value = self.remote(
-			"running", 2000, 4096, 51200, sleep_after_idle_seconds=1800
-		)
-
-		resize_server(self.server, SHAPE)
-
-		self.client.vm_action.assert_not_called()
-		self.client.resize.assert_not_called()
-		self.client.disable_idle_shutdown.assert_called_once_with("vm-00001")
-
-	def test_disk_only_grow_on_a_sleeping_server_stays_online(self):
-		"""The disk grows online, and the idle change sends no resource values, so Atlas takes
-		it on a running server."""
+	def test_a_resize_keeps_idle_sleep(self):
+		"""Atlas keeps every sleep field a resize omits, so the owner's choice stays."""
 		self.client.get_vm.return_value = self.remote("running", 2000, 4096, sleep_after_idle_seconds=1800)
 
 		resize_server(self.server, SHAPE)
 
-		self.client.vm_action.assert_not_called()
+		self.client.set_compute_settings.assert_not_called()
 		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
-		self.client.resize.assert_not_called()
-		self.client.disable_idle_shutdown.assert_called_once_with("vm-00001")
+
+	def test_a_server_leaving_its_trial_stops_sleeping(self):
+		self.client.get_vm.return_value = self.remote("running", 2000, 4096, sleep_after_idle_seconds=600)
+
+		self.is_trial_plan.return_value = True
+
+		resize_server(self.server, SHAPE)
+
+		self.client.set_compute_settings.assert_called_once_with("vm-00001", SLEEP_OFF_SETTINGS)
+
+	def test_a_sleeping_server_wakes_before_its_disk_grows(self):
+		"""A sleeping VM reports stopped while Atlas still wants it running."""
+		self.client.get_vm.side_effect = [
+			self.remote("stopped", 2000, 4096, sleep_after_idle_seconds=1800, desired_state="running"),
+			self.remote("stopped", 2000, 4096, desired_state="running"),
+			self.remote("running", 2000, 4096),
+			self.remote("running", 2000, 4096),
+		]
+
+		resize_server(self.server, SHAPE)
+
+		self.client.vm_action.assert_called_once_with("vm-00001", "start")
+		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
+
+	def test_deep_sleep_stays_within_the_offload_limit(self):
+		self.client.get_vm.return_value = self.remote(
+			"running", 2000, 4096, deep_sleep_after_idle_seconds=3600
+		)
+
+		resize_server(self.server, SHAPE)
+
+		self.client.set_compute_settings.assert_not_called()
+
+	def test_a_grow_past_the_offload_limit_turns_deep_sleep_off_first(self):
+		"""Atlas refuses a size past the offload limit while deep sleep is set. Idle sleep stays."""
+		self.client.get_vm.return_value = self.remote(
+			"running", 2000, 4096, sleep_after_idle_seconds=1800, deep_sleep_after_idle_seconds=3600
+		)
+
+		resize_server(self.server, {**SHAPE, "disk_gigabytes": 100})
+
+		self.assertEqual(
+			[
+				entry[0]
+				for entry in self.client.method_calls
+				if entry[0] in ("set_compute_settings", "update_disk")
+			],
+			["set_compute_settings", "update_disk"],
+		)
+		self.client.set_compute_settings.assert_called_once_with("vm-00001", OFFLOAD_OFF_SETTINGS)
 
 	def test_stopped_server_is_resized_then_started(self):
 		self.client.get_vm.side_effect = [
@@ -222,7 +265,7 @@ class TestServerResize(UnitTestCase):
 		self.client.get_vm.return_value = {**self.remote("running"), "is_in_rescue_mode": True}
 		resize_server(self.server, {"vcpus": 1, "memory_megabytes": 2048, "disk_gigabytes": 50})
 		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
-		self.client.disable_idle_shutdown.assert_not_called()
+		self.client.set_compute_settings.assert_not_called()
 		self.client.vm_action.assert_not_called()
 
 
@@ -301,17 +344,14 @@ class TestTrialUpgradeBucket(UnitTestCase):
 		)
 		resource_action = "central.infrastructure.doctype.resource_action.resource_action"
 		with (
-			patch.object(action, "db_set"),
 			patch(f"{resource_action}.is_trial_plan", side_effect=lambda name: name == "trial"),
 			patch(
 				"central.integrations.pilot.plan_includes_storage",
 				return_value=bundles_storage,
 			),
 			patch(f"{resource_action}.frappe.enqueue") as enqueue,
-			# The server is not in the database; its activity feed is tested elsewhere.
-			patch(f"{resource_action}.ActivityEvent.record_action"),
 		):
-			action.transition("Succeeded")
+			action.handle_success()
 
 		return enqueue
 

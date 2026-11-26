@@ -1,4 +1,5 @@
 -- title: Central certificate expiring
+-- description: The certificate that Central serves expires soon. When it expires, customers cannot reach the dashboard or API.
 -- severity: Medium
 -- host: {central_url}
 -- minimum_days_left: 14

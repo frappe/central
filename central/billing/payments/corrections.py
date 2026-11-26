@@ -167,17 +167,34 @@ def retry_failed_refunds(invoice: str) -> int:
 
 
 def run_cancellation(invoice: str) -> None:
-	"""Background job: take the next step of this invoice's cancellation."""
-	from central.billing.ingester.connection import enabled
+	"""Background job: take the next step of this invoice's cancellation.
+
+	The accounting system steps run here in Automatic mode only. In Manual mode an operator sends them."""
+	from central.billing.ingester.connection import is_automatic
 	from central.billing.ingester.locks import hold_until_transaction_ends
 
 	if not hold_until_transaction_ends(f"cancellation::{invoice}"):
 		return  # a step is running and queues the one after
 	doc = frappe.get_doc("Invoice", invoice)
-	step = _next_step(doc, enabled())
+	step = _next_step(doc, is_automatic())
 	if step:
 		step()
 		enqueue_steps(invoice)
+
+
+def next_accounting_step(invoice: str):
+	"""The next accounting system step of this invoice's refunds, for an operator push, or None.
+
+	Each step records the id it made, so the next call finds the step after it. The gateway
+	steps stay with the background job."""
+	from central.billing.ingester.locks import hold_until_transaction_ends
+
+	doc = frappe.get_doc("Invoice", invoice)
+	refunds = [r for r in _refunds(invoice) if not r.late_capture]
+	step = doc.erpnext_invoice and _accounting_step(doc, refunds)
+	if step and not hold_until_transaction_ends(f"cancellation::{invoice}"):
+		frappe.throw(_("A refund step of invoice {0} is running. Try again in a minute.").format(invoice))
+	return step or None
 
 
 def _next_step(doc, accounting: bool):
@@ -380,7 +397,7 @@ def _finish(refund, status: str) -> None:
 
 def _credit_note(doc) -> None:
 	"""The credit note against the Sales Invoice: found if it exists, else made."""
-	from central.billing.ingester import connection
+	from central.billing.ingester import connection, invoice_snapshot
 	from central.billing.ingester.settings import accounting_settings
 
 	existing = connection.find(
@@ -395,12 +412,15 @@ def _credit_note(doc) -> None:
 		"api/method/erpnext.accounts.doctype.sales_invoice.mapper.make_sales_return",
 		{"source_name": doc.erpnext_invoice},
 	)
+	reason = _reason(doc.name)
+	refunded = abs(frappe.utils.flt(note.get("grand_total")))
 	note.update(
 		{
 			"naming_series": accounting_settings().series_credit_note,
 			"advances": [],
 			"docstatus": 1,
-			"remarks": f"Credit note for Central invoice {doc.name}: {_reason(doc.name)}",
+			"remarks": f"Credit note for Central invoice {doc.name}: {reason}",
+			**invoice_snapshot.refund_fields(doc, doc.name, f"Refund: {reason}", refunded),
 		}
 	)
 	for key in ("name", "__islocal", "__unsaved"):
@@ -410,8 +430,9 @@ def _credit_note(doc) -> None:
 
 def _partial_credit_note(doc, refund) -> None:
 	"""A credit note for this refund's amount only: found if it exists, else made."""
-	from central.billing.ingester import connection
-	from central.billing.ingester.settings import accounting_settings
+	from central.billing.ingester import connection, invoice_snapshot
+	from central.billing.ingester.erpnext_sync import print_fields
+	from central.billing.ingester.settings import accounting_settings, income_account
 
 	existing = connection.find(
 		"Sales Invoice",
@@ -474,13 +495,15 @@ def _partial_credit_note(doc, refund) -> None:
 				"description": f"Refund: {reason}",
 				"qty": -1,
 				"rate": frappe.utils.flt(refund.net_amount),
-				"income_account": settings.income_account,
+				"income_account": income_account(doc.currency),
 				"cost_center": settings.cost_center,
 			}
 		],
 		"disable_rounded_total": 1,
 		"ignore_pricing_rule": 1,
 		"remarks": f"Credit note for refund {refund.name} of Central invoice {doc.name}: {reason}",
+		**print_fields(settings),
+		**invoice_snapshot.refund_fields(doc, refund.name, f"Refund: {reason}", refund.net_amount),
 	}
 	frappe.db.set_value(
 		"Refund", refund.name, "credit_note_id", connection.post("api/resource/Sales Invoice", note).name
@@ -518,7 +541,8 @@ def _record_payment(doc, refund) -> None:
 
 def _reverse_promotional(doc, refund) -> None:
 	"""Take back the promotional account's payment, against the credit note."""
-	from central.billing.ingester.erpnext_sync import _promotional_part, promotional_journal
+	from central.billing.ingester.erpnext_sync import _promotional_part
+	from central.billing.ingester.payment_records import promotional_journal
 
 	customer = frappe.db.get_value("Billing Profile", doc.team, "profile_id")
 	name = promotional_journal(
@@ -566,7 +590,11 @@ def _pay_out(doc, refund, amount: float) -> str:
 def _advance_again(doc, refund, amount: float) -> str:
 	"""Book returned paid-in credit as an advance again, with its GST."""
 	from central.billing.ingester import connection, gst
-	from central.billing.ingester.settings import accounting_settings, wallet_clearing_account
+	from central.billing.ingester.settings import (
+		accounting_settings,
+		advance_account,
+		wallet_clearing_account,
+	)
 
 	existing = connection.find(
 		"Payment Entry",
@@ -590,7 +618,7 @@ def _advance_again(doc, refund, amount: float) -> str:
 				"posting_date": frappe.utils.nowdate(),
 				"party_type": "Customer",
 				"party": frappe.db.get_value("Billing Profile", doc.team, "profile_id"),
-				"paid_from": settings.advance_account,
+				"paid_from": advance_account(doc.currency),
 				"paid_to": wallet_clearing_account(doc.currency),
 				"paid_amount": amount,
 				"received_amount": amount,

@@ -39,7 +39,6 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 	ACTION_CAPABILITIES,
 	COMMAND_ACTIONS,
 	PENDING_STATES,
-	ResourceAction,
 )
 from central.integrations.images import (
 	get_app_subdomain,
@@ -148,20 +147,27 @@ def submit_request(
 	subdomain = subdomain or app_subdomain
 	configuration.site = site
 
-	return ResourceAction.queue(
-		"create",
-		server_input.team,
-		server_input.region,
-		server_input.title,
-		resource_type=resource_type,
-		subdomain=subdomain,
-		product=site.product if site else None,
-		is_free_trial=int(is_free_trial),
-		request_payload=configuration.model_dump(),
-		request_key=server_input.request_key,
-		request_digest=digest,
-		reserved_monthly_rate=rate,
-	).customer_status()
+	action = frappe.get_doc(
+		{
+			"doctype": "Resource Action",
+			"action": "create",
+			"resource_type": resource_type,
+			"team": server_input.team,
+			"region": server_input.region,
+			"title": server_input.title,
+			"subdomain": subdomain,
+			"product": site.product if site else None,
+			"is_free_trial": int(is_free_trial),
+			"request_payload": configuration.model_dump(),
+			"request_key": server_input.request_key,
+			"request_digest": digest,
+			"reserved_monthly_rate": rate,
+		}
+	)
+	# Customers have read-only access, so the authorized service inserts for them.
+	action.insert(ignore_permissions=True)
+
+	return action.customer_status()
 
 
 def submit_command(
@@ -205,7 +211,7 @@ def submit_command(
 	if take_snapshot:
 		server.require_server_access()
 
-	return _queue_command(action, server, take_snapshot=take_snapshot)
+	return server.queue_action(action, take_snapshot=int(take_snapshot)).customer_status()
 
 
 def _prepare_start(server, team: str) -> None:
@@ -240,24 +246,7 @@ def submit_billing_command(action: str, server_name: str) -> ActionStatus:
 	if not server.atlas_vm_id:
 		frappe.throw(_("Server {0} has no verified regional identity.").format(server.name))
 
-	return _queue_command(action, server, requested_by="Administrator")
-
-
-def _queue_command(
-	action: str, server, take_snapshot: bool = False, requested_by: str | None = None
-) -> ActionStatus:
-	document = ResourceAction.get_pending(server.name, action) or ResourceAction.queue(
-		action,
-		server.team,
-		server.region,
-		server.title or server.name,
-		server=server.name,
-		remote_vm_id=server.atlas_vm_id,
-		requested_by=requested_by,
-		take_snapshot=int(take_snapshot),
-	)
-
-	return document.customer_status()
+	return server.queue_action(action, requested_by="Administrator").customer_status()
 
 
 def get_status(name: str) -> ActionStatus:

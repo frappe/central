@@ -16,6 +16,7 @@ once (normal grace), so one enum would lose information. Every standing transiti
 writes an append-only Subscription Change.
 """
 
+import datetime
 from typing import NamedTuple
 
 import frappe
@@ -64,6 +65,8 @@ def _record_change(
 	changed_by=None,
 	locked_rate=None,
 	currency=None,
+	included_resources=None,
+	effective_at: datetime.datetime | None = None,
 ):
 	"""Append one immutable Subscription Change row. A change that opens a segment
 	carries its locked rate and currency."""
@@ -74,7 +77,8 @@ def _record_change(
 			"change_type": change_type,
 			"old_value": old_value,
 			"new_value": new_value,
-			"effective_at": frappe.utils.now_datetime(),
+			"included_resources": included_resources,
+			"effective_at": effective_at or frappe.utils.now_datetime(),
 			"changed_by": changed_by or frappe.session.user,
 			"locked_rate": locked_rate,
 			"currency": currency,
@@ -357,7 +361,7 @@ def provision_service_subscription(
 
 
 def _service_subscription_result(subscription: str, subject: str, reused=False, upgraded=False) -> dict:
-	segment = _latest_segment_by_subscription([subscription]).get(subscription)
+	segment = latest_segment_by_subscription([subscription]).get(subscription)
 	return {
 		"subscription": subscription,
 		"service_subject": subject,
@@ -446,7 +450,7 @@ def begin_resize(
 	if not _is_resizable(doc):
 		return {"queued": False, "resized": False}
 	server = _locked_server(doc.server_id)
-	if server and (pending := ResourceAction.get_pending(doc.server_id, "resize")):
+	if server and (pending := frappe.get_doc("Virtual Machine", doc.server_id).get_pending_action("resize")):
 		return {"queued": True, "resized": True, **pending.customer_status()}
 
 	is_live = _is_live_for_resize(server)
@@ -544,15 +548,8 @@ def _queue_resize(doc, server, target: frappe._dict, shape: dict, changed_by: st
 		}
 	)
 	# Billing validated the target and the route already checked server:resize.
-	return ResourceAction.queue(
-		"resize",
-		doc.team,
-		server.region,
-		server.title or doc.server_id,
-		server=doc.server_id,
-		remote_vm_id=server.atlas_vm_id,
-		requested_by=changed_by,
-		request_payload=configuration.model_dump(),
+	return frappe.get_doc("Virtual Machine", doc.server_id).queue_action(
+		"resize", requested_by=changed_by, request_payload=configuration.model_dump()
 	)
 
 
@@ -938,7 +935,9 @@ def _is_resizable(doc) -> bool:
 	return True
 
 
-def _latest_segment_by_subscription(subscription_names: list[str], for_update: bool = False) -> dict:
+def latest_segment_by_subscription(
+	subscription_names: list[str], for_update: bool = False, before=None, types=SEGMENT_CHANGE_TYPES
+) -> dict:
 	"""The most-recent rate-bearing change per subscription, in ONE batched query.
 
 	Ordered newest-first so the first row seen per subscription is its latest segment
@@ -954,13 +953,16 @@ def _latest_segment_by_subscription(subscription_names: list[str], for_update: b
 	query = (
 		frappe.qb.from_(change)
 		.select(change.subscription, change.change_type, change.locked_rate, change.currency)
+		.select(change.new_value, change.effective_at)
 		.where(change.subscription.isin(subscription_names))
-		.where(change.change_type.isin(list(SEGMENT_CHANGE_TYPES)))
+		.where(change.change_type.isin(list(types)))
 		.orderby(change.effective_at, order=Order.desc)
 		.orderby(change.creation, order=Order.desc)
 	)
 	if for_update:
 		query = query.for_update()
+	if before is not None:
+		query = query.where(before)
 	latest: dict = {}
 	for r in query.run(as_dict=True):
 		latest.setdefault(r.subscription, r)
@@ -978,7 +980,7 @@ def _server_clusters(server_ids) -> dict:
 	}
 
 
-def active_segments(filters: dict | None = None) -> list:
+def active_segments(filters: dict | None = None, during: tuple | None = None) -> list:
 	"""Every open, rate-bearing billing segment — one row per subscription — resolved
 	from the `Subscription Change` ledger (ADR 0010) in batched queries.
 
@@ -989,7 +991,8 @@ def active_segments(filters: dict | None = None) -> list:
 
 	`filters` narrows the underlying Subscriptions (e.g. `{"team": t}` or
 	`{"plan": p}`). Each row is a `frappe._dict`: subscription, team, plan,
-	pricing_mode, server_id, resource_id, cluster, currency, locked_rate."""
+	pricing_mode, server_id, resource_id, cluster, currency, locked_rate. With `during`, a
+	(start, end), the segments open at some moment of it, each on the last plan it opened on."""
 	subs = frappe.get_all(
 		"Subscription",
 		filters=filters or {},
@@ -997,7 +1000,9 @@ def active_segments(filters: dict | None = None) -> list:
 	)
 	if not subs:
 		return []
-	latest = _latest_segment_by_subscription([s.name for s in subs])
+	names = [s.name for s in subs]
+	latest = _segments_open_during(names, during)
+	plans = _plans_in_force(latest, during)
 	clusters = _server_clusters([s.server_id for s in subs])
 	out = []
 	for s in subs:
@@ -1013,7 +1018,7 @@ def active_segments(filters: dict | None = None) -> list:
 				{
 					"subscription": s.name,
 					"team": s.team,
-					"plan": s.plan,
+					"plan": plans.get(s.name, s.plan),
 					"pricing_mode": s.pricing_mode,
 					"server_id": s.server_id,
 					"service_subject": s.service_subject,
@@ -1027,10 +1032,49 @@ def active_segments(filters: dict | None = None) -> list:
 	return out
 
 
+def server_segments(servers: list[str] | None = None, during: tuple | None = None) -> list:
+	"""The segments of these servers, or of every server, open now or at some moment of `during`."""
+	if servers is not None and not servers:
+		return []
+	server_id = ["is", "set"] if servers is None else ["in", servers]
+	return active_segments({"server_id": server_id}, during=during)
+
+
+def _segments_open_during(names: list[str], during: tuple | None) -> dict:
+	"""Each one's latest change, or the last rated one before the end of those open during (start, end)."""
+	if during is None:
+		return latest_segment_by_subscription(names)
+	start, end = during
+	change = frappe.qb.DocType("Subscription Change")
+	rated = latest_segment_by_subscription(names, before=change.effective_at < end, types=RATED_CHANGE_TYPES)
+	# One opened before the start is in the window only if nothing closed it by then.
+	earlier = [name for name, seg in rated.items() if seg.effective_at < start]
+	at_start = latest_segment_by_subscription(earlier, before=change.effective_at <= start)
+	return {
+		name: seg
+		for name, seg in rated.items()
+		if at_start.get(name, seg).change_type not in CLOSING_CHANGE_TYPES
+	}
+
+
+def _plans_in_force(latest: dict, during) -> dict:
+	"""The plan each segment open during the window was on, None for a composed one; empty for now."""
+	if during is None:
+		return {}
+	# A rated change names its plan, and a resume the plan it resumed.
+	labels = {seg.new_value for seg in latest.values() if seg.new_value}
+	plans = set(frappe.get_all("Plan", filters={"name": ["in", list(labels)]}, pluck="name"))
+	return {
+		name: seg.new_value if seg.new_value in plans else None
+		for name, seg in latest.items()
+		if seg.new_value
+	}
+
+
 def uncancelled_subscriptions(filters: dict) -> list[str]:
 	"""The subscriptions matching `filters` that no Cancelled change has ended, paused or not."""
 	names = frappe.get_all("Subscription", filters=filters, pluck="name")
-	latest = _latest_segment_by_subscription(names)
+	latest = latest_segment_by_subscription(names)
 	return [name for name in names if name not in latest or latest[name].change_type != "Cancelled"]
 
 
@@ -1054,7 +1098,7 @@ def current_segment_rate(subscription: str) -> float:
 	"""The locked_rate of a subscription's currently-open billing segment, or 0 when
 	it is paused, cancelled or never priced. The open segment is the latest rated change
 	not closed by a later Paused or Cancelled (ADR 0010 — the ledger is the lock)."""
-	seg = _latest_segment_by_subscription([subscription]).get(subscription)
+	seg = latest_segment_by_subscription([subscription]).get(subscription)
 	if not seg or seg.change_type in CLOSING_CHANGE_TYPES:
 		return 0.0
 	return frappe.utils.flt(seg.locked_rate)
@@ -1088,7 +1132,7 @@ def locked_team_run_rate(team: str, exclude: str | None = None) -> float:
 		.for_update()
 		.run(pluck=True)
 	)
-	latest = _latest_segment_by_subscription([n for n in names if n != exclude], for_update=True)
+	latest = latest_segment_by_subscription([n for n in names if n != exclude], for_update=True)
 	return frappe.utils.flt(
 		sum(seg.locked_rate for seg in latest.values() if seg.change_type not in CLOSING_CHANGE_TYPES)
 	)
@@ -1189,11 +1233,13 @@ def change_payment_method(subscription: str, new_method: str, changed_by: str | 
 	return doc
 
 
-def cancel_subscription(subscription: str, changed_by: str | None = None):
+def cancel_subscription(
+	subscription: str, changed_by: str | None = None, effective_at: datetime.datetime | None = None
+):
 	"""Cancel the subscription intent. The contract record is kept; the
 	cancellation is logged. Stopping/terminating the running resource is a separate
 	operational step Central drives via the cluster manager (ADR 0006)."""
-	_record_change(subscription, "Cancelled", changed_by=changed_by)
+	_record_change(subscription, "Cancelled", changed_by=changed_by, effective_at=effective_at)
 	return frappe.get_doc("Subscription", subscription)
 
 
@@ -1206,23 +1252,19 @@ def end_subscription(subscription: str, changed_by: str | None = None) -> None:
 
 def pause_billing(subscription: str, changed_by: str | None = None):
 	"""Stop billing a server and stop the server. The Paused change closes the segment,
-	and the server's public IPv4 pauses with it, so nothing on the server bills until
-	it is resumed. A no-op if already paused. If the server can't be stopped the whole
-	pause rolls back."""
+	so nothing on the server bills until it is resumed. A no-op if already paused. If the
+	server can't be stopped the whole pause rolls back."""
 	doc = frappe.get_doc("Subscription", subscription)
 	if not doc.server_id:
 		frappe.throw(frappe._("Only a server's billing can be paused."))
-	latest = _latest_segment_by_subscription([subscription, *_public_ipv4_subscriptions(doc)], True)
-	state = latest.get(subscription)
+	state = latest_segment_by_subscription([subscription], True).get(subscription)
 	if state and state.change_type == "Paused":
 		return doc
 	if not state or state.change_type not in RATED_CHANGE_TYPES:
 		frappe.throw(frappe._("Only a running server's billing can be paused."))
 	doc.enabled = 0
 	doc.save(ignore_permissions=True)
-	for name, segment in latest.items():
-		if segment.change_type in RATED_CHANGE_TYPES:
-			_record_change(name, "Paused", changed_by=changed_by)
+	_record_change(subscription, "Paused", changed_by=changed_by)
 	_control_subscription_server(doc, "stop")
 	return doc
 
@@ -1252,51 +1294,33 @@ def reopen_paused_billing(subscription: str, changed_by: str | None = None):
 	Refused when the team or project has no room left for it. Returns the subscription,
 	or None when its billing is not paused."""
 	doc = frappe.get_doc("Subscription", subscription)
-	latest = _latest_segment_by_subscription([subscription, *_public_ipv4_subscriptions(doc)], True)
-	state = latest.get(subscription)
+	state = latest_segment_by_subscription([subscription], True).get(subscription)
 	if not state or state.change_type != "Paused":
 		return None
-	reopened = _last_rated_changes_of_paused(latest)
-	rates = {name: frappe.utils.flt(change.locked_rate) for name, change in reopened.items()}
-	enforce_headroom(doc.team, sum(rates.values()), for_update=True)
-	# Only the server carries the project; its public IPv4 never counts toward a project.
-	enforce_project_headroom(doc.team, doc.project, rates.get(subscription, 0.0))
+	# A pause always follows a rated change, and the resume carries its rate, not today's price.
+	change = _last_rated_change(subscription)
+	rate = frappe.utils.flt(change.locked_rate)
+	enforce_headroom(doc.team, rate, for_update=True)
+	enforce_project_headroom(doc.team, doc.project, rate)
 
 	doc.enabled = 1
 	doc.save(ignore_permissions=True)
-	for name, change in reopened.items():
-		# The rate locked before the pause, not today's price.
-		_record_change(
-			name,
-			"Resumed",
-			new_value=change.new_value,
-			changed_by=changed_by,
-			locked_rate=change.locked_rate,
-			currency=change.currency,
-		)
+	_record_change(
+		subscription,
+		"Resumed",
+		new_value=change.new_value,
+		changed_by=changed_by,
+		locked_rate=change.locked_rate,
+		currency=change.currency,
+		included_resources=change.included_resources,
+	)
 	return doc
-
-
-def _last_rated_changes_of_paused(latest: dict) -> dict:
-	"""The last rated change of each paused subscription, by subscription."""
-	paused = [name for name, segment in latest.items() if segment.change_type == "Paused"]
-	changes = {name: _last_rated_change(name) for name in paused}
-	return {name: change for name, change in changes.items() if change}
 
 
 def _latest_change_type(subscription: str) -> str | None:
 	"""The type of the subscription's latest segment change, or None."""
-	state = _latest_segment_by_subscription([subscription]).get(subscription)
+	state = latest_segment_by_subscription([subscription]).get(subscription)
 	return state.change_type if state else None
-
-
-def _public_ipv4_subscriptions(doc) -> list[str]:
-	"""The open public IPv4 subscriptions of the subscription's server."""
-	if not doc.server_id:
-		return []
-	return frappe.get_all(
-		"Subscription", filters={"public_ip_server": doc.server_id, "enabled": 1}, pluck="name"
-	)
 
 
 def _last_rated_change(subscription: str):
@@ -1304,7 +1328,7 @@ def _last_rated_change(subscription: str):
 	changes = frappe.get_all(
 		"Subscription Change",
 		filters={"subscription": subscription, "change_type": ["in", RATED_CHANGE_TYPES]},
-		fields=["locked_rate", "currency", "new_value"],
+		fields=["locked_rate", "currency", "new_value", "included_resources"],
 		order_by="effective_at desc, creation desc",
 		limit=1,
 	)

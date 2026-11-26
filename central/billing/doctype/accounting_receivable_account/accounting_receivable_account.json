@@ -9,6 +9,8 @@
  "field_order": [
   "currency",
   "account",
+  "advance_account",
+  "income_account",
   "wallet_clearing_account"
  ],
  "fields": [
@@ -29,16 +31,31 @@
    "description": "Full account name, in this currency. For example Debtors USD - ABBR."
   },
   {
+   "fieldname": "advance_account",
+   "fieldtype": "Data",
+   "label": "Advance Account",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "Where a top-up in this currency is booked until an invoice uses it. A Receivable account under Liabilities, in this currency. For example Customer Advances USD - ABBR."
+  },
+  {
+   "fieldname": "income_account",
+   "fieldtype": "Data",
+   "label": "Income Account",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "Where invoice lines in this currency are booked. For example Sales - Global - ABBR."
+  },
+  {
    "fieldname": "wallet_clearing_account",
    "fieldtype": "Data",
    "label": "Wallet Clearing Account",
-   "in_list_view": 1,
    "description": "Bank-type account in this currency. Credit returned to a wallet passes through it, so no cash moves."
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-30 16:00:00.000000",
+ "modified": "2026-11-25 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Accounting Receivable Account",

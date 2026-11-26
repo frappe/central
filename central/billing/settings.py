@@ -226,6 +226,11 @@ def reporting_usd_to_inr() -> float:
 	return frappe.utils.flt(_settings().reporting_usd_to_inr)
 
 
+def exchange_rate_url() -> str:
+	"""The base URL of the rate API billing reads a month's exchange rate from."""
+	return (_settings().exchange_rate_url or "").strip().rstrip("/")
+
+
 def forecast_notify_ratio() -> float:
 	"""Share of a team's cap at which its forecast spend warning fires (0.8 = 80%)."""
 	override = _override("forecast_notify_percent")

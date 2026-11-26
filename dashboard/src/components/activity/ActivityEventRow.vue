@@ -31,9 +31,6 @@ const isOpen = ref(false)
 const runLimit = ref(RUN_PAGE)
 const event = computed(() => props.events[0])
 const isRun = computed(() => props.events.length > 1)
-const repeatCount = computed(() =>
-	props.events.length === 2 ? 'twice' : `${props.events.length} times`,
-)
 const detailId = computed(() => `activity-detail-${event.value.id}`)
 const parts = computed(() => getSentenceParts(event.value))
 const summary = computed(() => getEventSummary(event.value))
@@ -98,16 +95,17 @@ function toggle() {
 						/>
 						<template v-else>{{ part.text }}</template>
 					</template>
-					<span v-if="event.initiator" class="text-ink-gray-5">
-						{{ __('· initiated by') }}
-						<span class="text-ink-gray-7">{{ event.initiator.label }}</span>
-					</span>
-					<template v-if="isRun">
-						<span class="text-ink-gray-5"> · {{ repeatCount }}</span>
-					</template>
-					<template v-else-if="hasMultipleChanges">
+					<template v-if="event.initiator">
+						<span class="text-ink-gray-4" aria-hidden="true"> · </span>
 						<span class="text-ink-gray-5">
-							{{ __('· {0} changes', [changeCount]) }}</span
+							{{ __('initiated by') }}
+							<span class="text-ink-gray-7">{{ event.initiator.label }}</span>
+						</span>
+					</template>
+					<template v-if="isRun || hasMultipleChanges">
+						<span class="text-ink-gray-4" aria-hidden="true"> · </span>
+						<span class="text-ink-gray-5"
+							>{{ __('{0} changes', [isRun ? events.length : changeCount]) }}</span
 						>
 					</template>
 					<template v-else-if="summary.length">

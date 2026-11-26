@@ -38,6 +38,7 @@ BOUNDARY_ALLOWLIST = {
 GUARD_ALLOWLIST = {
 	"api/dashboard/account.py::whoami",  # reports the caller's own session/scope
 	"api/dashboard/account.py::get_billing_geo",  # static country/state lists
+	"api/metering.py::report",  # a service, not a team: accept_report checks its HMAC signature first
 }
 
 # Calling any of these on the first lines is what "guarded" means (security.md §3).

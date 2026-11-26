@@ -1,0 +1,92 @@
+{
+ "actions": [],
+ "creation": "2026-11-17 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "meter_key",
+  "aggregation",
+  "resource_type",
+  "unit",
+  "unit_divisor",
+  "cost_currency",
+  "allow_negative",
+  "label"
+ ],
+ "fields": [
+  {
+   "description": "What the service sends, such as bytes_stored.",
+   "fieldname": "meter_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Meter Key",
+   "reqd": 1
+  },
+  {
+   "description": "Level: the day's peak. Sum: the day's total.",
+   "fieldname": "aggregation",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Aggregation",
+   "options": "Level\nSum",
+   "reqd": 1
+  },
+  {
+   "description": "What billing prices. Blank: kept for limits and charts, never billed.",
+   "fieldname": "resource_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Resource Type",
+   "options": "Resource Type"
+  },
+  {
+   "description": "The unit a day's value is kept and billed in, such as GB.",
+   "fieldname": "unit",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Unit"
+  },
+  {
+   "default": "1",
+   "description": "Reported units in one stored unit: 1,000,000,000 bytes in a GB.",
+   "fieldname": "unit_divisor",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Unit Divisor",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "cost_currency",
+   "fieldtype": "Link",
+   "label": "Cost Currency",
+   "options": "Currency",
+   "description": "The meter counts money in this currency, so it bills at that amount, converted at the month's rate."
+  },
+  {
+   "fieldname": "allow_negative",
+   "fieldtype": "Check",
+   "label": "Allow Negative",
+   "default": "0",
+   "description": "A day may be below zero, such as a correction of an earlier day's cost."
+  },
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "label": "Label"
+  }
+ ],
+ "grid_page_length": 50,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-18 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Services",
+ "name": "Service Meter",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

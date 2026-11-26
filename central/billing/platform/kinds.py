@@ -12,6 +12,7 @@ CATEGORIES = {
 	"Dunning": ("suspended_server_running", "termination_due"),
 	"Money checks": ("invariant",),
 	"Readiness checks": ("readiness",),
+	"Metering": ("silent_service", "usage_mismatch"),
 }
 
 # A check's option starts with its code, so a reworded check title still matches its mute.

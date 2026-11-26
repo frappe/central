@@ -10,6 +10,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.pricing import set_catalog_rates
+from central.billing.tests.accounting_fake import ACCOUNTING_URL, SYNC_MODE
 
 _SWEEP_DEADLOCK_RETRIES = 3
 
@@ -75,7 +76,11 @@ class BillingTestCase(IntegrationTestCase):
 		"Gateway Customer",
 		"Entitlement Token",
 		"Commitment",
+		"Usage Day",
+		"Deleted Bucket",
+		"Monthly Exchange Rate",
 		"Usage Rollup",
+		"Usage Check",
 		"Payment Method",
 		"Tax Profile",
 		"Billing Profile",
@@ -113,8 +118,12 @@ class BillingTestCase(IntegrationTestCase):
 		before["Comment"] = set(_payment_method_comments())
 		gateways = self._snapshot_gateways()
 		try:
-			# The bench config may point at a real accounting site; a test opts in.
-			with patch.dict(frappe.local.conf, {"enable_erpnext_sync": 0}):
+			# Billing Settings may point at a real accounting site. A test opts into the sync
+			# and fakes the transport; a request that is not faked fails instead of leaving.
+			with (
+				patch(SYNC_MODE, return_value="Off"),
+				patch(ACCOUNTING_URL, side_effect=RuntimeError("tests never call the accounting system")),
+			):
 				return super().run(result)
 		finally:
 			self._sweep(before)
@@ -674,3 +683,10 @@ def run_repeat_counts(method, **kwargs):
 	"""Run the repeat-count job inline and leave the processing job queued."""
 	if method == WEBHOOK_COUNT_JOB:
 		run_enqueued_inline(method, **kwargs)
+
+
+def central_reads(case, service: str, is_on: bool = True) -> None:
+	"""Have Central read `service` itself, or not, for the rest of `case`."""
+	before = frappe.db.get_value("Service", service, "central_reads")
+	frappe.db.set_value("Service", service, "central_reads", int(is_on))
+	case.addCleanup(frappe.db.set_value, "Service", service, "central_reads", before)

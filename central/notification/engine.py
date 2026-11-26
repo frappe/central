@@ -86,6 +86,8 @@ def dispatch(
 	title = _render_template(event.in_app_title, reader_ctx)
 	body = _render_template(event.in_app_body, reader_ctx)
 
+	flapping = is_flapping(team, event, reference_name, server)
+
 	doc = None
 	if event.create_in_app:
 		# create_notification is the only Team Notification insert path.
@@ -108,20 +110,26 @@ def dispatch(
 			publish=True,
 		)
 
-	email_result = _fan_out_emails(
-		team,
-		event,
-		ctx,
-		message=message,
-		reference_doctype=reference_doctype,
-		reference_name=reference_name,
-		server=server,
-		affected_user=affected_user,
+	notification = doc.name if doc else None
+	email_result = (
+		{"queued": 0, "attempted": 0, "failed": 0}
+		if flapping
+		else _fan_out_emails(
+			team,
+			event,
+			ctx,
+			message=message,
+			reference_doctype=reference_doctype,
+			reference_name=reference_name,
+			server=server,
+			affected_user=affected_user,
+			notification=notification,
+		)
 	)
 
 	return {
 		"created": bool(doc),
-		"notification": doc.name if doc else None,
+		"notification": notification,
 		"title": title,
 		"body": body,
 		"emails_queued": email_result["queued"],
@@ -278,6 +286,7 @@ def _render_template(template_str: str | None, ctx: dict) -> str | None:
 
 
 DEDUP_WINDOW_MINUTES = 60
+FLAP_EMAIL_LIMIT = 4
 
 
 def _is_duplicate(team, event_type, reference_name, server=None) -> bool:
@@ -309,6 +318,17 @@ def _is_duplicate(team, event_type, reference_name, server=None) -> bool:
 	return not state_changed
 
 
+def is_flapping(team: str, event, reference_name: str | None, server: str | None = None) -> bool:
+	if event.reportable_by != "Pilot" or not reference_name:
+		return False
+
+	cutoff = frappe.utils.add_to_date(None, minutes=-DEDUP_WINDOW_MINUTES)
+	subject = {"team": team, "reference_name": reference_name, "creation": (">=", cutoff)}
+	if server:
+		subject["server"] = server
+	return frappe.db.count("Team Notification", subject) >= FLAP_EMAIL_LIMIT
+
+
 def _fan_out_emails(
 	team,
 	event,
@@ -319,6 +339,7 @@ def _fan_out_emails(
 	reference_name=None,
 	server=None,
 	affected_user=None,
+	notification=None,
 ) -> dict:
 	"""Queue the email to each recipient, sent after the caller's transaction commits.
 
@@ -336,6 +357,7 @@ def _fan_out_emails(
 			event_type=event.name,
 			ctx=ctx,
 			message=message,
+			notification=notification,
 		)
 	return {"queued": len(recipients), "attempted": len(recipients), "failed": 0}
 
@@ -359,10 +381,17 @@ def _email_recipients(team, event, *, server=None, affected_user=None) -> list[s
 			if not event.required_cap or can(user, team, event.required_cap, server=server)
 		]
 	preferences = UserNotificationPreference.load_for_users(team, users)
-	return [user for user in users if _is_emailed_instantly(preferences.get((user, event.category)), event)]
+	owner = frappe.db.get_value("Team", team, "owner_user")
+	return [
+		user
+		for user in users
+		if _is_emailed_instantly(preferences.get((user, event.category)), event, is_owner=user == owner)
+	]
 
 
-def send_notification_emails(recipients: list[str], event_type: str, ctx: dict, message=None) -> None:
+def send_notification_emails(
+	recipients: list[str], event_type: str, ctx: dict, message=None, notification: str | None = None
+) -> None:
 	"""Background job: render the event's email once per language and send each recipient theirs."""
 	recipients_by_language = defaultdict(list)
 	for user in recipients:
@@ -375,7 +404,14 @@ def send_notification_emails(recipients: list[str], event_type: str, ctx: dict, 
 
 		for user in users:
 			try:
-				frappe.sendmail(recipients=[user], subject=subject, message=body, reply_to=reply_to)
+				frappe.sendmail(
+					recipients=[user],
+					subject=subject,
+					message=body,
+					reply_to=reply_to,
+					reference_doctype="Team Notification" if notification else None,
+					reference_name=notification,
+				)
 			except Exception:
 				# Delivery is best effort, but a failure must leave an error log.
 				frappe.log_error(title=f"Notification email send failed: {event.name} -> {user}")
@@ -404,12 +440,14 @@ def publish_team_nudge(team: str) -> None:
 		)
 
 
-def _is_emailed_instantly(preference: dict | None, event: frappe._dict) -> bool:
+def _is_emailed_instantly(preference: dict | None, event: frappe._dict, is_owner: bool = False) -> bool:
 	"""No preference means yes. A digest event waits for the digest, which reads it from the feed.
 
 	The feed row is team-wide, so an Affected User event cannot wait for the digest."""
-	if preference is None or event.is_critical:
+	if preference is None:
 		return True
+	if event.is_critical:
+		return is_owner or bool(preference["email_enabled"])
 	if not preference["email_enabled"]:
 		return False
 	if not preference["events"].get(event.name, True):
@@ -453,6 +491,7 @@ def render_notification_email(event, ctx: dict, extras: dict) -> tuple[str, str]
 			"title": escape_html(subject),
 			"paragraphs": [escape_html(part.strip()) for part in text.split("\n\n") if part.strip()],
 			"notes": extras.get("notes") or [],
+			"note_html": extras.get("note_html"),
 			"brand": extras.get("brand"),
 			"action_label": event.action_label,
 			"action_url": escape_html(action_url) if action_url else None,

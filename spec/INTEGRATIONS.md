@@ -156,7 +156,7 @@ A member with `server:network` on a server can attach or detach its public IPv4 
 
 Atlas applies an attach or detach after it replies. Central waits up to 30 seconds for Atlas to report the change, then reads the server. A slower change appears on the next reconcile. Central does not use reserved addresses yet, so an address always belongs to one server.
 
-A public IPv4 is billed from the first read that reports it until a read no longer reports it, or the server is terminated. `VirtualMachine.sync_public_ipv4_billing` opens and closes one `Subscription` per server, linked by `public_ip_server`. The price is the Catalog Rate of the `IP` Resource Type for the team's currency, optionally per region. The starter rates are INR 170 and USD 2 per month. Central refuses to attach an IPv4, or to create a server with one, in a region without a rate. IPv6 is free.
+A public IPv4 is billed for each UTC day the server held it at some moment, while the server's subscription had an open billing period that day. Central writes one Usage Day per server and day on the server's subscription when a read reports the address, and an hourly job writes the day for every server that holds one. The month bills the address count of each day divided by the days in the month, at the current Catalog Rate of the `public-ipv4` metered plan for the team's currency, optionally per region. The starter rates are INR 170 and USD 2 per month. Central refuses to attach an IPv4, or to create a server with one, in a region without a rate. A trial server's address is free until the trial converts. IPv6 is free. See the billing [architecture](../central/billing/ARCHITECTURE.md) for the details.
 
 ## WireGuard gateway
 
@@ -169,9 +169,28 @@ A region with **WireGuard Gateway** on serves customer devices at `https://wireg
 | Restore a region | `GET /v1/peers`, then `PUT /v1/peers` | Operator action on Region. Never retried by itself. |
 | Server access | `PATCH /virtual-machines/{id}/network` with `wireguard_gateway_access` | Needs `server:network`. Off by default. |
 
+## Compute settings
+
+Atlas owns the sleep and CPU burst settings of a VM. Central stores no copy. **Compute Settings** on the Virtual Machine form reads them from `GET /virtual-machines/{id}` and sends only the changed fields to `POST /virtual-machines/{id}/actions/resize`. Atlas takes these fields in any VM state. A customer server that sleeps answers its first request late.
+
+The server owner changes only `sleep_after_idle_seconds`, on the **Settings** tab of the server. Only internal teams, which have **Is Internal** set on their Billing Profile, get this section, until a sleeping server costs customers less. Both routes refuse other teams. `central.api.servers.get_idle_sleep` needs `server:view`. `central.api.servers.set_idle_sleep` needs `server:resize`, and refuses an open free trial. It takes zero, or 5 minutes to 24 hours. Zero also turns deep sleep and coma off. Deep sleep, coma, and CPU burst stay in Desk.
+
+| Field | Atlas field | Effect |
+| --- | --- | --- |
+| Sleep After Idle (seconds) | `sleep_after_idle_seconds` | Saves memory and stops the VM after this idle time. The next request wakes it. |
+| Deep Sleep After Idle (seconds) | `deep_sleep_after_idle_seconds` | Moves the saved memory to object storage. |
+| Coma After Idle (seconds) | `coma_after_idle_seconds` | Also moves the disk to object storage. It must be longer than deep sleep. |
+| Burstable | `is_burstable` | Lets the VM use CPU above its baseline. Off clears the baseline and the window. |
+| Baseline CPU (millicores) | `baseline_cpu_millicores` | CPU the VM can always use. Zero uses 20% of its CPU. |
+| Sliding Window (minutes) | `sliding_window_minutes` | How far back Atlas measures average CPU use. Zero uses 60. |
+
+Zero turns a setting off. Atlas refuses deep sleep and coma on a VM with more than 4 GiB of memory or 50 GiB of disk. Desk makes these two fields read-only on a larger server. Atlas explains sleep in [Sleepy VMs](https://github.com/frappe/atlas/blob/develop/docs/compute/sleepy-vms.md).
+
+A resize keeps the sleep settings, because Atlas keeps every field that a resize leaves out. When the new size is past the offload limit, Central first turns deep sleep and coma off, because Atlas refuses that size while they are set. A resize off a trial plan turns all three sleep settings off.
+
 ## Termination protection
 
-A member with `server:terminate` can turn termination protection on or off with the lock button in the server header. Central sends `PATCH /virtual-machines/{id}/termination-protection` and stores the `is_termination_protected` value that Atlas returns on the Virtual Machine. Atlas does not report this value in a VM read, so the stored value changes only through this request. Central refuses a terminate request for a protected server before it queues a Resource Action, and Atlas also refuses to delete a protected VM.
+A member with `server:terminate` can turn termination protection on or off with the lock button in the server header, or in Desk with **Server > Turn On Termination Protection** on the Virtual Machine form. Central sends `PATCH /virtual-machines/{id}/termination-protection` and stores the `is_termination_protected` value that Atlas returns on the Virtual Machine. Atlas does not report this value in a VM read, so the stored value changes only through this request. Central refuses a terminate request for a protected server before it queues a Resource Action, and Atlas also refuses to delete a protected VM.
 
 ## Server operation contract
 
@@ -185,7 +204,7 @@ When the region has a **Max Storage Bundle Size** above 0, Central creates a Car
 
 Pilot creation includes the requesting user's email as `letsencrypt.email` in `pilot-common-config`. Pilot saves it in `common_config.toml` for certificate requests. Central reads the user from `Resource Action.requested_by`, not from the dispatch worker session. This setting is sent even when telemetry is unavailable. A request with no user email leaves the setting unset. This applies to new VMs; existing VMs keep their current setting.
 
-A free-trial creation also gets a Grove key when AI Settings keeps a pool of them for its product (a **Trial Products** row with a pool size above 0). Central mints each product's pool ahead, every 5 minutes, under the fixed Grove Team `Central Trial`, which an operator makes at Grove first, in the geography AI Settings names and, when the product's row names one, in that Model Group on top of the team's catalog; each key is capped for its life at **Trial Key Cap** and carries no expiry at Grove: Central revokes it **Revokes Automatically After** days after its assignment, or sooner when its server is terminated. Each key is an **AI Trial Key** record that holds the secret; the record's id is the key's title at Grove. The creation takes the oldest ready key of its product, records the creation on it, and adds it to `pilot-common-site-config` as `ai_keys`: the key's gateway URL and secret, the entry Pilot writes for a team's own keys. A paid creation gets no key. An empty pool does not fail the creation: the trial starts without AI. Central revokes the key at Grove when the creation fails, when the server is terminated and when AI Settings' **Revokes Automatically After** days have passed since the key was assigned, and tries a refused revoke again every hour. When the trial converts, Central hands the key to the team at Grove in the background: the same secret, now the team's, titled by the site, out of the product's group and without the trial's expiry, so the server's config keeps working and the team finds the key in its dashboard (AI is turned on for the team first; every conversion path has a payment method). The record goes Converting, then Converted. While it is Converting the team creates no key (`create_api_key` refuses and the dashboard says why), so none takes the key count, the spend-limit room or the title the hand-over needs. A hand-over Grove refuses or cannot hear is tried again every hour and given up after three attempts as Conversion Failed, said on the record and the Site with Grove's last answer (the record's **Last Error**, kept from any failed hand-over or revoke until one lands); the key is then revoked like any trial key's (the record's **Revoked** box ticks once Grove has it; its status keeps the failure) and the team creates its own key, told once by the `ai_key_handover_failed` notification that the old one will stop working. A trial's end stops its server and leaves its key, so an operator's **Extend Trial** of an ended trial starts it with the key it still holds. The gateway closes the key's books at the push that moves it, so what the trial spent stays Central Trial's and what follows is the team's.
+A free-trial creation also gets a Grove key when AI Settings keeps a pool of them for its product (a **Trial Products** row with a pool size above 0). Central mints each product's pool ahead, every 5 minutes, under the fixed Grove Team `Central Trial`, which an operator makes at Grove first, in the geography AI Settings names and, when the product's row names one, in that Model Group on top of the team's catalog; each key is capped for its life at **Trial Key Cap** and carries no expiry at Grove: Central revokes it **Revokes Automatically After** days after its assignment, or sooner when its server is terminated. Each key is an **AI Trial Key** record that holds the secret; the record's id is the key's title at Grove. The creation takes the oldest ready key of its product, records the creation on it, and adds it to `pilot-common-site-config` as `ai_keys`: the key's gateway URL and secret, the entry Pilot writes for a team's own keys. A paid creation gets no key. A creation that finds the pool empty mints its own key, with a 10 second timeout, unless **Pause Key Assignment** is on; **Pause Pool Refill** does not stop it. A mint Grove refuses does not fail the creation: the trial starts without AI, and the Error Log names the creation's Resource Action. Central revokes the key at Grove when the creation fails, when the server is terminated and when AI Settings' **Revokes Automatically After** days have passed since the key was assigned, and tries a refused revoke again every hour. When the trial converts, Central hands the key to the team at Grove in the background: the same secret, now the team's, titled by the site, out of the product's group and without the trial's expiry, so the server's config keeps working and the team finds the key in its dashboard (AI is turned on for the team first; every conversion path has a payment method). The record goes Converting, then Converted. While it is Converting the team creates no key (`create_api_key` refuses and the dashboard says why), so none takes the key count, the spend-limit room or the title the hand-over needs. A hand-over Grove refuses or cannot hear is tried again every hour and given up after three attempts as Conversion Failed, said on the record and the Site with Grove's last answer (the record's **Last Error**, kept from any failed hand-over or revoke until one lands); the key is then revoked like any trial key's (the record's **Revoked** box ticks once Grove has it; its status keeps the failure) and the team creates its own key, told once by the `ai_key_handover_failed` notification that the old one will stop working. A trial's end stops its server and leaves its key, so an operator's **Extend Trial** of an ended trial starts it with the key it still holds. The gateway closes the key's books at the push that moves it, so what the trial spent stays Central Trial's and what follows is the team's.
 
 See [Resource Action](../central/infrastructure/doctype/resource_action/SPEC.md) for states, authorization, recovery, accepted quotes, and customer responses.
 
@@ -208,7 +227,9 @@ The service gets Central's public keys from `central.api.jwks.get_jwks` and veri
 
 ## How does a Pilot read private GitHub repositories?
 
-Central owns the GitHub App, set on the GitHub tab of Central Settings. The App private key and secrets stay in Central. A Pilot gets only a token for one repository, with `contents: read`, that expires in about an hour.
+Central owns one GitHub App, set on the GitHub tab of Central Settings. Pilot grants and push-to-deploy use the same App. The App private key and secrets stay in Central. A Pilot gets only a token for one repository, with `contents: read`, that expires in about an hour. Only a deploy asks GitHub for `statuses: write`, to show its status on a commit, and for `deployments: write`, to record a live deploy in the `production` environment. GitHub then shows the app's domain in the repository's Deployments section.
+
+A `GitHub Installation` is the only record of a team's access to one installation of the App. It holds the installation ID and its status. A `GitHub Connection` (a Pilot's grant) and a `Deploy App` link to it and read the installation ID from it.
 
 ```text
 Pilot ── start_connection ──> Central ── authorize, install ──> GitHub
@@ -218,11 +239,11 @@ Pilot ── start_connection ──> Central ── authorize, install ──> 
 
 1. Pilot calls `central.api.integrations.github.start_connection(return_url)` with its credential and gets a link to `/dashboard/github/connect/<attempt>`. The attempt lives in Redis for 1 hour after the last activity. The `return_url` lives 24 hours, so an expired link still leads back to the server.
 2. The first user who opens the link must hold `server:console` on the Pilot's server. The attempt binds to that user. The OAuth `state` and a PKCE verifier bind the GitHub callback to the attempt and the user's session.
-3. The user authorizes or installs the App, then selects repositories in one or more accounts. The user must be a GitHub admin of each one. `complete_connection` saves one `GitHub Connection` per Pilot credential and installation. An account sent with no repositories loses its grant.
+3. The user authorizes or installs the App, then selects repositories in one or more accounts. The user must be a GitHub admin of each one. `complete_connection` links the team's `GitHub Installation` and saves one `GitHub Connection` per Pilot credential and installation. An account sent with no repositories loses its grant.
 4. Pilot calls `status`, `repositories` and `repository_token(repository)` with its credential. Each grant change increases the connection `version`. Central refuses a token when the grant changed while GitHub minted it.
-5. The signed GitHub webhook disables a connection when its installation is deleted or suspended, removes repositories the installation lost, and updates the name of a renamed repository. The App must subscribe to the `repository` event for renames. `disconnect` disables the Pilot's grants. Issued tokens stay valid until they expire.
+5. The signed GitHub webhook `central.api.integrations.github.webhook` keeps the `GitHub Installation` in step with GitHub. A removed installation becomes Disabled: its Pilot grants and its deploy apps are disabled, and each must connect again. A suspended installation becomes Suspended: its Pilot grants are disabled, and its deploy apps pause. When GitHub unsuspends it, it becomes Active and its deploy apps resume, but each Pilot must connect again. A suspended installation cannot be linked again. The webhook also removes repositories the installation lost from the grants, updates the name of a renamed repository, and sends a `push` to push-to-deploy. The App must subscribe to the `repository` and `push` events. `disconnect` disables the Pilot's grants. Issued tokens stay valid until they expire.
 
-The App needs one callback URL, on Central's issuer URL (`central_url()`). "Create GitHub App" in Central Settings creates the App from a manifest and fills the GitHub tab. A new App ID disables every grant, so each Pilot must connect GitHub again.
+The App needs one callback URL, `central.api.integrations.github.oauth_callback` on Central's issuer URL (`central_url()`). The callback sends the state of a deploy attempt to push-to-deploy, and every other state to the Pilot connection. "Create GitHub App" in Central Settings creates the App from a manifest and fills the GitHub tab. A new App ID disables every `GitHub Installation`, so each Pilot and each deploy must connect GitHub again.
 
 ## How does the trial flow work?
 
@@ -263,7 +284,7 @@ Show Open Pilot only for a Pilot-managed resource. A plain Ubuntu VM must not fa
 
 Do not expose privileged VM creation or system tenant zero to customers.
 
-Idle sleep is a trial policy. Ordinary Pilot servers and plain Ubuntu servers have no idle sleep unless their product requires it.
+Idle sleep is on for a trial server. Other servers sleep only when the owner turns sleep on.
 
 Record each operation separately from observed state and show a useful error on failure.
 
@@ -273,7 +294,7 @@ A restart completes when the region accepts it and Central then reads the server
 
 Opening Pilot uses a short-lived audience-bound token and the automatic admin name. Deny another Team's access.
 
-A System Manager has four more actions on the Virtual Machine form in Desk. Central records the first two as a Comment on the server.
+A System Manager has five more actions on the Virtual Machine form in Desk. Central records **Open Bench as Administrator**, **Revoke Pilot Access** and a changed **Compute Settings** as a Comment on the server.
 
 | Action | Effect |
 | --- | --- |
@@ -281,6 +302,7 @@ A System Manager has four more actions on the Virtual Machine form in Desk. Cent
 | **Revoke Pilot Access** | Revokes every Pilot Credential of the server, so its Pilot can no longer reach Central. |
 | **Retry Admin Domain** | Asks Pilot again for the admin hostname, when the server shows an admin domain error. |
 | **Web Console** | Opens an SSH session or the serial console (TTY) of a Running server, through `open_console`. |
+| **Compute Settings** | Reads and changes the sleep and CPU burst settings of a live server. See [compute settings](#compute-settings). |
 
 Pilot links back to its server in the console with `/dashboard/servers?pilot=<jwks_audience_id>&action=<action>`. The action is `overview` or `resize`; any other value opens the overview. A resize link opens the dialog only when the server can take a change and the user may resize it. The server list returns each server's active audience as `pilot_audience`, and the console matches the link against it. When the active Team does not hold that server, the console shows the server list and a message. On a fresh page, the link waits for the first server list load before it looks for the server.
 
@@ -367,7 +389,7 @@ Routine synchronization must not call the guest. Signup readiness and user-reque
 
 ## How does Central register Cargo?
 
-Central registers each region's Cargo after a health check. `cargo_connection.register_cargo` calls `CargoClient.configure_webhooks`, which sends Central's receiver URL and a fresh secret. Central stores the secret in `Region.cargo_webhook_secret` and sets `cargo_status` to `Registered`. **Enroll Cargo** on the Region form runs this on demand. `register_pending_cargo` retries Draft regions every 10 minutes.
+Central registers each region's Cargo after a health check. `cargo_connection.register_cargo` calls `CargoClient.configure_webhooks`, which sends Central's receiver URL, a fresh secret and the storage Service's `report_secret` when it is set. Central stores the secret in `Region.cargo_webhook_secret` and sets `cargo_status` to `Registered`. **Enroll Cargo** on the Region form runs this on demand. `register_pending_cargo` retries Draft regions every 10 minutes.
 
 Cargo reports `service`, `status`, and `service_endpoint`. Central records availability in Service Detail. Do not label a service healthy from a provisioning event.
 
@@ -382,19 +404,36 @@ Each minute, `central.integrations.metrics.publish_metrics` sends gauges to the 
 | Gauge | Meaning |
 | --- | --- |
 | `central_requests{group,status_class}` | API requests since the last accepted push, by `central.api` module and status class. The `after_request` hook `count_request` counts them in Redis. The minute job reads and resets the counts, and puts them back when the push fails. |
+| `central_signup_steps_last_hour{step,product}`, `central_signup_failed{product,site,error}` | The signup funnel of the last hour: new accounts (`verified`), and trial sites `requested`, `ready` and `failed`. A trial site is a Site create Resource Action. The first 20 failed ones are named. |
+| `central_signup_setup_seconds{region,quantile}`, `central_signup_oldest_waiting_seconds{region}` | The median (`p50`) and the longest (`max`) time from a trial request to a ready site in the last hour, and the oldest trial request of the last day that has no ready site, did not fail, and whose server is not terminated. |
 | `central_resource_action_oldest_open_seconds{region,resource_type,action}`, `central_resource_actions_finished_last_hour{...,status}` | Open and finished Resource Actions. |
 | `central_payment_attempts_last_hour{gateway,status}`, `central_payment_last_capture_seconds{gateway}` | Payment Attempts and the newest capture. |
 | `central_gateway_webhooks_unprocessed{gateway}`, `central_gateway_webhook_oldest_unprocessed_seconds{gateway}`, `central_gateway_webhooks_failed_last_hour{gateway}` | Webhook Events that wait or failed. |
 | `central_billing_run_oldest_open_seconds`, `central_invoices_sync_failed` | Billing Runs that did not complete, and invoices that failed to sync to accounting. |
+| `central_card_setups_last_hour{gateway,method_type,outcome}`, `central_card_setup_failed{gateway,team,code}` | Card and UPI setups (Payment Methods) of the last hour: `started`, `succeeded`, `failed` and `expired`. Failed and expired count only setups that were never checked. A Cancelled setup is one that the team's next attempt replaced, so it is not counted. The first 20 failed ones are named with their decline or failure code. |
+| `central_card_setup_unfinished_attempts{team}`, `central_card_setup_oldest_pending_seconds{gateway}` | Teams that started 2 or more setups in the last hour and finished none, and the oldest setup that is still Pending Validation. |
+| `central_trial_conversions_blocked{reason}`, `central_trial_conversions_unmoved` | Active trials whose team has had an active card for 10 minutes, by Trial Error, and converted trials whose server still runs a trial plan. |
 | `central_site_domains_failed_last_hour{route_type}`, `central_site_domain_oldest_pending_seconds{route_type}` | Proxy routes. |
 | `central_vm_snapshots_failed_last_day{snapshot_type}`, `central_vm_snapshot_oldest_pending_seconds` | VM Snapshots. |
 | `central_emails_failed_last_hour`, `central_email_oldest_unsent_seconds` | The Email Queue. An email with a later `send_after` waits from that time. |
-| `central_job_queue_length{queue}`, `central_scheduled_job_late_seconds{job}` | Queues, and how late each scheduled Central job is. Failed jobs write Error Logs, so `central-errors` covers them. |
+| `central_job_queue_length{queue}`, `central_scheduled_job_late_seconds{job}` | Queues, and how late each scheduled Central job is. |
+| `central_jobs_failed_last_hour{queue,method}`, `central_scheduled_job_runs_last_hour{job,status}` | Background jobs that failed in the last hour, read from the newest 100 entries of each queue's failed registry, and scheduler runs by Scheduled Job Log status. |
+| `central_resource_actions_finished_within_last_hour{region,resource_type,action,le}`, `central_signup_ready_within_last_hour{region,le}` | Succeeded actions, and trial sites that became ready, within each latency bucket of 30, 60, 120, 300 and 600 seconds. The counts are cumulative: an action of 40 seconds counts in the 60, 120, 300 and 600 buckets. |
 | `frappe_webhook_requests_last_day{webhook,status}` | Webhook Request Logs of the last day. `Exhausted` means Frappe gave up after its retries. |
 
 The rules in `beacon/rules/` read these gauges, and the runbooks in `beacon/runbooks/` tell the responder what to do.
 
-Two SLOs in `beacon/services/` read the same data. `dashboard-api` counts the requests that did not fail with 5xx. `server-actions` counts the finished create, start, stop, restart and resize actions that succeeded. Both are global, so in Beacon set their Query Region to the Central Telemetry Region. `billing` is a declared service with no query: a published incident in Beacon sets its status.
+The SLOs in `beacon/services/` read the same data. All are global, so in Beacon set their Query Region to the Central Telemetry Region. Each SLO file holds its own target, so a target change needs no Central release.
+
+| Service | Good | Target | Status page |
+|---|---|---|---|
+| `dashboard-api` | Requests that did not fail with 5xx | 99.9% | Shown |
+| `server-actions` | Finished create, start, stop, restart and resize actions that succeeded | 99% | Shown |
+| `server-action-latency` | Succeeded server actions within their target: create, start and restart 60 s, stop 30 s, resize 120 s | 99% | Hidden |
+| `signups` | Trial sites ready within 120 s of the request. A failed trial site counts as bad. | 99% | Hidden |
+| `scheduled-jobs` | Scheduler runs that completed | 99.9% | Hidden |
+
+`billing` is a declared service with no query: a published incident in Beacon sets its status.
 
 Three checks in `beacon/rules/` call Central from outside: `central-dashboard-unreachable.http`, `central-api-unreachable.http` and `central-certificate.tls`. They use `{central_url}` from Beacon Settings and have no region, so Beacon adds them turned off. In Beacon, set their Regions to the Central Telemetry Region and turn them on.
 
@@ -451,7 +490,7 @@ pilot --site <site> execute central.investigator.knowledge.load_knowledge_bases
 
 ## How does Central create and list support tickets?
 
-Central calls a Frappe Helpdesk site through `central/integrations/helpdesk.py`. Ticket policy lives in `central/support.py`. Central uses one service user on that site with the `Agent` role. An operator sets the Helpdesk URL, the API key and the API secret in Central Settings under General > Helpdesk. Central stores the secret in a Password field.
+Central calls a Frappe Helpdesk site through `central/integrations/helpdesk.py`. Ticket policy lives in `central/support.py`. Central uses one service user on that site with the `Agent` role. That user also needs the `Agent Manager` role, because Central creates HD Customer and Contact rows. An operator sets the Helpdesk URL, the API key and the API secret in Central Settings under General > Helpdesk. Central stores the secret in a Password field.
 
 A request to Helpdesk carries `Authorization: token <key>:<secret>`. Frappe reads the key, finds the service user and runs the request as that user. No customer session and no Central token reaches Helpdesk. The service user is the actor that Helpdesk records as `owner` and `modified_by`.
 
@@ -462,25 +501,30 @@ Central sends stock `HD Ticket` fields only. It does not change the Helpdesk sch
 | `subject` | `[<Category> · <Topic>] <customer subject>` |
 | `description` | The customer's escaped text, then a Context block with Team, User, Category, Topic, the Server and Site that the caller can view, and links to the Team and records in Central |
 | `raised_by` | The caller's email |
+| `customer` | The team id, such as `TEAM-00012` |
 | `via_customer_portal` | `1` |
 
-A critical issue is `Unreachable or down`, `Site setup or provisioning failed`, or `Payment method or failed charge`. A ticket for one of these is `Urgent`. Every other ticket gets the Helpdesk default priority. The client cannot set a priority.
+A critical issue is `Unreachable or down`, `Site setup or provisioning failed`, or `Payment method or failed charge`. A ticket for one of these is `Critical`, a priority that must exist in Helpdesk. Every other ticket gets the Helpdesk default priority. The client cannot set a priority.
 
 Each Context block ends with an `Open in Central` line. It links the Team, and the Server or Site when the ticket names one, to the Desk record. An agent opens the record from the ticket.
 
-A ticket's team is the `Team:` line in the Context block. The whole marker is `<hr><p><strong>Context</strong><br>Team: <team><br>`. Helpdesk has no team field, so this line links a ticket to a Central Team. Central escapes the customer's text before it writes the block, so a description cannot fake the line.
+Each Central Team is one `HD Customer`, named by the team id, such as `TEAM-00012`. Helpdesk names a customer by its `customer_name`, so Central creates the customer once and reuses it. Every Active member of the team is a `Contact` of that customer, one Contact per member email. A member who holds `support:manage` in the team is a Customer Manager, with `is_manager` set to `1`. Every other member has `is_manager` set to `0`. Helpdesk grants and removes the `HD Customer` and `HD Customer Manager` roles from these rows itself, so Central writes only the rows.
 
-A list request asks for tickets where `status_category` is not `Resolved`, the description holds the team marker, and the owner is Central's service user. Anyone can email Helpdesk a description that copies the marker, so only a ticket that Central opened counts. Central asks Helpdesk for the service user once with `frappe.auth.get_logged_user` and caches it for a day. A ticket that waits on the customer is `Paused`, not `Resolved`, and stays in the list.
+Central writes the customer's contact table from the team's Active members. It does this in a background job when a team is created, its members change, or its status changes. Before it opens a ticket, Central creates the customer only when Helpdesk does not have it. The job is deduplicated per team and runs after the commit. A System Manager can also run the sync by hand with Sync to Helpdesk on the Team form. The sync creates only the Contacts that Helpdesk does not have, then replaces the customer's contact table with the full list. A member who leaves the team loses the customer role at the next sync.
 
-Before a customer opens a ticket, the console asks Helpdesk for up to 5 matching articles and up to 5 of the team's tickets. An operator turns on Show Help Articles in Central Settings under Helpdesk after the desk publishes articles. While it is off, the dialog opens on the contact form and does not search. Central first lists every ticket whose description holds the team marker, then sends those ticket names in a POST body to Helpdesk's full-text search, so a match in the subject or in the thread counts. Central keeps only ticket and email rows. It drops agent comments, because Helpdesk returns them to an agent and Central reads Helpdesk as an agent. The ticket search accepts any status, because a resolved ticket can still answer the question. Central drops a search row that points to a ticket outside the team list. A failed search returns no tickets and never blocks ticket creation.
+Every ticket Central opens carries `customer` set to the team id. The Context block still starts with `<hr><p><strong>Context</strong><br>Team: <team><br>`, which names the team for an agent. A list request asks for the tickets of the team's customer where `status_category` is not `Resolved`. A member without `support:manage` gets only the tickets they raised, because Central adds a `raised_by` filter to the request. Related-ticket search uses the same rule. Helpdesk indexes `HD Ticket.customer`, so the list is one indexed filter and does not read descriptions. A ticket that waits on the customer is `Paused`, not `Resolved`, and stays in the list. When Helpdesk is unreachable, the list fails at once and does not try again.
+
+The data patch `sync_helpdesk_customers` makes every existing Team a customer. It queues one sync per team, so a slow Helpdesk cannot time out the whole run, and each team that fails is logged by its own job. It then runs `central.support.assign_marked_tickets` on the long queue after the commit. That job reads the tickets that the service user owns and that have no customer, reads the team from the `Team:` line of each description, and sets the customer for each team that exists. A team whose ticket write fails is logged and does not stop the rest. Central reads the service user once with `frappe.auth.get_logged_user` and caches it for a day. The patch is safe to run again.
+
+Before a customer opens a ticket, the console asks Helpdesk for up to 5 matching articles and up to 5 of the team's tickets. An operator turns on Show Help Articles in Central Settings under Helpdesk after the desk publishes articles. While it is off, the dialog opens on the contact form and does not search. Central first reads up to 500 of the team's ticket names by customer, then sends those names in a POST body to Helpdesk's search for the customer's query, so a match in the subject or in the thread counts. Central keeps only ticket and email rows. It drops agent comments, because Helpdesk returns them to an agent and Central reads Helpdesk as an agent. The ticket search accepts any status, because a resolved ticket can still answer the question. Central drops a search row that points to a ticket outside the team list. A failed search returns no tickets and never blocks ticket creation.
 
 Central waits up to 3 seconds to connect and 5 seconds for a search or list answer, because a late answer is no use while the customer types. It waits up to 30 seconds for a new ticket. A user can open 10 tickets an hour and run 60 searches a minute.
 
 Central logs each failed Helpdesk call once in the Error Log, with the status and the body. When Helpdesk cannot be reached, or answers 502, 503, or 504, the customer reads that support is unavailable. Any other refusal, or a reply that is not Frappe JSON, shows a generic message. An operator also sees the status and the start of the body.
 
-A ticket row opens `<Helpdesk URL>/help/my-tickets/<ticket name>`. This is the Helpdesk customer portal, so the customer needs a Helpdesk account there. The portal opens a ticket only for the person who raised it, so a teammate's ticket shows who raised it and has no link. An operator keeps every link.
+A ticket row opens `<Helpdesk URL>/help/my-tickets/<ticket name>`. This is the Helpdesk customer portal, so the customer needs a Helpdesk account there. The portal opens a ticket only for the person who raised it, so a teammate's ticket shows who raised it and has no link. The portal opens a teammate's ticket for a Customer Manager once Helpdesk links their Contact to their Helpdesk user. An operator keeps every link.
 
-A member of a suspended team can create and list tickets. That member needs support to learn why the team was suspended. When Helpdesk is not configured, the console keeps the external Support Ticket URL and shows no in-app form.
+A member needs `support:view` in an Active team to open or list tickets. Owner, Admin, Billing, Developer and Viewer have it, and Viewer does not have `support:manage`. A member of a suspended team can create and list their own tickets without it, because a suspended team holds no grants and that member needs support to learn why the team was suspended. See [Capabilities](../CAPABILITIES.md). When Helpdesk is not configured, the console keeps the external Support Ticket URL and shows no in-app form.
 
 ## Validation
 

@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { TabButtons, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import CopyableValue from '@/components/common/CopyableValue.vue'
 import {
 	createListViewQuery,
 	ListView,
 	type ListViewColumn,
 	type ListViewFilter,
 } from '@/components/common/list-view'
+import ImageIcon from '@/components/servers/ImageIcon.vue'
+import ServerAddress from '@/components/servers/ServerAddress.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
-import StatusRing from '@/components/servers/StatusRing.vue'
+import { useAuth } from '@/composables/useAuth'
 import type { ConsoleMode, VirtualMachineRow } from '@/composables/useServers'
-import { timeAgo } from '@/lib/datetime'
-import type { ResourceRow, ServerVisual } from '@/lib/serverMap'
+import { formatCalendarDate } from '@/lib/datetime'
+import { imageLabel, type ResourceRow } from '@/lib/serverMap'
 import { __ } from '@/lib/translate'
 import { formatMemory, gigabytesToMegabytes } from '@/lib/units'
 
@@ -44,252 +45,282 @@ defineEmits<{
 	terminate: [server: VirtualMachineRow]
 }>()
 
-const IMAGE_ICONS: Record<string, string> = {
-	pilot: 'lucide-box',
-	ubuntu: 'lucide-terminal',
-	apps: 'lucide-package',
+const { currentUser } = useAuth()
+
+type StatusTab = 'all' | 'running' | 'stopped' | 'attention'
+
+const STATUS_TABS: Record<StatusTab, (row: ResourceRow) => boolean> = {
+	all: () => true,
+	running: (row) => row.visual.key === 'active',
+	stopped: (row) => ['stopped', 'sleeping'].includes(row.visual.key),
+	attention: (row) => ['broken', 'paused'].includes(row.visual.key),
 }
 
-const imageIcon = (row: ResourceRow) =>
-	IMAGE_ICONS[row.server?.image_offering ?? ''] ?? 'lucide-server'
-
-type StatusTab = 'all' | 'running' | 'progress' | 'attention'
-
-const STATUS_TABS: Record<StatusTab, ServerVisual['key'][] | null> = {
-	all: null,
-	running: ['active'],
-	progress: ['settingUp', 'resizing', 'terminating'],
-	attention: ['broken', 'paused', 'stopped'],
-}
-
-const query = ref(createListViewQuery({ pageSize: 20 }))
+const query = ref(
+	createListViewQuery({
+		pageSize: 20,
+		sort: { key: 'created', direction: 'desc' },
+	}),
+)
 const statusTab = ref<StatusTab>('all')
 
-const isRinged = (row: ResourceRow) => row.visual.motion === 'progress'
+const tabRows = computed(() => props.rows.filter(STATUS_TABS[statusTab.value]))
 
-const isInTab = (row: ResourceRow, tab: StatusTab) =>
-	STATUS_TABS[tab]?.includes(row.visual.key) ?? true
+const countIn = (tab: StatusTab) => props.rows.filter(STATUS_TABS[tab]).length
 
-const tabRows = computed(() =>
-	props.rows.filter((row) => isInTab(row, statusTab.value)),
-)
+const statusTabOptions = computed(() => [
+	{ label: __('All {0}', [countIn('all')]), value: 'all' },
+	{ label: __('Running {0}', [countIn('running')]), value: 'running' },
+	{ label: __('Stopped {0}', [countIn('stopped')]), value: 'stopped' },
+	{
+		label: __('Needs attention {0}', [countIn('attention')]),
+		value: 'attention',
+	},
+])
 
-const STATUS_TAB_OPTIONS = [
-	{ label: __('All'), value: 'all' },
-	{ label: __('Running'), value: 'running' },
-	{ label: __('In progress'), value: 'progress' },
-	{ label: __('Attention'), value: 'attention' },
-]
+// Most teams run in one region, where a region column and filter would say nothing.
+const regionLabels = computed(() => [
+	...new Set(props.rows.map((row) => row.regionLabel).filter(Boolean)),
+])
+const isMultiRegion = computed(() => regionLabels.value.length > 1)
 
-const planOf = (row: ResourceRow) =>
-	row.server?.plan_title || row.server?.plan || ''
+const isRunningAction = (row: ResourceRow) => row.visual.motion === 'progress'
 
-const specsOf = (server?: VirtualMachineRow) =>
+const creatorLabel = (server?: VirtualMachineRow) =>
+	server?.created_by === currentUser.value
+		? __('You')
+		: server?.created_by_name || server?.created_by || ''
+
+const creatorFirstName = (server?: VirtualMachineRow) =>
+	creatorLabel(server).split(' ')[0]
+
+const sizeOf = (server?: VirtualMachineRow) =>
 	[
 		server?.vcpus && `${server.vcpus} vCPU`,
 		server?.memory_megabytes && formatMemory(server.memory_megabytes),
-		server?.disk_gigabytes &&
-			formatMemory(gigabytesToMegabytes(server.disk_gigabytes)),
 	]
 		.filter(Boolean)
 		.join(' · ')
 
-const columns: ListViewColumn<ResourceRow>[] = [
+const diskOf = (server?: VirtualMachineRow) =>
+	server?.disk_gigabytes
+		? __('{0} disk', [
+				formatMemory(gigabytesToMegabytes(server.disk_gigabytes)),
+			])
+		: ''
+
+const compareBy =
+	(read: (server?: VirtualMachineRow) => string | number | null | undefined) =>
+	(left: ResourceRow, right: ResourceRow) =>
+		String(read(left.server) ?? '').localeCompare(
+			String(read(right.server) ?? ''),
+			undefined,
+			{ numeric: true },
+		)
+
+const columns = computed<ListViewColumn<ResourceRow>[]>(() => [
 	{
 		key: 'name',
 		label: __('Server'),
-		value: (row) => `${row.name} ${row.server?.image_title ?? ''}`,
-		width: 'minmax(12rem,1fr)',
+		value: (row) => `${row.name} ${imageLabel(row.server)}`,
+		width: 'minmax(14rem,2fr)',
 		sortable: true,
+		compare: (left, right) => left.name.localeCompare(right.name),
 	},
 	{
 		key: 'status',
 		label: __('Status'),
 		value: (row) => row.visual.label,
-		width: 'minmax(8rem,1fr)',
+		width: 'minmax(9rem,1fr)',
 		sortable: true,
 	},
 	{
-		key: 'region',
-		label: __('Region'),
-		value: (row) => `${row.regionLabel} ${row.server?.public_ipv4 ?? ''}`,
-		width: 'minmax(11rem,1fr)',
-		sortable: true,
+		key: 'address',
+		label: __('Address'),
+		value: (row) => `${row.site?.url ?? ''} ${row.server?.public_ipv4 ?? ''}`,
+		width: 'minmax(10rem,0.9fr)',
 	},
 	{
-		key: 'plan',
-		label: __('Plan'),
-		value: planOf,
-		width: 'minmax(10rem,1fr)',
+		key: 'size',
+		label: __('Size'),
+		value: (row) => sizeOf(row.server),
+		width: 'minmax(8rem,0.8fr)',
 		sortable: true,
+		compare: compareBy(
+			(server) => (server?.vcpus ?? 0) * 1e6 + (server?.memory_megabytes ?? 0),
+		),
 	},
+	...(isMultiRegion.value
+		? [
+				{
+					key: 'region',
+					label: __('Region'),
+					value: (row: ResourceRow) => row.regionLabel,
+					width: 'minmax(7rem,0.8fr)',
+					sortable: true,
+				},
+			]
+		: []),
 	{
-		key: 'version',
-		label: __('Version'),
-		value: (row) => row.server?.frappe_version ?? '',
-		width: 'minmax(6rem,1fr)',
+		key: 'created',
+		label: __('Created'),
+		value: (row) =>
+			`${creatorLabel(row.server)} ${row.server?.created_by ?? ''} ${formatCalendarDate(row.server?.creation)}`,
+		width: 'minmax(9rem,0.9fr)',
 		sortable: true,
+		compare: compareBy((server) => server?.creation),
 	},
 	{ key: 'actions', label: '', width: '2.5rem', align: 'end' },
-]
+])
 
-const optionsFor = (read: (row: ResourceRow) => string | undefined) =>
-	[...new Set(props.rows.map(read).filter(Boolean) as string[])]
-		.sort()
-		.map((value) => ({ label: value, value }))
+const optionsFrom = (
+	pairs: [value: string | null | undefined, label: string | null | undefined][],
+) =>
+	[...new Map(pairs.filter(([value]) => value) as [string, string][]).entries()]
+		.map(([value, label]) => ({ label: label || value, value }))
+		.sort((left, right) => left.label.localeCompare(right.label))
+
+// The signed-in user leads the creator filter, as "You".
+const creatorOptions = computed(() => {
+	const options = optionsFrom(
+		props.rows.map((row) => [row.server?.created_by, creatorLabel(row.server)]),
+	)
+	const isYou = (option: { value: string }) =>
+		option.value === currentUser.value
+	return [
+		...options.filter(isYou),
+		...options.filter((option) => !isYou(option)),
+	]
+})
 
 const filters = computed<ListViewFilter[]>(() => [
 	{
-		key: 'region',
-		label: __('Region'),
-		allLabel: 'All regions',
-		options: optionsFor((row) => row.regionLabel),
+		key: 'created',
+		label: __('Created by'),
+		allLabel: __('Anyone'),
+		options: creatorOptions.value,
 	},
 	{
-		key: 'plan',
-		label: __('Plan'),
-		allLabel: 'All plans',
-		options: optionsFor(planOf),
+		key: 'name',
+		label: __('Image'),
+		allLabel: __('All images'),
+		options: optionsFrom(
+			props.rows.map((row) => [imageLabel(row.server), imageLabel(row.server)]),
+		),
 	},
-	{
-		key: 'version',
-		label: __('Version'),
-		allLabel: 'All versions',
-		options: optionsFor((row) => row.server?.frappe_version),
-	},
+	...(isMultiRegion.value
+		? [
+				{
+					key: 'region',
+					label: __('Region'),
+					allLabel: __('All regions'),
+					options: regionLabels.value.map((label) => ({ label, value: label })),
+				},
+			]
+		: []),
 ])
-
-const vpnTooltipText = __(
-	"Your team's WireGuard VPN devices reach this server at its private address.",
-)
 </script>
 
 <template>
 	<ListView
 		v-model:query="query"
-		min-width="56rem"
+		min-width="60rem"
 		:rows="tabRows"
 		:columns="columns"
 		:row-key="(row) => row.id"
 		:filters="filters"
 		searchable
-		:search-placeholder="__('Search by name, region or IP')"
-		item-label="server"
-		row-class="min-h-14 py-1.5"
+		:search-placeholder="__('Search by name, domain or IP')"
+		:show-count="false"
+		row-class="min-h-11"
 		:empty-state="{
 			title: __('No servers match'),
 			description: __('Try a different search or clear the filters.'),
 		}"
+		:external-filter-active="statusTab !== 'all'"
 		@row-click="$emit('openRow', $event)"
+		@clear-filters="statusTab = 'all'"
 	>
 		<template #filters>
 			<TabButtons
 				class="ml-auto"
 				v-model="statusTab"
-				:options="STATUS_TAB_OPTIONS"
+				:options="statusTabOptions"
 			/>
 		</template>
 
 		<template #name="{ row }">
 			<span class="flex min-w-0 items-center gap-3">
-				<span class="relative shrink-0">
-					<StatusRing
-						class="-inset-0.5"
-						shape="square"
-						:motion="isRinged(row) ? 'progress' : 'none'"
-						color="var(--ink-gray-6)"
-					/>
-					<Tooltip :text="row.server?.image_description ?? ''">
-						<span
-							class="relative grid size-8 place-items-center rounded-4 text-ink-gray-5"
-							:class="!isRinged(row) && 'bg-surface-gray-1'"
-						>
-							<span class="size-4" :class="imageIcon(row)" />
-						</span>
-					</Tooltip>
-				</span>
-
-				<span class="flex min-w-0 flex-col gap-0.5">
-					<span class="truncate text-sm-medium text-ink-gray-9">
-						{{ row.name }}
+				<Tooltip :text="imageLabel(row.server)">
+					<span
+						class="relative grid size-8 shrink-0 place-items-center rounded-4 bg-surface-gray-2 text-ink-gray-5 dark:bg-surface-gray-1"
+					>
+						<ImageIcon class="size-4" :offering="row.server?.image_offering" />
 					</span>
-					<span class="truncate text-xs text-ink-gray-5">
-						{{ row.server?.image_title }}
-					</span>
+				</Tooltip>
+				<span class="truncate text-base-medium text-ink-gray-9">
+					{{ row.name }}
 				</span>
 			</span>
 		</template>
 
 		<template #status="{ row }">
-			<span class="flex min-w-0 flex-col gap-0.5">
-				<span class="flex items-center gap-2 text-sm text-ink-gray-7">
+			<span class="flex min-w-0 items-center gap-2 text-base text-ink-gray-7">
+				<span class="relative flex size-2 shrink-0">
 					<span
-						class="size-2 shrink-0 rounded-full"
+						v-if="isRunningAction(row)"
+						class="absolute inset-0 animate-ping rounded-full opacity-60"
 						:style="{ background: row.visual.dot }"
 					/>
-					{{ row.visual.label }}
+					<span
+						v-if="row.visual.icon"
+						:class="[row.visual.icon, 'relative size-3 -m-0.5 text-ink-gray-5']"
+						aria-hidden="true"
+					/>
+					<span
+						v-else
+						class="relative size-2 rounded-full"
+						:style="{ background: row.visual.dot }"
+					/>
 				</span>
-				<span class="truncate text-xs tabular-nums text-ink-gray-5">
-					{{ timeAgo(row.server?.state_observed_at) || '-' }}
-				</span>
+				<span class="truncate">{{ row.visual.label }}</span>
 			</span>
+		</template>
+
+		<template #address="{ row }">
+			<ServerAddress :row="row" />
+		</template>
+
+		<template #size="{ row }">
+			<Tooltip :text="diskOf(row.server)">
+				<span class="relative truncate text-sm tabular-nums text-ink-gray-7">
+					{{ sizeOf(row.server) || '-' }}
+				</span>
+			</Tooltip>
 		</template>
 
 		<template #region="{ row }">
-			<span class="flex min-w-0 flex-col gap-0.5">
-				<span class="truncate text-sm text-ink-gray-7">
-					{{ row.flag }}
-					{{ row.regionLabel }}
-				</span>
-				<span class="flex min-w-0 items-center gap-1 text-xs text-ink-gray-5">
-					<CopyableValue
-						v-if="row.server?.public_ipv4"
-						class="relative"
-						:value="row.server.public_ipv4"
-						:label="__('IP address')"
-					/>
-					<span v-else class="truncate">{{ __('No public IP') }}</span>
-
-					<Tooltip
-						v-if="row.server"
-						:text="vpnTooltipText"
-						:disabled="!row.server.has_wireguard_access"
-					>
-						<span class="relative shrink-0">
-							{{ row.server.has_wireguard_access
-									? __('· VPN on')
-									: __('· VPN off') }}
-						</span>
-					</Tooltip>
-				</span>
+			<span class="truncate text-base text-ink-gray-7">
+				{{ row.regionLabel }}
 			</span>
 		</template>
 
-		<template #plan="{ row }">
-			<span class="flex min-w-0 flex-col gap-0.5">
+		<template #created="{ row }">
+			<Tooltip :text="creatorLabel(row.server)">
 				<span
-					:class="[
-						'truncate text-sm',
-						planOf(row) ? 'text-ink-gray-7' : 'text-ink-gray-4',
-					]"
+					class="relative flex min-w-0 items-baseline gap-1.5 text-sm tabular-nums"
 				>
-					{{ planOf(row) || '-' }}
+					<span class="shrink-0 text-ink-gray-7">
+						{{ formatCalendarDate(row.server?.creation) }}
+					</span>
+					<span
+						v-if="creatorLabel(row.server)"
+						class="truncate text-ink-gray-4"
+					>
+						{{ __('by {0}', [creatorFirstName(row.server)]) }}
+					</span>
 				</span>
-				<span class="truncate text-xs tabular-nums text-ink-gray-5">
-					{{ specsOf(row.server) }}
-				</span>
-			</span>
-		</template>
-
-		<template #version="{ row }">
-			<span
-				:class="[
-					'truncate text-sm',
-					row.server?.frappe_version ? 'text-ink-gray-7' : 'text-ink-gray-4',
-				]"
-			>
-				{{ row.server?.frappe_version || '-' }}
-			</span>
+			</Tooltip>
 		</template>
 
 		<template #actions="{ row }">

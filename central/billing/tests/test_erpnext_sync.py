@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 """Issuing the statutory Sales Invoice, using advances, and recording card payments."""
 
+import json
 from unittest.mock import patch
 
 import frappe
@@ -15,6 +16,7 @@ from central.billing.tests.accounting_fake import (
 	billing_team,
 	configure_accounting,
 	requires_accounting_system,
+	sync_mode,
 )
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
@@ -25,12 +27,16 @@ GSTIN = "27AABCT1111T1Z5"
 @requires_accounting_system
 class SyncTestCase(IntegrationTestCase):
 	def setUp(self):
-		conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
+		conf = sync_mode()
 		conf.start()
 		self.addCleanup(conf.stop)
 		configure_accounting()
 		self.remote = FakeAccountingSystem()
 		self.enterContext(self.remote.patches())
+		# A job's lock ends with its transaction. A test runs many syncs in one transaction.
+		self.lock = self.enterContext(
+			patch("central.billing.ingester.erpnext_sync.hold_until_transaction_ends", return_value=True)
+		)
 
 	def _invoice(
 		self, team=TEAM, currency="INR", subtotal=8000, tax=1440, credit=0, paid=0, month=8, advance=0
@@ -88,7 +94,10 @@ class TestIssue(SyncTestCase):
 		self.assertEqual(si["taxes_and_charges"], IN_STATE)
 		self.assertEqual([t["rate"] for t in si["taxes"]], [9, 9])
 		self.assertEqual(si["items"][0]["item_code"], "Cloud Hosting")
+		self.assertEqual(si["items"][0]["income_account"], "Sales India - TC")
 		self.assertIn(f"Central invoice {inv}", si["remarks"])
+		self.assertEqual(si["frappe_cloud_invoice_id"], inv)
+		self.assertEqual((si["tc_name"], si["terms"]), ("Frappe Cloud", "Pay on time."))
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "erpnext_invoice"), out["synced"])
 		self.assertIsNotNone(frappe.db.get_value("Invoice", inv, "erpnext_synced_at"))
 
@@ -117,13 +126,19 @@ class TestIssue(SyncTestCase):
 		si = self._sales_invoice()
 		self.assertEqual(si["naming_series"], "EXP/.TFY./.#####")
 		self.assertEqual(si["debit_to"], "Debtors USD - TC")
+		self.assertEqual(si["items"][0]["income_account"], "Sales Global - TC")
 		self.assertEqual((si["gst_category"], si["place_of_supply"]), ("Overseas", "96-Other Countries"))
 		self.assertEqual(si["taxes"], [])
 
 	def test_an_invoice_already_issued_is_adopted_not_repeated(self):
 		billing_team(TEAM, gstin=GSTIN)
 		inv = self._invoice()
-		self.remote.records[("Sales Invoice", "SINV-EXISTING")] = {"remarks": f"Central invoice {inv}"}
+		# Its credit note carries the same invoice id, and is never taken for it.
+		self.remote.records[("Sales Invoice", "SINV-RETURN")] = {
+			"frappe_cloud_invoice_id": inv,
+			"is_return": 1,
+		}
+		self.remote.records[("Sales Invoice", "SINV-EXISTING")] = {"frappe_cloud_invoice_id": inv}
 		out = erpnext_sync.sync_invoice(inv)
 		self.assertEqual(out["synced"], "SINV-EXISTING")
 		self.assertEqual(self.remote.posts("Sales Invoice"), [])
@@ -168,6 +183,13 @@ class TestAdvances(SyncTestCase):
 		erpnext_sync.sync_invoice(self._invoice(credit=9000, advance=8000))
 		sales_invoice = self._sales_invoice()
 		self.assertNotIn("romotional", sales_invoice["remarks"])
+		# The print format shows every line, then the promotional credit taken off them.
+		printed = json.loads(sales_invoice["frappe_cloud_invoice"])
+		self.assertEqual(printed["applied_credits"], 1000)
+		self.assertEqual(
+			{k: printed["items"][0][k] for k in ("document_name", "plan", "amount", "quantity")},
+			{"document_name": "vm-1", "plan": "Business VM", "amount": 8000, "quantity": 1},
+		)
 		self.assertEqual(sales_invoice["items"][0]["rate"], 8440)
 		self.assertTrue(all(row["included_in_print_rate"] for row in sales_invoice["taxes"]))
 
@@ -230,7 +252,7 @@ class TestCardPayment(SyncTestCase):
 class TestFailureIsolation(SyncTestCase):
 	def test_sync_off_does_nothing(self):
 		billing_team(TEAM, gstin=GSTIN)
-		frappe.local.conf["enable_erpnext_sync"] = 0
+		self.enterContext(sync_mode("Off"))
 		self.assertEqual(erpnext_sync.sync_invoice(self._invoice())["skipped"], "sync_off")
 
 	def test_team_without_a_customer_retries_later(self):
@@ -239,6 +261,20 @@ class TestFailureIsolation(SyncTestCase):
 		with patch("central.billing.ingester.customer._enqueue"):
 			out = erpnext_sync.sync_invoice(self._invoice())
 		self.assertTrue(out["retry_scheduled"])
+		self.assertEqual(self.remote.posted, [])
+
+	def test_the_team_hears_of_its_tax_invoice_only_in_automatic_mode(self):
+		billing_team(TEAM, gstin=GSTIN)
+		with patch("central.billing.platform.notifications.notify") as notify:
+			erpnext_sync.sync_invoice(inv := self._invoice())
+			with sync_mode("Manual"):
+				erpnext_sync.sync_invoice(self._invoice(month=9))
+		notify.assert_called_once_with(TEAM, "Invoice Ready", reference_doctype="Invoice", reference_name=inv)
+
+	def test_a_sync_already_running_is_not_repeated(self):
+		billing_team(TEAM, gstin=GSTIN)
+		self.lock.return_value = False
+		self.assertEqual(erpnext_sync.sync_invoice(self._invoice())["skipped"], "running")
 		self.assertEqual(self.remote.posted, [])
 
 	def test_backoff_grows_then_alerts_ops(self):

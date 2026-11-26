@@ -6,6 +6,9 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils.translations import N_
 
+from central.server_models import ServerShape
+from central.utils.units import mebibytes_to_gigabytes
+
 NO_FIELDS = MappingProxyType({})
 
 
@@ -154,6 +157,12 @@ ACTION_EVENTS = {
 	"resize": ("server.resized", "server.resize_failed"),
 	"terminate": ("server.terminated", "server.terminate_failed"),
 }
+
+SHAPE_DETAILS: tuple[tuple[str, Callable[[ServerShape], str]], ...] = (
+	(N_("vCPU"), lambda shape: f"{shape.vcpus:g}"),
+	(N_("Memory"), lambda shape: f"{mebibytes_to_gigabytes(shape.memory_megabytes):g} GB"),
+	(N_("Disk"), lambda shape: f"{shape.disk_gigabytes} GB"),
+)
 
 CONSOLE = EventKind("console_opened", "access", "server:console")
 

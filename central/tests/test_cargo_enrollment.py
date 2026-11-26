@@ -51,6 +51,15 @@ class TestCargoEnrollment(IntegrationTestCase):
 		self.assertTrue(secret)
 		self.assertEqual(self.post.call_args.kwargs["json"]["webhook_secret"], secret)
 
+	def test_enroll_sends_the_storage_report_secret(self):
+		storage = frappe.get_doc("Service", "storage")
+		storage.report_secret = "report-secret"
+		storage.save()
+
+		self.instance.enroll_cargo()
+
+		self.assertEqual(self.post.call_args.kwargs["json"]["report_secret"], "report-secret")
+
 	def test_the_cargo_secret_survives_a_later_save(self):
 		"""Frappe deletes a Password whose column is empty when the document is saved."""
 		self.instance.enroll_cargo()

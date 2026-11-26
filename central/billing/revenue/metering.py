@@ -12,19 +12,22 @@ selects one of two modes:
   - **Grandfathered** (default): `max(0, quantity - locked_allowance) x locked_rate`,
     where the allowance (the base plan's included baseline) and the per-unit rate are
     locked at ingest, exactly like fixed prices are grandfathered by the price-lock.
-  - **Live** (e.g. snapshot — depreciating storage): no allowance and the rate is
-    read from the CURRENT Catalog Rate each billing period, never locked. A live
-    resource has its own resource_id from birth and needs no price-lock to bill,
-    so it survives VM termination.
+  - **Live** (e.g. snapshot — depreciating storage): the only allowance is a server's
+    bundle, counted from its days, and the rate is read from the CURRENT Catalog Rate
+    each billing period, never locked. A live resource has its own resource_id from
+    birth and needs no price-lock to bill, so it survives VM termination.
 """
 
 import frappe
 from frappe import _
+from frappe.query_builder.functions import Coalesce
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
+from central.billing.revenue.metered_lines import line_description, rollups_in
+from central.billing.revenue.rollup_updates import apply_report, recount_allowance, rerate
 
 
-def _metered_plan_for(resource_type: str):
+def metered_plan_for(resource_type: str):
 	"""The active metered single-resource Plan for a resource_type, with its family's
 	`pricing_mode`. None if no metered Plan models the resource.
 
@@ -47,33 +50,36 @@ def _metered_plan_for(resource_type: str):
 	if not plans:
 		return None
 
-	includes = frappe.get_all(
-		"Plan Includes",
-		filters={"parent": ["in", [p.name for p in plans]]},
-		fields=["parent", "resource_type"],
-	)
-	by_plan: dict[str, list[str]] = {}
-	for inc in includes:
-		by_plan.setdefault(inc.parent, []).append(inc.resource_type)
-
+	by_plan = _resource_types_by_plan([p.name for p in plans])
 	for p in plans:
-		rts = by_plan.get(p.name, [])
-		if len(rts) == 1 and rts[0] == resource_type:
+		if by_plan.get(p.name, []) == [resource_type]:
 			return frappe._dict({"name": p.name, "pricing_mode": metered_cats[p.category]})
 	return None
+
+
+def _resource_types_by_plan(plans: list[str]) -> dict[str, list[str]]:
+	"""The resource types each plan includes, by plan."""
+	by_plan: dict[str, list[str]] = {}
+	for inc in frappe.get_all("Plan Includes", {"parent": ["in", plans]}, ["parent", "resource_type"]):
+		by_plan.setdefault(inc.parent, []).append(inc.resource_type)
+	return by_plan
 
 
 def _resolve_terms(meter: dict):
 	"""Ingest-time terms for a rollup, branching on the metered family's pricing mode.
 
+	- **Fixed by the caller** (`locked_terms`, such as a money meter's monthly rate):
+	  used as given, whatever the family's pricing mode.
 	- **Live** (e.g. snapshot): no price-lock needed — a live metered resource has its
 	  own resource_id from birth and survives VM termination. team/cluster/currency
-	  come from the meter payload; there is NO allowance and NO locked rate (the
-	  rate is read live at billing). See ADR 0002.
+	  come from the meter payload; the only allowance is a server's bundle counted
+	  from its days, and there is NO locked rate (the rate is read live at billing).
 	- **Grandfathered**: the locked allowance + per-unit rate off the resource's
 	  active price-lock (skipped when there is no active lock).
 	"""
-	plan = _metered_plan_for(meter.get("resource_type"))
+	if meter.get("locked_terms"):
+		return meter["locked_terms"]
+	plan = metered_plan_for(meter.get("resource_type"))
 	if plan and plan.pricing_mode == "Live":
 		return {
 			"team": meter.get("team"),
@@ -110,7 +116,7 @@ def _locked_terms(resource_id: str, resource_type: str):
 				break
 
 	rate = 0
-	plan = _metered_plan_for(resource_type)
+	plan = metered_plan_for(resource_type)
 	if plan:
 		rate = frappe.utils.flt(resolve_rate(get_catalog_rates("Plan", plan.name), seg.currency, seg.cluster))
 
@@ -127,7 +133,7 @@ def _reporting_mode_for(resource_type: str) -> str:
 	"""The reporting mode of the family that prices `resource_type` (ADR 0015), blank
 	resolving to Authoritative. A resource type maps to at most one active metered Plan
 	(ADR 0008), whose Plan Category carries the mode — so this is unambiguous."""
-	plan = _metered_plan_for(resource_type)
+	plan = metered_plan_for(resource_type)
 	if not plan:
 		return "Authoritative"
 	category = frappe.db.get_value("Plan", plan.name, "category")
@@ -138,7 +144,7 @@ def _settlement_mode_for(resource_type: str) -> str:
 	"""The settlement mode of the family that prices `resource_type` (ADR 0015), blank
 	resolving to Postpaid Overage. Prepaid Pack usage is not billed as overage — the
 	pack was paid up front and excess is blocked at the edge, not charged."""
-	return _settlement_from_plan(_metered_plan_for(resource_type))
+	return _settlement_from_plan(metered_plan_for(resource_type))
 
 
 def _settlement_from_plan(plan) -> str:
@@ -176,7 +182,9 @@ def override_terms(rollup: str, rate=None, allowance=None, reason: str | None = 
 	new.locked_rate = old.locked_rate if rate is None else rate
 	new.locked_allowance = old.locked_allowance if allowance is None else allowance
 	new.superseded_by = None
-	new.idempotency_key = f"{old.idempotency_key}::v{_version_of(old.idempotency_key) + 1}"
+	# The key says which versions moved the allowance, so a recount leaves those alone.
+	mark = "v" if allowance is None else "a"
+	new.idempotency_key = f"{old.idempotency_key}::{mark}{_version_of(old.idempotency_key) + 1}"
 	new.insert(ignore_permissions=True)
 
 	frappe.db.set_value("Usage Rollup", name, "superseded_by", new.name)
@@ -186,8 +194,17 @@ def override_terms(rollup: str, rate=None, allowance=None, reason: str | None = 
 
 def _version_of(idempotency_key: str) -> int:
 	"""The version suffix on a rollup key, 0 for an original."""
-	_head, _sep, tail = idempotency_key.rpartition("::v")
-	return frappe.utils.cint(tail) if tail.isdigit() else 0
+	_head, sep, tail = idempotency_key.rpartition("::")
+	return frappe.utils.cint(tail[1:]) if sep and _is_version_mark(tail, "va") else 0
+
+
+def _is_allowance_corrected(idempotency_key: str) -> bool:
+	"""Whether an operator corrected the allowance in this version of a rollup or an earlier one."""
+	return any(_is_version_mark(part, "a") for part in idempotency_key.split("::")[1:])
+
+
+def _is_version_mark(part: str, marks: str) -> bool:
+	return part[:1] in marks and part[1:].isdigit()
 
 
 def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
@@ -195,6 +212,7 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 	Both reporting modes (ADR 0015) land as one Usage Rollup row per period; the locked
 	allowance + rate are stamped once, at first receipt, so the metered terms are
 	grandfathered and a later catalog change cannot move an existing rollup's price.
+	A converted rollup is re-rated on each report until its rate date is set.
 
 	- **Authoritative** (default): a re-push REPLACES the period quantity (recompute
 	  after an outage), never adds — the reporter holds the authoritative total.
@@ -225,7 +243,7 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 		existing = frappe.db.get_value(
 			"Usage Rollup",
 			{"idempotency_key": key},
-			["name", "quantity", "sequence", "superseded_by"],
+			["name", "quantity", "sequence", "superseded_by", "rate_date", "idempotency_key"],
 			as_dict=True,
 			for_update=True,
 		)
@@ -235,14 +253,23 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 			if existing.superseded_by:
 				head = live_rollup(existing.name)
 				existing = frappe.db.get_value(
-					"Usage Rollup", head, ["name", "quantity", "sequence"], as_dict=True, for_update=True
+					"Usage Rollup",
+					head,
+					["name", "quantity", "sequence", "rate_date", "idempotency_key"],
+					as_dict=True,
+					for_update=True,
 				)
-			_apply_report(existing, mode, qty, seq, refuse_lower)
+			apply_report(existing, mode, qty, seq, refuse_lower)
+			rerate(existing, meter.get("locked_terms"))
+			# An operator's corrected allowance outranks the recount's.
+			recount_allowance(existing, meter, is_corrected=_is_allowance_corrected(existing.idempotency_key))
 			return key
 
 		terms = _resolve_terms(meter)
 		if not terms:
 			return None  # no active lock — nothing to bill this against yet
+		if "counted_allowance" in meter:
+			terms = {**terms, "allowance": meter["counted_allowance"]}
 
 		try:
 			frappe.db.savepoint("usage_rollup_insert")
@@ -270,31 +297,8 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 _INGEST_RACE_RETRIES = 3
 
 
-def _apply_report(existing, mode: str, qty: float, seq: int, refuse_lower: bool) -> None:
-	"""Apply a report to the already-locked rollup row. Authoritative replaces the period
-	figure; Incremental accumulates only when the sequence advances (else a no-op)."""
-	if mode == "Incremental":
-		if seq <= frappe.utils.cint(existing.sequence):
-			return  # duplicate / out-of-order batch — already counted
-		frappe.db.set_value(
-			"Usage Rollup",
-			existing.name,
-			{"quantity": frappe.utils.flt(existing.quantity) + qty, "sequence": seq},
-		)
-	else:
-		# Authoritative: replace the period figure; the locked terms stay as first stamped.
-		if refuse_lower and qty < frappe.utils.flt(existing.quantity):
-			frappe.throw(
-				_("A usage total for this period can only increase ({0} is recorded).").format(
-					existing.quantity
-				),
-				frappe.ValidationError,
-			)
-		frappe.db.set_value("Usage Rollup", existing.name, "quantity", qty)
-
-
 def _insert_rollup(meter: dict, terms: dict, qty: float, seq: int, key: str) -> None:
-	"""Insert the period's rollup with its billing terms stamped once, at first receipt."""
+	"""Insert the period's rollup with its billing terms stamped at first receipt."""
 	frappe.get_doc(
 		{
 			"doctype": "Usage Rollup",
@@ -302,6 +306,7 @@ def _insert_rollup(meter: dict, terms: dict, qty: float, seq: int, key: str) -> 
 			"team": terms["team"],
 			"cluster": terms["cluster"],
 			"resource_type": meter.get("resource_type"),
+			"dimension": meter.get("dimension"),
 			"meter_type": meter.get("meter_type"),
 			"period_start": meter.get("period_start"),
 			"period_end": meter.get("period_end"),
@@ -310,6 +315,7 @@ def _insert_rollup(meter: dict, terms: dict, qty: float, seq: int, key: str) -> 
 			"currency": terms["currency"],
 			"locked_allowance": terms["allowance"],
 			"locked_rate": terms["rate"],
+			"rate_date": terms.get("rate_date"),
 			"idempotency_key": key,
 			"sequence": seq,
 		}
@@ -337,39 +343,45 @@ def metered_line_items_for_clusters(
 	The monthly run consolidates a team's clusters into a single invoice; scanning
 	rollups (and re-resolving each family's plan) once per cluster is the rating-path
 	N+1. This fetches every cluster's rollups in one query and resolves each metered
-	family once. The billed set is exactly the per-cluster union.
+	family once. The billed set is the per-cluster union plus the team's AI usage.
 	"""
-	return _metered_lines(team, list(clusters), period_start, period_end, explain)
+	return _metered_lines(team, list(clusters), period_start, period_end, explain, team_level=True)
 
 
-def _metered_lines(team: str, clusters: list, period_start, period_end, explain: bool = False) -> list[dict]:
+def _metered_lines(
+	team: str, clusters: list, period_start, period_end, explain: bool = False, team_level: bool = False
+) -> list[dict]:
 	"""One line per overage rollup for `team` in any of `clusters` (see the two public
 	wrappers). The rollup carries its own cluster, so a multi-cluster run tags each line
 	correctly and prices Live plans against the rollup's cluster."""
-	if not clusters:
+	Rollup = frappe.qb.DocType("Usage Rollup")
+	in_scope = rollups_in(Rollup, clusters, team_level)
+	if in_scope is None:
 		return []
 
 	# Filter the period in SQL, not Python. period_start is a Datetime, so the upper
 	# bound is the exclusive next-day midnight to keep the old date-inclusive semantics
 	# (a rollup dated on period_end still counts). Rows with no period_start are always
 	# included, as before.
-	Rollup = frappe.qb.DocType("Usage Rollup")
 	period_end_excl = frappe.utils.add_days(frappe.utils.getdate(period_end), 1)
 	rollups = (
 		frappe.qb.from_(Rollup)
 		.select(
 			Rollup.resource_id,
 			Rollup.resource_type,
+			# A blank dimension is stored as NULL or "", and a forecast merges lines on it.
+			Coalesce(Rollup.dimension, "").as_("dimension"),
 			Rollup.meter_type,
 			Rollup.quantity,
 			Rollup.unit,
 			Rollup.currency,
 			Rollup.locked_allowance,
 			Rollup.locked_rate,
+			Rollup.rate_date,
 			Rollup.cluster,
 		)
 		.where(Rollup.team == team)
-		.where(_in_clusters(Rollup.cluster, clusters))
+		.where(in_scope)
 		# A superseded row has been replaced by a corrected-terms version; billing the
 		# old one as well would double-charge the same usage.
 		.where(Rollup.superseded_by.isnull())
@@ -387,7 +399,7 @@ def _metered_lines(team: str, clusters: list, period_start, period_end, explain:
 	# Resolve each family's pricing plan + settlement mode ONCE per resource_type — each
 	# resolution is several queries, and doing it per rollup row is the rating-path N+1.
 	types = {r.resource_type for r in rollups}
-	plan_by_type = {rt: _metered_plan_for(rt) for rt in types}
+	plan_by_type = {rt: metered_plan_for(rt) for rt in types}
 	settlement_by_type = {rt: _settlement_from_plan(plan_by_type[rt]) for rt in types}
 
 	lines = []
@@ -398,17 +410,16 @@ def _metered_lines(team: str, clusters: list, period_start, period_end, explain:
 		if settlement_by_type[r.resource_type] == "Prepaid Pack":
 			continue
 
-		# A live metered plan (e.g. snapshot) reads the CURRENT catalog rate and has no
-		# allowance; a grandfathered one uses the terms locked at ingest. `resolved`
-		# stays None (not 0) when no rate is configured, so an unpriced overage is
-		# distinguishable from a genuinely free one below.
+		# A live metered plan (e.g. snapshot) reads the CURRENT catalog rate; a grandfathered
+		# one uses the terms locked at ingest. `resolved` stays None (not 0) when no rate is
+		# configured, so an unpriced overage is distinguishable from a genuinely free one below.
 		plan = plan_by_type[r.resource_type]
 		if plan and plan.pricing_mode == "Live":
 			resolved = resolve_rate(get_catalog_rates("Plan", plan.name), r.currency, r.cluster)
-			allowance = 0.0
 		else:
 			resolved = r.locked_rate
-			allowance = frappe.utils.flt(r.locked_allowance)
+		# A live plan carries only the bundle counted from its days.
+		allowance = frappe.utils.flt(r.locked_allowance)
 
 		billable_qty = max(0.0, frappe.utils.flt(r.quantity) - allowance)
 		if billable_qty <= 0:
@@ -444,7 +455,9 @@ def _metered_lines(team: str, clusters: list, period_start, period_end, explain:
 			"plan": None,
 			"cluster": r.cluster,
 			"resource_type": r.resource_type,
+			"dimension": r.dimension,
 			"unit": r.unit,
+			"description": line_description(r, rate),
 			"quantity": billable_qty,
 			"rate": rate,
 			"days": 0,
@@ -481,13 +494,3 @@ def _metered_lines(team: str, clusters: list, period_start, period_end, explain:
 			)
 		)
 	return lines
-
-
-def _in_clusters(column, clusters: list):
-	"""`column` is one of `clusters`. A blank cluster is stored as NULL or "", so it matches both."""
-	named = [c for c in clusters if c]
-	condition = column.isin(named) if named else None
-	if len(named) < len(clusters):
-		blank = column.isnull() | (column == "")
-		condition = blank if condition is None else condition | blank
-	return condition

@@ -105,7 +105,6 @@ print(response.choices[0].message.content)`,
 			curl: `curl ${baseUrl.value}/v1/messages \\
   -H "Content-Type: application/json" \\
   -H "x-api-key: ${key.value}" \\
-  -H "anthropic-version: 2023-06-01" \\
   -d '{
     "model": "${model.value}",
     "max_tokens": 1024,

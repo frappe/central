@@ -1,5 +1,25 @@
 [
  {
+  "capability": "app:deploy",
+  "description": "Connect GitHub and deploy apps from repositories",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-11-14 12:00:00.000000",
+  "name": "app:deploy",
+  "plane": "central",
+  "resource": "app"
+ },
+ {
+  "capability": "app:view",
+  "description": "View deployed apps, their deploys, and their build and release logs",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-11-24 15:00:00.000000",
+  "name": "app:view",
+  "plane": "central",
+  "resource": "app"
+ },
+ {
   "capability": "billing:manage",
   "description": "Add credit, change payment methods, and update billing details",
   "docstatus": 0,
@@ -178,5 +198,25 @@
   "name": "team:manage_members",
   "plane": "central",
   "resource": "team"
+ },
+ {
+  "capability": "support:view",
+  "description": "Open support tickets and see your own",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-11-17 17:40:22.000000",
+  "name": "support:view",
+  "plane": "central",
+  "resource": "support"
+ },
+ {
+  "capability": "support:manage",
+  "description": "See every support ticket of the team",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-11-17 17:40:22.000000",
+  "name": "support:manage",
+  "plane": "central",
+  "resource": "support"
  }
 ]

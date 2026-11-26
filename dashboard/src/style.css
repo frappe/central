@@ -110,31 +110,39 @@ html[data-route-transition^="server-create"] .vt-server-summary {
 	}
 }
 
-/* Servers <-> Server. The detail is the moving page; the fleet only eases a little so the
-   map does not skate. Back is a dismiss: the detail leaves faster than it arrived. */
+/* Servers <-> Server, and the list layout of Servers <-> New server. The new page is the
+   moving page; the fleet only eases a little so the map does not skate. Back is a dismiss:
+   the new page leaves faster than it arrived. */
 @media (prefers-reduced-motion: no-preference) {
-	html[data-route-transition^="server-open"]::view-transition-image-pair(page) {
+	html[data-route-transition^="server-open"]::view-transition-image-pair(page),
+	html[data-route-transition^="server-list-create"]::view-transition-image-pair(page) {
 		overflow: hidden;
 	}
 	html[data-route-transition^="server-open"]::view-transition-old(page),
-	html[data-route-transition^="server-open"]::view-transition-new(page) {
+	html[data-route-transition^="server-open"]::view-transition-new(page),
+	html[data-route-transition^="server-list-create"]::view-transition-old(page),
+	html[data-route-transition^="server-list-create"]::view-transition-new(page) {
 		height: 100%;
 		width: 100%;
 		mix-blend-mode: normal;
 		background-color: var(--surface-base);
 	}
-	html[data-route-transition="server-open"]::view-transition-old(page) {
+	html[data-route-transition="server-open"]::view-transition-old(page),
+	html[data-route-transition="server-list-create"]::view-transition-old(page) {
 		animation: 260ms var(--route-ease-out) both route-page-push-back;
 	}
-	html[data-route-transition="server-open"]::view-transition-new(page) {
+	html[data-route-transition="server-open"]::view-transition-new(page),
+	html[data-route-transition="server-list-create"]::view-transition-new(page) {
 		z-index: 1;
 		animation: 280ms var(--route-ease-out) both route-page-slide-in;
 	}
-	html[data-route-transition="server-open-back"]::view-transition-old(page) {
+	html[data-route-transition="server-open-back"]::view-transition-old(page),
+	html[data-route-transition="server-list-create-back"]::view-transition-old(page) {
 		z-index: 1;
 		animation: 220ms var(--route-ease-out) both route-page-slide-out;
 	}
-	html[data-route-transition="server-open-back"]::view-transition-new(page) {
+	html[data-route-transition="server-open-back"]::view-transition-new(page),
+	html[data-route-transition="server-list-create-back"]::view-transition-new(page) {
 		animation: 240ms var(--route-ease-out) both route-page-return;
 	}
 }

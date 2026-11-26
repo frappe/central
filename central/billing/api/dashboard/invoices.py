@@ -94,7 +94,7 @@ def get_forecast(team: str | None = None) -> dict:
 		# Warn when the projected bill outruns the wallet (a top-up may be due).
 		"credit_alert": shortfall > 0,
 		# Spell out each service/plan + metered overage driving the projection.
-		"line_items": [_describe_line(team, frappe._dict(li)) for li in line_items],
+		"line_items": [_describe_line(team, frappe._dict(li), (month_start, month_end)) for li in line_items],
 	}
 
 
@@ -342,15 +342,19 @@ def list_invoices(team: str | None = None) -> list[dict]:
 @frappe.whitelist(methods=["GET"])
 @rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def download_invoice_pdf(name: str) -> None:
-	"""The customer's copy of the statutory invoice, as ERPNext renders it."""
+	"""The customer's copy of the statutory invoice, as ERPNext renders it the first time."""
 	from central.billing.ingester.erpnext_sync import sales_invoice_pdf
+	from central.billing.ingester.pdfs import stored_pdf
 
 	team, sales_invoice = frappe.db.get_value("Invoice", name, ["team", "erpnext_invoice"]) or (None, None)
 	_require_view(team)
 	if not sales_invoice:
 		frappe.throw(_("This invoice has not been issued yet, so it has no PDF."), frappe.DoesNotExistError)
-	frappe.local.response.filename = f"{sales_invoice.replace('/', '-')}.pdf"
-	frappe.local.response.filecontent = sales_invoice_pdf(sales_invoice)
+	filename = f"{sales_invoice.replace('/', '-')}.pdf"
+	frappe.local.response.filename = filename
+	frappe.local.response.filecontent = stored_pdf(
+		"Invoice", name, filename, lambda: sales_invoice_pdf(sales_invoice)
+	)
 	frappe.local.response.type = "download"
 
 
@@ -413,7 +417,7 @@ def get_invoice(name: str) -> dict:
 		"has_pdf": bool(doc.erpnext_invoice),
 		"payment_in_progress": payment_in_progress,
 		"paid_with": paid_with,
-		"items": [_describe_line(doc.team, li) for li in doc.items],
+		"items": [_describe_line(doc.team, li, (doc.period_start, doc.period_end)) for li in doc.items],
 		"activity": _invoice_activity(doc),
 	}
 
@@ -629,8 +633,9 @@ def credit_ledger(team: str | None = None, limit: int = 50) -> list[dict]:
 @frappe.whitelist(methods=["GET"])
 @rate_limit(limit=30, seconds=60 * 60, user_based=True)
 def download_topup_receipt(name: str) -> None:
-	"""The receipt voucher for a wallet top-up, as the accounting system renders it."""
+	"""The receipt voucher for a wallet top-up, as the accounting system renders it the first time."""
 	from central.billing.ingester.advance import receipt_pdf
+	from central.billing.ingester.pdfs import stored_pdf
 
 	team, advance_id = frappe.db.get_value("Credit Ledger Entry", name, ["team", "advance_id"]) or (
 		None,
@@ -639,8 +644,11 @@ def download_topup_receipt(name: str) -> None:
 	_require_view(team)
 	if not advance_id:
 		frappe.throw(_("This top-up has no receipt yet."), frappe.DoesNotExistError)
-	frappe.local.response.filename = f"{advance_id.replace('/', '-')}.pdf"
-	frappe.local.response.filecontent = receipt_pdf(advance_id)
+	filename = f"{advance_id.replace('/', '-')}.pdf"
+	frappe.local.response.filename = filename
+	frappe.local.response.filecontent = stored_pdf(
+		"Credit Ledger Entry", name, filename, lambda: receipt_pdf(advance_id)
+	)
 	frappe.local.response.type = "download"
 
 

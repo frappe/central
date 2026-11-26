@@ -22,6 +22,7 @@ class CentralSettings(Document):
 		from frappe.types import DF
 
 		articles_enabled: DF.Check
+		block_disposable_emails: DF.Check
 		central_id: DF.Int
 		common_site_config: DF.JSON | None
 		disk_iops: DF.Int
@@ -69,12 +70,12 @@ class CentralSettings(Document):
 
 	def on_update(self) -> None:
 		from central.infrastructure.doctype.blocked_domain.blocked_domain import seed_regional_domains
-		from central.infrastructure.doctype.github_connection.github_connection import GitHubConnection
+		from central.infrastructure.doctype.github_installation.github_installation import GitHubInstallation
 
 		if self.has_value_changed("wildcard_domain"):
 			seed_regional_domains()
 		if self.has_value_changed("github_app_id"):
-			GitHubConnection.disable_all()
+			GitHubInstallation.disable_all()
 
 	def validate_limits(self) -> None:
 		"""A zero would refuse every invitation or sign-in code, or give a new server no disk or network."""

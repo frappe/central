@@ -110,6 +110,47 @@ class TestAuth(IntegrationTestCase):
 		self.assertIn("disabled", notice.call_args.kwargs["subject"])
 		code_mail.assert_not_called()
 
+		from frappe.utils.jinja import get_email_from_template
+
+		html, _text = get_email_from_template(
+			notice.call_args.kwargs["template"], notice.call_args.kwargs["args"]
+		)
+		self.assertIn("Contact support to restore access.", html)
+
+	def test_a_temporary_email_gets_no_code_and_no_account(self):
+		"""A disposable domain or its subdomain gets no code."""
+		for email in ("new@mailinator.com", "new@inbox.mailinator.com"):
+			with (
+				self.subTest(email=email),
+				central_limit("block_disposable_emails", 1),
+				patch(SENDMAIL) as sendmail,
+				self.assertRaises(frappe.ValidationError),
+			):
+				send_code(email, "Temporary")
+
+			sendmail.assert_not_called()
+			self.assertFalse(frappe.db.exists("User", email))
+
+	def test_a_temporary_email_signs_up_when_the_block_is_off(self):
+		"""The block can be turned off."""
+		email = f"auth.{frappe.generate_hash(length=8)}@mailinator.com"
+		self.addCleanup(EmailCode(email).discard)
+		with central_limit("block_disposable_emails", 0), patch(SENDMAIL) as sendmail:
+			send_code(email, "Temporary")
+
+		sendmail.assert_called_once()
+
+	def test_an_existing_account_on_a_temporary_email_still_gets_a_code(self):
+		"""An existing account still signs in."""
+		frappe.set_user("Administrator")
+		email = create_user(f"auth.{frappe.generate_hash(length=8)}@mailinator.com")
+		self.addCleanup(EmailCode(email).discard)
+		frappe.set_user("Guest")
+		with central_limit("block_disposable_emails", 1), patch(SENDMAIL) as sendmail:
+			send_code(email)
+
+		sendmail.assert_called_once()
+
 	def test_the_code_limits_follow_central_settings(self):
 		with patch(SENDMAIL), central_limit("sign_in_codes_per_email", 1):
 			send_code(self.email, "One Code")

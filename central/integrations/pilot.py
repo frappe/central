@@ -63,7 +63,7 @@ def get_bootstrap_metadata(action) -> dict[str, str]:
 	}
 	if mailbox := UserMailAccount.assign(action):
 		common_site_config |= mailbox.get_site_config()
-	# A free trial boots with a Grove key from the pool: AI works before the team holds any key.
+	# A free trial boots with a Grove key, from the pool or minted now: AI works before the team holds any key.
 	if trial_key := AITrialKey.assign(action):
 		common_site_config |= trial_key.get_site_config()
 	metadata["pilot-common-site-config"] = json.dumps(common_site_config)
@@ -114,7 +114,7 @@ def plan_includes_storage(plan: str | None) -> bool:
 
 
 def create_bundled_bucket(team: str, region: str, server: str) -> dict | None:
-	"""Create the server's uncapped backup bucket; billing reconciles its usage."""
+	"""Create the server's uncapped backup bucket; what it holds above the plan's storage is billed."""
 	endpoint_url = get_storage_endpoint_url(region)
 	client = ObjectStorageClient.from_region(region)
 	name = get_bucket_name(team, region, server)
@@ -245,6 +245,19 @@ def is_site_reachable(url: str) -> bool:
 	return response.ok and "pong" in response.text
 
 
+def is_pilot_reachable(gateway_url: str) -> bool:
+	"""Whether a server's Pilot answers its health check. A server reports Running when it boots,
+	some time before Pilot starts, and the proxy returns 502 until then."""
+	try:
+		response = requests.get(
+			f"{gateway_url}/api/v1/health", timeout=SITE_PING_TIMEOUT_SECONDS, allow_redirects=False
+		)
+	except requests.RequestException:
+		return False
+
+	return response.ok
+
+
 def rename_admin_domain(server: str, base_url: str | None = None, tls: bool = True) -> dict:
 	"""Ask a server's pilot to serve its admin UI at the proxy hostname Central expects.
 
@@ -254,18 +267,6 @@ def rename_admin_domain(server: str, base_url: str | None = None, tls: bool = Tr
 	payload = {"domain": urlparse(expected).hostname, "tls": tls}
 
 	return _request_pilot("POST", server, base_url or expected, "/api/v1/settings/admin-domain", payload)
-
-
-def set_site_primary_domain(server: str, site: str, domain: str) -> dict:
-	"""Attach the customer's primary domain without moving the site's directory."""
-	base_url = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
-	return _request_pilot(
-		"POST",
-		server,
-		base_url,
-		f"/api/v1/sites/{quote(site, safe='')}/domains",
-		{"domain": domain, "primary": True},
-	)
 
 
 def rename_site(

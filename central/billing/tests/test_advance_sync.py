@@ -16,6 +16,7 @@ from central.billing.tests.accounting_fake import (
 	billing_team,
 	configure_accounting,
 	requires_accounting_system,
+	sync_mode,
 )
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
@@ -26,7 +27,7 @@ GSTIN = "27AABCT1111T1Z5"
 @requires_accounting_system
 class AdvanceTestCase(IntegrationTestCase):
 	def setUp(self):
-		conf = patch.dict(frappe.local.conf, {"enable_erpnext_sync": 1})
+		conf = sync_mode()
 		conf.start()
 		self.addCleanup(conf.stop)
 		configure_accounting()
@@ -60,6 +61,12 @@ class TestTopUp(AdvanceTestCase):
 		entry, _ = self._top_up(amount=500, currency="USD")
 		self.assertEqual(frappe.db.get_value("Credit Ledger Entry", entry, "tax_amount"), 0)
 
+	def test_an_overseas_advance_is_held_in_its_own_currency(self):
+		billing_team(TEAM, country="United States", state="California", currency="USD")
+		entry, _ = self._top_up(amount=500, currency="USD")
+		advance.sync_advance(entry)
+		self.assertEqual(self.remote.posts("Payment Entry")[-1]["paid_from"], "Customer Advances USD - TC")
+
 	def test_the_advance_books_the_credit_and_its_gst(self):
 		billing_team(TEAM, gstin=GSTIN)
 		entry, _ = self._top_up(amount=11800)
@@ -68,7 +75,7 @@ class TestTopUp(AdvanceTestCase):
 		payment = self.remote.posts("Payment Entry")[-1]
 		self.assertEqual(payment["docstatus"], 1)
 		self.assertEqual(payment["naming_series"], "RV/.TFY./.######")
-		self.assertEqual(payment["paid_from"], "Customer Advances - TC")
+		self.assertEqual(payment["paid_from"], "Customer Advances INR - TC")
 		self.assertEqual(payment["paid_to"], "Stripe Clearing INR - TC")
 		self.assertEqual(payment["reference_no"], "pi_topup_1")
 		self.assertEqual(payment["company_gstin"], COMPANY_GSTIN)
@@ -129,7 +136,7 @@ class TestTopUp(AdvanceTestCase):
 			advance.sync_advance(entry)
 
 	def test_nothing_is_queued_while_sync_is_off(self):
-		frappe.local.conf["enable_erpnext_sync"] = 0
+		self.enterContext(sync_mode("Off"))
 		with patch("frappe.enqueue") as enqueue:
 			advance.enqueue_sync("any")
 		enqueue.assert_not_called()

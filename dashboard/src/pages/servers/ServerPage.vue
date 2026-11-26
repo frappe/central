@@ -105,10 +105,12 @@ const metricsRange = computed<MetricsRange>({
 const {
 	overview,
 	metrics,
+	metricsLoading,
 	metricsError,
 	error: overviewError,
 	reload: reloadOverview,
 	reloadMetrics,
+	rangeError,
 } = useServerOverview(resourceId, metricsRange)
 
 const details = computed(() =>
@@ -309,7 +311,7 @@ watch(
 					@protect="protect"
 				/>
 
-				<Tabs v-model="activeTab" class="mt-4 shrink-0 md:mt-8">
+				<Tabs v-model="activeTab" class="mt-4 shrink-0 overflow-x-auto md:mt-8">
 					<TabList variant="browser-tab" size="md">
 						<TabTrigger
 							v-for="tab in TABS"
@@ -365,7 +367,9 @@ watch(
 					v-model:range="metricsRange"
 					:overview="details"
 					:metrics="metrics"
+					:metrics-loading="metricsLoading"
 					:metrics-error="metricsError"
+					:range-error="rangeError"
 					@refresh="reloadMetrics"
 					class="mt-3 lg:min-h-0 lg:flex-1"
 				/>
