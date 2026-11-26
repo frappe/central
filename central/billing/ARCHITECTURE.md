@@ -286,6 +286,9 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, setup 
 | cron `30 17 * * *` (12:00 UTC) | `revenue.usage_checks.sample_storage` | only while Cargo pushes storage (`Service.central_reads` off): read every billed bucket and each billed server's backup bucket once, in pages of 100 queued as `sample_team_page` and `sample_bundled_page`, with the same readers `storage_bridge` bills with, and keep the reading as a Usage Check for the next day's comparison |
 | cron `30 7 * * *` (02:00 UTC) | `revenue.usage_checks.check_yesterday` | only for a service that pushes: mark a storage day whose stored peak is more than 1 % below Central's sample, read each AI team's landing day from Grove with `grove_bridge.read_days` (failures logged as "Usage check: N AI team(s) not read") and mark a model that differs by more than 0.01 USD, then delete Usage Checks older than 7 days; writes no day value |
 | daily | `revenue.usage_corrections.write_off_expired` | mark Written Off each Open Usage Month Correction whose day was billed more than 90 days ago, in pages of 500 through `platform.jobs.each_isolated`, with a comment on its Usage Month |
+| daily | `revenue.usage_retention.prune_old_months` | clear the day values and slots of Usage Months older than 13 months with nothing left to bill; totals and terms stay |
+| daily | `revenue.usage_retention.prune_reports` | delete Usage Reports received more than 13 months ago, with their body files |
+| daily | `revenue.usage_retention.sample_report_bodies` | re-hash 20 random report bodies of the last 35 days and set `damaged_at` on each that no longer matches (readiness M6) |
 | daily | `revenue.usage_ledger.fill_missing_days` | give a Level subject with no reading for a UTC day that ended 48 hours ago its last reading, marked estimated, under one Estimated Usage Report per service and run |
 | hourly | `ingester.erpnext_sync.retry_failed_syncs` | Automatic mode only: retry Sales Invoice push (backoff window elapsed), and send at most 100 paid invoices that no sync tried, paid more than an hour ago |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
@@ -739,6 +742,13 @@ Usage months (ADR 0028, #207): every writer stores a line in the day slot of its
   → a correction bills only within 90 days of the invoice that billed its day
     (billed_invoice_date); a month below the minimum keeps it Open; the daily
     write_off_expired marks one past the window Written Off and comments on the Usage Month
+  → evidence is kept 13 months (usage_retention): prune_old_months clears the slots and d01 to d31
+    of a month row older than that with no open day and no Open correction, keeps its masks,
+    quantity and terms, and sets `pruned`; prune_reports deletes Usage Reports received before
+    the cutoff with their files; both page by name through platform.jobs.each_isolated
+  → readiness M5: a day billed in the last two months whose slot names no Usage Report with a
+    kept body; M6: a report body that sample_report_bodies (daily, 20 random reports of the last
+    35 days) found no longer matching its SHA-256 (`damaged_at`)
   → a reused subject name bills each day on the subscription whose row first held it
   → usage_recount rates one row per subscription, resource type, dimension and month (the
     rated row, counted_at set) from the open day slots; invoicing reads rated rows and Usage
@@ -983,6 +993,7 @@ The team and the signed-in user are counted apart, and either one can lock. A us
 | Tagging a subscription into a Project is refused | `Subscription.validate_project` — same-team? Project `enabled`? `catalog.subscriptions.enforce_project_headroom` — would the tag push the Project's committed run-rate (`project_run_rate`) past its `spending_limit`? (blocks new tagging only, §2.1) |
 | ERPNext out of sync | `erpnext_sync` (async, never rolls back the invoice; check retry backoff) |
 | A late usage value was not billed | the Usage Month's Corrections tab: Open waits for the next invoice (a month below the minimum keeps it Open); Credit Due did not raise the bill (readiness M4, an operator issues the credit note); Written Off came more than 90 days after the invoice that billed the day; Billed names the invoice. A day a reissue gave back is billed with its own value first |
+| A dispute names a day the Usage Month has no value for | is `pruned` set? The month is older than 13 months: its totals and terms stay, the day values and reports are gone. Otherwise readiness M5 lists billed days whose report is missing, M6 a report whose body no longer matches its hash |
 | A server's public IPv4 is not on the invoice | readiness M3; is there a `network` Usage Month for the server with that day filled (`subject` = server name)? Did the server's subscription have an open segment that day (a trial or a day paused throughout bills nothing)? Is the day before `Service.bill_from` (written off)? |
 | Draft fails with "unpriced metered usage: IP" | the `public-ipv4` plan has no Catalog Rate for the team's currency and the server's region; add it, then run the draft again: every unbilled IPv4 day of the open month bills |
 | Catalog masters missing | `taxonomy_setup.ensure_catalog_masters` (runs on install/migrate/before_tests) |

@@ -22,7 +22,8 @@
   "body_sha256",
   "signature",
   "secret_fingerprint",
-  "body"
+  "body",
+  "damaged_at"
  ],
  "fields": [
   {
@@ -125,11 +126,18 @@
    "fieldtype": "Attach",
    "label": "Body",
    "read_only": 1
+  },
+  {
+   "description": "When a daily sample found that the kept body no longer has the hash recorded when it was received.",
+   "fieldname": "damaged_at",
+   "fieldtype": "Datetime",
+   "label": "Body Damaged At",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-26 12:00:00.000000",
+ "modified": "2026-11-26 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Report",

@@ -333,6 +333,8 @@ def _is_as_new(row: dict, current) -> bool:
 
 def day_rows(filters: dict, day=None) -> list[frappe._dict]:
 	"""The filled days of the month rows that match `filters`, one dict per day, oldest first."""
+	# A row past retention keeps no day values.
+	filters = {"pruned": 0, **filters}
 	if day:
 		filters = {**filters, "month": month_of(day)}
 	months = frappe.get_all(DOCTYPE, filters=filters, fields=list(_READ_FIELDS), order_by="month asc")

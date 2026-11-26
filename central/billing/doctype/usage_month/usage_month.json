@@ -66,6 +66,7 @@
   "open_days",
   "changed_at",
   "stamped_at",
+  "pruned",
   "section_slots",
   "slots",
   "tab_rating",
@@ -456,6 +457,14 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "description": "Past retention: the day values and slots are cleared; the month's totals and terms are kept.",
+   "fieldname": "pruned",
+   "fieldtype": "Check",
+   "label": "Days Pruned",
+   "read_only": 1
+  },
+  {
    "collapsible": 1,
    "fieldname": "section_slots",
    "fieldtype": "Section Break",
@@ -565,7 +574,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-26 12:00:00.000000",
+ "modified": "2026-11-26 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Month",
