@@ -11,7 +11,7 @@ import datetime
 import frappe
 from frappe.query_builder import Order
 
-from central.billing.catalog.subscriptions import active_segments
+from central.billing.catalog.subscriptions import server_segments
 from central.billing.doctype.subscription_change.subscription_change import (
 	RATED_CHANGE_TYPES,
 	SEGMENT_CHANGE_TYPES,
@@ -50,14 +50,6 @@ def billed_subjects_of(service: str, day=None, names: list[str] | None = None) -
 		return subjects
 	# A backup bucket wins a name it shares with a team's bucket, as Central's own reading does.
 	return {**subjects, **bundled_buckets(names, day)}
-
-
-def server_segments(servers: list[str] | None = None, during: tuple | None = None) -> list:
-	"""The segments of these servers, or of every server, open now or at some moment of `during`."""
-	if servers is not None and not servers:
-		return []
-	server_id = ["is", "set"] if servers is None else ["in", servers]
-	return active_segments({"server_id": server_id}, during=during)
 
 
 def _bundled_buckets_on(day, servers: list[str] | None = None) -> dict[str, frappe._dict]:

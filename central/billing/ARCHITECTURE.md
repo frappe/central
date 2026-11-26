@@ -515,7 +515,7 @@ central.api.servers.create_server | create_composed_server
 
 Resize: `central.api.servers.resize_server` → `catalog.subscriptions.begin_resize` (validates, persists a Resource Action) → `central.integrations.resource_actions` → `apply_resize_billing` → `resize_composed_subscription` → new Subscription Change (re-prices).
 
-Pause and resume: `catalog.subscriptions.pause_billing` writes a `Paused` change on the server's subscription, and on a per-address public IPv4 subscription that is still enabled, which closes their segments. A public IPv4 bills as a Usage Day only on a day the server's segment was open at some moment, so a day paused throughout bills no address. `resume_billing` checks the team and project headroom, then writes `Resumed` changes that carry the rate locked before the pause. A Start on a paused server reopens its billing through the same headroom checks, and does not need `billing:manage`. A `Running` report from the region never enables a paused subscription again.
+Pause and resume: `catalog.subscriptions.pause_billing` writes a `Paused` change on the server's subscription, which closes its segment. A public IPv4 bills as a Usage Day only on a day the server's segment was open at some moment, so a day paused throughout bills no address. `resume_billing` checks the team and project headroom, then writes a `Resumed` change that carries the rate locked before the pause. A Start on a paused server reopens its billing through the same headroom checks, and does not need `billing:manage`. A `Running` report from the region never enables a paused subscription again.
 
 ### B. Bill a period (draft → open → collect)
 ```mermaid
@@ -755,8 +755,9 @@ Public IPv4 (#197, #200): one Level Usage Day per server and UTC day on the serv
     read_public_ipv4 sweep (see the scheduled table). write_days keeps the highest count, so both
     are idempotent
   → a day is written only when the server's subscription had an open segment at some moment of it
-    (public_ipv4_usage.billed_servers_on over bundled_buckets.server_segments): a trial server (no
-    subscription) is free until it converts, a Stopped server bills, a day paused throughout does not
+    (public_ipv4_usage.billed_servers_on over catalog.subscriptions.server_segments, which
+    bundled_buckets also reads): a trial server (no subscription) is free until it converts, a
+    Stopped server bills, a day paused throughout does not
   → included is always 0: no plan bundles an address. IPv6 is free
   → usage_recount bills the month as count ÷ days in the month per day, at the current Catalog
     Rate of the Live metered plan that models IP (`public-ipv4` under Live Metered Resources,

@@ -107,9 +107,9 @@ def ensure_ai_plan() -> None:
 
 def ensure_public_ipv4_plan() -> None:
 	"""Seed the plan that prices a public IPv4 per address-month. Safe to call repeatedly."""
-	from central.billing.revenue.metering import _metered_plan_for
+	from central.billing.revenue.metering import metered_plan_for
 
-	if not frappe.db.exists("Plan Category", PUBLIC_IPV4_CATEGORY) or _metered_plan_for(IP_RESOURCE_TYPE):
+	if not frappe.db.exists("Plan Category", PUBLIC_IPV4_CATEGORY) or metered_plan_for(IP_RESOURCE_TYPE):
 		return
 	_insert_metered_plan(PUBLIC_IPV4_PLAN, "Public IPv4", PUBLIC_IPV4_CATEGORY, IP_RESOURCE_TYPE)
 	# The prices an operator set on the IP rate card, regional ones too, carry over.

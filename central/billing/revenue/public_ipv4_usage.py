@@ -8,7 +8,7 @@ import frappe
 
 from central.billing.catalog.pricing import resolve_rate
 from central.billing.catalog.public_ips import get_public_ipv4_rates
-from central.billing.revenue.bundled_buckets import server_segments
+from central.billing.catalog.subscriptions import server_segments
 from central.billing.revenue.usage_ledger import utc_day_window, utc_today, write_days
 from central.services.doctype.service.service import NETWORK_SERVICE, PUBLIC_IPV4_METER
 

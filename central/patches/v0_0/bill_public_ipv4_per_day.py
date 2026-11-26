@@ -1,7 +1,7 @@
 import frappe
 
 from central.billing.catalog.plan_setup import IP_RESOURCE_TYPE
-from central.billing.catalog.subscriptions import _latest_segment_by_subscription, cancel_subscription
+from central.billing.catalog.subscriptions import cancel_subscription, latest_segment_by_subscription
 from central.billing.catalog.taxonomy_setup import ensure_catalog_masters
 from central.billing.revenue.public_ipv4_usage import held_addresses, write_ipv4_days
 from central.billing.revenue.usage_ledger import utc_day_start, utc_today
@@ -25,7 +25,7 @@ def close_address_subscriptions(cutover) -> None:
 	names = frappe.get_all(
 		"Subscription", filters={"public_ip_server": ["is", "set"], "enabled": 1}, pluck="name"
 	)
-	latest = _latest_segment_by_subscription(names)
+	latest = latest_segment_by_subscription(names)
 	for name in names:
 		last = latest.get(name)
 		if not (last and last.change_type == "Cancelled"):
