@@ -4,7 +4,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.tests.utils import make_plan
-from central.deploy.billing import get_plan_specs, get_size_plan
+from central.deploy.billing import get_plan_size, get_size_plan
 
 
 def make_size(title: str, vcpus: float, memory: float, disk: float) -> str:
@@ -26,7 +26,7 @@ def catalog(*rows: tuple[str, str]) -> dict:
 class IntegrationTestDeployBilling(IntegrationTestCase):
 	def test_a_plans_size_is_given_in_atlas_units(self):
 		plan = make_size("Starter", 0.5, 2, 25)
-		self.assertEqual(get_plan_specs(plan), {"cpu_millicores": 500, "memory_mib": 2048, "disk_mib": 25600})
+		self.assertEqual(get_plan_size(plan), {"cpu_millicores": 500, "memory_mib": 2048, "disk_mib": 25600})
 
 	def test_a_size_is_the_sellable_plan_with_that_title(self):
 		with patch(
