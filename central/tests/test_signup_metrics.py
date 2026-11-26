@@ -58,6 +58,10 @@ class TestSignupMetrics(IntegrationTestCase):
 		self.assertEqual(
 			get_values(metrics, "central_signup_setup_seconds", "quantile"), {"p50": 20.0, "max": 90.0}
 		)
+		self.assertEqual(
+			get_values(metrics, "central_signup_ready_within_last_hour", "le"),
+			{"30": 2.0, "60": 2.0, "120": 3.0, "300": 3.0, "600": 3.0},
+		)
 		self.assertEqual(get_values(metrics, "central_signup_failed", "site"), {"acme.frappe.cloud": 1.0})
 		waiting_age = get_values(metrics, "central_signup_oldest_waiting_seconds", "region")["bom"]
 		self.assertAlmostEqual(waiting_age, 600, delta=10)
