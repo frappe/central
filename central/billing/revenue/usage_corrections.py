@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 import frappe
 from frappe import _
+from frappe.query_builder import Case
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
 from central.billing.platform.invariants import Violation
@@ -17,6 +18,7 @@ from central.billing.revenue.usage_month import BILLED, CORRECTION, CREDIT_DUE, 
 from central.billing.states import transition
 
 # A correction is billed only within this many days of the invoice that billed its day.
+# A lower value is still rated after it: the window limits what we charge, never a credit we owe.
 WINDOW_DAYS = 90
 CREDITED = "Credited"
 NO_CHARGE = "No Charge"
@@ -47,7 +49,7 @@ class Corrections:
 
 
 def rate_open(team: str, today=None) -> Corrections:
-	"""Rate the team's open corrections in their window: a line for each that raises the bill, Credit Due or No Charge for the rest."""
+	"""Rate the team's open corrections: a line for each in its window that raises the bill, Credit Due or No Charge for the rest."""
 	rated = Corrections()
 	months: dict[tuple, BilledMonth | None] = {}
 	for correction in _open_corrections(team, frappe.utils.getdate(today)):
@@ -88,7 +90,7 @@ def mark_credited(name: str, reason: str) -> None:
 
 
 def write_off_expired(today=None) -> int:
-	"""Daily: write off each open correction that no invoice billed within its window."""
+	"""Daily: write off each open charge that no invoice billed within its window."""
 	cutoff = frappe.utils.getdate(today) - datetime.timedelta(days=WINDOW_DAYS)
 	written, after = 0, ""
 	while page := _expired_page(cutoff, after):
@@ -193,6 +195,9 @@ def _rate(month: BilledMonth, correction, team: str, rated: Corrections) -> None
 	if rounded == 0:
 		_close_unchanged(correction, team)
 		return
+	if not correction.billable:
+		# Past its window a charge is not billed; write_off_expired closes it.
+		return
 	# Later corrections of the same month are weighed against this one, as the invoice bills them together.
 	month.apply(key, frappe.utils.flt(correction.value))
 	rated.lines.append(_line(month.carrier, correction, delta))
@@ -263,9 +268,10 @@ def get_description(correction) -> str:
 
 
 def _open_corrections(team: str, today: datetime.date) -> list[frappe._dict]:
-	"""The team's open corrections still in their window, oldest day first, locked with their month rows."""
+	"""The team's open corrections in their window, and lower values past it, oldest day first, locked with their month rows."""
 	correction = frappe.qb.DocType(CORRECTION)
 	month = frappe.qb.DocType(DOCTYPE)
+	in_window = correction.billed_invoice_date >= today - datetime.timedelta(days=WINDOW_DAYS)
 	return (
 		frappe.qb.from_(correction)
 		.join(month)
@@ -283,11 +289,12 @@ def _open_corrections(team: str, today: datetime.date) -> list[frappe._dict]:
 			month.resource_type,
 			month.dimension,
 			month.slots,
+			Case().when(in_window, 1).else_(0).as_("billable"),
 		)
 		.where(
 			(month.team == team)
 			& (correction.status == OPEN)
-			& (correction.billed_invoice_date >= today - datetime.timedelta(days=WINDOW_DAYS))
+			& (in_window | (correction.value < correction.billed_value))
 		)
 		.orderby(month.name)
 		.orderby(correction.day)
@@ -336,18 +343,25 @@ def _billed_corrections(rows: list[str]) -> list[frappe._dict]:
 
 
 def _expired_page(cutoff: datetime.date, after: str) -> list[str]:
-	return frappe.get_all(
-		CORRECTION,
-		filters={"status": OPEN, "billed_invoice_date": ["<", cutoff], "name": [">", after]},
-		order_by="name asc",
-		limit=PAGE_SIZE,
-		pluck="name",
-	)
+	"""Open charges past their window; a lower value is never written off, as its credit is still owed."""
+	correction = frappe.qb.DocType(CORRECTION)
+	return (
+		frappe.qb.from_(correction)
+		.select(correction.name)
+		.where(
+			(correction.status == OPEN)
+			& (correction.billed_invoice_date < cutoff)
+			& (correction.value > correction.billed_value)
+			& (correction.name > after)
+		)
+		.orderby(correction.name)
+		.limit(PAGE_SIZE)
+	).run(pluck=True)
 
 
 def _write_off(name: str) -> None:
 	correction = frappe.get_doc(CORRECTION, name, for_update=True)
-	if correction.status != OPEN:
+	if correction.status != OPEN or correction.value <= correction.billed_value:
 		return
 	month = frappe.get_doc(DOCTYPE, correction.parent)
 	_move(name, WRITTEN_OFF, month.team, reason="no invoice billed it within its window")

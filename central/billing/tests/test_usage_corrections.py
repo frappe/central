@@ -217,3 +217,17 @@ class TestAICorrections(AIBillingCase):
 		correction.reload()
 		self.assertEqual((correction.status, correction.billable_delta), ("No Charge", 0))
 		self.assertEqual(credit_due_rows(row.month_row), [])
+
+	def test_a_lower_value_past_the_window_is_still_credit_due(self):
+		self.read_later("2026-06-10", 1.5)
+		correction, row = self.correction()
+		ended = frappe.utils.getdate() - datetime.timedelta(days=120)
+		frappe.db.set_value("Usage Month Correction", correction.name, "billed_invoice_date", ended)
+
+		self.assertEqual(usage_corrections.write_off_expired(), 0)
+		self.assertEqual([line.amount for line in self.july_lines()], [85.0])
+
+		correction.reload()
+		self.assertEqual(correction.status, "Credit Due")
+		[violation] = credit_due_rows(row.month_row)
+		self.assertIn(correction.name, violation.detail)
