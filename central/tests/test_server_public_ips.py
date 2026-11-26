@@ -5,7 +5,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import now_datetime
 
 from central.api.servers import set_server_ipv4_internet, set_server_public_ip, set_server_wireguard_access
-from central.billing.catalog.rate_card import ensure_component_rate_card
+from central.billing.catalog.taxonomy_setup import ensure_catalog_masters
 from central.billing.revenue.invoicing.lines import _subscription_clusters
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.tests.test_iam import ensure_user
@@ -20,7 +20,7 @@ class PublicIPTestCase(IntegrationTestCase):
 		self.addCleanup(frappe.set_user, "Administrator")
 		self.addCleanup(frappe.db.rollback)
 		self.enterContext(patch.object(VirtualMachine, "sync_subscription_on_status_change"))
-		ensure_component_rate_card()
+		ensure_catalog_masters()
 
 		self.developer = ensure_user("public-ip.developer@example.test")
 		self.viewer = ensure_user("public-ip.viewer@example.test")
@@ -64,32 +64,57 @@ class PublicIPTestCase(IntegrationTestCase):
 
 
 class TestPublicIPv4Billing(PublicIPTestCase):
-	def test_an_address_is_billed_while_atlas_reports_it(self):
-		self.observe(public_ipv4=ADDRESS)
+	def test_a_reported_address_queues_its_day_and_opens_no_subscription(self):
+		with patch("central.billing.revenue.public_ipv4_usage.queue_today") as queue_today:
+			self.observe(public_ipv4=ADDRESS)
 
-		subscription = frappe.get_doc("Subscription", self.ipv4_subscription())
-		self.assertEqual([(row.resource_type, row.quantity) for row in subscription.includes], [("IP", 1)])
-		rate = frappe.db.get_value("Subscription Change", {"subscription": subscription.name}, "locked_rate")
-		self.assertEqual(rate, 170)
+		queue_today.assert_called_once_with(self.server, 1)
+		self.assertIsNone(self.ipv4_subscription())
+
+	def test_a_released_address_closes_a_per_address_subscription(self):
+		subscription = self.open_per_address_subscription()
+		frappe.db.set_value("Virtual Machine", self.server, "public_ipv4", ADDRESS)
 
 		self.observe(public_ipv4=None)
 
 		self.assertIsNone(self.ipv4_subscription())
-		self.assertEqual(self.ipv4_subscription(enabled=0), subscription.name)
+		self.assertEqual(self.ipv4_subscription(enabled=0), subscription)
 
 	def test_termination_stops_the_charge(self):
-		self.observe(public_ipv4=ADDRESS)
-		self.observe(status="Terminated")
+		self.open_per_address_subscription()
+		frappe.db.set_value("Virtual Machine", self.server, "public_ipv4", ADDRESS)
+
+		with patch("central.billing.revenue.public_ipv4_usage.queue_today"):
+			self.observe(status="Terminated")
 
 		self.assertIsNone(self.ipv4_subscription())
 
 	def test_the_charge_is_invoiced_in_the_server_region(self):
-		self.observe(public_ipv4=ADDRESS)
 		subscription = frappe._dict(
-			name=self.ipv4_subscription(), server_id=None, vm_snapshot=None, public_ip_server=self.server
+			name=self.open_per_address_subscription(),
+			server_id=None,
+			vm_snapshot=None,
+			public_ip_server=self.server,
 		)
 
 		self.assertEqual(_subscription_clusters([subscription]), {subscription.name: self.region})
+
+	def open_per_address_subscription(self) -> str:
+		"""A per-address subscription as Central opened them before addresses were billed per day."""
+		subscription = frappe.get_doc(
+			{
+				"doctype": "Subscription",
+				"team": self.team,
+				"public_ip_server": self.server,
+				"pricing_mode": "Composed",
+				"includes": [{"resource_type": "IP", "quantity": 1, "unit": "Nos"}],
+				"billing_cycle": "Monthly",
+				"account_standing": "Current",
+				"enabled": 1,
+			}
+		)
+		subscription.flags.opening_quote = (170, "INR")
+		return subscription.insert(ignore_permissions=True).name
 
 
 class TestPublicIPActions(PublicIPTestCase):
@@ -111,7 +136,7 @@ class TestPublicIPActions(PublicIPTestCase):
 	def test_a_region_without_a_price_attaches_no_ipv4(self):
 		frappe.set_user(self.developer)
 		with (
-			patch("central.billing.catalog.public_ips.resolve_component_rate", return_value=None),
+			patch("central.billing.catalog.public_ips.get_public_ipv4_rates", return_value=[]),
 			self.assertRaises(frappe.ValidationError),
 		):
 			set_server_public_ip(self.team, self.server, version=4, is_attached=1)
