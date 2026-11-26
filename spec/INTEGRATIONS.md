@@ -227,7 +227,7 @@ The service gets Central's public keys from `central.api.jwks.get_jwks` and veri
 
 ## How does a Pilot read private GitHub repositories?
 
-Central owns one GitHub App, set on the GitHub tab of Central Settings. Pilot grants and push-to-deploy use the same App. The App private key and secrets stay in Central. A Pilot gets only a token for one repository, with `contents: read`, that expires in about an hour. Only a deploy asks GitHub for `statuses: write`, to show its status on a commit.
+Central owns one GitHub App, set on the GitHub tab of Central Settings. Pilot grants and push-to-deploy use the same App. The App private key and secrets stay in Central. A Pilot gets only a token for one repository, with `contents: read`, that expires in about an hour. Only a deploy asks GitHub for `statuses: write`, to show its status on a commit, and for `deployments: write`, to record a live deploy in the `production` environment. GitHub then shows the app's domain in the repository's Deployments section.
 
 A `GitHub Installation` is the only record of a team's access to one installation of the App. It holds the installation ID and its status. A `GitHub Connection` (a Pilot's grant) and a `Deploy App` link to it and read the installation ID from it.
 
