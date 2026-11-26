@@ -2,7 +2,6 @@ import calendar
 
 import frappe
 
-from central.billing.revenue.usage_ledger import utc_today, write_days
 from central.services.doctype.service.service import (
 	AI_SERVICE,
 	STORAGE_METER,
@@ -16,6 +15,8 @@ WRITE_PAGE = 500
 
 def execute():
 	"""Start the Usage Day ledger without losing the storage this month already read."""
+	if not frappe.db.table_exists("Usage Day"):
+		return
 	ensure_services()
 	_name_subjects()
 	_mark_invoiced_months()
@@ -66,6 +67,10 @@ def _mark_invoiced_months() -> None:
 
 def _carry_this_month() -> None:
 	"""Carry this month's storage figure into estimated days before today, in GB."""
+	# Imported here, so the patch still loads when the billing modules it uses change.
+	from central.billing.revenue.usage_ledger import utc_today, write_central_days
+	from central.billing.revenue.usage_reports import ESTIMATED
+
 	# The old job kept one GiB-month figure over the days it read; today on, the hourly read counts.
 	today = utc_today()
 	month_start = today.replace(day=1)
@@ -95,7 +100,7 @@ def _carry_this_month() -> None:
 		for row in _carried_days(meter, rollup, subscriptions.get(rollup.resource_id), today, days_in_month)
 	]
 	for start in range(0, len(rows), WRITE_PAGE):
-		write_days(rows[start : start + WRITE_PAGE])
+		write_central_days(rows[start : start + WRITE_PAGE], ESTIMATED)
 
 
 def _carried_days(meter, rollup, subscription: str | None, today, days_in_month: int) -> list[dict]:

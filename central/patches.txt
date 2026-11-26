@@ -132,3 +132,5 @@ central.patches.v0_0.move_advance_and_income_accounts_to_currency_rows
 central.patches.v0_0.move_github_installations
 # Bill each public IPv4 per UTC day on its server: end the per-address subscriptions where today starts (UTC).
 central.patches.v0_0.bill_public_ipv4_per_day
+# Keep usage as one row per subject, meter and month with a value per day; fold the Usage Days and recounted rollups into it.
+central.patches.v0_0.fold_usage_days_into_months

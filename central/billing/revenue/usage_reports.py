@@ -26,6 +26,7 @@ def record(
 	as_of=None,
 	signature: str | None = None,
 	line_count: int = 0,
+	name: str | None = None,
 ) -> str:
 	"""Keep a report and its raw body as evidence, and return the report's name."""
 	report = frappe.get_doc(
@@ -42,14 +43,15 @@ def record(
 		}
 	)
 	# A signed service call or a scheduled job writes the evidence; neither has a user who may.
-	report.insert(ignore_permissions=True)
+	report.insert(ignore_permissions=True, set_name=name)
 	_attach_body(report.name, body)
 	return report.name
 
 
-def record_lines(service: str, kind: str, lines: list[dict], as_of=None) -> str:
+def record_lines(service: str, kind: str, lines: list[dict], name: str | None = None) -> str:
 	"""Keep the lines Central read or estimated itself as one report, and return its name."""
-	return record(service, kind, central_body(lines), as_of=as_of, line_count=len(lines))
+	body = central_body(lines)
+	return record(service, kind, body, line_count=len(lines), name=name)
 
 
 def set_counts(name: str, accepted: int, rejected: int) -> None:
@@ -61,7 +63,12 @@ def set_counts(name: str, accepted: int, rejected: int) -> None:
 
 def central_body(lines: list[dict]) -> bytes:
 	"""The lines Central wrote itself, as canonical JSON, so their hash is stable."""
-	return json.dumps({"lines": lines}, sort_keys=True, default=str, separators=(",", ":")).encode()
+	return canonical_json({"lines": lines})
+
+
+def canonical_json(payload: dict) -> bytes:
+	"""`payload` as JSON with sorted keys and no spaces, so the same content always hashes the same."""
+	return json.dumps(payload, sort_keys=True, default=str, separators=(",", ":")).encode()
 
 
 def signature_of(secret: str, body: bytes) -> bytes:

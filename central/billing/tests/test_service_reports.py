@@ -12,7 +12,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.catalog.subscriptions import provision_service_subscription
-from central.billing.revenue import report_subjects, service_reports, usage_ledger
+from central.billing.revenue import report_subjects, service_reports, usage_ledger, usage_month
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	_clear_metered_plans,
@@ -20,6 +20,7 @@ from central.billing.tests.utils import (
 	ensure_team,
 	give_team_a_card,
 	make_plan,
+	usage_days,
 )
 from central.services.doctype.team_service import team_service
 
@@ -101,9 +102,7 @@ class ServiceReportsCase(IntegrationTestCase):
 		return service_reports.accept_report("storage", signature, raw)
 
 	def days(self):
-		return frappe.get_all(
-			"Usage Day", filters={"team": TEAM}, fields=["day", "quantity"], order_by="day asc", as_list=True
-		)
+		return [(day.day, day.quantity) for day in usage_days(team=TEAM)]
 
 
 class TestServiceReports(ServiceReportsCase):
@@ -112,25 +111,26 @@ class TestServiceReports(ServiceReportsCase):
 		self.assertEqual(answer, {"accepted": 2, "rejected": []})
 		self.assertEqual([q for _d, q in self.days()], [10, 12])
 
-	def test_a_day_written_at_the_same_time_is_rejected_to_be_sent_again(self):
+	def test_a_month_written_at_the_same_time_is_rejected_to_be_sent_again(self):
 		self.send([line("2026-06-20", 10)])
-		with patch.object(usage_ledger, "_existing_days", return_value={}):
+		# Under snapshot isolation a month row another worker changed meanwhile refuses the lock.
+		with patch.object(usage_month, "_locked_months", side_effect=frappe.QueryDeadlockError):
 			answer = self.send([line("2026-06-19", 8), line("2026-06-20", 12)])
-		self.assertEqual(answer["accepted"], 1)
+		self.assertEqual(answer["accepted"], 0)
 		self.assertEqual(
-			answer["rejected"],
+			[(r["day"], r["reason"], r["retry"]) for r in answer["rejected"]],
 			[
-				{
-					"subject": BUCKET,
-					"meter": "bytes_stored",
-					"day": "2026-06-20",
-					"dimension": "",
-					"reason": "the day changed at the same time; send it again",
-					"retry": True,
-				}
+				("2026-06-19", "the day changed at the same time; send it again", True),
+				("2026-06-20", "the day changed at the same time; send it again", True),
 			],
 		)
-		self.assertEqual([q for _d, q in self.days()], [8, 10])
+		self.assertEqual([q for _d, q in self.days()], [10])
+
+	def test_each_stored_day_names_the_report_that_set_it(self):
+		self.send([line("2026-06-20", 10)])
+		[day] = usage_days(team=TEAM)
+		self.assertEqual(day.source, "Pushed")
+		self.assertEqual(frappe.db.get_value("Usage Report", day.report, "kind"), "Pushed")
 
 	def test_a_wrong_signature_is_refused_whole(self):
 		with self.assertRaises(frappe.PermissionError):
@@ -237,7 +237,8 @@ class TestServiceReports(ServiceReportsCase):
 		return billed
 
 	def billed_on(self, day: str) -> str | None:
-		return frappe.db.get_value("Usage Day", {"subject": BUCKET, "day": day}, "subscription")
+		found = usage_days(subject=BUCKET, day=day)
+		return found[0].subscription if found else None
 
 	def test_a_bucket_deleted_today_bills_today_and_a_backlog_on_its_subscription(self):
 		billed = self.delete_bucket()
@@ -270,9 +271,8 @@ class TestServiceReports(ServiceReportsCase):
 		self.delete_bucket("2026-06-18 12:00:00")
 		self.assertEqual(self.send_on("2026-06-20", [line("2026-06-18", 12)])["accepted"], 1)
 		# A later day stored for the name, as an estimate or a stray write might leave one.
-		copy = frappe.copy_doc(frappe.get_doc("Usage Day", {"subject": BUCKET}))
-		copy.day = "2026-06-20"
-		copy.db_insert()
+		[stored] = usage_days(subject=BUCKET)
+		usage_month.write_lines([{**stored, "day": "2026-06-20"}], None, "Estimated")
 
 		answer = self.send_on("2026-06-21", [line("2026-06-18", 13)])
 

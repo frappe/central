@@ -90,13 +90,14 @@ def _cost_by_resource(lines) -> dict:
 def _metered_usage(team: str) -> dict:
 	"""Usage against the locked allowance, per metered subject, for this period."""
 	usage: dict = {}
+	month_start = frappe.utils.get_first_day(frappe.utils.getdate())
 	rows = frappe.get_all(
 		"Usage Rollup",
-		filters={
-			"team": team,
-			"period_start": [">=", frappe.utils.get_first_day(frappe.utils.getdate())],
-			"superseded_by": ["is", "not set"],
-		},
+		filters={"team": team, "period_start": [">=", month_start], "superseded_by": ["is", "not set"]},
+		fields=["resource_id", "quantity", "unit", "locked_allowance"],
+	) + frappe.get_all(
+		"Usage Month",
+		filters={"team": team, "month": [">=", month_start], "counted_at": ["is", "set"]},
 		fields=["resource_id", "quantity", "unit", "locked_allowance"],
 	)
 	for row in rows:

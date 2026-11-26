@@ -22,7 +22,7 @@ CLOCK_SKEW = datetime.timedelta(minutes=5)
 
 
 def accept_report(service_name: str | None, signature: str | None, raw_body: bytes) -> dict:
-	"""Store a signed report's lines as Usage Days. Only a failed signature refuses the whole call."""
+	"""Store a signed report's lines as day values, kept with the report. Only a failed signature refuses it."""
 	# Each line is one subject's value for one UTC day so far, so a resent, late or reordered report
 	# changes nothing it should not.
 	service = verified_service(service_name, signature, raw_body)
@@ -41,14 +41,14 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 		reason = _("Central still reads this service; send it again after the switch")
 		answer = {"accepted": 0, "rejected": [_refused(line, reason, retry=True) for line in report["lines"]]}
 	else:
-		answer = _stored(service, report["lines"], as_of)
+		answer = _stored(service, report["lines"], as_of, evidence)
 	usage_reports.set_counts(evidence, answer["accepted"], len(answer["rejected"]))
 	_record_report(service.name, as_of)
 	return answer
 
 
-def _stored(service, lines: list, as_of: datetime.datetime) -> dict:
-	"""Write each valid line as a Usage Day and name every line that was not stored."""
+def _stored(service, lines: list, as_of: datetime.datetime, evidence: str) -> dict:
+	"""Write each valid line as a day value and name every line that was not stored."""
 	# A server's backup bucket bills only on the days its server billed, so subjects are per day.
 	subjects = subjects_by_day(service.name, _subject_names(lines), _days(lines))
 
@@ -61,7 +61,7 @@ def _stored(service, lines: list, as_of: datetime.datetime) -> dict:
 			rejected.append(_refused(line, reason, retry=retry))
 		else:
 			rows.append(_row(service, line, day_subjects[line["subject"]], as_of))
-	conflicts = write_days(rows).conflicts
+	conflicts = write_days(rows, evidence, usage_reports.PUSHED).conflicts
 	# A day another worker wrote at the same moment is not confirmed, so the service sends it again.
 	rejected += [
 		_refused(row, _("the day changed at the same time; send it again"), retry=True) for row in conflicts

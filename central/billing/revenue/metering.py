@@ -23,8 +23,14 @@ from frappe import _
 from frappe.query_builder.functions import Coalesce
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
-from central.billing.revenue.metered_lines import line_description, rollups_in
-from central.billing.revenue.rollup_updates import apply_report, recount_allowance, rerate
+from central.billing.revenue.metered_lines import line_description, month_rows, rollups_in
+from central.billing.revenue.rollup_updates import (
+	apply_report,
+	is_allowance_corrected,
+	live_rollup,
+	recounted_allowance,
+	rerated,
+)
 
 
 def metered_plan_for(resource_type: str):
@@ -89,6 +95,14 @@ def _resolve_terms(meter: dict):
 			"rate": 0,
 		}
 	return _locked_terms(meter.get("resource_id"), meter.get("resource_type"))
+
+
+def rollup_terms(meter: dict) -> dict | None:
+	"""The terms a usage month is first billed at, with the bundle a recount counted, or None."""
+	terms = _resolve_terms(meter)
+	if terms and "counted_allowance" in meter:
+		terms = {**terms, "allowance": meter["counted_allowance"]}
+	return terms
 
 
 def _locked_terms(resource_id: str, resource_type: str):
@@ -156,57 +170,6 @@ def _settlement_from_plan(plan) -> str:
 	return frappe.db.get_value("Plan Category", category, "settlement_mode") or "Postpaid Overage"
 
 
-def live_rollup(name: str) -> str:
-	"""Follow a rollup's supersede chain to the row that is actually billed."""
-	seen = {name}
-	while True:
-		nxt = frappe.db.get_value("Usage Rollup", name, "superseded_by")
-		if not nxt or nxt in seen:
-			return name
-		seen.add(nxt)
-		name = nxt
-
-
-def override_terms(rollup: str, rate=None, allowance=None, reason: str | None = None) -> str:
-	"""Re-price one rollup by writing a new version of it, never by editing the old.
-
-	Locked terms are what makes a metered charge auditable, so a correction adds a row
-	and points the old one at it. The quantity carries over; only the terms move.
-	"""
-	name = live_rollup(rollup)
-	old = frappe.get_doc("Usage Rollup", name)
-	if rate is None and allowance is None:
-		frappe.throw(_("Nothing to correct: give a rate, an allowance, or both."), frappe.ValidationError)
-
-	new = frappe.copy_doc(old)
-	new.locked_rate = old.locked_rate if rate is None else rate
-	new.locked_allowance = old.locked_allowance if allowance is None else allowance
-	new.superseded_by = None
-	# The key says which versions moved the allowance, so a recount leaves those alone.
-	mark = "v" if allowance is None else "a"
-	new.idempotency_key = f"{old.idempotency_key}::{mark}{_version_of(old.idempotency_key) + 1}"
-	new.insert(ignore_permissions=True)
-
-	frappe.db.set_value("Usage Rollup", name, "superseded_by", new.name)
-	old.add_comment("Info", f"Terms corrected -> {new.name}: {reason or 'no reason given'}")
-	return new.name
-
-
-def _version_of(idempotency_key: str) -> int:
-	"""The version suffix on a rollup key, 0 for an original."""
-	_head, sep, tail = idempotency_key.rpartition("::")
-	return frappe.utils.cint(tail[1:]) if sep and _is_version_mark(tail, "va") else 0
-
-
-def _is_allowance_corrected(idempotency_key: str) -> bool:
-	"""Whether an operator corrected the allowance in this version of a rollup or an earlier one."""
-	return any(_is_version_mark(part, "a") for part in idempotency_key.split("::")[1:])
-
-
-def _is_version_mark(part: str, marks: str) -> bool:
-	return part[:1] in marks and part[1:].isdigit()
-
-
 def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 	"""Idempotently store one meter rollup, keyed by the period-identity idempotency_key.
 	Both reporting modes (ADR 0015) land as one Usage Rollup row per period; the locked
@@ -260,16 +223,19 @@ def ingest_rollup(meter: dict, refuse_lower: bool = False) -> str | None:
 					for_update=True,
 				)
 			apply_report(existing, mode, qty, seq, refuse_lower)
-			rerate(existing, meter.get("locked_terms"))
 			# An operator's corrected allowance outranks the recount's.
-			recount_allowance(existing, meter, is_corrected=_is_allowance_corrected(existing.idempotency_key))
+			is_corrected = is_allowance_corrected(existing.idempotency_key)
+			updates = {
+				**rerated(existing, meter.get("locked_terms")),
+				**recounted_allowance(meter, is_corrected),
+			}
+			if updates:
+				frappe.db.set_value("Usage Rollup", existing.name, updates)
 			return key
 
-		terms = _resolve_terms(meter)
+		terms = rollup_terms(meter)
 		if not terms:
 			return None  # no active lock — nothing to bill this against yet
-		if "counted_allowance" in meter:
-			terms = {**terms, "allowance": meter["counted_allowance"]}
 
 		try:
 			frappe.db.savepoint("usage_rollup_insert")
@@ -393,6 +359,8 @@ def _metered_lines(
 			)
 		)
 	).run(as_dict=True)
+	# A usage month the ledger counted bills alongside the totals services report directly.
+	rollups += month_rows(team, clusters, period_start, period_end_excl, team_level)
 	if not rollups:
 		return []
 

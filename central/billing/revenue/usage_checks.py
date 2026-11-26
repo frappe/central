@@ -3,7 +3,7 @@
 """Checks on services that push their usage: Central's own reading against the stored days, and silence.
 
 They run only for a service whose `central_reads` is off; while Central reads a service itself there is
-nothing to check. A check writes no Usage Day: a difference is an operator alert.
+nothing to check. A check writes no day value: a difference is an operator alert.
 """
 
 import datetime
@@ -20,6 +20,7 @@ from central.billing.revenue.storage_bridge import (
 	team_bucket_reader,
 )
 from central.billing.revenue.usage_ledger import utc_today
+from central.billing.revenue.usage_month import day_rows
 from central.services.doctype.service.service import (
 	AI_METER,
 	AI_SERVICE,
@@ -264,11 +265,7 @@ def _stored(service: str, day, subjects: list[str]) -> dict:
 	"""The stored quantity of each subject and dimension on a day."""
 	if not subjects:
 		return {}
-	rows = frappe.get_all(
-		"Usage Day",
-		filters={"service": service, "day": day, "subject": ["in", subjects]},
-		fields=["subject", "dimension", "quantity"],
-	)
+	rows = day_rows({"service": service, "subject": ["in", subjects]}, day=day)
 	return {(row.subject, row.dimension or ""): row.quantity for row in rows}
 
 

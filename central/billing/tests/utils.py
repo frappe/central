@@ -10,6 +10,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.pricing import set_catalog_rates
+from central.billing.revenue.usage_month import day_rows
 from central.billing.tests.accounting_fake import ACCOUNTING_URL, SYNC_MODE
 
 _SWEEP_DEADLOCK_RETRIES = 3
@@ -185,6 +186,32 @@ class BillingTestCase(IntegrationTestCase):
 		comments = list(set(_payment_method_comments()) - before["Comment"])
 		if comments:
 			frappe.db.delete("Comment", {"name": ["in", comments]})
+
+
+def usage_days(day=None, **filters) -> list[frappe._dict]:
+	"""The stored days of the usage months that match `filters`, one dict per day, oldest first."""
+	return day_rows(filters, day=day)
+
+
+def usage_month_of(**filters) -> frappe._dict | None:
+	"""The rated usage month that matches `filters`, with its quantity, terms and invoice."""
+	return frappe.db.get_value(
+		"Usage Month",
+		{**filters, "counted_at": ["is", "set"]},
+		[
+			"name",
+			"quantity",
+			"locked_allowance",
+			"locked_rate",
+			"rate_date",
+			"currency",
+			"invoice",
+			"cluster",
+			"dimension",
+			"billed_quantity",
+		],
+		as_dict=True,
+	)
 
 
 def _delete_owned_rows(doctype: str, names: list[str]) -> None:

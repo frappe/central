@@ -80,6 +80,45 @@ def write_lines(rows: list[dict], report: str | None, source: str) -> Written:
 	return written
 
 
+def stamp_days(masks: dict[str, int], invoice: str) -> None:
+	"""Mark the counted days of these month rows as billed by the invoice. A billed day keeps its invoice."""
+	if not masks:
+		return
+	now = frappe.utils.now_datetime()
+	table = frappe.qb.DocType(DOCTYPE)
+	for month in _locked(table.name.isin(list(masks))):
+		month.stamp(masks[month.record["name"]] & ~month.record["billed"], invoice, now)
+		month.save(now)
+
+
+def locked_meter_months(subscription: str, resource_type: str, dimension: str, month) -> "list[MonthRow]":
+	"""A meter's month rows up to `month`, locked, so a draft bills the values it read."""
+	table = frappe.qb.DocType(DOCTYPE)
+	return _locked(
+		(table.subscription == subscription)
+		& (table.resource_type == resource_type)
+		& (table.dimension == dimension)
+		& (table.month <= month)
+	)
+
+
+def insert_month(meter, month) -> None:
+	"""Insert an empty row for a meter's month, to carry a month that has only late days."""
+	row = {
+		name: meter.get(name) for name in (*_CONTEXT_FIELDS, "service", "meter", "dimension", "subscription")
+	}
+	_insert_missing([{**row, "subject": meter.day_subject, "day": month}], frappe.utils.now_datetime())
+
+
+def release_days(invoice: str, team: str, since) -> None:
+	"""Unmark the days a cancelled invoice billed. Only rows stamped since it was made can hold one."""
+	now = frappe.utils.now_datetime()
+	table = frappe.qb.DocType(DOCTYPE)
+	for month in _locked((table.team == team) & (table.stamped_at >= since)):
+		month.release(invoice)
+		month.save(now)
+
+
 class MonthRow:
 	"""One locked Usage Month, changed in memory and saved with one statement."""
 
@@ -89,6 +128,7 @@ class MonthRow:
 		self.corrections = corrections
 		self.changed_days: set[int] = set()
 		self.is_changed = False
+		self.stamped_at = None
 
 	def has_day(self, day: int, mask: str = "filled") -> bool:
 		return bool(frappe.utils.cint(self.record[mask]) & bit(day))
@@ -106,6 +146,20 @@ class MonthRow:
 			report=slot.get("report"),
 		)
 
+	def get_open_days(self) -> list[frappe._dict]:
+		"""The days not yet billed or written off, as the recount weighs them."""
+		return [
+			frappe._dict(
+				month_row=self.record["name"],
+				number=day,
+				day=self.record["month"].replace(day=day),
+				quantity=frappe.utils.flt(self.record[DAY_FIELDS[day - 1]]),
+				included=frappe.utils.flt(self.slots.get(str(day), {}).get("included")),
+				aggregation=self.record["aggregation"],
+			)
+			for day in _days_of(frappe.utils.cint(self.record["open_days"]))
+		]
+
 	def apply(self, row: dict, report: str | None, source: str, now) -> str | None:
 		"""Apply one line to its day: fill it, replace it, or keep a correction of a billed day."""
 		day = frappe.utils.getdate(row["day"]).day
@@ -119,6 +173,22 @@ class MonthRow:
 		self._replace(day, row, report, source, now)
 		return WRITTEN
 
+	def stamp(self, mask: int, invoice: str, now) -> None:
+		"""Mark the days of `mask` as billed by the invoice."""
+		for day in _days_of(mask):
+			self.slots[str(day)]["invoice"] = invoice
+		self.record["billed"] |= mask
+		self.stamped_at = now
+		self.is_changed = True
+
+	def release(self, invoice: str) -> None:
+		"""Unmark the days the invoice billed."""
+		for day in _days_of(self.record["billed"]):
+			if self.slots.get(str(day), {}).get("invoice") == invoice:
+				del self.slots[str(day)]["invoice"]
+				self.record["billed"] &= ~bit(day)
+				self.is_changed = True
+
 	def save(self, now) -> None:
 		if not self.is_changed:
 			return
@@ -130,6 +200,8 @@ class MonthRow:
 			query = query.set(table[name], record[name])
 		if self.changed_days:
 			query = query.set(table.changed_at, now)
+		if self.stamped_at:
+			query = query.set(table.stamped_at, self.stamped_at)
 		query.set(table.modified, now).where(table.name == record["name"]).run()
 
 	def _fill(self, day: int, row: dict, report: str | None, source: str, now) -> None:
@@ -305,7 +377,12 @@ def _day_row(month, day: int) -> frappe._dict:
 
 
 def _filled_days(month) -> list[int]:
-	return [day for day in range(1, 32) if frappe.utils.cint(month.filled) & bit(day)]
+	return _days_of(frappe.utils.cint(month.filled))
+
+
+def _days_of(mask: int) -> list[int]:
+	"""The days whose bit is set in `mask`."""
+	return [day for day in range(1, 32) if mask & bit(day)]
 
 
 def _slots(value) -> dict:
@@ -368,24 +445,33 @@ def _insert_missing(rows: list[dict], now) -> None:
 
 
 def _locked_months(rows: list[dict]) -> dict[tuple, list[MonthRow]]:
-	"""The month rows of these lines, locked in name order so two writers never deadlock."""
+	"""The month rows of these lines, by month key."""
+	table = frappe.qb.DocType(DOCTYPE)
+	found = _locked(
+		table.service.isin(list({row["service"] for row in rows}))
+		& table.subject.isin(list({row["subject"] for row in rows}))
+		& table.month.isin(list({month_of(row["day"]) for row in rows})),
+		with_corrections=True,
+	)
+	months: dict[tuple, list[MonthRow]] = {}
+	for month in found:
+		months.setdefault(_key(month.record), []).append(month)
+	return months
+
+
+def _locked(condition, with_corrections: bool = False) -> list[MonthRow]:
+	"""The month rows that match, locked in name order so two writers never deadlock."""
 	table = frappe.qb.DocType(DOCTYPE)
 	found = (
 		frappe.qb.from_(table)
 		.select(*(table[name] for name in _READ_FIELDS))
-		.where(
-			table.service.isin(list({row["service"] for row in rows}))
-			& table.subject.isin(list({row["subject"] for row in rows}))
-			& table.month.isin(list({month_of(row["day"]) for row in rows}))
-		)
+		.where(condition)
 		.orderby(table.name, order=Order.asc)
 		.for_update()
 	).run(as_dict=True)
-	corrections = _corrections_of([month.name for month in found if month.billed])
-	months: dict[tuple, list[MonthRow]] = {}
-	for month in found:
-		months.setdefault(_key(month), []).append(MonthRow(month, corrections.get(month.name, [])))
-	return months
+	billed = [month.name for month in found if month.billed] if with_corrections else []
+	corrections = _corrections_of(billed)
+	return [MonthRow(month, corrections.get(month.name, [])) for month in found]
 
 
 def _corrections_of(names: list[str]) -> dict[str, list]:

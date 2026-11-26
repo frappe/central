@@ -149,7 +149,7 @@ CATEGORIES = [
 		"sub_category_label": "Storage purpose",
 		"description": "Frappe Box remote storage — data, backups, or snapshots (live-priced).",
 		# Billed by the GB-month at the current rate: the month is recomputed from each
-		# bucket's daily peak (Usage Day), so each recount replaces the figure.
+		# bucket's daily peak (its Usage Month), so each recount replaces the figure.
 		"billing_type": "Metered",
 		"billing_interval": "Monthly",
 		"pricing_mode": "Live",

@@ -22,6 +22,35 @@ def line_description(rollup, rate: float) -> str:
 	return " · ".join(part for part in ((rollup.dimension or "")[:room], conversion) if part)
 
 
+def month_rows(team: str, clusters: list, period_start, period_end_excl, team_level: bool) -> list:
+	"""The team's counted usage months in the period, shaped as rollups."""
+	table = frappe.qb.DocType("Usage Month")
+	in_scope = rollups_in(table, clusters, team_level)
+	if in_scope is None:
+		return []
+	return (
+		frappe.qb.from_(table)
+		.select(
+			table.resource_id,
+			table.resource_type,
+			table.dimension,
+			table.quantity,
+			table.unit,
+			table.currency,
+			table.locked_allowance,
+			table.locked_rate,
+			table.rate_date,
+			table.cluster,
+		)
+		.where(table.team == team)
+		.where(in_scope)
+		# Only the row a recount rated bills; the other rows of the month only hold days.
+		.where(table.counted_at.isnotnull())
+		.where(table.month >= frappe.utils.getdate(period_start))
+		.where(table.month < period_end_excl)
+	).run(as_dict=True)
+
+
 def rollups_in(table, clusters: list, team_level: bool):
 	"""Rollups in one of `clusters`, and with `team_level` the team's AI usage, which has no cluster."""
 	condition = _in_clusters(table.cluster, clusters) if clusters else None

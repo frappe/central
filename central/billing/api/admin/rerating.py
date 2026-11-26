@@ -6,7 +6,7 @@ import frappe
 from frappe import _
 
 from central.billing.authz import require_operator
-from central.billing.revenue import metering, rerating
+from central.billing.revenue import rerating, rollup_updates
 
 
 @frappe.whitelist()
@@ -26,7 +26,9 @@ def apply_rerating(resource_type: str, period_start: str, period_end: str, reaso
 
 
 @frappe.whitelist(methods=["POST"])
-def correct_rollup_terms(rollup: str, rate=None, allowance=None, reason: str | None = None) -> str:
-	"""Re-price one usage rollup by writing a new version of it."""
+def correct_rollup_terms(
+	rollup: str, rate: float | None = None, allowance: float | None = None, reason: str | None = None
+) -> str:
+	"""Re-price one usage month in place, or one reported rollup by writing a new version of it."""
 	require_operator()
-	return metering.override_terms(rollup, rate=rate, allowance=allowance, reason=reason)
+	return rollup_updates.correct_terms(rollup, rate=rate, allowance=allowance, reason=reason)

@@ -402,6 +402,7 @@ def summary() -> dict:
 			"resizes": frappe.db.count("Subscription Change", {"change_type": "Plan Changed"}),
 			"credit_ledger_entries": frappe.db.count("Credit Ledger Entry"),
 			"usage_rollups": frappe.db.count("Usage Rollup"),
+			"usage_months": frappe.db.count("Usage Month"),
 			"largest_invoice": {"invoice": top, "line_items": line_counts.get(top)} if top else None,
 			"months_covered": sorted(
 				{str(d)[:7] for d in frappe.get_all("Invoice", pluck="period_start") if d}

@@ -6,7 +6,7 @@ Fixed charges project into a future month for free: the rate is locked on the
 subscription's change row and the days are arithmetic, so the existing line engine
 answers a September question in August without being told anything new.
 
-Metering cannot. `metered_line_items_for_clusters` selects `Usage Rollup` rows *within
+Metering cannot. `metered_line_items_for_clusters` selects `Usage Month` and `Usage Rollup` rows *within
 the period*, and a future month has none — so left alone it returns an empty list and
 the projection quietly loses every metered charge. That failure is worse than a
 missing feature: it understates the bill, which is the direction that reassures, and a

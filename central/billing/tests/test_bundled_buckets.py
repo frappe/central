@@ -8,7 +8,7 @@ import frappe
 
 from central.billing.api.dashboard._shared import _describe_line, _qty
 from central.billing.platform import invariants, readiness
-from central.billing.revenue import metering, storage_bridge, usage_ledger, usage_recount
+from central.billing.revenue import rollup_updates, storage_bridge, usage_ledger, usage_recount
 from central.billing.revenue.bundled_buckets import bundled_buckets
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.tests.utils import (
@@ -19,6 +19,8 @@ from central.billing.tests.utils import (
 	make_metered_plan,
 	make_plan,
 	seed_running_resource,
+	usage_days,
+	usage_month_of,
 )
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.integrations.object_storage import ObjectStorageNotFound
@@ -68,9 +70,7 @@ class BundledServerFixture:
 			storage_bridge.read_bundled_page("test-run", CLUSTER, [self.bucket])
 
 	def estimated_bundles(self) -> list[float]:
-		return frappe.get_all(
-			"Usage Day", filters={"subject": self.bucket, "estimated": 1}, pluck="included", order_by="day"
-		)
+		return [day.included for day in usage_days(subject=self.bucket) if day.estimated]
 
 	def transfer_day(self, day: str) -> dict:
 		return {
@@ -94,9 +94,7 @@ class TestBundledBuckets(BundledServerFixture, IntegrationTestCase):
 		self.set_up_bundled_server()
 
 	def days(self) -> list[float]:
-		return frappe.get_all(
-			"Usage Day", filters={"subject": self.bucket}, pluck="quantity", order_by="day asc"
-		)
+		return [day.quantity for day in usage_days(subject=self.bucket)]
 
 	def resize(self, gb: float, on: str) -> str:
 		plan = make_plan(
@@ -122,26 +120,26 @@ class TestBundledBuckets(BundledServerFixture, IntegrationTestCase):
 	def test_a_recount_keeps_an_operators_corrected_allowance(self):
 		self.read("2026-06-01", 100)
 		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
-		[rollup] = frappe.get_all("Usage Rollup", filters={"resource_id": SERVER}, pluck="name")
-		head = metering.override_terms(rollup, allowance=5, reason="test")
+		month = usage_month_of(resource_id=SERVER).name
+		rollup_updates.correct_terms(month, allowance=5, reason="test")
 		self.read("2026-06-02", 130)
 		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
-		quantity, allowance = frappe.db.get_value("Usage Rollup", head, ["quantity", "locked_allowance"])
+		quantity, allowance = frappe.db.get_value("Usage Month", month, ["quantity", "locked_allowance"])
 		self.assertAlmostEqual(allowance, 5)
 		self.assertAlmostEqual(quantity, 230 / 30)  # two days held, 100 then 130 GB
 
 	def test_a_recount_still_counts_the_allowance_after_a_rate_correction(self):
 		self.read("2026-06-01", 100)
 		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
-		[rollup] = frappe.get_all("Usage Rollup", filters={"resource_id": SERVER}, pluck="name")
-		head = metering.override_terms(rollup, rate=1.0, reason="test")
+		month = usage_month_of(resource_id=SERVER).name
+		rollup_updates.correct_terms(month, rate=1.0, reason="test")
 		self.read("2026-06-02", 130)
 		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
-		self.assertAlmostEqual(frappe.db.get_value("Usage Rollup", head, "locked_allowance"), 80 / 30)
+		self.assertAlmostEqual(frappe.db.get_value("Usage Month", month, "locked_allowance"), 80 / 30)
 
 	def test_a_day_keeps_what_was_held_and_what_the_plan_included(self):
 		self.read("2026-06-01", 30)
-		[day] = frappe.get_all("Usage Day", filters={"subject": self.bucket}, fields=["quantity", "included"])
+		[day] = usage_days(subject=self.bucket)
 		self.assertEqual((day.quantity, day.included), (30, 40))
 
 	def test_a_bucket_within_the_plan_bills_nothing(self):
@@ -160,9 +158,7 @@ class TestBundledBuckets(BundledServerFixture, IntegrationTestCase):
 		for day in range(1, 31):
 			self.read(f"2026-06-{day:02d}", 100)
 		self.storage_lines()
-		[rollup] = frappe.get_all(
-			"Usage Rollup", filters={"resource_id": SERVER}, fields=["quantity", "locked_allowance"]
-		)
+		rollup = usage_month_of(resource_id=SERVER)
 		self.assertAlmostEqual(rollup.quantity, 100)
 		self.assertAlmostEqual(rollup.locked_allowance, 40)
 
@@ -179,7 +175,7 @@ class TestBundledBuckets(BundledServerFixture, IntegrationTestCase):
 		self.read("2026-06-01", 100)
 		self.resize(200, "2026-06-01 12:00:00")
 		self.read("2026-06-01", 90)
-		[day] = frappe.get_all("Usage Day", filters={"subject": self.bucket}, fields=["quantity", "included"])
+		[day] = usage_days(subject=self.bucket)
 		self.assertEqual((day.quantity, day.included), (100, 200))  # the day keeps its peak
 
 	def test_each_months_line_says_what_its_own_plan_included(self):
@@ -235,7 +231,7 @@ class TestBundledBuckets(BundledServerFixture, IntegrationTestCase):
 		add_segment(self.subscription, "Paused", 0, "2026-06-10 00:00:00", plan=VM_PLAN)
 		add_segment(self.subscription, "Resumed", 1000, "2026-06-15 12:00:00", plan=VM_PLAN)
 		usage_ledger.fill_missing_days("2026-06-18")
-		days = frappe.get_all("Usage Day", filters={"subject": self.bucket}, pluck="day", order_by="day")
+		days = [day.day for day in usage_days(subject=self.bucket)]
 		self.assertEqual([d.day for d in days], [*range(1, 10), 15])  # resumed on the 15th, which bills
 
 	def test_a_server_resumed_after_a_pause_is_estimated_from_its_last_reading(self):
@@ -248,7 +244,7 @@ class TestBundledBuckets(BundledServerFixture, IntegrationTestCase):
 		)
 		add_segment(self.subscription, "Resumed", 1000, "2026-06-10 12:00:00", plan=bigger)
 		usage_ledger.fill_missing_days("2026-06-13")
-		days = frappe.get_all("Usage Day", filters={"subject": self.bucket}, pluck="day", order_by="day")
+		days = [day.day for day in usage_days(subject=self.bucket)]
 		self.assertEqual([d.day for d in days], [1, 2, 3, 4, 5, 10])  # the paused days stay empty
 		self.assertEqual(self.estimated_bundles(), [200])
 
@@ -324,35 +320,33 @@ class TestBundledBuckets(BundledServerFixture, IntegrationTestCase):
 
 	def test_a_reading_without_a_bundle_keeps_the_stored_one(self):
 		self.read("2026-06-01", 100)
-		[stored] = frappe.get_all(
-			"Usage Day", filters={"subject": self.bucket}, fields=list(usage_ledger._DAY_FIELDS)
-		)
+		[stored] = usage_days(subject=self.bucket)
 		del stored["included"]
 		later = frappe.utils.add_to_date(stored.as_of, hours=1)
-		usage_ledger.write_days([{**stored, "quantity": 120, "as_of": later}])
-		[day] = frappe.get_all("Usage Day", filters={"subject": self.bucket}, fields=["quantity", "included"])
+		usage_ledger.write_days([{**stored, "quantity": 120, "as_of": later}], None, "Read By Central")
+		[day] = usage_days(subject=self.bucket)
 		self.assertEqual((day.quantity, day.included), (120, 40))
 
 	def test_an_older_reading_does_not_bring_back_an_older_bundle(self):
 		self.read("2026-06-01", 100)
-		[stored] = frappe.get_all(
-			"Usage Day", filters={"subject": self.bucket}, fields=list(usage_ledger._DAY_FIELDS)
-		)
+		[stored] = usage_days(subject=self.bucket)
 		earlier = frappe.utils.add_to_date(stored.as_of, hours=-1)
 		for quantity in (120, 50):
-			usage_ledger.write_days([{**stored, "quantity": quantity, "included": 10, "as_of": earlier}])
-		[day] = frappe.get_all("Usage Day", filters={"subject": self.bucket}, fields=["quantity", "included"])
+			usage_ledger.write_days(
+				[{**stored, "quantity": quantity, "included": 10, "as_of": earlier}], None, "Read By Central"
+			)
+		[day] = usage_days(subject=self.bucket)
 		self.assertEqual((day.quantity, day.included), (120, 40))  # the peak rises, the bundle stays
 
 	def test_a_bundle_corrected_to_nothing_is_cleared_on_recount(self):
 		self.read("2026-06-01", 100)
 		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
-		frappe.db.set_value("Usage Day", {"subject": self.bucket}, "included", 0)
+		month = frappe.get_doc("Usage Month", {"subject": self.bucket})
+		slots = frappe.parse_json(month.slots)
+		del slots["1"]["included"]
+		frappe.db.set_value("Usage Month", month.name, "slots", frappe.as_json(slots))
 		usage_recount.recount_month(self.subscription, "Storage", "2026-06-01")
-		[allowance] = frappe.get_all(
-			"Usage Rollup", filters={"resource_id": SERVER}, pluck="locked_allowance"
-		)
-		self.assertEqual(allowance, 0)
+		self.assertEqual(usage_month_of(resource_id=SERVER).locked_allowance, 0)
 
 	def test_a_grandfathered_server_meter_keeps_its_locked_allowance(self):
 		make_metered_plan("bundled-bucket-transfer", resource_type="Transfer")
@@ -363,14 +357,9 @@ class TestBundledBuckets(BundledServerFixture, IntegrationTestCase):
 		frappe.db.set_value("Subscription", self.subscription, "plan", plan)
 		add_segment(self.subscription, "Plan Changed", 1000, "2026-06-01 00:00:01", plan=plan)
 		for day in ("2026-06-01", "2026-06-02"):
-			usage_ledger.write_days([self.transfer_day(day)])
+			usage_ledger.write_days([self.transfer_day(day)], None, "Pushed")
 			usage_recount.recount_month(self.subscription, "Transfer", "2026-06-01")
-		[allowance] = frappe.get_all(
-			"Usage Rollup",
-			filters={"resource_id": SERVER, "resource_type": "Transfer"},
-			pluck="locked_allowance",
-		)
-		self.assertEqual(allowance, 500)
+		self.assertEqual(usage_month_of(resource_id=SERVER, resource_type="Transfer").locked_allowance, 500)
 
 	def flagged(self, today: str) -> list:
 		frappe.db.set_value("Virtual Machine", SERVER, "creation", "2026-06-01", update_modified=False)

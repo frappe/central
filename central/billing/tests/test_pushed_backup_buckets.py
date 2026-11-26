@@ -11,7 +11,7 @@ from central.billing.revenue import report_subjects, service_reports
 from central.billing.tests import test_bundled_buckets as base
 from central.billing.tests.test_service_reports import signed
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import add_segment, complete_billing_profile, give_team_a_card
+from central.billing.tests.utils import add_segment, complete_billing_profile, give_team_a_card, usage_days
 from central.services.doctype.team_service import team_service
 
 SECRET = "storage-report-secret"
@@ -50,12 +50,7 @@ class TestPushedBackupBuckets(base.BundledServerFixture, IntegrationTestCase):
 			return service_reports.accept_report("storage", signature, raw)
 
 	def stored_days(self) -> list:
-		return frappe.get_all(
-			"Usage Day",
-			filters={"subject": self.bucket},
-			fields=["day", "quantity", "included", "subscription"],
-			order_by="day asc",
-		)
+		return usage_days(subject=self.bucket)
 
 	def team_bucket_of_the_same_name(self) -> str:
 		"""A team's own bucket that shares the backup bucket's name, and its subscription."""
