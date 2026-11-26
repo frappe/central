@@ -9,7 +9,7 @@
 -- resolve_after: 900
 -- Central work that customers wait for, but that no request shows. One alert for each check: a billing run open for 1 day, a proxy route pending for 30 min,
 -- 3 proxy routes that failed in 1 h, an automatic snapshot that failed today, a snapshot pending for 2 h, 5 failed emails in 1 h, an email waiting for 30 min,
--- a scheduled job 15 min late, or 1,000 queued jobs. Invoices that fail to sync to accounting are Low. Failed jobs show in central-errors.
+-- a scheduled job 15 min late, or 1,000 queued jobs. Invoices that fail to sync to accounting are Low. Failed jobs show in central-failed-jobs.
 -- Central sends all gauges of one collection with one timestamp. The rule reads only the newest collection, so a series that Central stopped sending, because its problem cleared, does not keep the alert.
 WITH (SELECT max(ts) FROM datum.samples_recent WHERE metric = 'central_job_queue_length' AND resource_id = 'central' AND ts > now() - INTERVAL 10 MINUTE) AS snapshot
 SELECT {region:String} AS resource_id,

@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -7,6 +8,7 @@ from frappe.tests import IntegrationTestCase
 from central.integrations.metrics import (
 	CentralMetrics,
 	count_request,
+	get_failed_jobs,
 	get_request_group,
 	publish_metrics,
 	take_request_counts,
@@ -72,6 +74,51 @@ class TestCentralMetrics(IntegrationTestCase):
 		self.assertEqual(
 			[(labels["resource"], labels["error"]) for labels in failed], [("acme.frappe.cloud", "Failed")]
 		)
+
+	def test_succeeded_actions_count_in_every_bucket_they_fit(self) -> None:
+		finished = frappe.utils.now_datetime()
+		rows = [
+			frappe._dict(
+				region="bom",
+				resource_type="Server",
+				action="create",
+				creation=finished - timedelta(seconds=seconds),
+				completed_at=finished,
+			)
+			for seconds in (20, 45, 400)
+		]
+		metrics = CentralMetrics()
+		metrics.add_action_durations(rows)
+
+		within = {
+			sample["labels"]["le"]: sample["value"]
+			for sample in metrics.samples
+			if sample["metric"] == "central_resource_actions_finished_within_last_hour"
+		}
+		self.assertEqual(within, {"30": 1.0, "60": 2.0, "120": 2.0, "300": 2.0, "600": 3.0})
+
+	def test_failed_jobs_count_only_the_last_hour_by_job_name(self) -> None:
+		now = datetime.now(UTC)
+		jobs = [
+			SimpleNamespace(ended_at=now - timedelta(minutes=5), name="recent"),
+			SimpleNamespace(ended_at=(now - timedelta(minutes=10)).replace(tzinfo=None), name="recent"),
+			SimpleNamespace(ended_at=now - timedelta(hours=3), name="old"),
+			None,
+		]
+		queue = SimpleNamespace(
+			failed_job_registry=SimpleNamespace(get_job_ids=lambda start, end: ["a", "b", "c", "d"]),
+			connection=None,
+		)
+		with (
+			patch("central.integrations.metrics.Job.fetch_many", return_value=jobs),
+			patch(
+				"central.integrations.metrics.serialize_job",
+				side_effect=lambda job: frappe._dict(job_name=job.name),
+			),
+		):
+			failed = get_failed_jobs(queue, frappe.utils.add_to_date(None, hours=-1))
+
+		self.assertEqual(failed, {"recent": 2})
 
 	def test_an_email_waits_from_its_send_after(self) -> None:
 		created = frappe.utils.add_to_date(None, hours=-5)
