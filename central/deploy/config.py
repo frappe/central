@@ -40,6 +40,13 @@ class DeployConfig(BaseModel):
 	machine: MachineConfig = Field(default_factory=MachineConfig)
 	health: HealthConfig = Field(default_factory=HealthConfig)
 
+	def get_machine_size(self) -> str:
+		"""The size `[machine]` names, else Central Settings' Default Deploy Size."""
+		size = self.machine.size or frappe.db.get_single_value("Central Settings", "deploy_default_size")
+		if not size:
+			frappe.throw(_("Set a Default Deploy Size in Central Settings."))
+		return size
+
 
 def get_deploy_config(config: str | None) -> DeployConfig:
 	"""The commit's `frappe_cloud_deploy.toml`, or the defaults when it has none."""
@@ -75,11 +82,3 @@ def find_containerfile(root: list[dict]) -> str:
 			)
 		)
 	frappe.throw(_("Add a Dockerfile at the root of the repository and push again."))
-
-
-def get_machine_size(config: DeployConfig) -> str:
-	"""The size the commit's config names, else Central Settings' Default Deploy Size."""
-	size = config.machine.size or frappe.db.get_single_value("Central Settings", "deploy_default_size")
-	if not size:
-		frappe.throw(_("Set a Default Deploy Size in Central Settings."))
-	return size

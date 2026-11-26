@@ -1,17 +1,17 @@
 import frappe
 from frappe import _
 
+from central.billing.catalog.configurator import rung_includes
 from central.billing.catalog.server_plans import get_server_plans
-from central.billing.catalog.subscriptions import (
-	_plan_resize,
-	_require_offered_plan,
-	create_subscription,
-	get_plan_shape,
-	resize_to_plan,
-)
+from central.billing.catalog.subscriptions import create_subscription, get_plan_shape
 from central.billing.doctype.billing_profile.billing_profile import get_team_currency
 from central.resource_actions import validate_purchase
-from central.utils.units import gigabytes_to_mebibytes, vcpus_to_millicores
+from central.utils.units import (
+	gigabytes_to_mebibytes,
+	mebibytes_to_gigabytes,
+	millicores_to_vcpus,
+	vcpus_to_millicores,
+)
 
 
 def get_size_plan(team: str, region: str, size: str, server: str | None = None) -> str:
@@ -33,7 +33,7 @@ def get_size_plan(team: str, region: str, size: str, server: str | None = None) 
 	return plans[0]
 
 
-def get_plan_specs(plan: str) -> dict[str, int]:
+def get_plan_size(plan: str) -> dict[str, int]:
 	"""The plan's size in Atlas units."""
 	shape = get_plan_shape(plan)
 	return {
@@ -48,8 +48,26 @@ def validate_vm_purchase(team: str, region: str, plan: str) -> float:
 	return validate_purchase(team, region, plan, None, None)[1]
 
 
-def open_vm_subscription(server: str, team: str, region: str, plan: str, rate: float | None) -> None:
-	"""Bill the deploy VM from the rate accepted before Atlas created it. A VM found again keeps its subscription."""
+def get_shape_includes(specs: dict[str, int]) -> list[dict]:
+	"""A size in Atlas units as the composition rows a composed subscription bills."""
+	return rung_includes(
+		millicores_to_vcpus(specs["cpu_millicores"]),
+		mebibytes_to_gigabytes(specs["memory_mib"]),
+		mebibytes_to_gigabytes(specs["disk_mib"]),
+		0,
+	)
+
+
+def open_vm_subscription(
+	server: str,
+	team: str,
+	region: str,
+	plan: str | None = None,
+	rate: float | None = None,
+	includes: list[dict] | None = None,
+) -> None:
+	"""Bill the deploy VM at `plan` from the rate accepted before Atlas created it, or as the composed `includes`
+	when Central does not know the plan it was created at. A VM found again keeps its subscription."""
 	if frappe.db.exists("Subscription", {"server_id": server}):
 		return
 
@@ -58,21 +76,7 @@ def open_vm_subscription(server: str, team: str, region: str, plan: str, rate: f
 		region,
 		plan=plan,
 		resource_id=server,
+		pricing_mode="Preset" if plan else "Composed",
+		includes=None if plan else includes,
 		opening_quote=(rate, get_team_currency(team)) if rate is not None else None,
 	)
-
-
-def validate_vm_resize(server: str, plan: str) -> None:
-	"""Run the checks a server moving to `plan` passes (offered, headroom, a way to pay), before the VM stops."""
-	subscription = frappe.get_doc("Subscription", {"server_id": server})
-	machine = frappe.get_doc("Virtual Machine", server)
-	_require_offered_plan(subscription, plan, machine.region)
-	_plan_resize(subscription, machine, plan, None, None)
-
-
-def update_vm_plan(server: str, plan: str) -> None:
-	"""Bill the VM at `plan` once it runs at that size. Nothing changes while the plan is the same."""
-	subscription = frappe.db.get_value("Subscription", {"server_id": server}, "name")
-	resize_to_plan(subscription, plan)
-	# The VM's plan is what its subscription follows each time Central sees it running.
-	frappe.db.set_value("Virtual Machine", server, "plan", plan)
