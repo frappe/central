@@ -7,7 +7,7 @@ The OpenAPI 3.1 document is generated from the code. No hand edit survives a reg
 
 ## What is documented
 
-The generator reads the whitelisted functions in `central/api/` for 11 modules, listed with their reference names in `DOCUMENTED_MODULES`: activity, firewall_rulesets, identity, images, servers, sites, snapshots, ssh_keys, support, teams, and wireguard. Grove is left out because every Grove endpoint is a machine endpoint.
+The public API is opt in. `PUBLIC_API` in `central/api/openapi.py` names each public endpoint, grouped by module with the name and description the reference shows. An endpoint that is not in this list is not documented, even when it is whitelisted. To publish an endpoint, add its name to `PUBLIC_API` and regenerate the document. The generator fails when a listed name is not a logged-in endpoint that answers JSON.
 
 Each function becomes one path, `/api/method/central.api.<module>.<function>`, with an operationId of `<module>.<function>`.
 The operation takes the function signature as query parameters when the function allows GET, and as a JSON request body otherwise.
@@ -23,11 +23,16 @@ Every operation declares the responses `200`, `401`, and `403`. Every descriptio
 
 ## What is excluded
 
-Guest endpoints are excluded, because no token identifies the caller. The excluded modules are pilot, oidc, jwks, sso, signups, auth, state_delivery, and email_oauth.
+These endpoints are not in `PUBLIC_API`:
 
-Functions whose return value is not JSON are excluded, because a schema cannot describe them.
-
-Staff actions on another team are excluded: impersonate, suspend, unsuspend and restore. Their own checks refuse customers. `OPERATOR_METHODS` in `central/api/openapi.py` lists them.
+| Endpoints | Why |
+| --- | --- |
+| Trial signup and onboarding: every endpoint in `central.api.sites`, `servers.keep_trial_site` and `teams.set_onboarding_step` | The console's signup flow. Their arguments follow its pages. |
+| `identity.set_profile_photo` and `teams.set_team_logo` | They take the address of a file that the console uploaded first. |
+| `support.find_related` | The console's search-as-you-type in the support dialog. |
+| `servers.get_idle_sleep`, `servers.set_idle_sleep` and `servers.refresh_servers` | Sleep is for internal teams only, and refresh is a manual reconcile. |
+| Staff actions: impersonate, suspend, unsuspend and restore a team | Their own checks refuse customers. |
+| Guest endpoints: pilot, oidc, jwks, sso, signups, auth, state_delivery, email_oauth and grove | No token identifies the caller. |
 
 ## Customer docs
 

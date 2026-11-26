@@ -1,17 +1,19 @@
 ---
 title: Use the API
-description: Call the Frappe Cloud API from a script or another app with an API key, and find every operation in the API reference.
+description: Manage your team's servers, snapshots, keys and support tickets from a script or another app with an API key.
 ---
 
 # Use the API
 
-Everything the console does for a team, such as list servers, resize a server, or open a support ticket, is also an API call. You can make the same calls from a script or from another app.
+You can manage your team from a script or from another app. The API covers servers, images, snapshots, firewall rules, SSH keys, WireGuard devices, team members, activity and support tickets.
 
 ## Open the API reference
 
-The [API reference](https://frappe.github.io/central/api/) lists every operation, its arguments, and whether it changes data. Each Frappe Cloud site also shows its own reference at `/central/api`.
+The [API reference](https://frappe.github.io/central/api/) lists every public operation. For each operation it shows the arguments, the answer, and if the operation changes data. Each Frappe Cloud site also shows its own reference at `/central/api`.
 
-Operations are grouped by area, such as **Servers**, **Teams**, and **Support**. An operation whose description ends in **Changes data.** changes your team's resources. The others only read.
+An operation whose description ends in **Changes data.** changes your team's resources. The other operations only read.
+
+The reference shows only the operations that are meant for you. Steps that only the console uses, such as the trial signup, are not in it and can change without notice.
 
 ## Get an API key
 
@@ -21,17 +23,65 @@ The console does not create API keys yet. To get one, contact support.
 
 Keep the secret private. Anyone with the key and the secret can act as you.
 
-## Make a call
+## Read data
 
-Send the key and the secret in the `Authorization` header:
+Send the key and the secret in the `Authorization` header. A read is a `GET` request with the arguments in the query string.
 
 ```bash
 curl https://<your Frappe Cloud URL>/api/method/central.api.identity.my_teams \
   -H "Authorization: token <api key>:<api secret>"
 ```
 
-The answer is JSON. The result is in `message`.
+The answer is JSON. The result is in `message`:
 
-Most operations need a `team` argument. Get your team names from `central.api.identity.my_teams` first.
+```json
+{"message": [{"name": "TEAM-00001", "label": "Acme", "role": "Owner", "members": 4, "status": "Active"}]}
+```
 
-A call that your role does not allow answers with status `403`. A call without a valid key answers with status `401`.
+Most operations need a `team` argument. Use the `name` that `central.api.identity.my_teams` returns.
+
+```bash
+curl "https://<your Frappe Cloud URL>/api/method/central.api.servers.registry?team=TEAM-00001" \
+  -H "Authorization: token <api key>:<api secret>"
+```
+
+Yes or no values are `true` or `false`.
+
+## Change data
+
+A change is a `POST` request with the arguments in a JSON body:
+
+```bash
+curl -X POST https://<your Frappe Cloud URL>/api/method/central.api.servers.stop_server \
+  -H "Authorization: token <api key>:<api secret>" \
+  -H "Content-Type: application/json" \
+  -d '{"team": "TEAM-00001", "resource_id": "<resource_id from registry>"}'
+```
+
+## Follow a server action
+
+Creating, starting, stopping, resizing and terminating a server take time. These operations do not wait. They return the action that does the work:
+
+```json
+{"message": {"action": "8n4ve1k2qd", "status": "Queued", "resource_id": "vm-8f2c", "title": "web-1", "error": null}}
+```
+
+Read the action again with `central.api.servers.action_status`, with `name` set to the `action` value, until the status is final:
+
+| Status | Meaning |
+| --- | --- |
+| `Queued`, `Dispatching`, `Sent`, `In Progress`, `Uncertain` | The action is not finished. Read it again in a few seconds. |
+| `Succeeded` | The action is done. |
+| `Failed`, `Timed Out` | The action stopped. `error` tells you why. Some failed actions can run again with `central.api.servers.retry_action`. |
+
+## Errors
+
+| Status | Meaning |
+| --- | --- |
+| `401` | The key or the secret is wrong. |
+| `403` | Your role does not allow this operation on this team. |
+| `404` | The team, server or other record does not exist, or you cannot see it. |
+| `417` | An argument is not valid, for example an unknown ticket category. |
+| `429` | Too many requests. Wait, then try again. |
+
+The body of an error names it in `exc_type`. The message for a person is in `_server_messages`, which is a JSON string.
