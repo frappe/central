@@ -1,15 +1,14 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
-import base64
 import datetime
-import hashlib
 import hmac
 from typing import NoReturn
 
 import frappe
 from frappe import _
 
+from central.billing.revenue import usage_reports
 from central.billing.revenue.report_subjects import subjects_by_day
 from central.billing.revenue.usage_ledger import utc_today, write_days
 from central.services.doctype.service.service import get_report_secret, is_read_by_central_locked
@@ -29,12 +28,21 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 	service = verified_service(service_name, signature, raw_body)
 	report = _parsed(raw_body)
 	as_of = reported_at(report.get("as_of"))
+	evidence = usage_reports.record(
+		service.name,
+		usage_reports.PUSHED,
+		raw_body,
+		as_of=as_of,
+		signature=signature,
+		line_count=len(report["lines"]),
+	)
 	if is_read_by_central_locked(service.name):
 		# Central's own reading still bills this service, so a pushed day would bill its usage twice.
 		reason = _("Central still reads this service; send it again after the switch")
 		answer = {"accepted": 0, "rejected": [_refused(line, reason, retry=True) for line in report["lines"]]}
 	else:
 		answer = _stored(service, report["lines"], as_of)
+	usage_reports.set_counts(evidence, answer["accepted"], len(answer["rejected"]))
 	_record_report(service.name, as_of)
 	return answer
 
@@ -96,7 +104,7 @@ def verified_service(service_name: str | None, signature: str | None, raw_body: 
 	secret = get_report_secret(service_name)
 	if not secret:
 		_reject(f"no report secret for service '{service_name}'")
-	expected = base64.b64encode(hmac.new(secret.encode(), raw_body, hashlib.sha256).digest())
+	expected = usage_reports.signature_of(secret, raw_body)
 	# Bytes, not str: compare_digest raises TypeError on a non-ASCII string.
 	if not hmac.compare_digest(expected, signature.encode()):
 		_reject(f"signature mismatch for service '{service_name}'")

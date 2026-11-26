@@ -41,7 +41,9 @@ def line(day: str, gb: float, subject: str = BUCKET) -> dict:
 	return {"subject": subject, "meter": "bytes_stored", "day": day, "value": gb * GB}
 
 
-class TestServiceReports(IntegrationTestCase):
+class ServiceReportsCase(IntegrationTestCase):
+	"""A storage service that pushes its reports, with one team bucket billed from June 1."""
+
 	def setUp(self):
 		frappe.db.delete("Team Service", {"team": TEAM})
 		self.addCleanup(frappe.db.delete, "Team Service", {"team": TEAM})
@@ -103,6 +105,8 @@ class TestServiceReports(IntegrationTestCase):
 			"Usage Day", filters={"team": TEAM}, fields=["day", "quantity"], order_by="day asc", as_list=True
 		)
 
+
+class TestServiceReports(ServiceReportsCase):
 	def test_a_signed_report_stores_each_day(self):
 		answer = self.send([line("2026-06-19", 10), line("2026-06-20", 12)])
 		self.assertEqual(answer, {"accepted": 2, "rejected": []})

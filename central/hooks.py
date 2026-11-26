@@ -234,6 +234,7 @@ doc_events = {
 			"Credit Wallet",
 			"Usage Day",
 			"Usage Rollup",
+			"Usage Report",
 			"Webhook Event",
 			"Billing Event",
 			"Top-up Order",

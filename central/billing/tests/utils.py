@@ -81,6 +81,7 @@ class BillingTestCase(IntegrationTestCase):
 		"Monthly Exchange Rate",
 		"Usage Rollup",
 		"Usage Check",
+		"Usage Report",
 		"Payment Method",
 		"Tax Profile",
 		"Billing Profile",
@@ -177,6 +178,8 @@ class BillingTestCase(IntegrationTestCase):
 				removed_teams = added
 			if doctype == "Plan":
 				frappe.db.delete("Plan Includes", {"parent": ["in", added]})
+			if doctype == "Usage Report":
+				_delete_attached_files(doctype, added)
 			frappe.db.delete(doctype, {"name": ["in", added]})
 		if removed_teams:
 			frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", removed_teams]})
@@ -184,6 +187,15 @@ class BillingTestCase(IntegrationTestCase):
 		comments = list(set(_payment_method_comments()) - before["Comment"])
 		if comments:
 			frappe.db.delete("Comment", {"name": ["in", comments]})
+
+
+def _delete_attached_files(doctype: str, names: list[str]) -> None:
+	"""Delete the files attached to these records, with their stored bytes."""
+	files = frappe.get_all(
+		"File", filters={"attached_to_doctype": doctype, "attached_to_name": ["in", names]}, pluck="name"
+	)
+	for file in files:
+		frappe.delete_doc("File", file, ignore_permissions=True, force=True)
 
 
 def _payment_method_comments() -> list[str]:
