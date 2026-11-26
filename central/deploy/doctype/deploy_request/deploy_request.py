@@ -237,6 +237,7 @@ class DeployRequest(PipelineBuilder):
 		specs, plan_specs = machine.get_specs(vm), get_plan_size(self.plan)
 		disk_gigabytes = ceil(mebibytes_to_gigabytes(max(plan_specs["disk_mib"], specs["disk_mib"])))
 		subscription = frappe.db.get_value("Subscription", {"server_id": server.name}, "name")
+		# This resize is a no-op if there are no plan changes.
 		if (
 			status in LIVE_STATES
 			and begin_resize(subscription, plan=self.plan, disk_gigabytes=disk_gigabytes)["queued"]
