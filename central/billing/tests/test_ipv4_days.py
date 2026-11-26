@@ -24,6 +24,7 @@ VM_PLAN = "ipv4-days-vm-plan"
 ADDRESS = "203.0.113.20"
 JUNE = [f"2026-06-{day:02d}" for day in range(1, 31)]
 CUTOVER_DAY = datetime.date(2026, 6, 20)
+BEFORE_JUNE = datetime.date(2026, 1, 1)
 
 
 class IPv4DaysTestCase(IntegrationTestCase):
@@ -36,9 +37,9 @@ class IPv4DaysTestCase(IntegrationTestCase):
 	def setUp(self):
 		frappe.db.delete("Virtual Machine", {"team": self.team})
 		self.addCleanup(frappe.db.delete, "Virtual Machine", {"team": self.team})
-		# The cutover patch sets the first billed day; these tests bill June.
+		# These tests bill June, so the cutover is set before it: no day is written without one.
 		bill_from = frappe.db.get_value("Service", NETWORK_SERVICE, "bill_from")
-		frappe.db.set_value("Service", NETWORK_SERVICE, "bill_from", None)
+		frappe.db.set_value("Service", NETWORK_SERVICE, "bill_from", BEFORE_JUNE)
 		self.addCleanup(frappe.db.set_value, "Service", NETWORK_SERVICE, "bill_from", bill_from)
 		make_plan(VM_PLAN)
 		self.subscription = seed_running_resource(
@@ -300,6 +301,8 @@ class TestIPv4Cutover(IPv4DaysTestCase):
 		super().setUp()
 		# BillingTestCase's row sweep commits and would keep the patch's catalog rewrites; roll them back.
 		self.addCleanup(frappe.db.rollback)
+		# The patch sets the cutover day itself.
+		frappe.db.set_value("Service", NETWORK_SERVICE, "bill_from", None)
 		self.keep_swept_day()
 		self.today = CUTOVER_DAY
 		self.enterContext(patch.object(bill_public_ipv4_per_day, "utc_today", return_value=self.today))
@@ -360,7 +363,8 @@ class TestIPv4Cutover(IPv4DaysTestCase):
 	def test_an_address_paused_and_resumed_on_the_cutover_day_bills_no_hour_after_the_resume(self):
 		"""The decided gap: the hours after the resume on day C are not billed, and none bill twice."""
 		address = self.address_subscription(utc_day_start("2026-06-01"))
-		add_segment(address, "Paused", None, frappe.utils.add_to_date(self.cutover, minutes=1))
+		paused_at = frappe.utils.add_to_date(self.cutover, minutes=1)
+		add_segment(address, "Paused", None, paused_at, currency=self.currency)
 		resumed_at = frappe.utils.add_to_date(self.cutover, hours=2)
 		add_segment(address, "Resumed", 2, resumed_at, currency=self.currency)
 
@@ -391,6 +395,28 @@ class TestIPv4Cutover(IPv4DaysTestCase):
 		address_changes.assert_not_called()
 		self.assertIn(tomorrow, self.days())
 
+	def test_no_day_is_written_until_the_patch_sets_the_cutover_day(self):
+		self.queue_today()
+		self.sweep(str(self.today))
+		self.assertEqual(self.days(), [])
+
+		bill_public_ipv4_per_day.execute()
+		self.clear_days()
+		self.queue_today()
+		self.assertEqual(self.days(), [str(self.today)])
+
+		self.clear_days()
+		frappe.db.set_default(public_ipv4_usage.SWEPT_DAY, str(self.today))
+		self.sweep(str(self.today))
+		self.assertEqual(self.days(), [str(self.today)])
+
+	def test_the_patch_keeps_the_rates_when_no_plan_bills_ipv4(self):
+		with patch.object(bill_public_ipv4_per_day, "metered_plan_for", return_value=None):
+			with self.assertRaises(frappe.ValidationError):
+				bill_public_ipv4_per_day.execute()
+
+		self.assertEqual(len(get_catalog_rates("Resource Type", "IP")), len(self.old_rates))
+
 	def test_running_the_patch_again_changes_nothing(self):
 		address = self.address_subscription(utc_day_start("2026-06-01"))
 		bill_public_ipv4_per_day.execute()
@@ -401,6 +427,13 @@ class TestIPv4Cutover(IPv4DaysTestCase):
 		self.assertEqual(get_catalog_rates("Plan", "public-ipv4"), rates)
 		self.assertEqual(self.cancelled_at(address), [self.cutover])
 		self.assertEqual(self.days(), [str(self.today)])
+
+	def queue_today(self) -> None:
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			public_ipv4_usage.queue_today(self.server, 1)
+
+	def clear_days(self) -> None:
+		frappe.db.delete("Usage Day", {"service": NETWORK_SERVICE, "subject": self.server})
 
 	def cancelled_at(self, subscription: str) -> list:
 		return frappe.get_all(

@@ -140,11 +140,12 @@ def _pages(held: dict[str, int]) -> dict[str, list[str]]:
 def _page_writer(day, pages: dict[str, list[str]], held: dict[str, int]):
 	"""Write `day` for the page that starts with a given server."""
 	service = frappe.get_doc("Service", NETWORK_SERVICE)
+	if not service.bill_from:
+		# Before the cutover the per-address subscriptions still bill, so a day would bill twice.
+		return lambda first: 0
 	meter = service.get_meter(PUBLIC_IPV4_METER)
 	# Per-address subscriptions all closed by the cutover day, so no later day can overlap one.
-	is_cutover_day = bool(service.bill_from) and frappe.utils.getdate(day) == frappe.utils.getdate(
-		service.bill_from
-	)
+	is_cutover_day = frappe.utils.getdate(day) == frappe.utils.getdate(service.bill_from)
 
 	def write_page(first: str) -> int:
 		servers = pages[first]
