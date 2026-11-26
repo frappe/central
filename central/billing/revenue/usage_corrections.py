@@ -19,6 +19,7 @@ from central.billing.states import transition
 # A correction is billed only within this many days of the invoice that billed its day.
 WINDOW_DAYS = 90
 CREDITED = "Credited"
+NO_CHARGE = "No Charge"
 WRITTEN_OFF = "Written Off"
 PAGE_SIZE = 500
 _CARRIER_FIELDS = (
@@ -46,7 +47,7 @@ class Corrections:
 
 
 def rate_open(team: str, today=None) -> Corrections:
-	"""Rate the team's open corrections in their window: a line for each that raises the bill, Credit Due for the rest."""
+	"""Rate the team's open corrections in their window: a line for each that raises the bill, Credit Due or No Charge for the rest."""
 	rated = Corrections()
 	months: dict[tuple, BilledMonth | None] = {}
 	for correction in _open_corrections(team, frappe.utils.getdate(today)):
@@ -180,17 +181,33 @@ class BilledMonth:
 
 
 def _rate(month: BilledMonth, correction, team: str, rated: Corrections) -> None:
-	"""Bill a correction that raises the bill at its month's terms; mark one that does not Credit Due."""
+	"""Bill a correction that raises the bill at its month's terms; close one that lowers it or changes nothing."""
 	key = (correction.month_row, correction.day)
 	delta = month.get_delta(key, frappe.utils.flt(correction.value))
 	frappe.db.set_value(CORRECTION, correction.name, "billable_delta", delta, update_modified=False)
-	if delta <= 0:
-		_move(correction.name, CREDIT_DUE, team, reason="the new value does not raise the bill")
+	# Float noise from summing day weights must not bill, or credit, a zero change.
+	rounded = frappe.utils.flt(delta, frappe.get_precision(CORRECTION, "billable_delta"))
+	if rounded < 0:
+		_move(correction.name, CREDIT_DUE, team, reason="the new value lowers the bill")
+		return
+	if rounded == 0:
+		_close_unchanged(correction, team)
 		return
 	# Later corrections of the same month are weighed against this one, as the invoice bills them together.
 	month.apply(key, frappe.utils.flt(correction.value))
 	rated.lines.append(_line(month.carrier, correction, delta))
 	rated.names.append(correction.name)
+
+
+def _close_unchanged(correction, team: str) -> None:
+	"""Close a correction that stays inside the bundle or allowance: no line, nothing to credit."""
+	reason = "the new value stays inside the bundle or allowance, so the bill does not change"
+	_move(correction.name, NO_CHARGE, team, reason=reason)
+	frappe.get_doc(DOCTYPE, correction.month_row).add_comment(
+		"Info",
+		f"Correction of day {correction.day} to {correction.value} (report {correction.report}) "
+		f"needs no invoice line: {reason}.",
+	)
 
 
 def _billed_rate(carrier, invoice: str) -> float:

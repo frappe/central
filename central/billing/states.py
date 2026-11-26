@@ -179,10 +179,11 @@ USAGE_MONTH_CORRECTION = StateMachine(
 	"Usage Month Correction",
 	"status",
 	{
-		"Open": {"Billed", "Credit Due", "Written Off"},
+		"Open": {"Billed", "Credit Due", "No Charge", "Written Off"},
 		"Billed": {"Open"},  # a reissued invoice gives it back, so the replacement bills it again
 		"Credit Due": {"Credited"},  # an operator issued the credit note
 		"Credited": set(),  # terminal
+		"No Charge": set(),  # terminal — stays inside the bundle or allowance, nothing to bill or credit
 		"Written Off": set(),  # terminal — no invoice billed it within its window
 	},
 )

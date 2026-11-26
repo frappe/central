@@ -94,16 +94,24 @@ class TestStorageCorrections(StorageMonthsFixture, BillingTestCase):
 
 		self.assertFalse([line for line in self.lines(august) if "Correction" in line.description])
 
-	def test_a_higher_value_inside_the_bundle_is_credit_due(self):
+	def test_a_higher_value_inside_the_bundle_closes_with_no_charge(self):
 		# 120 GB on the 30th is still inside the 200 GB the resized plan includes.
 		self.read("2026-06-30", 120)
-		correction, _row = self.correction(subject=self.bucket)
+		correction, row = self.correction(subject=self.bucket)
 		self.assertEqual(correction.status, "Open")
 
-		self.draft(JULY_PERIOD)
+		july = self.draft(JULY_PERIOD)
 
 		correction.reload()
-		self.assertEqual((correction.status, correction.billable_delta), ("Credit Due", 0))
+		self.assertEqual((correction.status, correction.billable_delta), ("No Charge", 0))
+		self.assertFalse([line for line in self.lines(july) if "Correction" in line.description])
+		self.assertEqual(credit_due_rows(row.month_row), [])
+		notes = frappe.get_all(
+			"Comment",
+			filters={"reference_doctype": "Usage Month", "reference_name": row.month_row},
+			pluck="content",
+		)
+		self.assertTrue(any("needs no invoice line" in note for note in notes))
 
 	def test_a_month_below_the_minimum_keeps_the_correction_open(self):
 		self.read_team_bucket("2026-06-30", 60)

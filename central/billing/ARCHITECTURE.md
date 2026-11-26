@@ -736,9 +736,11 @@ Usage months (ADR 0028, #207): every writer stores a line in the day slot of its
     the rate on the invoice line); a positive delta is one line on the next invoice, "Correction
     · <subject> · 14 Mar 2026 · report <original> → <new>", with charge_date the corrected day,
     and the invoice stamps the correction Billed; a reissue reopens it and bills it again
-  → a delta of 0 or less goes Credit Due and never makes a negative line: readiness M4 lists it
+  → a negative delta goes Credit Due and never makes a negative line: readiness M4 lists it
     until an operator issues the credit note and marks it Credited (Usage Month form, Mark
     Credited); nothing lowers a bill automatically
+  → a delta of 0 at the field's precision (a higher value still inside the bundle or allowance)
+    goes No Charge, a terminal state with a comment on the Usage Month: no line, no M4 row
   → a correction bills only within 90 days of the invoice that billed its day
     (billed_invoice_date); a month below the minimum keeps it Open; the daily
     write_off_expired marks one past the window Written Off and comments on the Usage Month
@@ -992,7 +994,7 @@ The team and the signed-in user are counted apart, and either one can lock. A us
 | A line's Project breakdown is missing/wrong | `generate._tag_projects`/`_resource_project_map` — is the resource's Subscription tagged, is its Project `enabled`? A disabled Project's lines carry no tag by design (§2.1); check `Invoice Line Item.project`/`project_title` on a real invoice, or the same fields on a forecast line |
 | Tagging a subscription into a Project is refused | `Subscription.validate_project` — same-team? Project `enabled`? `catalog.subscriptions.enforce_project_headroom` — would the tag push the Project's committed run-rate (`project_run_rate`) past its `spending_limit`? (blocks new tagging only, §2.1) |
 | ERPNext out of sync | `erpnext_sync` (async, never rolls back the invoice; check retry backoff) |
-| A late usage value was not billed | the Usage Month's Corrections tab: Open waits for the next invoice (a month below the minimum keeps it Open); Credit Due did not raise the bill (readiness M4, an operator issues the credit note); Written Off came more than 90 days after the invoice that billed the day; Billed names the invoice. A day a reissue gave back is billed with its own value first |
+| A late usage value was not billed | the Usage Month's Corrections tab: Open waits for the next invoice (a month below the minimum keeps it Open); Credit Due lowers the bill (readiness M4, an operator issues the credit note); No Charge stayed inside the bundle or allowance and changes nothing; Written Off came more than 90 days after the invoice that billed the day; Billed names the invoice. A day a reissue gave back is billed with its own value first |
 | A dispute names a day the Usage Month has no value for | is `pruned` set? The month is older than 13 months: its totals and terms stay, the day values and reports are gone. Otherwise readiness M5 lists billed days whose report is missing, M6 a report whose body no longer matches its hash |
 | A server's public IPv4 is not on the invoice | readiness M3; is there a `network` Usage Month for the server with that day filled (`subject` = server name)? Did the server's subscription have an open segment that day (a trial or a day paused throughout bills nothing)? Is the day before `Service.bill_from` (written off)? |
 | Draft fails with "unpriced metered usage: IP" | the `public-ipv4` plan has no Catalog Rate for the team's currency and the server's region; add it, then run the draft again: every unbilled IPv4 day of the open month bills |
