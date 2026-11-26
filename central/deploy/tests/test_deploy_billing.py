@@ -3,17 +3,8 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.billing.catalog.pricing import set_catalog_rate
-from central.billing.tests.utils import (
-	BillingTestCase,
-	complete_billing_profile,
-	ensure_team,
-	give_team_a_card,
-	make_billing_subscription,
-	make_plan,
-	set_team_tier,
-)
-from central.deploy.billing import get_plan_specs, get_size_plan, update_vm_plan, validate_vm_resize
+from central.billing.tests.utils import make_plan
+from central.deploy.billing import get_plan_specs, get_size_plan
 
 
 def make_size(title: str, vcpus: float, memory: float, disk: float) -> str:
@@ -75,50 +66,3 @@ class IntegrationTestDeployBilling(IntegrationTestCase):
 			self.assertRaises(frappe.ValidationError),
 		):
 			get_size_plan("team", "region", "Growth")
-
-
-class IntegrationTestDeployResizeBilling(BillingTestCase):
-	"""A deploy's move to a plan with a smaller disk keeps the disk, billed like the console's resize."""
-
-	def setUp(self):
-		team, region = ensure_team("team-deploy-keep-disk"), "deploy-keep-disk"
-		complete_billing_profile(team, currency="INR")
-		give_team_a_card(team)
-		set_team_tier(team, max_spend=1_000_000)
-		set_catalog_rate("Resource Type", "Disk", "INR", 10)
-		growth = make_size("Growth", 2, 8, 100)
-		self.starter = make_size("Starter", 1, 2, 25)
-		frappe.db.set_value("Plan", (growth, self.starter), "sub_category", "General")
-		set_catalog_rate("Plan", self.starter, "INR", 500)
-
-		self.subscription = make_billing_subscription(team, region, growth, clear_changes=False)
-		self.server = frappe.db.get_value("Subscription", self.subscription, "server_id")
-		frappe.db.set_value(
-			"Virtual Machine",
-			self.server,
-			{"status": "Running", "vcpus": 2, "memory_megabytes": 8192, "disk_gigabytes": 100},
-		)
-		# The catalog a team may resize to is tested with get_size_plan.
-		self.enterContext(patch("central.deploy.billing._require_offered_plan"))
-
-	def test_a_smaller_plan_keeps_the_disk_and_bills_the_extra(self):
-		validate_vm_resize(self.server, self.starter, 100)
-		update_vm_plan(self.server, self.starter, 100)
-
-		subscription = frappe.get_doc("Subscription", self.subscription)
-		self.assertEqual(
-			{row.resource_type: row.quantity for row in subscription.includes},
-			{"Compute": 1, "Memory": 2, "Disk": 100},
-		)
-		rate = frappe.get_all(
-			"Subscription Change",
-			filters={"subscription": self.subscription, "change_type": "Plan Changed"},
-			pluck="locked_rate",
-		)
-		# Starter's price plus 75 GB at the disk rate.
-		self.assertEqual(rate, [500 + 75 * 10])
-		self.assertIsNone(frappe.db.get_value("Virtual Machine", self.server, "plan"))
-
-	def test_a_disk_smaller_than_the_vms_is_refused(self):
-		with self.assertRaises(frappe.ValidationError):
-			validate_vm_resize(self.server, self.starter, 25)

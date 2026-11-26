@@ -55,8 +55,7 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		self.wait = patch.object(DeployRequest, "wait").start()
 		self.validate_purchase = patch(f"{MODULE}.validate_vm_purchase", return_value=12.5).start()
 		self.open_subscription = patch(f"{MODULE}.open_vm_subscription").start()
-		self.validate_resize = patch(f"{MODULE}.validate_vm_resize").start()
-		self.update_plan = patch(f"{MODULE}.update_vm_plan").start()
+		self.begin_resize = patch(f"{MODULE}.begin_resize", return_value={"queued": False}).start()
 		self.addCleanup(patch.stopall)
 
 	def test_the_first_deploy_creates_a_vm_at_its_size(self):
@@ -134,75 +133,76 @@ class IntegrationTestDeployVM(IntegrationTestCase):
 		self.machine.get.return_value = make_vm("running")
 
 		self.request.resize_virtual_machine(name)
-		self.machine.stop.assert_not_called()
-		self.machine.resize.assert_not_called()
+		self.begin_resize.assert_called_once_with(None, plan=self.request.plan, disk_gigabytes=20)
+		self.machine.start.assert_not_called()
 		self.wait.assert_not_called()
-		self.update_plan.assert_called_once_with(name, self.request.plan, 20)
 
-	def test_a_new_size_stops_then_resizes_then_starts_the_vm(self):
+	def test_a_stopped_vm_at_the_deploys_size_is_started(self):
 		name = self.request.get_virtual_machine()["name"]
-		self.request.cpu_millicores, self.request.memory_mib = 4000, 8192
-
-		self.machine.get.return_value = make_vm("running")
-		self.request.resize_virtual_machine(name)
-		self.validate_resize.assert_called_once_with(name, self.request.plan, 20)
-		self.machine.stop.assert_called_once_with(self.atlas_vm_id)
-		self.update_plan.assert_not_called()
-
 		self.machine.get.return_value = make_vm("stopped")
-		self.request.resize_virtual_machine(name)
-		self.machine.resize.assert_called_once_with(
-			self.atlas_vm_id, {"cpu_millicores": 4000, "memory_mib": 8192, "disk_mib": 20480}
-		)
 
-		self.machine.get.return_value = make_vm("migrating", cpu=4000, memory=8192)
-		self.wait.reset_mock()
-		self.request.resize_virtual_machine(name)
-		self.wait.assert_called_once()
-
-		self.machine.get.return_value = make_vm("stopped", cpu=4000, memory=8192)
 		self.request.resize_virtual_machine(name)
 		self.machine.start.assert_called_once_with(self.atlas_vm_id)
-		self.update_plan.assert_called_with(name, self.request.plan, 20)
 
-	def test_a_size_billing_refuses_keeps_the_vm_running(self):
+	def test_a_new_size_waits_for_the_consoles_resize(self):
 		name = self.request.get_virtual_machine()["name"]
-		self.request.cpu_millicores, self.request.memory_mib = 4000, 8192
-		self.validate_resize.side_effect = frappe.ValidationError
 		self.machine.get.return_value = make_vm("running")
+		self.begin_resize.return_value = {"queued": True}
 
-		with self.assertRaises(frappe.ValidationError):
-			self.request.resize_virtual_machine(name)
-		self.machine.stop.assert_not_called()
+		self.request.resize_virtual_machine(name)
+		self.wait.assert_called_once()
+		self.machine.start.assert_not_called()
 
-	def test_a_size_billing_refuses_leaves_a_stopped_vm_at_its_size(self):
+	def test_a_resize_still_running_is_waited_on_without_a_new_one(self):
 		name = self.request.get_virtual_machine()["name"]
-		self.request.cpu_millicores, self.request.memory_mib = 4000, 8192
-		self.validate_resize.side_effect = frappe.ValidationError
-		self.machine.get.return_value = make_vm("stopped")
+		self.machine.get.return_value = make_vm("running")
+		self.make_resize(name, "Sent")
+
+		self.request.resize_virtual_machine(name)
+		self.wait.assert_called_once()
+		self.begin_resize.assert_not_called()
+
+	def test_a_failed_resize_fails_the_deploy_with_its_error(self):
+		name = self.request.get_virtual_machine()["name"]
+		self.machine.get.return_value = make_vm("running")
+		self.make_resize(name, "Failed", error_code="ACTION_FAILED")
+
+		with self.assertRaisesRegex(frappe.ValidationError, "reported a failure while trying to resize"):
+			self.request.resize_virtual_machine(name)
+		self.begin_resize.assert_not_called()
+
+	def test_a_resize_billing_refuses_fails_the_deploy(self):
+		name = self.request.get_virtual_machine()["name"]
+		self.machine.get.return_value = make_vm("running")
+		self.begin_resize.side_effect = frappe.ValidationError
 
 		with self.assertRaises(frappe.ValidationError):
 			self.request.resize_virtual_machine(name)
-		self.machine.resize.assert_not_called()
+		self.machine.start.assert_not_called()
 
 	def test_a_plan_with_a_smaller_disk_keeps_the_vms_disk_and_says_so(self):
 		name = self.request.get_virtual_machine()["name"]
-		self.request.cpu_millicores, self.request.memory_mib, self.request.disk_mib = 1000, 2048, 10240
-		self.machine.get.return_value = make_vm("stopped")
+		self.request.disk_mib = 10240
+		self.machine.get.return_value = make_vm("running")
 
 		self.request.resize_virtual_machine(name)
-		self.validate_resize.assert_called_once_with(name, self.request.plan, 20)
-		self.machine.resize.assert_called_once_with(
-			self.atlas_vm_id, {"cpu_millicores": 1000, "memory_mib": 2048, "disk_mib": 20480}
-		)
+		self.request.resize_virtual_machine(name)
+		self.begin_resize.assert_called_with(None, plan=self.request.plan, disk_gigabytes=20)
 		self.assertEqual(frappe.db.get_value("Deploy Request", self.request.name, "disk_mib"), 20480)
-		self.assertIn("Preserving disk size", self.request.get_log("build_log"))
-
-		self.machine.get.return_value = make_vm("stopped", cpu=1000, memory=2048)
-		self.request.resize_virtual_machine(name)
-		self.machine.start.assert_called_once_with(self.atlas_vm_id)
-		self.update_plan.assert_called_once_with(name, self.request.plan, 20)
 		self.assertEqual(self.request.get_log("build_log").count("Preserving disk size"), 1)
+
+	def make_resize(self, server: str, status: str, **fields) -> None:
+		frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"resource_type": "Server",
+				"action": "resize",
+				"team": self.app.team,
+				"server": server,
+				"status": status,
+				**fields,
+			}
+		).insert(ignore_permissions=True)
 
 
 class IntegrationTestDeployMachine(IntegrationTestCase):

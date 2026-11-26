@@ -8,9 +8,9 @@ import frappe
 import httpx
 from atlas_client import AuthenticatedClient
 from atlas_client.api.images import list_images
-from atlas_client.api.vm_actions import resize_virtual_machine, start_virtual_machine, stop_virtual_machine
+from atlas_client.api.vm_actions import start_virtual_machine
 from atlas_client.api.vm_lifecycle import create_virtual_machine, get_virtual_machine, list_virtual_machines
-from atlas_client.models import CreateVirtualMachinePayload, ListImagesImageTypeType0, ResizePayload
+from atlas_client.models import CreateVirtualMachinePayload, ListImagesImageTypeType0
 from frappe import _
 
 from central.infrastructure.doctype.virtual_machine import firewall
@@ -104,13 +104,6 @@ class DeployMachine:
 
 	def start(self, vm_id: str) -> None:
 		self.call(start_virtual_machine, vm_id)
-
-	def stop(self, vm_id: str) -> None:
-		self.call(stop_virtual_machine, vm_id)
-
-	def resize(self, vm_id: str, specs: dict[str, int]) -> None:
-		"""Atlas resizes only a stopped VM, may move it to another host meanwhile, and never shrinks the disk."""
-		self.call(resize_virtual_machine, vm_id, body=ResizePayload(**specs))
 
 	@staticmethod
 	def get_specs(vm: dict) -> dict[str, int]:
