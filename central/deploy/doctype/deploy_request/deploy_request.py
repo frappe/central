@@ -11,7 +11,7 @@ from cloudtoolkit.pipeline.doctype.pipeline.pipeline_builder import PipelineBuil
 from frappe import _
 from frappe.model.naming import append_number_if_name_exists, make_autoname
 from frappe.query_builder.functions import IfNull
-from frappe.utils import now_datetime, time_diff_in_seconds
+from frappe.utils import ceil, now_datetime, time_diff_in_seconds
 from redis.exceptions import LockError
 
 from central.deploy.billing import (
@@ -241,26 +241,34 @@ class DeployRequest(PipelineBuilder):
 		machine = DeployMachine(frappe.get_doc("Deploy App", self.deploy_app))
 		vm = machine.get(atlas_vm_id)
 		state, current = vm.get("current_state"), machine.get_specs(vm)
+		self.keep_disk(current["disk_mib"])
+		disk_gigabytes = ceil(mebibytes_to_gigabytes(self.disk_mib))
 
 		if current == self.specs:
-			update_vm_plan(name, self.plan)
+			update_vm_plan(name, self.plan, disk_gigabytes)
 			if state == "stopped":
 				machine.start(atlas_vm_id)
 			elif state == "migrating":
 				self.wait(_("Atlas is moving {0} to a host that fits it.").format(name), for_=900)
 			return
 
-		if self.disk_mib < (current["disk_mib"] or 0):
-			frappe.throw(
-				_("The disk can't shrink from {0} MiB to {1} MiB.").format(current["disk_mib"], self.disk_mib)
-			)
-
-		validate_vm_resize(name, self.plan)
+		validate_vm_resize(name, self.plan, disk_gigabytes)
 		if state == "running":
 			machine.stop(atlas_vm_id)
 		elif state == "stopped":
 			machine.resize(atlas_vm_id, self.specs)
 		self.wait(_("Resizing {0}.").format(name), for_=900)
+
+	def keep_disk(self, disk_mib: int | None) -> None:
+		"""Keep the VM's disk when the plan's is smaller, since a disk never shrinks, and say so in the build log."""
+		# If machine disk is smaller than the new plans disk we are fine
+		if not disk_mib or disk_mib <= self.disk_mib:
+			return
+
+		# Otherwise we will keep the disk same as the machines current disk
+		self.disk_mib = disk_mib
+		self.append_log("build_log", "Preserving disk size as shrink is not allowed")
+		self.save(ignore_permissions=True)
 
 	@task
 	def wait_for_virtual_machine(self, name: str) -> None:
