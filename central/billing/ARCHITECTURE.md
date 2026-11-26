@@ -754,8 +754,14 @@ Public IPv4 (#197, #200): one Level Usage Day per server and UTC day on the serv
     saw, so an address released before the job runs still bills its day; and the hourly
     read_public_ipv4 sweep (see the scheduled table). write_days keeps the highest count, so both
     are idempotent
-  → no writer writes a day while Service `network`.bill_from is empty: until the cutover patch
-    runs (a deploy runs the new code before migrate), the per-address subscriptions still bill
+  → no writer writes a day while Service `network` is missing or its bill_from is empty
+    (public_ipv4_usage.cutover_day is None): until the cutover patch runs (a deploy runs the new
+    code before migrate), the per-address subscriptions still bill. The writers write nothing
+    and raise nothing, and the sweep still marks the day before swept, because a day before
+    bill_from is written off
+  → a fresh install marks the cutover patch done without running it, so after_install
+    public_ipv4_usage.start_on_install sets bill_from to the install's UTC day when it is empty
+    (a fresh site holds no per-address subscription, so nothing bills twice)
   → a day is written only when the server's subscription had an open segment at some moment of it
     (public_ipv4_usage.billed_servers_on over catalog.subscriptions.server_segments, which
     bundled_buckets also reads): a trial server (no subscription) is free until it converts, a
