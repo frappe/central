@@ -21,7 +21,6 @@ KEY_FIELDS = (
 	"gateway_url",
 	"cap",
 	"month_spent",
-	"limits",
 )
 
 # Grove owns the keys. Central keeps none: a secret is shown once, in the answer that mints it.
@@ -56,7 +55,8 @@ def enable_ai(team: str | None = None) -> dict:
 @require_capability("service:view", VIEW_DENIED)
 def list_api_keys(team: str | None = None) -> list[dict]:
 	"""The team's keys, newest first, masked, each with its geography and the gateway it
-	calls, its monthly cap, its spend this month, and its rate limits."""
+	calls, its monthly cap and its spend this month. Rate limits are the team's: the overview's
+	`spend.limits`."""
 	require_ai(team)
 	keys = GroveClient.from_settings().get_figures(team)["keys"]
 	return [{field: row.get(field) for field in KEY_FIELDS} for row in keys]

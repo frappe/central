@@ -23,8 +23,8 @@ class GroveUnavailable(frappe.ValidationError):
 
 class GroveClient:
 	"""Calls Grove's control API (`grove.api`) as Central. A team is one Central Team at Grove,
-	named by the team id, under the key count, monthly spend limit and rate limits of its tier,
-	which Grove holds; each of its keys carries its own geography, models, rate limits and monthly cap. Grove owns the keys;
+	named by the team id, under the monthly spend limit and per-model rate limits of its tier,
+	which Grove holds; each of its keys carries its own geography and monthly cap. Grove owns the keys;
 	Central never proxies inference. A tier change reaches Grove by the Webhook AI Settings keeps
 	(`grove.api.teams.team_webhook`), not through this client."""
 
@@ -61,7 +61,7 @@ class GroveClient:
 
 	def provision_team(self, team: str) -> dict:
 		"""Register `team` by its id; Grove keeps nothing else about who it is. Grove upserts
-		by `team`; `update_team` sets everything else. → `team` and `max_keys`."""
+		by `team`; `update_team` sets everything else. → `team`."""
 		return self.call("grove.api.teams.provision_team", team=team)
 
 	def update_team(
@@ -128,7 +128,7 @@ class GroveClient:
 
 	def transfer_key(self, team: str, key: str, to_team: str, title: str) -> dict:
 		"""Hand a key of `team` to `to_team`, titled `title`: the same credential, the trial's rules
-		gone (no expiry; what it may call is `to_team`'s); cap, geography and rate limits as minted.
+		gone (no expiry; what it may call is `to_team`'s, and so are its rate limits); cap and geography as minted.
 		Grove counts it against `to_team` like a mint and answers a key `to_team` already holds as
 		it is. → the key as `get_figures` lists it."""
 		return self.call("grove.api.keys.transfer_key", team=team, key=key, to_team=to_team, title=title)
@@ -148,9 +148,8 @@ class GroveClient:
 		a correction, a key or the team saved, its tier edited) and 30 minutes at most, so every
 		page shows one moment. `spend` in USD: `month_spent`, `capped` (Σ live caps) and
 		`committed` (each live key's cap or its month's spend, whichever is more, plus revoked keys'
-		spend: what a raise is checked against) against `spend_limit`; `max_keys`; `suspended`.
-		`keys`: the team's keys, newest first, masked, each with its cap, this month's spend and effective
-		rate limits. `usage`: this month across every key, as `get_usage` answers it."""
+		spend: what a raise is checked against) against `spend_limit`; `limits`, the rate limit rows the team runs under; `suspended`.
+		`keys`: the team's keys, newest first, masked, each with its cap and this month's spend. `usage`: this month across every key, as `get_usage` answers it."""
 		return self.call("grove.api.usage.figures", timeout=timeout, team=team)
 
 	def pull_usage(self, team: str) -> dict:

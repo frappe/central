@@ -36,7 +36,6 @@ LISTED = {
 	"geography": "eu",
 	"gateway_url": "https://eu.llm.frappe.cloud",
 	"cap": 5.0,
-	"limits": LIMITS,
 }
 MODELS = [
 	{
@@ -96,7 +95,7 @@ class TestGroveClientCalls(IntegrationTestCase):
 		self.assertEqual(result, minted)
 
 	def test_a_team_is_registered_under_the_control_credential(self):
-		with grove_replies({"team": "TEAM-1", "max_keys": 0}) as post:
+		with grove_replies({"team": "TEAM-1"}) as post:
 			self.client.provision_team("TEAM-1")
 
 		self.assertEqual(
@@ -262,7 +261,7 @@ class TestAI(IntegrationTestCase):
 
 	def enabled(self):
 		with (
-			patch.object(GroveClient, "provision_team", return_value={"team": self.team, "max_keys": 10}),
+			patch.object(GroveClient, "provision_team", return_value={"team": self.team}),
 			patch.object(GroveClient, "update_team"),
 		):
 			return ai.enable(self.team)
@@ -270,9 +269,7 @@ class TestAI(IntegrationTestCase):
 	def test_enabling_registers_the_team_and_sends_its_limits(self):
 		frappe.set_user(self.owner)
 		with (
-			patch.object(
-				GroveClient, "provision_team", return_value={"team": self.team, "max_keys": 0}
-			) as provision_team,
+			patch.object(GroveClient, "provision_team", return_value={"team": self.team}) as provision_team,
 			patch.object(GroveClient, "update_team") as update_team,
 		):
 			name = api.enable_ai(self.team)["name"]
@@ -333,7 +330,7 @@ class TestAI(IntegrationTestCase):
 			"capped": 20.0,
 			"committed": 27.5,
 			"spend_limit": 50.0,
-			"max_keys": 10,
+			"limits": LIMITS,
 			"suspended": False,
 		}
 		month = {
@@ -409,8 +406,8 @@ class TestAI(IntegrationTestCase):
 			[listed] = api.list_api_keys(self.team)
 		self.assertNotIn("key_hash", listed)
 		self.assertEqual(
-			(listed["masked"], listed["geography"], listed["cap"], listed["limits"]),
-			(LISTED["masked"], "eu", 5.0, LIMITS),
+			(listed["masked"], listed["geography"], listed["cap"]),
+			(LISTED["masked"], "eu", 5.0),
 		)
 
 		with patch.object(GroveClient, "update_caps", return_value=[{**LISTED, "cap": 8}]) as update_caps:

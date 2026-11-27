@@ -6,6 +6,7 @@ import { useAI } from '@/composables/useAI'
 import { formatDateTime, timeAgo } from '@/lib/datetime'
 import { reportError, successToast } from '@/lib/feedback'
 import { compactNumber, money, usd } from '@/lib/format'
+import { limitChips } from '@/lib/limits'
 import { __ } from '@/lib/translate'
 
 interface Props {
@@ -153,12 +154,7 @@ const limitBarClass = computed(() =>
 			: 'bg-surface-gray-7',
 )
 
-const keysLabel = computed(() => {
-	const max = spend.value?.max_keys ?? 0
-	return max > 0
-		? `${activeKeyCount.value} of ${max}`
-		: String(activeKeyCount.value)
-})
+const planLimits = computed(() => limitChips(spend.value?.limits ?? []))
 
 const refresh = async (): Promise<void> => {
 	try {
@@ -377,9 +373,30 @@ const refresh = async (): Promise<void> => {
 				</div>
 			</div>
 
-			<div class="flex items-center justify-between gap-3">
-				<dt class="text-ink-gray-5">Live keys</dt>
-				<dd class="tabular-nums text-ink-gray-8">{{ keysLabel }}</dd>
+			<div class="flex items-start justify-between gap-3">
+				<dt class="flex items-center gap-1.5 text-ink-gray-5">
+					{{ __('Rate limits') }}
+					<Tooltip
+						:text="__('Counted for the whole team on each model, however many keys you hold.')"
+					>
+						<span
+							class="lucide-info size-3.5 text-ink-gray-4"
+							:aria-label="__('What the rate limits are')"
+						/>
+					</Tooltip>
+				</dt>
+				<dd
+					v-if="planLimits.length"
+					class="flex flex-wrap justify-end gap-x-2 text-right tabular-nums text-ink-gray-8"
+				>
+					<template v-for="(chip, index) in planLimits" :key="chip.key">
+						<span v-if="index" aria-hidden="true">·</span>
+						<Tooltip :text="chip.text">
+							<span>{{ chip.label }}</span>
+						</Tooltip>
+					</template>
+				</dd>
+				<dd v-else class="text-ink-gray-5">{{ __('None') }}</dd>
 			</div>
 		</dl>
 	</section>
