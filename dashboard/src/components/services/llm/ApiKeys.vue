@@ -20,6 +20,7 @@ import Quickstart from '@/components/services/llm/Quickstart.vue'
 import { useAI } from '@/composables/useAI'
 import { formatDateTime, timeAgo } from '@/lib/datetime'
 import { getErrorMessage, reportError } from '@/lib/feedback'
+import { limitChips } from '@/lib/limits'
 import { __ } from '@/lib/translate'
 import type { AIApiKey } from '@/types/ai'
 
@@ -51,6 +52,12 @@ loadApiKeys()
 
 const prepaid = computed(() => !!ai.value?.spend)
 const spend = computed(() => ai.value?.spend)
+// A plan that counts per key: the same limit for each key, across every model it calls.
+const keyLimits = computed(() =>
+	spend.value?.limit_scope === 'Key'
+		? limitChips(spend.value.limits, 'per key, across every model')
+		: [],
+)
 const asOf = computed(() =>
 	ai.value?.usage?.as_of
 		? formatDateTime(ai.value.usage.as_of)
@@ -477,6 +484,19 @@ const revokeText = __(
 				</tr>
 			</tbody>
 		</table>
+
+		<p
+			v-if="keyLimits.length && apiKeys.length"
+			class="mt-3 flex flex-wrap items-center gap-x-2 text-p-xs text-ink-gray-5"
+		>
+			{{ __('Every key is limited to') }}
+			<template v-for="(chip, index) in keyLimits" :key="chip.key">
+				<span v-if="index" aria-hidden="true">·</span>
+				<Tooltip :text="chip.text">
+					<span class="tabular-nums text-ink-gray-7">{{ chip.label }}</span>
+				</Tooltip>
+			</template>
+		</p>
 
 		<ListViewPagination
 			v-if="pageCount > 1"
