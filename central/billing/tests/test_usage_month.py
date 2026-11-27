@@ -163,8 +163,14 @@ class TestUsageMonth(BillingTestCase):
 		self.addCleanup(frappe.db.rollback)
 		return self.write(line(1, quantity))
 
-	def test_a_month_another_worker_committed_meanwhile_is_written_under_its_lock(self):
+	def test_a_month_another_worker_committed_meanwhile_is_written_once(self):
 		written = self.write_after_another_worker(40)
+		if written.conflicts:
+			# With snapshot isolation (MariaDB 11.8 default) the lock is refused and the whole
+			# batch comes back to be sent again; without it the row is written under the lock.
+			self.assertEqual((written.count, len(written.conflicts)), (0, 1))
+			frappe.db.rollback()
+			written = self.write(line(1, 40))
 		self.assertEqual((written.count, written.conflicts), (1, []))
 		self.assertEqual([d.quantity for d in self.days()], [40])
 
