@@ -30,12 +30,17 @@ export interface LimitChip {
 
 // One chip per limit: `10 RPM gpt-6-luna`, the model's id when the row names one; the long form
 // goes in its tooltip. A row at 0 is no limit there: `∞ RPM gpt-6-luna`.
-export const limitChips = (limits: AIRateLimit[]): LimitChip[] =>
+export const limitChips = (
+	limits: AIRateLimit[],
+	scope: 'Model' | 'Key' = 'Model',
+): LimitChip[] =>
 	limits.map((limit) => {
 		const model = limit.model_key ? ` ${limit.model_key.split('/').pop()}` : ''
+		const where =
+			scope === 'Key' ? 'per key' : `on ${limit.model_key || 'every model'}`
 		return {
 			key: `${limit.model_key}:${limit.metric}:${limit.window}`,
 			label: `${limit.value ? compactNumber(limit.value) : '∞'} ${METRIC_LETTERS[limit.metric] ?? limit.metric}${WINDOW_LETTERS[limit.window] ?? ''}${model}`,
-			text: `${limit.value ? limit.value.toLocaleString() : 'No limit on'} ${METRIC_WORDS[limit.metric] ?? limit.metric} ${WINDOW_WORDS[limit.window] ?? limit.window} on ${limit.model_key || 'every model'}`,
+			text: `${limit.value ? limit.value.toLocaleString() : 'No limit on'} ${METRIC_WORDS[limit.metric] ?? limit.metric} ${WINDOW_WORDS[limit.window] ?? limit.window} ${where}`,
 		}
 	})

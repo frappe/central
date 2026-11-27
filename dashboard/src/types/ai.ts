@@ -40,9 +40,10 @@ export interface AISpend {
 	capped: number
 	committed: number
 	spend_limit: number
-	// The team's rate limits, counted per model for the team as a whole however many keys it
-	// holds. None: uncapped.
+	// The team's rate limits; none: uncapped. `limit_scope` says who they are counted for: the
+	// team as a whole on each model, or each key on its own with every model together.
 	limits: AIRateLimit[]
+	limit_scope: 'Model' | 'Key'
 	suspended: boolean
 	// Whether the gateways keep the team's prompts and outputs for a short time, for support.
 	log_payloads: boolean

@@ -143,7 +143,7 @@ class GroveClient:
 		a correction, a key or the team saved, its tier edited) and 30 minutes at most, so every
 		page shows one moment. `spend` in USD: `month_spent`, `capped` (Σ live caps) and
 		`committed` (each live key's cap or its month's spend, whichever is more, plus revoked keys'
-		spend: what a raise is checked against) against `spend_limit`; `limits`, the rate limit rows the team runs under; `suspended`.
+		spend: what a raise is checked against) against `spend_limit`; `limits`, the rate limit rows the team runs under, and `limit_scope`, `Model` or `Key`, how they are counted; `suspended`.
 		`keys`: the team's keys, newest first, masked, each with its cap and this month's spend. `usage`: this month across every key, as `get_usage` answers it."""
 		return self.call("grove.api.usage.figures", timeout=timeout, team=team)
 

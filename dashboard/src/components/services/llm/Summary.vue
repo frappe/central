@@ -154,7 +154,16 @@ const limitBarClass = computed(() =>
 			: 'bg-surface-gray-7',
 )
 
-const planLimits = computed(() => limitChips(spend.value?.limits ?? []))
+const planLimits = computed(() =>
+	limitChips(spend.value?.limits ?? [], spend.value?.limit_scope),
+)
+const limitsHelp = computed(() =>
+	spend.value?.limit_scope === 'Key'
+		? __('Counted for each key on its own, across every model it calls.')
+		: __(
+				'Counted for the whole team on each model, however many keys you hold.',
+			),
+)
 
 const refresh = async (): Promise<void> => {
 	try {
@@ -376,9 +385,7 @@ const refresh = async (): Promise<void> => {
 			<div class="flex items-start justify-between gap-3">
 				<dt class="flex items-center gap-1.5 text-ink-gray-5">
 					{{ __('Rate limits') }}
-					<Tooltip
-						:text="__('Counted for the whole team on each model, however many keys you hold.')"
-					>
+					<Tooltip :text="limitsHelp">
 						<span
 							class="lucide-info size-3.5 text-ink-gray-4"
 							:aria-label="__('What the rate limits are')"
