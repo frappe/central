@@ -725,7 +725,7 @@ platform.sync.record_meter_rollups  (Central writes the runtime it bills)
 
 Usage months (ADR 0028, #207): every writer stores a line in the day slot of its Usage Month
   → one row per service, subject, meter, dimension, month and subscription, d01 to d31, bit masks
-    (filled, billed, written off, estimated, open, unreported) and a JSON slot per day: source (Pushed, Read By
+    (filled, billed, written off, estimated, open, unreported, underived) and a JSON slot per day: source (Pushed, Read By
     Central, Estimated, Segment), the Usage Report or Usage Segment that set it, as_of, landed_at, the bundle, the invoice
   → usage_month.write_lines locks the batch's rows in name order; a lock refused under snapshot
     isolation returns the whole batch as conflicts, which the service sends again; the refusal
@@ -914,6 +914,15 @@ Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
     be ahead) and a day written by another worker at the same time; the service sends these
     again. It is false for a malformed line, an unknown meter and a bad value, dimension, amount,
     currency or day format; the service never sends these again
+  → each line may carry `evidence`, how the service worked out its value (ADR 0028, #209). It
+    stays only in the kept body, never in the slot. service_reports._evidence_of keeps it as the
+    day's derivation when it is an object with an integer `v` from 1 to 99, at most 8 KB as
+    canonical JSON, and every key its Service Meter names in `evidence_keys` (storage: v, peak,
+    peak_at, readings; ai: v, requests, records, pricings). Missing or malformed evidence never
+    refuses a line: the value is stored and the reply's `underived` counts the stored lines
+    without a derivation. MonthRow._set_value clears the day's `underived` bit when the line has
+    evidence or a segment and sets it otherwise; a correction keeps its derivation in its
+    correcting report
   → report_subjects.subjects_by_day resolves the subjects once per distinct day in the report
     with bundled_buckets.billed_subjects_of(service, day, names): the service's Team Services
     with a subscription, made by the end of that UTC day; for storage, a server's backup bucket on a day its server billed, with

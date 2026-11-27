@@ -65,6 +65,7 @@
   "estimated",
   "open_days",
   "unreported",
+  "underived",
   "changed_at",
   "stamped_at",
   "pruned",
@@ -451,6 +452,13 @@
    "read_only": 1
   },
   {
+   "description": "Days whose value came with no derivation, so a dispute about them cannot be worked out again.",
+   "fieldname": "underived",
+   "fieldtype": "Int",
+   "label": "Underived Days",
+   "read_only": 1
+  },
+  {
    "description": "When a day value last changed.",
    "fieldname": "changed_at",
    "fieldtype": "Datetime",
@@ -582,7 +590,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-27 12:00:00.000000",
+ "modified": "2026-11-27 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Month",

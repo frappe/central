@@ -38,7 +38,7 @@ SETTLED = (BILLED, CREDITED, CREDIT_DUE, NO_CHARGE, BILLED_BY_HAND)
 DAY_FIELDS = tuple(f"d{day:02d}" for day in range(1, 32))
 WRITTEN = "written"
 CORRECTED = "corrected"
-MASKS = ("filled", "billed", "written_off", "estimated", "open_days", "unreported")
+MASKS = ("filled", "billed", "written_off", "estimated", "open_days", "unreported", "underived")
 
 READ_FIELDS = (
 	*KEY_FIELDS,
@@ -265,6 +265,11 @@ class MonthRow:
 		_set_optional(slot, "segment", row.get("segment"))
 		_set_optional(slot, "amount", frappe.utils.flt(row.get("source_amount")))
 		_set_optional(slot, "currency", row.get("source_currency"))
+		# The derivation stays in the report body; the mask only says whether the line had one.
+		if row.get("evidence") or row.get("segment"):
+			self.record["underived"] &= ~bit(day)
+		else:
+			self.record["underived"] |= bit(day)
 		self.changed_days.add(day)
 		self.is_changed = True
 

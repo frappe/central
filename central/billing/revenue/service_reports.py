@@ -18,6 +18,9 @@ MAXIMUM_LINES = 1000
 MAXIMUM_VALUE = 10**18
 MAXIMUM_CURRENCY = 10
 MAXIMUM_DIMENSION = 140
+# A line's evidence above this, as canonical JSON, is not kept as a derivation.
+MAXIMUM_EVIDENCE = 8192
+MAXIMUM_EVIDENCE_VERSION = 99
 CLOCK_SKEW = datetime.timedelta(minutes=5)
 
 
@@ -32,7 +35,11 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 	if is_read_by_central_locked(service.name):
 		# Central's own reading still bills this service, so a pushed day would bill its usage twice.
 		reason = _("Central still reads this service; send it again after the switch")
-		answer = {"accepted": 0, "rejected": [_refused(line, reason, retry=True) for line in report["lines"]]}
+		answer = {
+			"accepted": 0,
+			"rejected": [_refused(line, reason, retry=True) for line in report["lines"]],
+			"underived": 0,
+		}
 	else:
 		answer = _stored(service, report["lines"], as_of, report_name)
 	# Kept after the lines: a refused lock rolls back the whole transaction, and the report with its
@@ -70,7 +77,15 @@ def _stored(service, lines: list, as_of: datetime.datetime, report_name: str) ->
 	rejected += [
 		_refused(row, _("the day changed at the same time; send it again"), retry=True) for row in conflicts
 	]
-	return {"accepted": len(rows) - len(conflicts), "rejected": rejected}
+	return {
+		"accepted": len(rows) - len(conflicts),
+		"rejected": rejected,
+		"underived": _underived_count(rows) - _underived_count(conflicts),
+	}
+
+
+def _underived_count(rows: list[dict]) -> int:
+	return sum(1 for row in rows if not row.get("evidence"))
 
 
 def _record_report(service_name: str, as_of: datetime.datetime) -> None:
@@ -227,8 +242,26 @@ def _row(service, line: dict, subject, as_of: datetime.datetime) -> dict:
 		source_amount=line.get("amount"),
 		source_currency=line.get("currency"),
 		as_of=as_of,
+		evidence=_evidence_of(service, line),
 		**bundle,
 	)
+
+
+def _evidence_of(service, line: dict) -> dict | None:
+	"""The line's evidence when it is well formed and carries every key its meter names, else None."""
+	# A line with missing or malformed evidence is still stored: its value bills, and its day is
+	# marked as having no derivation.
+	evidence = line.get("evidence")
+	if not isinstance(evidence, dict) or not _is_evidence_version(evidence.get("v")):
+		return None
+	if len(usage_reports.canonical_json(evidence)) > MAXIMUM_EVIDENCE:
+		return None
+	keys = service.get_meter(line["meter"]).get_evidence_keys()
+	return evidence if all(key in evidence for key in keys) else None
+
+
+def _is_evidence_version(value) -> bool:
+	return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= MAXIMUM_EVIDENCE_VERSION
 
 
 def _parsed(raw_body: bytes) -> dict:

@@ -91,7 +91,7 @@ class TestPushedBackupBuckets(base.BundledServerFixture, IntegrationTestCase):
 	def test_a_billed_servers_bucket_is_taken_with_its_days_bundle(self):
 		answer = self.send(["2026-06-01"])
 
-		self.assertEqual(answer, {"accepted": 1, "rejected": []})
+		self.assertEqual(answer, {"accepted": 1, "rejected": [], "underived": 1})
 		[day] = self.stored_days()
 		self.assertEqual((day.quantity, day.included, day.subscription), (100, 40, self.subscription))
 
@@ -128,7 +128,7 @@ class TestPushedBackupBuckets(base.BundledServerFixture, IntegrationTestCase):
 		self.assertEqual(together, alone)
 		self.assertEqual(together["2026-06-02"][self.bucket].subscription, self.subscription)
 		self.assertEqual(together["2026-06-03"][self.bucket].subscription, own)
-		self.assertEqual(answer, {"accepted": 2, "rejected": []})
+		self.assertEqual(answer, {"accepted": 2, "rejected": [], "underived": 2})
 		subscriptions = [(str(day.day), day.subscription) for day in self.stored_days()]
 		self.assertEqual(subscriptions, [("2026-06-02", self.subscription), ("2026-06-03", own)])
 

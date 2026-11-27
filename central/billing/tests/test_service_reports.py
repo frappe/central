@@ -109,7 +109,7 @@ class ServiceReportsCase(IntegrationTestCase):
 class TestServiceReports(ServiceReportsCase):
 	def test_a_signed_report_stores_each_day(self):
 		answer = self.send([line("2026-06-19", 10), line("2026-06-20", 12)])
-		self.assertEqual(answer, {"accepted": 2, "rejected": []})
+		self.assertEqual(answer, {"accepted": 2, "rejected": [], "underived": 2})
 		self.assertEqual([q for _d, q in self.days()], [10, 12])
 
 	def test_a_month_written_at_the_same_time_is_rejected_to_be_sent_again(self):
@@ -254,7 +254,7 @@ class TestServiceReports(ServiceReportsCase):
 
 		answer = self.send_on("2026-06-20", [line("2026-06-18", 8), line("2026-06-20", 12)])
 
-		self.assertEqual(answer, {"accepted": 2, "rejected": []})
+		self.assertEqual(answer, {"accepted": 2, "rejected": [], "underived": 2})
 		self.assertEqual((self.billed_on("2026-06-18"), self.billed_on("2026-06-20")), (billed, billed))
 
 	def test_a_day_after_the_bucket_was_deleted_is_an_unknown_subject(self):
@@ -295,7 +295,7 @@ class TestServiceReports(ServiceReportsCase):
 
 		answer = self.send_on("2026-06-20", [line("2026-06-20", 12)])
 
-		self.assertEqual(answer, {"accepted": 1, "rejected": []})
+		self.assertEqual(answer, {"accepted": 1, "rejected": [], "underived": 1})
 		self.assertEqual(self.billed_on("2026-06-20"), later)
 
 	def test_a_reused_name_bills_each_day_on_the_bucket_alive_most_recently(self):
@@ -321,7 +321,7 @@ class TestServiceReports(ServiceReportsCase):
 
 		answer = self.send_on("2026-06-20", [line("2026-06-19", 12)])
 
-		self.assertEqual(answer, {"accepted": 1, "rejected": []})
+		self.assertEqual(answer, {"accepted": 1, "rejected": [], "underived": 1})
 		self.assertEqual(self.billed_on("2026-06-19"), later)
 
 	def test_a_bucket_made_again_on_its_deletion_day_bills_that_day_on_the_live_bucket(self):
@@ -332,7 +332,7 @@ class TestServiceReports(ServiceReportsCase):
 
 		answer = self.send_on("2026-06-20", [line("2026-06-19", 8), line("2026-06-20", 12)])
 
-		self.assertEqual(answer, {"accepted": 2, "rejected": []})
+		self.assertEqual(answer, {"accepted": 2, "rejected": [], "underived": 2})
 		# The old team is never charged for the new bucket's data on the day they shared.
 		self.assertEqual((self.billed_on("2026-06-19"), self.billed_on("2026-06-20")), (deleted, live))
 
@@ -344,7 +344,7 @@ class TestServiceReports(ServiceReportsCase):
 
 		answer = self.send_on("2026-06-20", [line("2026-06-19", 8), line("2026-06-20", 12)])
 
-		self.assertEqual(answer, {"accepted": 2, "rejected": []})
+		self.assertEqual(answer, {"accepted": 2, "rejected": [], "underived": 2})
 		self.assertEqual((self.billed_on("2026-06-19"), self.billed_on("2026-06-20")), (deleted, current))
 
 	def test_a_day_between_two_buckets_of_one_name_is_an_unknown_subject(self):
