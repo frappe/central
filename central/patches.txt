@@ -136,3 +136,5 @@ central.patches.v0_0.bill_public_ipv4_per_day
 central.patches.v0_0.fold_usage_days_into_months
 # Keep public IPv4 as Usage Segments: a segment per run of billed days, and an open one for each address held now.
 central.patches.v0_0.move_public_ipv4_to_segments
+# Name the evidence keys each pushed storage and AI line carries.
+central.patches.v0_0.set_meter_evidence_keys

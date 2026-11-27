@@ -21,3 +21,7 @@ class ServiceMeter(Document):
 			"unit": self.unit,
 			**values,
 		}
+
+	def get_evidence_keys(self) -> list[str]:
+		"""The keys a line's evidence must carry for this meter."""
+		return [key.strip() for key in (self.evidence_keys or "").split(",") if key.strip()]
