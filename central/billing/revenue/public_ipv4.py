@@ -27,15 +27,23 @@ def count_addresses(public_ipv4: str | None) -> int:
 
 
 def record_public_ipv4(server: Document) -> None:
-	"""Record the public IPv4 addresses a server holds from when the region saw them, and none once it ends."""
+	"""Record the public IPv4 addresses a server holds from when Central received the report, and none once it ends."""
 	is_terminated = server.status == "Terminated"
 	held = 0 if is_terminated else count_addresses(server.public_ipv4)
 	is_observed = bool(server.state_observed_at) and server.has_value_changed("state_observed_at")
-	# The region's clock, so a report that lands late still starts the segment when the change happened.
+	# state_observed_at is when Central received the report, not the region's clock.
 	at = server.state_observed_at if is_observed else frappe.utils.now_datetime()
 	source = _source_of(is_terminated, is_observed)
-	reference = str(server.last_reported_at or server.state_observed_at) if is_observed else None
+	reference = _report_reference(server) if is_observed else None
 	set_quantity(NETWORK_SERVICE, PUBLIC_IPV4_METER, server, held, at, source, reference)
+
+
+def _report_reference(server: Document) -> str:
+	"""The region's time of the report that this save carries, else when Central received it."""
+	# A polled read leaves last_reported_at as it was, so an older webhook's time would be wrong here.
+	if server.last_reported_at and server.has_value_changed("last_reported_at"):
+		return str(server.last_reported_at)
+	return str(server.state_observed_at)
 
 
 def _source_of(is_terminated: bool, is_observed: bool) -> str:

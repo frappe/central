@@ -205,6 +205,24 @@ class TestIPv4Segments(IPv4DaysTestCase):
 		[segment] = self.segments()
 		self.assertEqual((segment.starts_at, segment.ends_at), (at("2026-06-05"), at("2026-06-05")))
 
+	def test_the_reference_is_the_region_time_of_this_report_only(self):
+		server = frappe.get_doc("Virtual Machine", self.server)
+		server.record_observed_state(
+			{"public_ipv4": ADDRESS}, at("2026-06-02", 1), reported_at=at("2026-06-02")
+		)
+		# A polled read carries no region time, so the earlier webhook's time must not be its reference.
+		self.observe(at("2026-06-05", 1), public_ipv4=None)
+
+		rows = frappe.get_all(
+			"Usage Segment",
+			{"subject": self.server},
+			["starts_at", "opened_reference", "closed_reference"],
+		)
+		self.assertEqual(
+			[(row.starts_at, row.opened_reference, row.closed_reference) for row in rows],
+			[(at("2026-06-02", 1), str(at("2026-06-02")), str(at("2026-06-05", 1)))],
+		)
+
 	def test_a_save_without_a_region_report_starts_now(self):
 		frappe.db.set_value("Virtual Machine", self.server, "state_observed_at", at("2026-06-01"))
 		server = frappe.get_doc("Virtual Machine", self.server)

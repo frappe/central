@@ -827,8 +827,10 @@ Public IPv4 (#197, #200, #208): a state meter, kept as Usage Segments and billed
   → one writer: VirtualMachine.sync_billing calls public_ipv4.record_public_ipv4 when the status
     or public_ipv4 changes, in the same transaction as the report, under the server's row lock.
     set_quantity reads the last segment FOR UPDATE: the same count writes nothing; a new count
-    closes the open segment and opens the next one at the region's state_observed_at (source State
-    Report, Termination for a Terminated server, Operator for a save that carries no report). A
+    closes the open segment and opens the next one at state_observed_at, when Central received the
+    report (source State Report, Termination for a Terminated server, Operator for a save that
+    carries no report). The reference is the region's last_reported_at when this save changed it,
+    else state_observed_at. A
     time before the last segment's start or end is moved up to it, so segments never overlap.
     Unique open_key (service|meter|subject while open) allows one open segment per subject
   → no segment is written while the meter's aggregation is not State (a deploy runs the new code
