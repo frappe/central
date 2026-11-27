@@ -17,6 +17,7 @@
   "original_segment",
   "segment",
   "as_of",
+  "derived",
   "section_billing",
   "billable_delta",
   "invoice",
@@ -97,6 +98,14 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "description": "Whether the line that set the new value came with how it was worked out, decided when it arrived.",
+   "fieldname": "derived",
+   "fieldtype": "Check",
+   "label": "Derived",
+   "read_only": 1
+  },
+  {
    "fieldname": "section_billing",
    "fieldtype": "Section Break",
    "label": "Billing"
@@ -127,7 +136,7 @@
  "index_web_pages_for_search": 0,
  "istable": 1,
  "links": [],
- "modified": "2026-11-27 18:00:00.000000",
+ "modified": "2026-11-27 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Month Correction",

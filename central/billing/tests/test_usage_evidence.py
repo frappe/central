@@ -156,3 +156,13 @@ class TestSegmentDays(BillingTestCase):
 		usage_month.write_lines([test_usage_month.line(4, 1)], "report-1", "Read By Central")
 		underived = frappe.db.get_value("Usage Month", {"subject": test_usage_month.SUBJECT}, "underived")
 		self.assertEqual(underived, bit(4))
+
+	def test_an_estimate_replaced_by_a_line_without_evidence_marks_the_day(self):
+		estimate = {"v": 1, "estimate": {"copied_day": "2026-06-02", "report": "report-1"}}
+		usage_month.write_lines(
+			[test_usage_month.line(3, 1, estimated=1, as_of=None, evidence=estimate)], None, "Estimated"
+		)
+		filters = {"subject": test_usage_month.SUBJECT}
+		self.assertEqual(frappe.db.get_value("Usage Month", filters, "underived"), 0)
+		usage_month.write_lines([test_usage_month.line(3, 2)], "report-2", "Pushed")
+		self.assertEqual(frappe.db.get_value("Usage Month", filters, "underived"), bit(3))

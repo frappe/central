@@ -3,6 +3,7 @@
 """What set a stored usage day and how its service worked the value out, for a dispute."""
 
 import json
+from typing import TypedDict
 
 import frappe
 from frappe import _
@@ -11,16 +12,75 @@ from frappe.query_builder.functions import Count, GroupConcat, Sum
 
 from central.billing.platform.invariants import Violation
 from central.billing.revenue import usage_reports
-from central.billing.revenue.service_reports import evidence_of
 from central.billing.revenue.usage_month import DAY_FIELDS, bit, slots_of
 from central.billing.revenue.usage_month_rows import CORRECTION, DOCTYPE
 
-NO_DERIVATION = "none"
-MONTH_FIELDS = ("name", "service", "subject", "meter", "dimension", "month", "filled", "pruned", "slots")
-REPORT_FIELDS = ("name", "service", "kind", "received_at", "as_of", "body_sha256")
-CORRECTION_FIELDS = ("name", "value", "billed_value", "status", "report", "segment")
+EVIDENCE = "Evidence"
+SEGMENT = "Segment"
+MIGRATED = "Migrated"
+NO_DERIVATION = "None"
+MONTH_FIELDS = (
+	"name",
+	"service",
+	"subject",
+	"meter",
+	"dimension",
+	"month",
+	"filled",
+	"underived",
+	"pruned",
+	"slots",
+)
+REPORT_FIELDS = ("name", "service", "kind", "received_at", "as_of", "body_sha256 as sha256")
+CORRECTION_FIELDS = ("name", "value", "billed_value", "status", "report", "segment", "derived")
 EXAMPLE_SUBJECTS = 5
 BitCount = CustomFunction("BIT_COUNT", ["value"])
+
+
+class Derivation(TypedDict, total=False):
+	"""How a value was worked out. `kind` is Evidence, Segment, Migrated or None."""
+
+	kind: str
+	evidence: dict
+	segment: str
+
+
+class ReportEvidence(TypedDict):
+	"""A kept report, its body hash, and whether the body is still kept, intact and signed."""
+
+	name: str
+	service: str
+	kind: str
+	received_at: str
+	as_of: str | None
+	sha256: str
+	is_kept: bool
+	is_intact: bool
+	has_valid_signature: bool
+
+
+class ValueEvidence(TypedDict):
+	"""What set one value. `derived` is the verdict kept when the line arrived, and is true for a day stored before."""
+
+	derived: bool
+	report: ReportEvidence | None
+	line: dict | None
+	derivation: Derivation
+
+
+class CorrectionEvidence(ValueEvidence):
+	value: float
+	billed_value: float
+	status: str
+
+
+class DayAnswer(ValueEvidence):
+	month_row: str
+	day: str
+	value: float
+	source: str | None
+	invoice: str | None
+	corrections: list[CorrectionEvidence]
 
 
 class DayEvidence:
@@ -28,53 +88,59 @@ class DayEvidence:
 
 	def __init__(self, month: frappe._dict):
 		self.month = month
-		self.service = frappe.get_cached_doc("Service", month.service)
-		meter = self.service.get_meter(month.meter)
-		self.divisor = frappe.utils.flt(meter.unit_divisor) if meter else 1
-		self.reports: dict[str, dict | None] = {}
+		self.meter = frappe.get_cached_doc("Service", month.service).get_meter(month.meter)
+		self.reports: dict[str, ReportEvidence | None] = {}
 		self.lines: dict[str, dict[tuple, list[dict]]] = {}
 
 	@classmethod
-	def of(cls, month_name: str, day: int) -> dict:
+	def of(cls, month_name: str, day: int) -> DayAnswer:
 		"""The value, report, line and derivation behind a day of a month row, and behind each correction of it."""
 		return cls(_month(month_name, day)).describe(day)
 
-	def describe(self, day: int) -> dict:
+	def describe(self, day: int) -> DayAnswer:
 		"""The day's value and what set it, then each later value kept as a correction."""
 		slot = slots_of(self.month.slots).get(str(day), {})
 		value = frappe.utils.flt(self.month[DAY_FIELDS[day - 1]])
+		derived = not frappe.utils.cint(self.month.underived) & bit(day)
 		return {
 			"month_row": self.month.name,
 			"day": str(self.month.month.replace(day=day)),
 			"value": value,
 			"source": slot.get("source"),
 			"invoice": slot.get("invoice"),
-			**self._evidence(slot.get("report"), slot.get("segment"), day, value),
+			**self._evidence(derived, slot.get("report"), slot.get("segment"), day, value),
 			"corrections": [
 				{
 					"value": correction.value,
 					"billed_value": correction.billed_value,
 					"status": correction.status,
-					**self._evidence(correction.report, correction.segment, day, correction.value),
+					**self._evidence(
+						bool(correction.derived), correction.report, correction.segment, day, correction.value
+					),
 				}
 				for correction in _corrections(self.month.name, day)
 			],
 		}
 
-	def _evidence(self, report: str | None, segment: str | None, day: int, value: float) -> dict:
-		"""The report that set a value, the line in its body, and the derivation that line carries."""
+	def _evidence(self, derived: bool, report: str | None, segment: str | None, day, value) -> ValueEvidence:
+		"""The report that set a value, the line in its body, and the derivation recorded for it."""
 		kept = self._report(report)
 		line = self._line(report, day, value) if kept else None
-		return {"report": kept, "line": line, "derivation": self._derivation(kept, line, segment)}
+		return {
+			"derived": derived,
+			"report": kept,
+			"line": line,
+			"derivation": _derivation(derived, kept, line, segment),
+		}
 
-	def _report(self, name: str | None) -> dict | None:
+	def _report(self, name: str | None) -> ReportEvidence | None:
 		if not name:
 			return None
 		if name not in self.reports:
 			self.reports[name] = self._read_report(name)
 		return self.reports[name]
 
-	def _read_report(self, name: str) -> dict | None:
+	def _read_report(self, name: str) -> ReportEvidence | None:
 		"""The report's row, whether its body is intact and signed, with the body's lines indexed."""
 		report = frappe.db.get_value(usage_reports.DOCTYPE, name, list(REPORT_FIELDS), as_dict=True)
 		if not report:
@@ -84,7 +150,6 @@ class DayEvidence:
 		is_kept = body is not None
 		return {
 			**report,
-			"sha256": report.pop("body_sha256"),
 			"is_kept": is_kept,
 			"is_intact": is_kept and usage_reports.is_intact(name, body),
 			"has_valid_signature": is_kept and usage_reports.has_valid_signature(name, body),
@@ -100,23 +165,22 @@ class DayEvidence:
 
 	def _is_value(self, line: dict, value: float) -> bool:
 		# Central's own lines keep the stored quantity; a pushed line keeps the service's raw value.
-		quantity = (
-			line["quantity"] if "quantity" in line else frappe.utils.flt(line.get("value")) / self.divisor
-		)
+		quantity = line["quantity"] if "quantity" in line else self.meter.quantity_of(line.get("value"))
 		return frappe.utils.flt(quantity, 6) == frappe.utils.flt(value, 6)
 
-	def _derivation(self, report: dict | None, line: dict | None, segment: str | None) -> dict | str:
-		if line and self._is_derivation(report, line):
-			return line["evidence"]
-		if segment:
-			return {"segment": segment}
-		return NO_DERIVATION
 
-	def _is_derivation(self, report: dict, line: dict) -> bool:
-		# A pushed line's evidence counts only when it passed the checks it was stored under.
-		if report["kind"] == usage_reports.PUSHED:
-			return evidence_of(self.service, line) is not None
-		return isinstance(line.get("evidence"), dict)
+def _derivation(derived: bool, report: ReportEvidence | None, line: dict | None, segment) -> Derivation:
+	"""The recorded derivation of a value, tagged by kind, with the evidence found in its report body."""
+	if not derived:
+		return {"kind": NO_DERIVATION}
+	if segment:
+		return {"kind": SEGMENT, "segment": segment}
+	if report and report["kind"] == usage_reports.MIGRATED:
+		return {"kind": MIGRATED}
+	if line and isinstance(line.get("evidence"), dict):
+		return {"kind": EVIDENCE, "evidence": line["evidence"]}
+	# A day stored before lines carried evidence was never marked, so it has no derivation to show.
+	return {"kind": NO_DERIVATION}
 
 
 def check_days_carry_a_derivation(today=None) -> list[Violation]:

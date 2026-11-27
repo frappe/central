@@ -17,10 +17,14 @@ class ServiceMeter(Document):
 			"team": team_service.team,
 			"subscription": team_service.subscription,
 			"resource_type": self.resource_type,
-			"quantity": value / frappe.utils.flt(self.unit_divisor),
+			"quantity": self.quantity_of(value),
 			"unit": self.unit,
 			**values,
 		}
+
+	def quantity_of(self, value: float) -> float:
+		"""A raw value of this meter in its billed unit."""
+		return frappe.utils.flt(value) / frappe.utils.flt(self.unit_divisor)
 
 	def get_evidence_keys(self) -> list[str]:
 		"""The keys a line's evidence must carry for this meter."""

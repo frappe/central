@@ -265,8 +265,8 @@ class MonthRow:
 		_set_optional(slot, "segment", row.get("segment"))
 		_set_optional(slot, "amount", frappe.utils.flt(row.get("source_amount")))
 		_set_optional(slot, "currency", row.get("source_currency"))
-		# The derivation stays in the report body; the mask only says whether the line had one.
-		if row.get("evidence") or row.get("segment"):
+		# The derivation stays in the report body; the mask keeps the verdict made on receipt.
+		if has_derivation(row):
 			self.record["underived"] &= ~bit(day)
 		else:
 			self.record["underived"] |= bit(day)
@@ -336,6 +336,7 @@ class MonthRow:
 				"original_segment": origin.get("segment"),
 				"segment": row.get("segment"),
 				"as_of": row.get("as_of"),
+				"derived": int(has_derivation(row)),
 				"billed_invoice_date": frappe.utils.getdate(billed_on) if billed_on else None,
 				# Higher or lower, the next draft rates it: only a value that lowers the bill is Credit Due.
 				"status": OPEN,
@@ -343,6 +344,12 @@ class MonthRow:
 		)
 		correction.db_insert()
 		self.corrections.append(frappe._dict(correction.as_dict()))
+
+
+def has_derivation(row: dict) -> bool:
+	"""Whether a line came with how its value was worked out: evidence kept on receipt, or a segment."""
+	# A pushed line's evidence is already the checked one: invalid evidence arrives here as None.
+	return bool(row.get("evidence") or row.get("segment"))
 
 
 def is_newer(current, row: dict) -> bool:

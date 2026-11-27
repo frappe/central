@@ -920,18 +920,24 @@ Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
   → each line may carry `evidence`, how the service worked out its value (ADR 0028, #209). It
     stays only in the kept body, never in the slot. service_reports.evidence_of keeps it as the
     day's derivation when it is an object with an integer `v` from 1 to 99, at most 8 KB as
-    canonical JSON, and every key its Service Meter names in `evidence_keys` (storage: v, peak,
-    peak_at, readings; ai: v, requests, records, pricings). Missing or malformed evidence never
-    refuses a line: the value is stored and the reply's `underived` counts the stored lines
-    without a derivation. MonthRow._set_value clears the day's `underived` bit when the line has
-    evidence or a segment and sets it otherwise; a correction keeps its derivation in its
-    correcting report
+    canonical JSON, and every key its Service Meter names in `evidence_keys` (storage: peak,
+    peak_at, readings; ai: requests, records, pricings; `v` is always required). Missing or
+    malformed evidence never refuses a line: the value is stored and the reply's `underived`
+    counts the stored lines without a derivation
+  → the derivation verdict is made once, on receipt, by usage_month.has_derivation: the line has
+    checked evidence, Central's own evidence (a read, an estimate, or a folded Usage Day as
+    {"v": 1, "folded": name}), or a segment. MonthRow._set_value keeps it in the day's
+    `underived` bit; _add_correction keeps it in the correction's `derived` check. A later change
+    to `evidence_keys` never changes a stored verdict, so a dispute answer stays the same
   → usage_evidence.DayEvidence.of(month row, day) answers a dispute (operators:
-    api/admin/revenue.get_usage_day_evidence): the day's value and source, the report that set
-    it (SHA-256, whether its body is kept, intact and validly signed), the body's line for the
-    day and its derivation (the evidence, the segment, or "none"), then the same for each
-    correction of the day from its correcting report; each body is read once per call, and of
-    two lines for the same day the one whose value the day holds is taken
+    api/admin/revenue.get_usage_day_evidence) in the shape its DayAnswer TypedDict states: the
+    day's value and source, `derived` (the stored verdict), the report that set it (name, kind,
+    sha256, whether its body is kept, intact and validly signed), the body's line for the day,
+    and `derivation` tagged by kind: Evidence (with the line's evidence), Segment (with the
+    segment), Migrated (a folded day) or None; then the same for each correction of the day. It
+    never checks evidence again. A day stored before the verdict was kept reads derived with
+    kind None. Each body is read once per call, and of two lines for the same day the one whose
+    value the day holds (ServiceMeter.quantity_of) is taken
   → readiness M8 (usage_evidence.check_days_carry_a_derivation): one row per service with
     `underived` days in months from the start of last month, not pruned: the subjects, the days
     and up to 5 example subjects. The count_underived_days_from_now patch clears the mask on

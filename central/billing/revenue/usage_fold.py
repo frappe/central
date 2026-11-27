@@ -180,6 +180,8 @@ def _stamp_folded(billed: list) -> None:
 def _line(day) -> dict:
 	line = {name: day[name] for name in _DAY_FIELDS if name not in ("name", "invoice")}
 	line["dimension"] = day.dimension or ""
+	# A folded day's derivation is the Usage Day it was copied from, kept in the migrated report.
+	line["evidence"] = {"v": 1, "folded": day.name}
 	if not frappe.utils.flt(day.included):
 		# A day without a bundle stores none.
 		line.pop("included")

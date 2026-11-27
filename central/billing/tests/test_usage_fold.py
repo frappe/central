@@ -11,9 +11,10 @@ from central.billing.doctype.billing_run_team.billing_run_team import INVOICED, 
 from central.billing.revenue import usage_fold, usage_recount
 from central.billing.revenue.invoicing.generate import team_clusters
 from central.billing.revenue.metering import metered_line_items_for_clusters
+from central.billing.revenue.usage_evidence import DayEvidence, check_days_carry_a_derivation
 from central.billing.tests.test_ai_billing import TEAM_INR, TEAM_USD, AIBillingCase, feed, rate_on
 from central.billing.tests.utils import BillingTestCase, usage_days
-from central.patches.v0_0 import fold_usage_days_into_months
+from central.patches.v0_0 import count_underived_days_from_now, fold_usage_days_into_months
 from central.services.doctype.service.service import AI_METER, AI_SERVICE
 
 JUNE = ("2026-06-01", "2026-06-30")
@@ -184,6 +185,18 @@ class TestFoldUsageDays(AIBillingCase):
 		self.assertIn(
 			(datetime.date(2026, 7, 7), 2.0), [(d.day, d.quantity) for d in usage_days(team=TEAM_USD)]
 		)
+
+	def test_a_folded_straggler_carries_its_migrated_derivation(self):
+		fold_usage_days_into_months.execute()
+		count_underived_days_from_now.execute()
+		meter = frappe.get_doc("Service", AI_SERVICE).get_meter(AI_METER)
+		self.insert_day(meter, TEAM_USD, "2026-07-07", "gpt-4o", 2.0, billed=False)
+		usage_fold.fold_stragglers()
+		found = [v for v in check_days_carry_a_derivation("2026-07-10") if v.subject == AI_SERVICE]
+		self.assertEqual(found, [])
+		[day] = [d for d in usage_days(team=TEAM_USD) if d.day == datetime.date(2026, 7, 7)]
+		answer = DayEvidence.of(day.month_row, 7)
+		self.assertEqual((answer["derived"], answer["derivation"]), (True, {"kind": "Migrated"}))
 
 
 class TestFoldWatermark(BillingTestCase):

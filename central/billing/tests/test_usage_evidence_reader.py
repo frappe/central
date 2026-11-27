@@ -9,7 +9,7 @@ import frappe
 
 from central.billing.api.admin.revenue import get_usage_day_evidence
 from central.billing.revenue import usage_month, usage_reports
-from central.billing.revenue.usage_evidence import NO_DERIVATION, DayEvidence, check_days_carry_a_derivation
+from central.billing.revenue.usage_evidence import DayEvidence, check_days_carry_a_derivation
 from central.billing.revenue.usage_month import bit
 from central.billing.tests import test_usage_month
 from central.billing.tests.test_service_reports import TEAM, line
@@ -18,6 +18,18 @@ from central.billing.tests.utils import BillingTestCase, ensure_team, usage_days
 from central.patches.v0_0 import count_underived_days_from_now
 
 SERVICES = ("evidence-check-storage", "evidence-check-ai")
+REPORT_KEYS = {
+	"name",
+	"service",
+	"kind",
+	"received_at",
+	"as_of",
+	"sha256",
+	"is_kept",
+	"is_intact",
+	"has_valid_signature",
+}
+NONE = {"kind": "None"}
 
 
 class TestDayEvidence(EvidenceCase):
@@ -29,28 +41,40 @@ class TestDayEvidence(EvidenceCase):
 		found = DayEvidence.of(self.month_row(), 20)
 		[day] = usage_days(team=TEAM)
 		report = found["report"]
+		self.assertEqual(set(report), REPORT_KEYS)
 		self.assertEqual((found["value"], found["source"], report["name"]), (10, "Pushed", day.report))
 		self.assertEqual(report["sha256"], hashlib.sha256(usage_reports.get_body(day.report)).hexdigest())
 		self.assertTrue(report["is_intact"])
 		self.assertTrue(report["has_valid_signature"])
 		self.assertEqual(found["line"]["value"], 10 * 1_000_000_000)
-		self.assertEqual(found["derivation"], evidence(10))
+		self.assertTrue(found["derived"])
+		self.assertEqual(found["derivation"], {"kind": "Evidence", "evidence": evidence(10)})
 		self.assertEqual(found["corrections"], [])
 
 	def test_a_day_without_evidence_has_no_derivation(self):
 		self.send([line("2026-06-20", 10)])
 		found = DayEvidence.of(self.month_row(), 20)
 		self.assertEqual(found["line"]["value"], 10 * 1_000_000_000)
-		self.assertEqual(found["derivation"], NO_DERIVATION)
+		self.assertEqual((found["derived"], found["derivation"]), (False, NONE))
 
 	def test_evidence_that_was_refused_is_not_shown_as_a_derivation(self):
 		self.send([{**line("2026-06-20", 10), "evidence": {"v": 1}}])
-		self.assertEqual(DayEvidence.of(self.month_row(), 20)["derivation"], NO_DERIVATION)
+		found = DayEvidence.of(self.month_row(), 20)
+		self.assertEqual((found["derived"], found["derivation"]), (False, NONE))
+		self.assertEqual(found["line"]["evidence"], {"v": 1})
+
+	def test_the_verdict_kept_on_receipt_stays_when_the_meter_keys_change(self):
+		self.send([derived("2026-06-20", 10)])
+		self.send([line("2026-06-21", 10)])
+		filters = {"parent": "storage", "meter_key": "bytes_stored"}
+		frappe.db.set_value("Service Meter", filters, "evidence_keys", "peak,missing")
+		self.assertEqual(DayEvidence.of(self.month_row(), 20)["derivation"]["kind"], "Evidence")
+		self.assertEqual(DayEvidence.of(self.month_row(), 21)["derivation"], NONE)
 
 	def test_of_two_lines_for_a_day_the_one_the_day_holds_is_found(self):
 		self.send([derived("2026-06-20", 12), derived("2026-06-20", 10)])
 		found = DayEvidence.of(self.month_row(), 20)
-		self.assertEqual((found["value"], found["derivation"]["peak"]), (12, 12 * 1_000_000_000))
+		self.assertEqual((found["value"], found["derivation"]["evidence"]["peak"]), (12, 12 * 1_000_000_000))
 
 	def test_a_correction_names_the_report_that_corrected_the_day(self):
 		self.send([derived("2026-06-20", 10)])
@@ -60,7 +84,19 @@ class TestDayEvidence(EvidenceCase):
 		[correction] = found["corrections"]
 		self.assertEqual((found["value"], correction["value"], correction["status"]), (10, 14, "Open"))
 		self.assertNotEqual(correction["report"]["name"], found["report"]["name"])
-		self.assertEqual(correction["derivation"]["peak"], 14 * 1_000_000_000)
+		self.assertEqual(set(correction["report"]), REPORT_KEYS)
+		self.assertTrue(correction["derived"])
+		self.assertEqual(correction["derivation"]["evidence"]["peak"], 14 * 1_000_000_000)
+
+	def test_a_correction_without_evidence_keeps_its_verdict(self):
+		self.send([derived("2026-06-20", 10)])
+		usage_month.stamp_days({self.month_row(): bit(20)}, "invoice-evidence")
+		self.send([line("2026-06-20", 14)], as_of="2026-06-20T06:32:00Z")
+		[correction] = DayEvidence.of(self.month_row(), 20)["corrections"]
+		self.assertEqual((correction["derived"], correction["derivation"]), (False, NONE))
+		self.assertEqual(
+			frappe.db.get_value("Usage Month Correction", {"parent": self.month_row()}, "derived"), 0
+		)
 
 	def test_a_day_with_no_value_is_refused(self):
 		self.send([line("2026-06-20", 10)])
@@ -86,7 +122,9 @@ class TestSegmentDayEvidence(BillingTestCase):
 		usage_month.write_lines([test_usage_month.line(3, 1, segment="segment-1")], None, "Segment")
 		name = frappe.db.get_value("Usage Month", {"subject": test_usage_month.SUBJECT}, "name")
 		found = DayEvidence.of(name, 3)
-		self.assertEqual((found["report"], found["derivation"]), (None, {"segment": "segment-1"}))
+		self.assertEqual(
+			(found["report"], found["derivation"]), (None, {"kind": "Segment", "segment": "segment-1"})
+		)
 
 
 class TestDerivationCheck(BillingTestCase):

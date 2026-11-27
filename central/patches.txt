@@ -140,3 +140,5 @@ central.patches.v0_0.move_public_ipv4_to_segments
 central.patches.v0_0.set_meter_evidence_keys
 # Count usage days with no derivation only from now: the days the fold and earlier writers stored are not counted.
 central.patches.v0_0.count_underived_days_from_now
+# Record whether each kept correction came with a derivation: a segment or a migrated report does.
+central.patches.v0_0.mark_derived_usage_corrections
