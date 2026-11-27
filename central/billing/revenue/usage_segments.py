@@ -141,7 +141,7 @@ def project(subjects: list[str], since, until) -> int:
 	return written.count + written.corrections
 
 
-def held_days(segments: list, windows: dict[str, list], days: list[tuple]) -> dict[tuple, frappe._dict]:
+def _held_days(segments: list, windows: dict[str, list], days: list[tuple]) -> dict[tuple, frappe._dict]:
 	"""The most each subject held at once on each day while it was billed, by (subject, day)."""
 	found: dict[tuple, frappe._dict] = {}
 	for segment in segments:
@@ -206,7 +206,7 @@ def _day_lines(service: str, meter_key: str, segments: list, since, until) -> li
 	since = max(frappe.utils.getdate(since), frappe.utils.getdate(bill_from))
 	before = utc_day_start(frappe.utils.getdate(until) + datetime.timedelta(days=1))
 	windows = _server_billed_windows(list({segment.subject for segment in segments}), before)
-	held = held_days(segments, windows, _utc_days(since, until))
+	held = _held_days(segments, windows, _utc_days(since, until))
 	_keep_written_subscriptions(held, service, meter_key, since, until)
 	meter = frappe.get_doc("Service", service).get_meter(meter_key)
 	now = frappe.utils.now_datetime()
