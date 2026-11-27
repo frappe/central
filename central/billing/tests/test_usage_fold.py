@@ -21,7 +21,7 @@ from central.billing.tests.test_ai_billing import (
 	rate_on,
 	run_inline,
 )
-from central.billing.tests.utils import usage_days
+from central.billing.tests.utils import BillingTestCase, usage_days
 from central.patches.v0_0 import fold_usage_days_into_months
 
 JUNE = ("2026-06-01", "2026-06-30")
@@ -182,3 +182,26 @@ class TestFoldUsageDays(AIBillingCase):
 		self.assertIn(
 			(datetime.date(2026, 7, 7), 2.0), [(d.day, d.quantity) for d in usage_days(team=TEAM_USD)]
 		)
+
+
+class TestFoldWatermark(BillingTestCase):
+	def test_the_watermark_is_the_moment_before_the_days_were_read(self):
+		self.addCleanup(
+			frappe.db.set_default, usage_fold.WATERMARK, frappe.db.get_default(usage_fold.WATERMARK)
+		)
+		start = frappe.utils.now_datetime()
+		clock = {"now": start}
+		read_rollups = usage_fold.ledger_rollups
+
+		def rollups_an_hour_later(*args, **kwargs):
+			# The days are read by now; a day written from here on is newer than the watermark.
+			clock["now"] = start + datetime.timedelta(hours=1)
+			return read_rollups(*args, **kwargs)
+
+		with (
+			patch("frappe.utils.now_datetime", side_effect=lambda: clock["now"]),
+			patch.object(usage_fold, "ledger_rollups", side_effect=rollups_an_hour_later),
+		):
+			usage_fold.fold_all()
+
+		self.assertEqual(frappe.db.get_default(usage_fold.WATERMARK), str(start))

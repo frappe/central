@@ -57,10 +57,12 @@ _ROLLUP_FIELDS = (
 
 def fold_all() -> None:
 	"""Fold every Usage Day and every rollup the recount wrote into month rows, and check the totals."""
+	# Taken before the read, so a day written while the fold runs is folded again by the next recount.
+	started = frappe.utils.now_datetime()
 	days = frappe.get_all(DAY_DOCTYPE, fields=list(_DAY_FIELDS), order_by="name asc")
 	folded = fold(days, ledger_rollups())
 	_check_totals(days, folded)
-	frappe.db.set_default(WATERMARK, str(frappe.utils.now_datetime()))
+	frappe.db.set_default(WATERMARK, str(started))
 
 
 def fold_stragglers() -> None:
