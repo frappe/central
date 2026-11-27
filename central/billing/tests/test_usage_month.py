@@ -56,10 +56,13 @@ class TestUsageMonth(BillingTestCase):
 	def month(self, subscription: str = SUBSCRIPTION):
 		return frappe.get_doc(usage_month.DOCTYPE, {"subject": SUBJECT, "subscription": subscription})
 
+	def open_days(self) -> list[int]:
+		[month] = usage_month.locked_meter_months(SUBSCRIPTION, "Storage", "", datetime.date(2026, 6, 1))
+		return [day.number for day in month.get_open_days()]
+
 	def bill(self, *days: int) -> None:
-		"""Mark days billed, as an invoice stamp does."""
-		mask = sum(bit(day) for day in days)
-		frappe.db.set_value(usage_month.DOCTYPE, self.month().name, "billed", mask)
+		"""Mark days billed by an invoice."""
+		usage_month.stamp_days({self.month().name: sum(bit(day) for day in days)}, "invoice-1")
 
 	def test_a_line_fills_its_day_and_names_its_report(self):
 		self.assertEqual(self.write(line(14, 30)).count, 1)
@@ -68,10 +71,7 @@ class TestUsageMonth(BillingTestCase):
 			(day.day, day.quantity, day.report, day.source),
 			(datetime.date(2026, 6, 14), 30, "report-1", "Read By Central"),
 		)
-		month = self.month()
-		self.assertEqual(
-			(month.filled, month.open_days, month.month), (bit(14), bit(14), datetime.date(2026, 6, 1))
-		)
+		self.assertEqual(self.open_days(), [14])
 
 	def test_one_row_holds_every_day_of_the_month(self):
 		self.write(line(1, 10), line(2, 20))
@@ -104,15 +104,16 @@ class TestUsageMonth(BillingTestCase):
 
 	def test_a_written_off_day_is_kept_but_never_open(self):
 		self.write(line(1, 30, written_off=1), line(2, 30))
-		month = self.month()
-		self.assertEqual((month.written_off, month.open_days), (bit(1), bit(2)))
+		self.assertEqual([(d.day.day, d.written_off) for d in self.days()], [(1, 1), (2, 0)])
+		self.assertEqual(self.open_days(), [2])
 
 	def test_a_billed_day_keeps_its_value_and_a_higher_one_is_an_open_correction(self):
 		self.write(line(14, 30))
 		self.bill(14)
 		written = self.write(line(14, 40), report="report-2")
 		self.assertEqual((written.count, written.corrections), (0, 1))
-		self.assertEqual([d.quantity for d in self.days()], [30])
+		self.assertEqual([(d.quantity, d.invoice) for d in self.days()], [(30, "invoice-1")])
+		self.assertEqual(self.open_days(), [])
 		[correction] = self.month().corrections
 		self.assertEqual(
 			(correction.day, correction.billed_value, correction.value, correction.status),
