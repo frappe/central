@@ -28,13 +28,13 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 	service = verified_service(service_name, signature, raw_body)
 	report = _parsed(raw_body)
 	as_of = reported_at(report.get("as_of"))
-	evidence = frappe.generate_hash(length=10)
+	report_name = frappe.generate_hash(length=10)
 	if is_read_by_central_locked(service.name):
 		# Central's own reading still bills this service, so a pushed day would bill its usage twice.
 		reason = _("Central still reads this service; send it again after the switch")
 		answer = {"accepted": 0, "rejected": [_refused(line, reason, retry=True) for line in report["lines"]]}
 	else:
-		answer = _stored(service, report["lines"], as_of, evidence)
+		answer = _stored(service, report["lines"], as_of, report_name)
 	# Kept after the lines: a refused lock rolls back the whole transaction, and the report with its
 	# file must not go with it.
 	usage_reports.record(
@@ -44,14 +44,14 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 		as_of=as_of,
 		signature=signature,
 		line_count=len(report["lines"]),
-		name=evidence,
+		name=report_name,
 	)
-	usage_reports.set_counts(evidence, answer["accepted"], len(answer["rejected"]))
+	usage_reports.set_counts(report_name, answer["accepted"], len(answer["rejected"]))
 	_record_report(service.name, as_of)
 	return answer
 
 
-def _stored(service, lines: list, as_of: datetime.datetime, evidence: str) -> dict:
+def _stored(service, lines: list, as_of: datetime.datetime, report_name: str) -> dict:
 	"""Write each valid line as a day value and name every line that was not stored."""
 	# A server's backup bucket bills only on the days its server billed, so subjects are per day.
 	subjects = subjects_by_day(service.name, _subject_names(lines), _days(lines))
@@ -65,7 +65,7 @@ def _stored(service, lines: list, as_of: datetime.datetime, evidence: str) -> di
 			rejected.append(_refused(line, reason, retry=retry))
 		else:
 			rows.append(_row(service, line, day_subjects[line["subject"]], as_of))
-	conflicts = write_days(rows, evidence, usage_reports.PUSHED).conflicts
+	conflicts = write_days(rows, report_name, usage_reports.PUSHED).conflicts
 	# A day another worker wrote at the same moment is not confirmed, so the service sends it again.
 	rejected += [
 		_refused(row, _("the day changed at the same time; send it again"), retry=True) for row in conflicts
