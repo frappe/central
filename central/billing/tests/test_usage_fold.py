@@ -2,86 +2,43 @@
 # For license information, please see license.txt
 """The patch folds Usage Days and recounted rollups into month rows, and the invoices stay the same."""
 
-import calendar
 import datetime
 from unittest.mock import patch
 
 import frappe
 
+from central.billing.doctype.billing_run_team.billing_run_team import INVOICED, record_outcome
 from central.billing.revenue import usage_fold, usage_recount
 from central.billing.revenue.invoicing.generate import team_clusters
 from central.billing.revenue.metering import metered_line_items_for_clusters
-from central.billing.revenue.usage_month import day_rows
-from central.billing.tests.test_ai_billing import (
-	TEAM_INR,
-	TEAM_USD,
-	AIBillingCase,
-	feed,
-	forget_rate_readings,
-	rate_on,
-	run_inline,
-)
+from central.billing.tests.test_ai_billing import TEAM_INR, TEAM_USD, AIBillingCase, feed, rate_on
 from central.billing.tests.utils import BillingTestCase, usage_days
 from central.patches.v0_0 import fold_usage_days_into_months
+from central.services.doctype.service.service import AI_METER, AI_SERVICE
 
 JUNE = ("2026-06-01", "2026-06-30")
 JULY = ("2026-07-01", "2026-07-31")
-_DAY_FIELDS = (
-	"service",
-	"meter",
-	"subject",
-	"dimension",
-	"day",
-	"aggregation",
-	"team",
-	"subscription",
-	"resource_type",
-	"quantity",
-	"included",
-	"unit",
-	"source_amount",
-	"source_currency",
-	"as_of",
-	"landed_at",
-	"estimated",
-	"written_off",
-	"invoice",
+INVOICES = {TEAM_INR: "fold-june-inr", TEAM_USD: "fold-june-usd"}
+# What the day ledger kept before the fold: (team, day, model, USD, billed).
+DAYS = (
+	(TEAM_INR, "2026-06-10", "gpt-4o", 2.0, True),
+	(TEAM_INR, "2026-06-10", "claude-sonnet", 0.5, False),
+	(TEAM_INR, "2026-06-12", "claude-sonnet", -1.0, False),
+	(TEAM_USD, "2026-06-11", "gpt-4o", 3.0, True),
+	(TEAM_INR, "2026-07-05", "gpt-4o", 1.0, False),
+	(TEAM_INR, "2026-07-05", "claude-sonnet", 1.0, False),
+	(TEAM_USD, "2026-07-06", "gpt-4o", 4.0, False),
 )
-
-
-def unfold() -> None:
-	"""Turn the month rows into the Usage Days and recounted rollups the day ledger kept."""
-	months = frappe.get_all("Usage Month", fields=["*"])
-	for month in months:
-		for day in day_rows({"name": month.name}):
-			frappe.get_doc({"doctype": "Usage Day", **{name: day[name] for name in _DAY_FIELDS}}).db_insert()
-		if month.counted_at:
-			frappe.get_doc(_rollup_of(month)).db_insert()
-	frappe.db.delete("Usage Month", {"name": ["in", [month.name for month in months]]})
-
-
-def _rollup_of(month) -> dict:
-	key = f"{month.service}::{month.resource_id}::{month.month:%Y-%m}"
-	last = calendar.monthrange(month.month.year, month.month.month)[1]
-	return {
-		"doctype": "Usage Rollup",
-		"idempotency_key": f"{key}::{month.dimension}" if month.dimension else key,
-		"resource_id": month.resource_id,
-		"resource_type": month.resource_type,
-		"dimension": month.dimension,
-		"meter_type": "Gauge" if month.aggregation == "Level" else "Counter",
-		"team": month.team,
-		"cluster": month.cluster,
-		"currency": month.currency,
-		"period_start": month.month,
-		"period_end": month.month.replace(day=last),
-		"quantity": month.quantity,
-		"unit": month.unit,
-		"locked_allowance": month.locked_allowance,
-		"locked_rate": month.locked_rate,
-		"rate_date": month.rate_date,
-		"invoice": month.invoice,
-	}
+# And the rollups its recount wrote: (team, month, model, quantity, rate, rate date, billed). June's
+# claude month was below zero, so it was not billed and its days were carried into July's.
+ROLLUPS = (
+	(TEAM_INR, "2026-06-01", "gpt-4o", 2.0, 84.1, "2026-06-01", True),
+	(TEAM_INR, "2026-06-01", "claude-sonnet", -0.5, 84.1, "2026-06-01", False),
+	(TEAM_USD, "2026-06-01", "gpt-4o", 3.0, 1.0, None, True),
+	(TEAM_INR, "2026-07-01", "gpt-4o", 1.0, 85.0, None, False),
+	(TEAM_INR, "2026-07-01", "claude-sonnet", 0.5, 85.0, None, False),
+	(TEAM_USD, "2026-07-01", "gpt-4o", 4.0, 1.0, None, False),
+)
 
 
 class TestFoldUsageDays(AIBillingCase):
@@ -89,24 +46,71 @@ class TestFoldUsageDays(AIBillingCase):
 		super().setUp()
 		for key in (usage_fold.WATERMARK, usage_recount.WATERMARK):
 			self.addCleanup(frappe.db.set_default, key, frappe.db.get_default(key))
-		# June: two models, one below zero, billed. July: open.
-		self.land(TEAM_INR, "2026-06-10", {"gpt-4o": 2.0, "claude-sonnet": 0.5})
-		self.land(TEAM_INR, "2026-06-12", {"claude-sonnet": -1.0})
-		self.land(TEAM_USD, "2026-06-11", {"gpt-4o": 3.0})
-		self.land(TEAM_INR, "2026-07-05", {"gpt-4o": 1.0, "claude-sonnet": 1.0})
-		self.land(TEAM_USD, "2026-07-06", {"gpt-4o": 4.0})
-		self.read("2026-06-10", "2026-06-11", "2026-06-12", "2026-07-05", "2026-07-06")
-		with feed(rate_on("2026-06-01", 84.1)):
-			for team in (TEAM_INR, TEAM_USD):
-				self.invoice_lines(team)
-		self.invoices = {
-			team: frappe.db.get_value("Invoice", {"team": team, "period_start": JUNE[0]})
-			for team in (TEAM_INR, TEAM_USD)
-		}
-		forget_rate_readings()
-		frappe.db.set_default(usage_recount.WATERMARK, "2000-01-01 00:00:00")
-		with feed(rate_on("2026-07-01", 85.0)), patch("frappe.enqueue", side_effect=run_inline):
-			usage_recount.recount_changed()
+		self.addCleanup(frappe.db.delete, "Billing Run Team", {"team": ["in", list(INVOICES)]})
+		meter = frappe.get_doc("Service", AI_SERVICE).get_meter(AI_METER)
+		for team, day, model, cost, billed in DAYS:
+			self.insert_day(meter, team, day, model, cost, billed)
+		for rollup in ROLLUPS:
+			self.insert_rollup(*rollup)
+		# June's draft kept the month's rate, as the rate its INR rollup names.
+		frappe.get_doc(
+			{
+				"doctype": "Monthly Exchange Rate",
+				"month": JUNE[0],
+				"from_currency": "USD",
+				"to_currency": "INR",
+				"rate": 84.1,
+				"rate_date": JUNE[0],
+				"source": "rates.test",
+			}
+		).insert(ignore_permissions=True)
+		# An operator re-priced June's USD month: the old version points at the one that is billed.
+		self.reprice(TEAM_USD, "2026-06-01", "gpt-4o", rate=0.9)
+
+	def insert_day(self, meter, team: str, day: str, model: str, cost: float, billed: bool) -> None:
+		row = meter.get_day_row(
+			self.services[team], day, cost * frappe.utils.flt(meter.unit_divisor), dimension=model
+		)
+		as_of = frappe.utils.get_datetime(f"{day} 23:00:00")
+		invoice = INVOICES[team] if billed else None
+		frappe.get_doc(
+			{"doctype": "Usage Day", **row, "as_of": as_of, "landed_at": as_of, "invoice": invoice}
+		).db_insert()
+
+	def insert_rollup(
+		self, team: str, month: str, model: str, quantity: float, rate, rate_date, billed
+	) -> None:
+		subscription = self.services[team].subscription
+		subject, cluster = frappe.db.get_value("Subscription", subscription, ["service_subject", "cluster"])
+		month = frappe.utils.getdate(month)
+		frappe.get_doc(
+			{
+				"doctype": "Usage Rollup",
+				"idempotency_key": f"{AI_SERVICE}::{subject}::{month:%Y-%m}::{model}",
+				"resource_id": subject,
+				"resource_type": "AI Usage",
+				"dimension": model,
+				"meter_type": "Counter",
+				"team": team,
+				"cluster": cluster,
+				"currency": frappe.db.get_value("Billing Profile", {"team": team}, "currency"),
+				"period_start": month,
+				"period_end": frappe.utils.get_last_day(month),
+				"quantity": quantity,
+				"unit": "USD",
+				"locked_allowance": 0,
+				"locked_rate": rate,
+				"rate_date": rate_date,
+				"invoice": INVOICES[team] if billed else None,
+			}
+		).db_insert()
+
+	def reprice(self, team: str, month: str, model: str, rate: float) -> None:
+		old = frappe.get_doc("Usage Rollup", {"team": team, "period_start": month, "dimension": model})
+		new = frappe.copy_doc(old)
+		new.update({"locked_rate": rate, "idempotency_key": f"{old.idempotency_key}::v1"})
+		new.db_insert()
+		frappe.db.set_value("Usage Rollup", old.name, "superseded_by", new.name)
 
 	def lines(self) -> list:
 		return sorted(
@@ -117,35 +121,47 @@ class TestFoldUsageDays(AIBillingCase):
 		)
 
 	def days(self) -> list:
-		return [
-			(day.team, day.day, day.dimension, day.quantity, day.invoice, day.subscription)
+		return sorted(
+			(day.team, str(day.day), day.dimension, day.quantity, bool(day.invoice))
 			for team in (TEAM_INR, TEAM_USD)
 			for day in usage_days(team=team)
-		]
+		)
 
 	def test_the_patch_keeps_every_metered_line_and_day(self):
-		lines, days = self.lines(), self.days()
-		unfold()
-		self.assertEqual(self.lines(), lines, "the day ledger bills the same lines")
-		self.assertEqual(self.days(), [])
+		# Read from the day ledger's rollups, as before the patch.
+		lines = self.lines()
+		self.assertEqual(
+			[(team, month, model, amount) for team, month, _type, model, _quantity, amount in lines],
+			[
+				(TEAM_INR, "2026-06-01", "gpt-4o", 168.2),
+				(TEAM_INR, "2026-07-01", "claude-sonnet", 42.5),
+				(TEAM_INR, "2026-07-01", "gpt-4o", 85.0),
+				(TEAM_USD, "2026-06-01", "gpt-4o", 2.7),
+				(TEAM_USD, "2026-07-01", "gpt-4o", 4.0),
+			],
+		)
 
 		fold_usage_days_into_months.execute()
 
 		self.assertEqual(self.lines(), lines)
-		self.assertEqual(self.days(), days)
+		self.assertEqual(
+			self.days(), sorted((team, day, model, cost, billed) for team, day, model, cost, billed in DAYS)
+		)
 		self.assertFalse(usage_fold.ledger_rollups())
 		self.assertTrue(frappe.db.count("Usage Day"), "the old days stay, read only")
 
 	def test_a_billed_month_bills_nothing_again_after_the_patch(self):
-		unfold()
+		for team in INVOICES:
+			record_outcome(team, JUNE[1], INVOICED)
 		fold_usage_days_into_months.execute()
-		for team, invoice in self.invoices.items():
-			self.assertEqual(usage_recount.recount_team(team, JUNE[1]).months, [])
-			billed = [
-				day.invoice for day in usage_days(team=team, month=JUNE[0]) if day.dimension == "gpt-4o"
-			]
-			self.assertEqual(set(billed), {invoice})
+		# Recounting June moves its carried claude days on to July, which reads July's rate.
 		with feed(rate_on("2026-07-01", 85.0)):
+			for team, invoice in INVOICES.items():
+				self.assertEqual(usage_recount.recount_team(team, JUNE[1]).months, [])
+				billed = [
+					day.invoice for day in usage_days(team=team, month=JUNE[0]) if day.dimension == "gpt-4o"
+				]
+				self.assertEqual(set(billed), {invoice})
 			july = self.invoice_lines(TEAM_INR, JULY)
 		# Claude nets -0.5 in June and +1.0 in July: only July and that carry are billed.
 		self.assertEqual(
@@ -154,7 +170,6 @@ class TestFoldUsageDays(AIBillingCase):
 		)
 
 	def test_each_folded_day_names_a_migrated_report(self):
-		unfold()
 		fold_usage_days_into_months.execute()
 		reports = {day.report for day in usage_days(team=TEAM_INR)}
 		self.assertEqual(
@@ -162,22 +177,9 @@ class TestFoldUsageDays(AIBillingCase):
 		)
 
 	def test_a_day_an_older_worker_writes_after_the_patch_is_folded_on_the_next_recount(self):
-		unfold()
 		fold_usage_days_into_months.execute()
-		day = frappe.get_doc(
-			{
-				"doctype": "Usage Day",
-				**{
-					name: value
-					for name, value in usage_days(team=TEAM_USD)[-1].items()
-					if name in _DAY_FIELDS
-				},
-				"day": datetime.date(2026, 7, 7),
-				"quantity": 2.0,
-				"invoice": None,
-			}
-		)
-		day.db_insert()
+		meter = frappe.get_doc("Service", AI_SERVICE).get_meter(AI_METER)
+		self.insert_day(meter, TEAM_USD, "2026-07-07", "gpt-4o", 2.0, billed=False)
 		usage_fold.fold_stragglers()
 		self.assertIn(
 			(datetime.date(2026, 7, 7), 2.0), [(d.day, d.quantity) for d in usage_days(team=TEAM_USD)]
