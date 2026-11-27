@@ -20,9 +20,8 @@ import Quickstart from '@/components/services/llm/Quickstart.vue'
 import { useAI } from '@/composables/useAI'
 import { formatDateTime, timeAgo } from '@/lib/datetime'
 import { getErrorMessage, reportError } from '@/lib/feedback'
-import { compactNumber } from '@/lib/format'
 import { __ } from '@/lib/translate'
-import type { AIApiKey, AIRateLimit } from '@/types/ai'
+import type { AIApiKey } from '@/types/ai'
 
 interface Props {
 	canManage: boolean
@@ -59,12 +58,6 @@ const asOf = computed(() =>
 )
 const activeKeys = computed(() =>
 	apiKeys.value.filter((key) => key.status === 'active'),
-)
-const atKeyLimit = computed(
-	() =>
-		!!spend.value &&
-		spend.value.max_keys > 0 &&
-		activeKeys.value.length >= spend.value.max_keys,
 )
 const canSetCaps = computed(
 	() => prepaid.value && props.canManage && activeKeys.value.length > 0,
@@ -139,41 +132,6 @@ const rowActions = (key: AIApiKey): DropdownOptions => [
 		onClick: () => (revokeTarget.value = key),
 	},
 ]
-
-const METRIC_LETTERS: Record<string, string> = {
-	requests: 'R',
-	total_tokens: 'T',
-}
-const WINDOW_LETTERS: Record<string, string> = {
-	'1m': 'PM',
-	'1h': 'PH',
-	'1d': 'PD',
-	'1M': 'PMo',
-}
-const METRIC_WORDS: Record<string, string> = {
-	requests: 'requests',
-	total_tokens: 'tokens',
-}
-const WINDOW_WORDS: Record<string, string> = {
-	'1m': 'per minute',
-	'1h': 'per hour',
-	'1d': 'per day',
-	'1M': 'per month',
-}
-const limitChips = (limits: AIRateLimit[]) =>
-	limits.map((limit) => ({
-		key: `${limit.metric}:${limit.window}`,
-		label: `${compactNumber(limit.value)} ${METRIC_LETTERS[limit.metric] ?? limit.metric}${WINDOW_LETTERS[limit.window] ?? ''}`,
-		text: `${limit.value.toLocaleString()} ${METRIC_WORDS[limit.metric] ?? limit.metric} ${WINDOW_WORDS[limit.window] ?? limit.window}`,
-	}))
-
-const sharedLimits = computed(() => {
-	const [first, ...rest] = activeKeys.value.map((key) =>
-		JSON.stringify(key.limits),
-	)
-	if (!first || rest.some((limits) => limits !== first)) return null
-	return limitChips(activeKeys.value[0].limits)
-})
 
 const usd = (value: number): string =>
 	value.toLocaleString(undefined, {
@@ -313,7 +271,7 @@ const openHelp = (): void => {
 	helpOpen.value = true
 }
 
-defineExpose({ openCreate, openHelp, atKeyLimit })
+defineExpose({ openCreate, openHelp })
 
 const revokeTarget = ref<AIApiKey | null>(null)
 const revokeError = ref('')
@@ -410,13 +368,6 @@ const revokeText = __(
 					<th scope="col" class="hidden pb-2 font-normal sm:table-cell">
 						{{ __('Geography') }}
 					</th>
-					<th
-						v-if="!sharedLimits"
-						scope="col"
-						class="hidden pb-2 font-normal lg:table-cell"
-					>
-						{{ __('Rate limits') }}
-					</th>
 					<th scope="col" class="hidden pb-2 font-normal md:table-cell">
 						{{ __('Created') }}
 					</th>
@@ -459,26 +410,6 @@ const revokeText = __(
 						<Tooltip :text="key.gateway_url">
 							<span>{{ geographyLabel(key.geography) }}</span>
 						</Tooltip>
-					</td>
-
-					<td
-						v-if="!sharedLimits"
-						class="hidden border-t border-outline-gray-1 py-2.5 pr-3 text-sm lg:table-cell"
-					>
-						<span
-							v-if="key.status === 'active'"
-							class="flex flex-wrap items-center gap-x-2 text-ink-gray-6"
-						>
-							<template
-								v-for="(chip, index) in limitChips(key.limits)"
-								:key="chip.key"
-							>
-								<span v-if="index" aria-hidden="true">·</span>
-								<Tooltip :text="chip.text">
-									<span class="tabular-nums">{{ chip.label }}</span>
-								</Tooltip>
-							</template>
-						</span>
 					</td>
 
 					<td
@@ -546,19 +477,6 @@ const revokeText = __(
 				</tr>
 			</tbody>
 		</table>
-
-		<p
-			v-if="sharedLimits && apiKeys.length"
-			class="mt-3 flex flex-wrap items-center gap-x-2 text-p-xs text-ink-gray-5"
-		>
-			{{ __('Every key is limited to') }}
-			<template v-for="(chip, index) in sharedLimits" :key="chip.key">
-				<span v-if="index" aria-hidden="true">·</span>
-				<Tooltip :text="chip.text">
-					<span class="tabular-nums text-ink-gray-7">{{ chip.label }}</span>
-				</Tooltip>
-			</template>
-		</p>
 
 		<ListViewPagination
 			v-if="pageCount > 1"

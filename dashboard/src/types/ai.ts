@@ -21,8 +21,11 @@ export interface AIModel {
 	dialects: AIDialect[]
 }
 
-// One limit Grove counts for one key: a metric over a window.
+// One rate limit: a metric over a window, on every model (blank `model_key`, each model counted
+// on its own) or on one model alone, which then stands in for the blank row there. A `value` of
+// 0 is no limit.
 export interface AIRateLimit {
+	model_key: string
 	metric: 'requests' | 'total_tokens' | string
 	window: '1m' | '1h' | '1d' | '1M' | string
 	value: number
@@ -37,8 +40,9 @@ export interface AISpend {
 	capped: number
 	committed: number
 	spend_limit: number
-	// How many live keys the plan allows; 0 is no limit.
-	max_keys: number
+	// The team's rate limits, counted per model for the team as a whole however many keys it
+	// holds. None: uncapped.
+	limits: AIRateLimit[]
 	suspended: boolean
 	// Whether the gateways keep the team's prompts and outputs for a short time, for support.
 	log_payloads: boolean
@@ -134,7 +138,6 @@ export interface AIApiKey {
 	// USD: what the key may spend a month and what it spent this month.
 	cap: number
 	month_spent: number
-	limits: AIRateLimit[]
 }
 
 // What a new key is minted with.

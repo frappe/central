@@ -72,16 +72,14 @@ const enableAI = async (): Promise<void> => {
 						? __('This team is suspended. Nothing can be changed until that is lifted.')
 						: ai.key_handover_pending
 							? __('Your trial\'s API key is being moved to this team. You can create keys once that is done.')
-							: keys?.atKeyLimit
-								? __('Your plan allows {0} live keys. Revoke one to create another.', [ai.spend?.max_keys])
-								: ''
+							: ''
 				"
 			>
 				<Button
 					variant="solid"
 					icon-left="lucide-plus"
 					:label="__('Create key')"
-					:disabled="suspended || ai.key_handover_pending || keys?.atKeyLimit"
+					:disabled="suspended || ai.key_handover_pending"
 					@click="keys?.openCreate()"
 				/>
 			</Tooltip>
