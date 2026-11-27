@@ -934,9 +934,13 @@ Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
     day's value and source, `derived` (the stored verdict), the report that set it (name, kind,
     sha256, whether its body is kept, intact and validly signed), the body's line for the day,
     and `derivation` tagged by kind: Evidence (with the line's evidence), Segment (with the
-    segment), Migrated (a folded day) or None; then the same for each correction of the day. It
-    never checks evidence again. A day stored before the verdict was kept reads derived with
-    kind None. Each body is read once per call, and of two lines for the same day the one whose
+    segment), Migrated (a folded day), Unrecorded (derived, but the kept body shows no
+    evidence) or None (arrived without a derivation); then the same for each correction of the
+    day. It never checks evidence again. A day or correction stored before the verdict was kept
+    reads derived with kind Unrecorded (the mark_derived_usage_corrections patch marks existing
+    corrections derived, as count_underived_days_from_now does days). A meter since removed
+    from its Service compares a line's raw value to the stored quantity. Each body is read once
+    per call, and of two lines for the same day the one whose
     value the day holds (ServiceMeter.quantity_of) is taken
   → readiness M8 (usage_evidence.check_days_carry_a_derivation): one row per service with
     `underived` days in months from the start of last month, not pruned: the subjects, the days

@@ -4,6 +4,7 @@
 
 import datetime
 import hashlib
+from unittest.mock import patch
 
 import frappe
 
@@ -15,7 +16,8 @@ from central.billing.tests import test_usage_month
 from central.billing.tests.test_service_reports import TEAM, line
 from central.billing.tests.test_usage_evidence import EvidenceCase, derived, evidence
 from central.billing.tests.utils import BillingTestCase, ensure_team, usage_days
-from central.patches.v0_0 import count_underived_days_from_now
+from central.patches.v0_0 import count_underived_days_from_now, mark_derived_usage_corrections
+from central.services.doctype.service.service import Service
 
 SERVICES = ("evidence-check-storage", "evidence-check-ai")
 REPORT_KEYS = {
@@ -30,6 +32,7 @@ REPORT_KEYS = {
 	"has_valid_signature",
 }
 NONE = {"kind": "None"}
+UNRECORDED = {"kind": "Unrecorded"}
 
 
 class TestDayEvidence(EvidenceCase):
@@ -97,6 +100,36 @@ class TestDayEvidence(EvidenceCase):
 		self.assertEqual(
 			frappe.db.get_value("Usage Month Correction", {"parent": self.month_row()}, "derived"), 0
 		)
+
+	def test_a_correction_kept_before_the_verdict_reads_unrecorded(self):
+		self.send([derived("2026-06-20", 10)])
+		usage_month.stamp_days({self.month_row(): bit(20)}, "invoice-evidence")
+		self.send([line("2026-06-20", 14)], as_of="2026-06-20T06:32:00Z")
+		mark_derived_usage_corrections.execute()
+		[correction] = DayEvidence.of(self.month_row(), 20)["corrections"]
+		self.assertEqual((correction["derived"], correction["derivation"]), (True, UNRECORDED))
+
+	def test_a_day_stored_before_the_verdict_reads_unrecorded(self):
+		self.send([line("2026-06-20", 10)])
+		count_underived_days_from_now.execute()
+		found = DayEvidence.of(self.month_row(), 20)
+		self.assertEqual((found["derived"], found["derivation"]), (True, UNRECORDED))
+
+	def test_a_day_whose_body_is_no_longer_kept_reads_unrecorded(self):
+		self.send([derived("2026-06-20", 10)])
+		[day] = usage_days(team=TEAM)
+		frappe.db.set_value("Usage Report", day.report, "body", None)
+		found = DayEvidence.of(self.month_row(), 20)
+		self.assertFalse(found["report"]["is_kept"])
+		self.assertEqual((found["line"], found["derived"], found["derivation"]), (None, True, UNRECORDED))
+
+	def test_a_day_of_a_meter_removed_from_its_service_still_answers(self):
+		self.send([derived("2026-06-20", 10)])
+		# Patched, not deleted: saving the Service in teardown would keep a deleted meter deleted.
+		with patch.object(Service, "get_meter", return_value=None):
+			found = get_usage_day_evidence(self.month_row(), 20)
+		self.assertEqual(found["line"]["value"], 10 * 1_000_000_000)
+		self.assertEqual(found["derivation"], {"kind": "Evidence", "evidence": evidence(10)})
 
 	def test_a_day_with_no_value_is_refused(self):
 		self.send([line("2026-06-20", 10)])

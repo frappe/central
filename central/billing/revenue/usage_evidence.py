@@ -3,7 +3,7 @@
 """What set a stored usage day and how its service worked the value out, for a dispute."""
 
 import json
-from typing import TypedDict
+from typing import Literal, NotRequired, Required, TypedDict
 
 import frappe
 from frappe import _
@@ -18,6 +18,7 @@ from central.billing.revenue.usage_month_rows import CORRECTION, DOCTYPE
 EVIDENCE = "Evidence"
 SEGMENT = "Segment"
 MIGRATED = "Migrated"
+UNRECORDED = "Unrecorded"
 NO_DERIVATION = "None"
 MONTH_FIELDS = (
 	"name",
@@ -37,12 +38,12 @@ EXAMPLE_SUBJECTS = 5
 BitCount = CustomFunction("BIT_COUNT", ["value"])
 
 
-class Derivation(TypedDict, total=False):
-	"""How a value was worked out. `kind` is Evidence, Segment, Migrated or None."""
+class Derivation(TypedDict):
+	"""How a value was worked out, tagged by kind; None means it arrived without a derivation."""
 
-	kind: str
-	evidence: dict
-	segment: str
+	kind: Required[Literal["Evidence", "Segment", "Migrated", "Unrecorded", "None"]]
+	evidence: NotRequired[dict]
+	segment: NotRequired[str]
 
 
 class ReportEvidence(TypedDict):
@@ -60,7 +61,7 @@ class ReportEvidence(TypedDict):
 
 
 class ValueEvidence(TypedDict):
-	"""What set one value. `derived` is the verdict kept when the line arrived, and is true for a day stored before."""
+	"""What set one value. `derived` is the verdict kept on receipt; a value stored before it was kept reads Unrecorded."""
 
 	derived: bool
 	report: ReportEvidence | None
@@ -69,6 +70,8 @@ class ValueEvidence(TypedDict):
 
 
 class CorrectionEvidence(ValueEvidence):
+	"""A later value of a day, with its verdict and derivation read the same way as the day's."""
+
 	value: float
 	billed_value: float
 	status: str
@@ -165,8 +168,12 @@ class DayEvidence:
 
 	def _is_value(self, line: dict, value: float) -> bool:
 		# Central's own lines keep the stored quantity; a pushed line keeps the service's raw value.
-		quantity = line["quantity"] if "quantity" in line else self.meter.quantity_of(line.get("value"))
+		quantity = line["quantity"] if "quantity" in line else self._quantity_of(line.get("value"))
 		return frappe.utils.flt(quantity, 6) == frappe.utils.flt(value, 6)
+
+	def _quantity_of(self, raw) -> float:
+		# A meter removed from its Service leaves no divisor, so the raw value is compared as it is.
+		return self.meter.quantity_of(raw) if self.meter else frappe.utils.flt(raw)
 
 
 def _derivation(derived: bool, report: ReportEvidence | None, line: dict | None, segment) -> Derivation:
@@ -179,8 +186,8 @@ def _derivation(derived: bool, report: ReportEvidence | None, line: dict | None,
 		return {"kind": MIGRATED}
 	if line and isinstance(line.get("evidence"), dict):
 		return {"kind": EVIDENCE, "evidence": line["evidence"]}
-	# A day stored before lines carried evidence was never marked, so it has no derivation to show.
-	return {"kind": NO_DERIVATION}
+	# Derived, yet the kept body shows nothing: stored before the verdict was kept, or the body is gone.
+	return {"kind": UNRECORDED}
 
 
 def check_days_carry_a_derivation(today=None) -> list[Violation]:

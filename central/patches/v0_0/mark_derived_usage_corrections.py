@@ -2,14 +2,7 @@ import frappe
 
 
 def execute():
-	"""Mark the corrections set by a segment or a migrated report as derived. Others stay not derived."""
+	"""Mark every kept correction derived, as the days are; current code sets the check on write."""
+	# Only rows an earlier rung's code wrote change (dev, test sites, staged deploys).
 	correction = frappe.qb.DocType("Usage Month Correction")
-	report = frappe.qb.DocType("Usage Report")
-	migrated = frappe.qb.from_(report).select(report.name).where(report.kind == "Migrated")
-	(
-		frappe.qb.update(correction)
-		.set(correction.derived, 1)
-		.where(
-			(correction.segment.isnotnull() & (correction.segment != "")) | correction.report.isin(migrated)
-		)
-	).run()
+	frappe.qb.update(correction).set(correction.derived, 1).where(correction.derived == 0).run()
