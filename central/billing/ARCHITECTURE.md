@@ -843,7 +843,9 @@ Public IPv4 (#197, #200, #208): a state meter, kept as Usage Segments and billed
     same moment the server was billed (the intersection of the segment with a billed stretch of
     the server's subscription, from Created, Resumed or Plan Changed to Paused or Cancelled), not
     only on the same day. Example: billing paused at 06:00 and an address attached at 20:00 bills
-    no day. The value is the most held at once that day, on the subscription billed then; the
+    no day. The value is the most held at once that day, on the subscription billed then. When two
+    subscriptions bill the server on one day (a team edit), the day stays on the subscription whose
+    month row already holds it, else goes to the earlier one, so it bills once; the
     slot's source is Segment and it names the segment (its report is empty, and M5 counts the
     segment as its evidence). A trial server (no subscription) is free until it converts, a
     Stopped server bills, a day paused throughout does not, a termination day bills once

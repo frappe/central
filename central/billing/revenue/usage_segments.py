@@ -205,12 +205,44 @@ def _day_lines(service: str, meter_key: str, segments: list, since, until) -> li
 	since = max(frappe.utils.getdate(since), frappe.utils.getdate(bill_from))
 	before = utc_day_start(frappe.utils.getdate(until) + datetime.timedelta(days=1))
 	windows = _server_billed_windows(list({segment.subject for segment in segments}), before)
+	held = held_days(segments, windows, _utc_days(since, until))
+	_keep_written_subscriptions(held, service, meter_key, since, until)
 	meter = frappe.get_doc("Service", service).get_meter(meter_key)
 	now = frappe.utils.now_datetime()
 	return [
 		meter.get_day_row(found, day, found.quantity, dimension="", as_of=now, segment=found.segment)
-		for (_, day), found in held_days(segments, windows, _utc_days(since, until)).items()
+		for (_, day), found in held.items()
 	]
+
+
+def _keep_written_subscriptions(held: dict, service: str, meter: str, since, until) -> None:
+	"""Keep each day on the subscription whose month row already holds it."""
+	subjects = list({key[0] for key in held})
+	# A team edit can bill two subscriptions of one server on one day, and the day bills only once.
+	for key, written in _written_days(service, meter, subjects, since, until).items():
+		if key in held:
+			held[key].update(written)
+
+
+def _written_days(service: str, meter: str, subjects: list[str], since, until) -> dict[tuple, frappe._dict]:
+	"""The subscription and team of the month row that holds each subject's day, by (subject, day)."""
+	if not subjects:
+		return {}
+	rows = frappe.get_all(
+		usage_month.DOCTYPE,
+		filters={
+			"service": service,
+			"meter": meter,
+			"subject": ["in", subjects],
+			"month": ["between", [month_of(since), month_of(until)]],
+		},
+		fields=["subject", "month", "subscription", "team", "filled"],
+	)
+	return {
+		(row.subject, row.month.replace(day=day)): frappe._dict(subscription=row.subscription, team=row.team)
+		for row in rows
+		for day in usage_month.days_of(row.filled)
+	}
 
 
 def _add_days(found: dict, segment, window, held: tuple, days: list[tuple]) -> None:
@@ -230,11 +262,11 @@ def _add_days(found: dict, segment, window, held: tuple, days: list[tuple]) -> N
 
 
 def _is_more(kept, segment, window) -> bool:
-	"""Whether the segment beats the day's kept value: more held, or as much on a later subscription."""
+	"""Whether the segment beats the day's kept value: more held, or as much on an earlier subscription."""
 	if not kept:
 		return True
 	quantity = frappe.utils.flt(segment.quantity)
-	return quantity > kept.quantity or (quantity == kept.quantity and window.start > kept.billed_from)
+	return quantity > kept.quantity or (quantity == kept.quantity and window.start < kept.billed_from)
 
 
 def _window(first, end) -> frappe._dict:

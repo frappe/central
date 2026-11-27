@@ -181,10 +181,11 @@ def reproject(cutover: datetime.date, today: datetime.date) -> int:
 
 
 def _day_values(subjects: list[str]) -> dict[tuple, float]:
+	"""Each day's value by server, subscription and day, so a day that moved subscription shows too."""
 	if not subjects:
 		return {}
 	rows = day_rows({"service": NETWORK_SERVICE, "meter": PUBLIC_IPV4_METER, "subject": ["in", subjects]})
-	return {(row.subject, row.day): row.quantity for row in rows}
+	return {(row.subject, row.subscription, row.day): row.quantity for row in rows}
 
 
 def _server_teams(servers: list[str]) -> dict[str, str]:
