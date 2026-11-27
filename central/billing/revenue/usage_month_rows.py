@@ -3,8 +3,12 @@
 """Usage Month rows by their key: insert the missing ones, find a line's row, and read corrections."""
 
 import datetime
+from typing import TYPE_CHECKING
 
 import frappe
+
+if TYPE_CHECKING:
+	from central.billing.revenue.usage_month import MonthRow
 
 DOCTYPE = "Usage Month"
 CORRECTION = "Usage Month Correction"
@@ -29,7 +33,7 @@ def row_key(row) -> tuple:
 	)
 
 
-def month_for(months: dict, row: dict):
+def month_for(months: dict, row: dict) -> "MonthRow | None":
 	"""The row that holds the line's day, else the row of the line's subscription."""
 	candidates = months.get(row_key(row), [])
 	day = frappe.utils.getdate(row["day"]).day
