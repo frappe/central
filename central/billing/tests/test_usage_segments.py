@@ -95,3 +95,19 @@ class TestUsageSegmentRecord(BillingTestCase):
 			"starts_at": starts_at,
 			"opened_source": usage_segments.OPERATOR,
 		}
+
+
+class TestCorrectionEvidence(BillingTestCase):
+	"""A correction names what set the billed value and what corrected it."""
+
+	def test_each_side_names_its_own_evidence(self):
+		from central.billing.revenue.usage_corrections import get_evidence
+
+		cases = [
+			({"original_report": "r1", "report": "r2"}, "report r1 → r2"),
+			({"original_segment": "s1", "segment": "s2"}, "segment s1 → s2"),
+			({"original_report": "r1", "segment": "s2"}, "report r1 → segment s2"),
+			({"original_segment": "s1", "report": "r2"}, "segment s1 → report r2"),
+		]
+		for fields, expected in cases:
+			self.assertEqual(get_evidence(frappe._dict(fields)), expected)

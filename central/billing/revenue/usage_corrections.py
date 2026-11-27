@@ -335,17 +335,27 @@ def get_description(correction) -> str:
 	"""The line text: what was corrected, the day, and the report or segment it replaces with the one that corrected it."""
 	day = get_day_of(correction)
 	subject = " ".join(part for part in (correction.subject, correction.dimension) if part)
-	if correction.get("segment") or correction.get("original_segment"):
-		# A day projected from segments has no report; its segments are the evidence.
-		text = _("Correction · {0} · {1} · segment {2} → {3}")
-		was, now = correction.get("original_segment"), correction.get("segment")
-	else:
-		text = _("Correction · {0} · {1} · report {2} → {3}")
-		was, now = correction.original_report, correction.report
-	parts = (f"{day.day} {day:%b %Y}", was or "-", now or "-")
+	text = _("Correction · {0} · {1} · {2}")
+	parts = (f"{day.day} {day:%b %Y}", get_evidence(correction))
 	# The day and the evidence are kept whole; a long subject gives way.
 	room = MAXIMUM_DESCRIPTION - len(text.format("", *parts))
 	return text.format(subject[: max(room, 0)], *parts)
+
+
+def get_evidence(correction) -> str:
+	"""What set the billed value and what corrected it, each named as a report or a segment."""
+	# A day projected from segments has no report; its segments are the evidence.
+	was = _evidence(correction.get("original_segment"), correction.get("original_report"))
+	now = _evidence(correction.get("segment"), correction.get("report"))
+	if was[0] == now[0]:
+		return f"{was[0]} {was[1]} → {now[1]}"
+	return f"{was[0]} {was[1]} → {now[0]} {now[1]}"
+
+
+def _evidence(segment: str | None, report: str | None) -> tuple[str, str]:
+	if segment:
+		return "segment", segment
+	return "report", report or "-"
 
 
 def _open_corrections(team: str, today: datetime.date) -> list[frappe._dict]:
@@ -440,7 +450,7 @@ def _write_off(name: str) -> None:
 	month.add_comment(
 		"Info",
 		f"Correction of {day:%d %b %Y} written off: {correction.billed_value} to {correction.value} "
-		f"(report {correction.original_report} to {correction.report}). No invoice billed it within "
+		f"({get_evidence(correction)}). No invoice billed it within "
 		f"{WINDOW_DAYS} days of {correction.billed_invoice_date}, the date of the invoice that billed the day.",
 	)
 
