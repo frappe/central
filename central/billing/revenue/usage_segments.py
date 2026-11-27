@@ -63,7 +63,7 @@ def set_quantity(
 def insert_segment(**values) -> Document:
 	"""Insert one segment, opened by the current user."""
 	segment = frappe.get_doc({"doctype": DOCTYPE, "opened_by": frappe.session.user, **values})
-	# A state change is recorded as the system, whoever made the save that carried it.
+	# The save that carries the change was already permitted, and a segment has no permission of its own.
 	return segment.insert(ignore_permissions=True)
 
 
