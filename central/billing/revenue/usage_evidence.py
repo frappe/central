@@ -6,7 +6,10 @@ import json
 
 import frappe
 from frappe import _
+from frappe.query_builder import CustomFunction
+from frappe.query_builder.functions import Count, GroupConcat, Sum
 
+from central.billing.platform.invariants import Violation
 from central.billing.revenue import usage_reports
 from central.billing.revenue.service_reports import evidence_of
 from central.billing.revenue.usage_month import DAY_FIELDS, bit, slots_of
@@ -16,6 +19,8 @@ NO_DERIVATION = "none"
 MONTH_FIELDS = ("name", "service", "subject", "meter", "dimension", "month", "filled", "pruned", "slots")
 REPORT_FIELDS = ("name", "service", "kind", "received_at", "as_of", "body_sha256")
 CORRECTION_FIELDS = ("name", "value", "billed_value", "status", "report", "segment")
+EXAMPLE_SUBJECTS = 5
+BitCount = CustomFunction("BIT_COUNT", ["value"])
 
 
 class DayEvidence:
@@ -112,6 +117,38 @@ class DayEvidence:
 		if report["kind"] == usage_reports.PUSHED:
 			return evidence_of(self.service, line) is not None
 		return isinstance(line.get("evidence"), dict)
+
+
+def check_days_carry_a_derivation(today=None) -> list[Violation]:
+	"""Every metered day stored since the start of last month came with how its service worked it out."""
+	since = frappe.utils.add_months(frappe.utils.getdate(today).replace(day=1), -1)
+	month = frappe.qb.DocType(DOCTYPE)
+	rows = (
+		frappe.qb.from_(month)
+		.select(
+			month.service,
+			Count(month.subject).distinct().as_("subjects"),
+			Sum(BitCount(month.underived)).as_("days"),
+			GroupConcat(month.subject).distinct().as_("names"),
+		)
+		.where((month.underived > 0) & (month.month >= since) & (month.pruned == 0))
+		.groupby(month.service)
+	).run(as_dict=True)
+	return [_underived_violation(row, since) for row in rows]
+
+
+def _underived_violation(row: frappe._dict, since) -> Violation:
+	examples = ", ".join(sorted(row.names.split(","))[:EXAMPLE_SUBJECTS])
+	days = frappe.utils.cint(row.days)
+	return Violation(
+		check="M8",
+		subject_doctype="Service",
+		subject=row.service,
+		detail=_(
+			"{0} day(s) of {1} subject(s) of {2} since {3} came with no derivation, such as {4}. A dispute about them cannot be worked out again until the service sends evidence on each line."
+		).format(days, row.subjects, row.service, since.strftime("%B %Y"), examples),
+		actual=days,
+	)
 
 
 def _month(name: str, day: int) -> frappe._dict:

@@ -12,7 +12,7 @@ from central.billing.catalog.subscriptions import active_segments
 from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.india_gst import INDIA
 from central.billing.platform.invariants import Violation
-from central.billing.revenue import credits, usage_correction_checks, usage_retention
+from central.billing.revenue import credits, usage_correction_checks, usage_evidence, usage_retention
 from central.billing.revenue.exchange_rates import month_rate
 
 STALLED_HOURS = 3
@@ -672,6 +672,7 @@ CHECKS = {
 	"M5": ("Billed usage days name their evidence", usage_retention.check_billed_days_name_a_report),
 	"M6": ("Usage report bodies are intact", usage_retention.check_report_bodies_are_intact),
 	"M7": ("Reissued usage corrections are settled", usage_correction_checks.check_reissued_corrections),
+	"M8": ("Metered days carry their derivation", usage_evidence.check_days_carry_a_derivation),
 	"W1": ("Billed teams can pay", check_billed_teams_can_pay),
 	"W2": ("Promotional credit expires", check_promotional_credit_expires),
 	"X1": ("No staging trials outside staging", check_no_staging_trials_outside_staging),

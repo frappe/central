@@ -138,3 +138,5 @@ central.patches.v0_0.fold_usage_days_into_months
 central.patches.v0_0.move_public_ipv4_to_segments
 # Name the evidence keys each pushed storage and AI line carries.
 central.patches.v0_0.set_meter_evidence_keys
+# Count usage days with no derivation only from now: the days the fold and earlier writers stored are not counted.
+central.patches.v0_0.count_underived_days_from_now

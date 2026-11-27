@@ -2,18 +2,22 @@
 # For license information, please see license.txt
 """An operator traces a billed day to the signed report that set it and the derivation it carried."""
 
+import datetime
 import hashlib
 
 import frappe
 
 from central.billing.api.admin.revenue import get_usage_day_evidence
 from central.billing.revenue import usage_month, usage_reports
-from central.billing.revenue.usage_evidence import NO_DERIVATION, DayEvidence
+from central.billing.revenue.usage_evidence import NO_DERIVATION, DayEvidence, check_days_carry_a_derivation
 from central.billing.revenue.usage_month import bit
 from central.billing.tests import test_usage_month
 from central.billing.tests.test_service_reports import TEAM, line
 from central.billing.tests.test_usage_evidence import EvidenceCase, derived, evidence
 from central.billing.tests.utils import BillingTestCase, ensure_team, usage_days
+from central.patches.v0_0 import count_underived_days_from_now
+
+SERVICES = ("evidence-check-storage", "evidence-check-ai")
 
 
 class TestDayEvidence(EvidenceCase):
@@ -83,3 +87,43 @@ class TestSegmentDayEvidence(BillingTestCase):
 		name = frappe.db.get_value("Usage Month", {"subject": test_usage_month.SUBJECT}, "name")
 		found = DayEvidence.of(name, 3)
 		self.assertEqual((found["report"], found["derivation"]), (None, {"segment": "segment-1"}))
+
+
+class TestDerivationCheck(BillingTestCase):
+	def setUp(self):
+		ensure_team(test_usage_month.TEAM)
+
+	def write(self, service: str, subject: str, day: datetime.date, **values) -> None:
+		row = {**test_usage_month.line(1, 5, **values), "service": service, "subject": subject, "day": day}
+		usage_month.write_lines([row], "report-1", "Pushed")
+
+	def violations(self) -> dict:
+		found = check_days_carry_a_derivation("2026-07-10")
+		return {violation.subject: violation for violation in found if violation.subject in SERVICES}
+
+	def test_days_without_a_derivation_are_listed_once_per_service(self):
+		storage, ai = SERVICES
+		for day in (1, 2):
+			self.write(storage, "bucket-a", datetime.date(2026, 6, day))
+		self.write(storage, "bucket-b", datetime.date(2026, 7, 3))
+		self.write(storage, "bucket-c", datetime.date(2026, 7, 4), evidence={"v": 1})
+		self.write(ai, "team-a", datetime.date(2026, 7, 5))
+		found = self.violations()
+		self.assertEqual(sorted(found), sorted(SERVICES))
+		self.assertEqual((found[storage].check, found[storage].actual, found[ai].actual), ("M8", 3, 1))
+		self.assertIn("2 subject(s)", found[storage].detail)
+		self.assertIn("bucket-a, bucket-b", found[storage].detail)
+
+	def test_months_before_last_month_and_pruned_months_are_not_listed(self):
+		storage, ai = SERVICES
+		self.write(storage, "bucket-a", datetime.date(2026, 5, 31))
+		self.write(ai, "team-a", datetime.date(2026, 7, 5))
+		frappe.db.set_value("Usage Month", {"service": ai}, "pruned", 1)
+		self.assertEqual(self.violations(), {})
+
+	def test_days_stored_before_evidence_was_sent_are_not_listed(self):
+		self.write(SERVICES[0], "bucket-a", datetime.date(2026, 7, 3))
+		count_underived_days_from_now.execute()
+		self.assertEqual(self.violations(), {})
+		self.write(SERVICES[0], "bucket-a", datetime.date(2026, 7, 4))
+		self.assertEqual(self.violations()[SERVICES[0]].actual, 1)
