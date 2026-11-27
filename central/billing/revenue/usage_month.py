@@ -35,6 +35,7 @@ _READ_FIELDS = (
 	*_CONTEXT_FIELDS,
 	"name",
 	"carries_bundle",
+	"pruned",
 	"slots",
 	*MASKS,
 	*DAY_FIELDS,
@@ -179,6 +180,9 @@ class MonthRow:
 
 	def apply(self, row: dict, report: str | None, source: str, now) -> str | None:
 		"""Apply one line to its day: fill it, replace it, or keep a correction of a billed day."""
+		if self.record["pruned"]:
+			# Past retention the day values are gone, so a line has nothing to be weighed against.
+			return None
 		day = frappe.utils.getdate(row["day"]).day
 		if not self.has_day(day):
 			self._fill(day, row, report, source, now)

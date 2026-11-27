@@ -74,6 +74,18 @@ class TestUsageRetention(BillingTestCase):
 		)
 		self.assertEqual(usage_month.day_rows({"subject": SUBJECT}), [])
 
+	def test_a_line_for_a_month_past_retention_is_ignored(self):
+		name = self.write(OLD.replace(day=14))
+		usage_retention.prune_old_months(TODAY)
+
+		written = usage_month.write_lines(
+			[line(OLD.replace(day=14), 50), line(OLD.replace(day=15), 50)], "report-late", "Read By Central"
+		)
+
+		self.assertEqual((written.count, written.corrections, written.conflicts), (0, 0, []))
+		month = frappe.get_doc(usage_month.DOCTYPE, name)
+		self.assertEqual((month.filled, month.d15, month.slots, month.corrections), (bit(14), 0, None, []))
+
 	def test_a_month_with_something_left_to_bill_is_kept(self):
 		self.write(OLD.replace(day=14), billed=False)
 		self.write(TODAY.replace(day=1))
