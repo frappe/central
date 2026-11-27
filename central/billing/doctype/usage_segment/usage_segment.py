@@ -96,3 +96,5 @@ def on_doctype_update() -> None:
 	frappe.db.add_index("Usage Segment", ["service", "meter", "subject", "starts_at"])
 	frappe.db.add_index("Usage Segment", ["ends_at"])
 	frappe.db.add_index("Usage Segment", ["team"])
+	# The hourly recount reads the segments opened or closed since its last run.
+	frappe.db.add_index("Usage Segment", ["modified"])

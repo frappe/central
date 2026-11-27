@@ -435,11 +435,10 @@ class VirtualMachine(SystemRecord):
 			subscription.insert(ignore_permissions=True)
 
 	def sync_public_ipv4_billing(self) -> None:
-		"""Count today's public IPv4 while Atlas reports one on this server."""
-		from central.billing.revenue import public_ipv4_usage
+		"""Record the public IPv4 addresses this server holds, in the same transaction as the report."""
+		from central.billing.revenue import usage_segments
 
-		if addresses := public_ipv4_usage.count_addresses(self.public_ipv4):
-			public_ipv4_usage.queue_today(self.name, addresses)
+		usage_segments.record_public_ipv4(self)
 
 	def disable_active_subscription(self):
 		"""Cancel and disable this terminated server's subscription, running or paused.

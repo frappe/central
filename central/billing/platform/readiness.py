@@ -377,7 +377,7 @@ def check_converted_usage_has_a_rate() -> list[Violation]:
 
 def check_public_ipv4_is_billed() -> list[Violation]:
 	"""Every billed server that holds a public IPv4 has a price for it in its team's currency and region."""
-	from central.billing.revenue.public_ipv4_usage import find_unbilled_addresses
+	from central.billing.revenue.usage_segments import find_unbilled_addresses
 
 	return [
 		Violation(

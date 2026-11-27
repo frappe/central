@@ -11,7 +11,7 @@ from frappe.query_builder import Case
 from central.billing.doctype.billing_profile.billing_profile import get_team_currency
 from central.billing.doctype.billing_run_team.billing_run_team import FAILED
 from central.billing.platform.jobs import each_isolated
-from central.billing.revenue import usage_corrections, usage_fold, usage_month
+from central.billing.revenue import usage_corrections, usage_fold, usage_month, usage_segments
 from central.billing.revenue.exchange_rates import fix_month_rate
 from central.billing.revenue.metering import metered_plan_for, rollup_terms
 from central.billing.revenue.rollup_updates import recounted_allowance, rerated
@@ -57,6 +57,7 @@ def recount_changed(now=None) -> int:
 	usage_fold.fold_stragglers()
 	# Overlap the last run, so a day whose transaction committed after that scan is still seen.
 	since = frappe.utils.add_to_date(frappe.db.get_default(WATERMARK) or "2000-01-01", minutes=-5)
+	usage_segments.project_changed(since)
 	months = sorted(_changed_months(since, now))
 	for start in range(0, len(months), PAGE_SIZE):
 		frappe.enqueue(
@@ -76,6 +77,8 @@ def recount_team(team: str, period_end) -> Counted:
 	"""Recompute the team's usage for the month that ends on `period_end`, and return what was counted."""
 	month = month_of(period_end)
 	counted = Counted()
+	# State meters keep segments, so their days are written from them before the days are counted.
+	usage_segments.project_team(team, period_end)
 	for subscription, resource_type, dimension in _unbilled_meters(team, period_end):
 		written = recount_month(subscription, resource_type, month, drafting=True, dimension=dimension)
 		# A month below zero bills nothing. Its days stay unbilled, so the credit goes into the next month.

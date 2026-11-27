@@ -18,7 +18,7 @@ from central.billing.tests.test_bundled_buckets import (
 	VM_PLAN,
 	BundledServerFixture,
 )
-from central.billing.tests.test_ipv4_days import JUNE, IPv4DaysTestCase
+from central.billing.tests.test_ipv4_days import IPv4DaysTestCase, at
 from central.billing.tests.utils import (
 	DEFAULT_INCLUDES,
 	BillingTestCase,
@@ -142,7 +142,7 @@ class TestAIFromMonthRows(AIBillingCase):
 
 class TestPublicIPv4FromMonthRows(IPv4DaysTestCase):
 	def test_an_address_held_all_month_bills_one_address_month(self):
-		self.write(*JUNE)
+		self.hold(at("2026-06-01"))
 		line = self.ip_line()
 		self.assertEqual((line.quantity, line.amount), (1.0, 170.0))
 		self.assertEqual({day.invoice for day in usage_days(subject=self.server)}, {line.parent})
