@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 
 class Profile(TypedDict):
@@ -259,3 +259,30 @@ class TeamTicket(TypedDict):
 	creation: str
 	modified: str
 	url: str | None
+
+
+class APIKeyRow(TypedDict):
+	"""One of the signed-in user's API keys. Only the first characters of the key come back."""
+
+	name: str
+	title: str
+	team: str
+	enabled: bool
+	expires_at: str
+	last_used_at: str | None
+	creation: str
+	key_prefix: str
+	scopes: dict[str, Literal["Read", "Write"]]
+
+
+class ListAPIKeysResponse(TypedDict):
+	keys: list[APIKeyRow]
+	scopes: dict[str, list[Literal["Read", "Write"]]]
+	expiry_days: list[int]
+
+
+class CreateAPIKeyResponse(TypedDict):
+	"""`token` is `<api key>:<api secret>`, the only copy of the secret."""
+
+	name: str
+	token: str

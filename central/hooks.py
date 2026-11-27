@@ -510,6 +510,7 @@ permission_query_conditions = {
 	"Notification Digest Setting": "central.permissions.notification_digest_setting_query_conditions",
 	"Team Service": "central.permissions.team_service_query_conditions",
 	"User Notification Preference": "central.permissions.user_notification_preference_query_conditions",
+	"API Key": "central.permissions.api_key_query_conditions",
 	"VM Snapshot": "central.permissions.vm_snapshot_query_conditions",
 	"Deploy App": "central.permissions.deploy_app_query_conditions",
 	"Deploy Request": "central.permissions.deploy_request_query_conditions",
@@ -533,6 +534,7 @@ has_permission = {
 	"Notification Digest Setting": "central.permissions.has_notification_digest_setting_permission",
 	"Team Service": "central.permissions.team_service_has_permission",
 	"User Notification Preference": "central.permissions.user_notification_preference_has_permission",
+	"API Key": "central.permissions.api_key_has_permission",
 	"VM Snapshot": "central.permissions.vm_snapshot_has_permission",
 	"Deploy App": "central.permissions.deploy_app_has_permission",
 	"Deploy Request": "central.permissions.deploy_request_has_permission",
@@ -541,9 +543,8 @@ has_permission = {
 
 # --------------------------------
 
-# auth_hooks = [
-# 	"central.auth.validate"
-# ]
+# Narrows a request signed with an API Key to its team, scopes and methods.
+auth_hooks = ["central.identity.doctype.api_key.api_key.authenticate"]
 
 # Automatically update python controller files with type annotations for this app.
 export_python_type_annotations = True

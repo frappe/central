@@ -10,6 +10,7 @@ from frappe import _
 from central.iam import (
 	can,
 	can_on_any_server,
+	get_request_api_key,
 	is_active_team_member,
 	resolve_team,
 	user_has_operator_bypass,
@@ -54,7 +55,7 @@ def require_support_team_member(func: Callable) -> Callable:
 	1. An operator passes.
 	2. The caller must be a member of the Active or Suspended team.
 	3. In an Active team the caller also needs `support:view`, which only a team-wide grant
-	   carries. A suspended team holds no grants, and its members keep support to learn why it was suspended."""
+	   carries. An API Key cannot reach support on a suspended team. A suspended team holds no grants, and its members keep support to learn why it was suspended."""
 
 	@functools.wraps(func)
 	def wrapper(*args, **kwargs):
@@ -65,7 +66,8 @@ def require_support_team_member(func: Callable) -> Callable:
 			if not is_active_team_member(user, team, statuses):
 				frappe.throw(_("You are not a member of this team."), frappe.PermissionError)
 			is_active = frappe.db.get_value("Team", team, "status") == "Active"
-			if is_active and not can(user, team, "support:view"):
+			# A suspended team holds no grants, so an API Key without the scope is refused there too.
+			if (is_active or get_request_api_key(user)) and not can(user, team, "support:view"):
 				frappe.throw(_("You do not have access to support for this team."), frappe.PermissionError)
 
 		return func(*bound.args, **bound.kwargs)

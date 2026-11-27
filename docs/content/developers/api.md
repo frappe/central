@@ -17,19 +17,26 @@ The reference shows only the operations that are meant for you. Steps that only 
 
 ## Get an API key
 
-An API key and its secret act as you. They can do what your role in the team allows, and nothing more.
+Open **Settings > Access > API Keys** in the console and click **Add API key**. Choose:
 
-The console does not create API keys yet. To get one, contact support.
+| Setting | Meaning |
+| --- | --- |
+| Team | The only team the key acts on. |
+| Expiration | 1, 7, 30, 90 or 365 days. |
+| Permissions | **Servers**: Read or Write. **Support**: Write. **Read only** and **Full access** set both at once. |
 
-Keep the secret private. Anyone with the key and the secret can act as you.
+The key never does more than your role in the team allows. It cannot manage team members, billing or other API keys, and it cannot open a server console.
+
+The console shows the key once, as `<api key>:<api secret>`. Copy it then. If you lose it, revoke it and add another. Keep it private: anyone with it can act as you on that team.
 
 ## Read data
 
-Send the key and the secret in the `Authorization` header. A read is a `GET` request with the arguments in the query string.
+Send the key in the `Authorization` header, and `API Key` in the `Frappe-Authorization-Source` header. A read is a `GET` request with the arguments in the query string.
 
 ```bash
 curl https://<your Frappe Cloud URL>/api/method/central.api.identity.my_teams \
-  -H "Authorization: token <api key>:<api secret>"
+  -H "Authorization: token <api key>:<api secret>" \
+  -H "Frappe-Authorization-Source: API Key"
 ```
 
 The answer is JSON. The result is in `message`:
@@ -42,7 +49,8 @@ Most operations need a `team` argument. Use the `name` that `central.api.identit
 
 ```bash
 curl "https://<your Frappe Cloud URL>/api/method/central.api.servers.registry?team=TEAM-00001" \
-  -H "Authorization: token <api key>:<api secret>"
+  -H "Authorization: token <api key>:<api secret>" \
+  -H "Frappe-Authorization-Source: API Key"
 ```
 
 Yes or no values are `true` or `false`.
@@ -54,6 +62,7 @@ A change is a `POST` request with the arguments in a JSON body:
 ```bash
 curl -X POST https://<your Frappe Cloud URL>/api/method/central.api.servers.stop_server \
   -H "Authorization: token <api key>:<api secret>" \
+  -H "Frappe-Authorization-Source: API Key" \
   -H "Content-Type: application/json" \
   -d '{"team": "TEAM-00001", "resource_id": "<resource_id from registry>"}'
 ```
@@ -78,8 +87,8 @@ Read the action again with `central.api.servers.action_status`, with `name` set 
 
 | Status | Meaning |
 | --- | --- |
-| `401` | The key or the secret is wrong. |
-| `403` | Your role does not allow this operation on this team. |
+| `401` | The key or the secret is wrong, the key expired, or the `Frappe-Authorization-Source` header is missing. |
+| `403` | Your role or the key's permissions do not allow this operation on this team. |
 | `404` | The team, server or other record does not exist, or you cannot see it. |
 | `417` | An argument is not valid, for example an unknown ticket category. |
 | `429` | Too many requests. Wait, then try again. |

@@ -127,8 +127,9 @@ PUBLIC_API = {
 
 _DESCRIPTION = (
 	"Central is the control plane for Frappe Cloud v2. It owns identity, teams, servers, "
-	"sites and billing. Send the header `Authorization: token <api key>:<api secret>`. "
-	"The capabilities of the token's user decide access."
+	"sites and billing. Send `Authorization: token <api key>:<api secret>` and "
+	"`Frappe-Authorization-Source: API Key`. "
+	"A key acts on one team, within its permissions and its user's role."
 )
 
 _SCHEMA_TYPES = {str: "string", int: "integer", float: "number", bool: "boolean"}
@@ -163,7 +164,10 @@ def build_document() -> dict:
 					"type": "apiKey",
 					"in": "header",
 					"name": "Authorization",
-					"description": ("`token <api key>:<api secret>`. The caller's own capabilities apply."),
+					"description": (
+						"`token <api key>:<api secret>`, sent with `Frappe-Authorization-Source: API Key`. "
+						"The key's team and permissions, within its user's role, apply."
+					),
 				}
 			},
 			"schemas": {name: schema for name, (_model, schema) in sorted(models.items())},

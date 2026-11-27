@@ -15,7 +15,7 @@ The operation takes the function signature as query parameters when the function
 ## Request and response models
 
 Each POST operation takes a named request model, `<Function>Request`, built from the function signature. Each operation returns a named response model in `message`. The response models are `TypedDict` classes in `central/api/models/` (`teams.py`, `servers.py`, `sites.py`), and the function's return hint names its model, for example `def list_team_members(team: str) -> list[TeamMember]`. `ActionStatus` and `AppRequirements` come from `central/server_models.py`. A change to a model is an API change, so review it as one. Frappe does not check return hints at runtime, so a model documents the answer and does not change it.
-The document declares one security scheme: the `Authorization` header with `token <api key>:<api secret>`. The capabilities of the token's user decide access.
+The document declares one security scheme: the `Authorization` header with `token <api key>:<api secret>`, sent with `Frappe-Authorization-Source: API Key`. A key acts on one team, within its permissions and its user's role. See [API Keys](IAM.md#api-keys).
 
 Every operation declares the responses `200`, `401`, and `403`. Every description ends with `Read-only.` or `Changes data.`, so a reader knows whether a call changes data before running it.
 

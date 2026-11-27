@@ -166,6 +166,42 @@ Central sends the invitation email directly, not through notification preference
 
 The emailed token verifies the address, so a new invitee does not need a second email code. A token never signs in to an existing account.
 
+## API Keys
+
+### Purpose
+
+A user creates an API key in Settings > API Keys so that a script or an agent can call the API. A key acts as its user on one team, inside the scopes the user chose, until it expires.
+
+### Configuration
+
+| Field | Meaning |
+| --- | --- |
+| `team` | The only team the key acts on. The user must be an active member. |
+| `scopes` | One level per category, from `SCOPES` in `central/identity/doctype/api_key/api_key.py`. Write includes Read. |
+| `expires_at` | 1, 7, 30, 90 or 365 days after creation. An expired key is refused. |
+| `api_key`, `api_secret` | The token halves. The secret is a Password field and is shown once, at creation. |
+| `enabled` | An operator clears it to stop a key at once. The user's Revoke deletes the key. |
+
+### Operation
+
+```text
+Authorization: token <api_key>:<api_secret>
+Frappe-Authorization-Source: API Key
+        |
+        v
+frappe.auth.validate_api_key_secret   checks the pair against the API Key DocType, sets the user
+        |
+        v
+api_key.authenticate (auth_hooks)     refuses an expired key and a method outside the key list,
+        |                             sets frappe.local.api_key
+        v
+iam.resolve_user_grants               keeps only the key's team and the key's capabilities
+```
+
+Frappe checks the token. Central only narrows the request, so `can()`, the list query conditions and `is_active_team_member` all see the key's limits. The result is the intersection of the key's scopes and the user's role. An API key never carries the operator bypass.
+
+The controller checks the scopes, the team and the expiry limit, so a key inserted through `/api/resource` gets the same rules as one made in Settings. Only the create rate limit is on the route. A key never holds `server:console`, so it cannot open an Administrator session on a bench. A key reaches only `KEY_METHODS`: the public API in `PUBLIC_API` ([API](API.md)), without the Teams group and `update_profile`. Team members, roles, invitations, billing, the console's own flows and the key endpoints stay out, so a leaked key cannot widen itself or create another key.
+
 ## Console Login
 
 Console login sends a six-digit code to an enabled user's email. The request response does not disclose whether the account exists. Central limits sends to 20 per IP in ten minutes, and per email to Codes per Email on the Limits tab of Central Settings (default 5). A pending code expires after System Settings, Login with email link expiry (default 10 minutes), counted from the last send or incorrect attempt. It permits Code Attempts incorrect attempts (default 5). Verification consumes the code before it creates a session. The console login form uses only this email code flow.

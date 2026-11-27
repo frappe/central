@@ -3,9 +3,12 @@ from typing import Any
 import frappe
 from frappe.query_builder import Order
 from frappe.query_builder.functions import Count
+from frappe.rate_limiter import rate_limit
 from frappe.utils import escape_html
 
 from central.api.models.teams import (
+	CreateAPIKeyResponse,
+	ListAPIKeysResponse,
 	Profile,
 	ReceivedInvitation,
 	SetProfilePhotoResponse,
@@ -17,6 +20,8 @@ from central.iam import (
 	resolve_user_grants,
 	user_has_operator_bypass,
 )
+from central.identity.doctype.api_key.api_key import EXPIRY_DAYS, get_expiry
+from central.identity.doctype.api_key.api_key import SCOPES as API_KEY_SCOPES
 
 
 @frappe.whitelist(methods=["GET"])
@@ -249,3 +254,61 @@ def set_profile_photo(file_url: str | None = None) -> SetProfilePhotoResponse:
 	doc.save()
 
 	return {"user_image": doc.user_image}
+
+
+@frappe.whitelist(methods=["GET"])
+def list_api_keys() -> ListAPIKeysResponse:
+	"""The signed-in user's API keys, newest first, and the scope levels a new key can take.
+	Only the first characters of a key come back, and its secret never does."""
+	keys = frappe.get_list(
+		"API Key",
+		filters={"user": frappe.session.user},
+		fields=["name", "title", "team", "api_key", "enabled", "expires_at", "last_used_at", "creation"],
+		order_by="creation desc",
+	)
+	scopes = frappe.get_list(
+		"API Key Scope",
+		parent_doctype="API Key",
+		filters={"parenttype": "API Key", "parent": ("in", [key.name for key in keys] or [""])},
+		fields=["parent", "category", "access"],
+		order_by="idx asc",
+	)
+	for key in keys:
+		key.key_prefix = key.pop("api_key")[:8]
+		key.enabled = bool(key.enabled)
+		key.scopes = {row.category: row.access for row in scopes if row.parent == key.name}
+
+	return {
+		"keys": keys,
+		"scopes": {category: list(levels) for category, levels in API_KEY_SCOPES.items()},
+		"expiry_days": list(EXPIRY_DAYS),
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=10, seconds=300, methods="POST", user_based=True)
+def create_api_key(
+	team: str, title: str, expires_in_days: int, scopes: dict[str, str]
+) -> CreateAPIKeyResponse:
+	"""Create an API key that acts as the signed-in user on one team, inside its scopes.
+	The reply holds the only copy of the token: `<api key>:<api secret>`."""
+	secret = frappe.generate_hash(length=32)
+	key = frappe.get_doc(
+		{
+			"doctype": "API Key",
+			"title": title.strip(),
+			"user": frappe.session.user,
+			"team": team,
+			"expires_at": get_expiry(expires_in_days),
+			"scopes": [{"category": category, "access": access} for category, access in scopes.items()],
+			"api_secret": secret,
+		}
+	).insert()
+
+	return {"name": key.name, "token": f"{key.api_key}:{secret}"}
+
+
+@frappe.whitelist(methods=["POST"])
+def revoke_api_key(name: str) -> None:
+	"""Delete one of the signed-in user's API keys. Calls that use it fail from now on."""
+	frappe.delete_doc("API Key", name)
