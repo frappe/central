@@ -154,19 +154,31 @@ const refresh = async (): Promise<void> => {
 	>
 		<div v-if="hasTraffic" class="flex flex-col gap-3 px-4 py-4 md:px-6">
 			<div class="flex items-center justify-between gap-3">
-				<h2 class="flex items-center gap-1.5 text-sm-medium text-ink-gray-6">
-					<span
-						class="lucide-calendar-days size-4 text-ink-gray-4"
-						aria-hidden="true"
-					/>
-					{{ monthLabel }}
-				</h2>
+				<div class="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1">
+					<h2 class="flex items-center gap-1.5 text-sm-medium text-ink-gray-6">
+						<span
+							class="lucide-calendar-days size-4 text-ink-gray-4"
+							aria-hidden="true"
+						/>
+						{{ monthLabel }}
+					</h2>
+					<p
+						v-if="rateLabel"
+						class="flex items-center gap-1.5 text-sm text-ink-gray-5"
+					>
+						<span
+							class="lucide-tag size-3.5 shrink-0 text-ink-gray-4"
+							aria-hidden="true"
+						/>
+						{{ rateLabel }}
+					</p>
+				</div>
 
 				<Tooltip
 					:text="usage?.as_of ? `Counted ${formatDateTime(usage.as_of)}` : 'Refresh usage'"
 				>
 					<Button
-						class="!rounded-full"
+						class="!rounded-full !text-ink-gray-5 hover:!text-ink-gray-8"
 						variant="ghost"
 						icon-left="lucide-refresh-cw"
 						:label="usage?.as_of ? `Updated ${timeAgo(usage.as_of)}` : 'Refresh usage'"
@@ -177,7 +189,7 @@ const refresh = async (): Promise<void> => {
 			</div>
 
 			<div class="grid gap-4 lg:grid-cols-7 lg:gap-6">
-				<div class="flex min-w-0 flex-col lg:col-span-4 lg:justify-center">
+				<div class="flex min-w-0 flex-col lg:col-span-4">
 					<p class="truncate text-8xl-semibold tabular-nums text-ink-gray-9">
 						{{ billed(usage?.cost) }}
 					</p>
@@ -202,24 +214,14 @@ const refresh = async (): Promise<void> => {
 							tokens.
 						</span>
 					</p>
-					<div
-						v-if="rateLabel"
-						class="mt-3 border-t border-outline-gray-1 pt-2.5"
-					>
-						<span
-							class="inline-flex items-center gap-1.5 rounded-full border border-outline-gray-1 bg-surface-gray-1 px-3 py-1.5 text-sm text-ink-gray-6"
-						>
-							<span class="lucide-tag size-3.5 shrink-0" aria-hidden="true" />
-							{{ rateLabel }}
-						</span>
-					</div>
+					<MonthlyLimit class="mt-3 border-t border-outline-gray-1 pt-3" />
 				</div>
 
 				<figure
 					class="pace-chart flex min-w-0 flex-col gap-2 rounded-7 border border-outline-gray-1 bg-surface-gray-1 px-3.5 pb-3 pt-2.5 lg:col-span-3"
 				>
 					<div
-						class="h-12"
+						class="min-h-12 flex-1"
 						role="img"
 						:aria-label="`Spend this month so far, on pace for ${billed(projected)} by ${monthEnd}`"
 					>
@@ -240,7 +242,6 @@ const refresh = async (): Promise<void> => {
 						>
 						by {{ monthEnd }}
 					</figcaption>
-					<MonthlyLimit class="border-t border-outline-gray-2 pt-2.5" />
 				</figure>
 			</div>
 		</div>
