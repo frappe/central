@@ -114,7 +114,8 @@ def project_team(team: str, period_end) -> int:
 	until = frappe.utils.getdate(period_end)
 	# A day of the month before can land after that month closed, and still bills in this draft.
 	since = frappe.utils.add_months(month_of(until), -1)
-	subjects = _team_subjects(team, since, until)
+	# A server moved to the team keeps its segments under the old team, so its subscriptions count too.
+	subjects = sorted(set(_team_subjects(team, since, until)) | set(_team_servers(team)))
 	return project(subjects, since, until) if subjects else 0
 
 
@@ -324,6 +325,16 @@ def _team_subjects(team: str, since, until) -> list[str]:
 		.where(table.starts_at < utc_day_window(until)[1])
 		.where(table.ends_at.isnull() | (table.ends_at > utc_day_start(since)))
 	).run(pluck=True)
+
+
+def _team_servers(team: str) -> list[str]:
+	"""The servers the team's subscriptions bill."""
+	return frappe.get_all(
+		"Subscription",
+		filters={"team": team, "server_id": ["is", "set"]},
+		pluck="server_id",
+		distinct=True,
+	)
 
 
 def _changed_subjects(since) -> list[tuple[str, str]]:

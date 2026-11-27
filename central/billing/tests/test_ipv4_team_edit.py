@@ -58,3 +58,10 @@ class TestIPv4TeamEdit(IPv4DaysTestCase):
 
 		self.assertEqual(self.days_on(self.subscription), JUNE[:10])
 		self.assertEqual(self.days_on(self.new_subscription), JUNE[10:])
+
+	def test_the_new_team_draft_writes_the_days_of_a_server_moved_to_it(self):
+		self.move_server()
+
+		# The segment still names the old team; the draft finds the server by its subscription.
+		self.assertAlmostEqual(self.ip_quantity(self.new_team), 20 / 30)
+		self.assertEqual(self.days_on(self.new_subscription), JUNE[10:])
