@@ -277,6 +277,22 @@ class TestIPv4LateReports(IPv4DaysTestCase):
 		self.assertEqual([row.day for row in corrections], list(range(20, 31)))
 		self.assertEqual({(row.billed_value, row.value, row.status) for row in corrections}, {(1, 2, "Open")})
 
+	def test_a_correction_line_names_the_segments_it_replaces(self):
+		self.hold(at("2026-06-01"))
+		self.invoice()
+		self.hold(at("2026-06-20"), quantity=2)
+		self.days()
+
+		first, second = [
+			row.name
+			for row in frappe.get_all("Usage Segment", {"subject": self.server}, order_by="starts_at asc")
+		]
+		july = self.invoice("2026-07-01", "2026-07-31")
+		[line] = [li for li in july.items if li.charge_date == datetime.date(2026, 6, 20)]
+		self.assertEqual(
+			line.description, f"Correction · {self.server} · 20 Jun 2026 · segment {first} → {second}"
+		)
+
 	def test_a_late_day_of_a_drafted_month_bills_in_the_next_one(self):
 		self.hold_days(JUNE[0], JUNE[19])
 		self.invoice()

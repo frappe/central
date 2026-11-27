@@ -332,12 +332,18 @@ def _line(carrier, correction, delta: float) -> dict:
 
 
 def get_description(correction) -> str:
-	"""The line text: what was corrected, the day, and the report it replaces with the one that corrected it."""
+	"""The line text: what was corrected, the day, and the report or segment it replaces with the one that corrected it."""
 	day = get_day_of(correction)
 	subject = " ".join(part for part in (correction.subject, correction.dimension) if part)
-	text = _("Correction · {0} · {1} · report {2} → {3}")
-	parts = (f"{day.day} {day:%b %Y}", correction.original_report or "-", correction.report or "-")
-	# The day and the reports are kept whole; a long subject gives way.
+	if correction.get("segment") or correction.get("original_segment"):
+		# A day projected from segments has no report; its segments are the evidence.
+		text = _("Correction · {0} · {1} · segment {2} → {3}")
+		was, now = correction.get("original_segment"), correction.get("segment")
+	else:
+		text = _("Correction · {0} · {1} · report {2} → {3}")
+		was, now = correction.original_report, correction.report
+	parts = (f"{day.day} {day:%b %Y}", was or "-", now or "-")
+	# The day and the evidence are kept whole; a long subject gives way.
 	room = MAXIMUM_DESCRIPTION - len(text.format("", *parts))
 	return text.format(subject[: max(room, 0)], *parts)
 
@@ -357,6 +363,8 @@ def _open_corrections(team: str, today: datetime.date) -> list[frappe._dict]:
 			correction.value,
 			correction.original_report,
 			correction.report,
+			correction.original_segment,
+			correction.segment,
 			month.name.as_("month_row"),
 			month.month,
 			month.subject,

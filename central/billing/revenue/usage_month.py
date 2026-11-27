@@ -167,6 +167,7 @@ class MonthRow:
 			invoice=slot.get("invoice"),
 			aggregation=self.record["aggregation"],
 			report=slot.get("report"),
+			segment=slot.get("segment"),
 		)
 
 	def get_open_days(self) -> list[frappe._dict]:
@@ -291,8 +292,7 @@ class MonthRow:
 		billed = billed_value(self.corrections, day, current.quantity)
 		if frappe.utils.flt(row["quantity"]) == billed:
 			return CORRECTED if dropped else None
-		original = settled.report if settled else current.report
-		self._add_correction(day, row, report, billed, original, current.invoice)
+		self._add_correction(day, row, report, billed, settled or current, current.invoice)
 		return CORRECTED
 
 	def _last_value(self, day: int, current) -> frappe._dict:
@@ -311,7 +311,7 @@ class MonthRow:
 			self.corrections.remove(correction)
 		return found
 
-	def _add_correction(self, day: int, row: dict, report, billed: float, original, invoice) -> None:
+	def _add_correction(self, day: int, row: dict, report, billed: float, origin, invoice) -> None:
 		# The dispute window runs from the invoice that billed the day, whichever invoice bills the correction.
 		billed_on = frappe.db.get_value("Invoice", invoice, "creation")
 		correction = frappe.get_doc(
@@ -325,8 +325,11 @@ class MonthRow:
 				"day": day,
 				"billed_value": billed,
 				"value": frappe.utils.flt(row["quantity"]),
-				"original_report": original,
+				# What set the value now billed, a report or a segment, and what replaces it.
+				"original_report": origin.report,
 				"report": report,
+				"original_segment": origin.get("segment"),
+				"segment": row.get("segment"),
 				"as_of": row.get("as_of"),
 				"billed_invoice_date": frappe.utils.getdate(billed_on) if billed_on else None,
 				# Higher or lower, the next draft rates it: only a value that lowers the bill is Credit Due.

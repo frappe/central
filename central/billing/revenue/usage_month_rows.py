@@ -87,7 +87,7 @@ def corrections_of(names: list[str]) -> dict[str, list]:
 	rows = frappe.get_all(
 		CORRECTION,
 		filters={"parent": ["in", names], "parenttype": DOCTYPE},
-		fields=["name", "parent", "idx", "day", "value", "as_of", "status", "report", "invoice"],
+		fields=["name", "parent", "idx", "day", "value", "as_of", "status", "report", "segment", "invoice"],
 		order_by="idx asc, creation asc",
 	)
 	by_parent: dict[str, list] = {}

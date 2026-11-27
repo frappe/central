@@ -863,7 +863,9 @@ Public IPv4 (#197, #200, #208): a state meter, kept as Usage Segments and billed
     Stopped server bills, a day paused throughout does not, a termination day bills once
   → project runs in recount_team before the draft counts the days, and hourly in recount_changed;
     a State day weighs as a Level day (higher wins on an unbilled day; never estimated). A late
-    report that lands on a billed day is kept as a correction; one that lands on an unfilled day of
+    report that lands on a billed day is kept as a correction, which names the segment that set
+    the billed value and the one that replaces it (original_segment, segment); its invoice line
+    reads `Correction · <subject> · <day> · segment <a> → <b>`; one that lands on an unfilled day of
     a drafted month bills in the next open month. Segments are never pruned
   → included is always 0: no plan bundles an address. IPv6 is free
   → usage_recount bills the month as count ÷ days in the month per day, at the current Catalog
