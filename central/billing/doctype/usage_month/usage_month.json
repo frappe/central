@@ -64,6 +64,7 @@
   "column_break_state",
   "estimated",
   "open_days",
+  "unreported",
   "changed_at",
   "stamped_at",
   "pruned",
@@ -443,6 +444,13 @@
    "read_only": 1
   },
   {
+   "description": "Billed days whose value names no Usage Report.",
+   "fieldname": "unreported",
+   "fieldtype": "Int",
+   "label": "Unreported Days",
+   "read_only": 1
+  },
+  {
    "description": "When a day value last changed.",
    "fieldname": "changed_at",
    "fieldtype": "Datetime",
@@ -574,7 +582,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-26 19:00:00.000000",
+ "modified": "2026-11-27 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Month",

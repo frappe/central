@@ -8,7 +8,7 @@ import frappe
 from central.billing.platform.invariants import Violation
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue import usage_reports
-from central.billing.revenue.usage_month import CORRECTION, DAY_FIELDS, DOCTYPE, OPEN, days_of, slots_of
+from central.billing.revenue.usage_month import CORRECTION, DAY_FIELDS, DOCTYPE, OPEN
 
 # Usage evidence is kept this long; a dispute window must end well before it.
 RETENTION_MONTHS = 13
@@ -16,7 +16,6 @@ PAGE_SIZE = 500
 # The daily integrity check re-hashes this many recent report bodies.
 SAMPLE_SIZE = 20
 SAMPLE_DAYS = 35
-_IN_CHUNK = 1000
 
 
 def prune_old_months(today=None) -> int:
@@ -55,28 +54,11 @@ def retention_cutoff(today=None) -> datetime.date:
 
 
 def check_billed_days_name_a_report() -> list[Violation]:
-	"""Every day billed in the last two months names a Usage Report whose body is kept.
+	"""Every day billed in the last two months names a Usage Report, and every recent report keeps its body.
 
 	A billed day with no report cannot be shown to a customer who disputes it."""
 	since = frappe.utils.add_months(frappe.utils.getdate().replace(day=1), -1)
-	months = frappe.get_all(
-		DOCTYPE,
-		filters={"month": [">=", since], "billed": ["!=", 0], "pruned": 0},
-		fields=["name", "team", "subject", "month", "billed", "slots"],
-	)
-	missing = _missing_evidence(months)
-	return [
-		Violation(
-			check="M5",
-			team=month.team,
-			subject_doctype=DOCTYPE,
-			subject=month.name,
-			detail=f"{month.subject} ({month.month:%B %Y}): {missing[month.name]} billed day(s) name no Usage Report with a kept body.",
-			actual=missing[month.name],
-		)
-		for month in months
-		if missing[month.name]
-	]
+	return _unreported_months(since) + _reports_without_body(since)
 
 
 def check_report_bodies_are_intact() -> list[Violation]:
@@ -181,28 +163,40 @@ def _is_body_intact(name: str) -> bool:
 		return False
 
 
-def _missing_evidence(months: list) -> dict[str, int]:
-	"""How many billed days of each month row name no report with a kept body."""
-	reports = {month.name: _billed_reports(month) for month in months}
-	kept = _reports_with_body({report for named in reports.values() for report in named if report})
-	return {name: len([report for report in named if report not in kept]) for name, named in reports.items()}
-
-
-def _billed_reports(month) -> list[str | None]:
-	"""The report each billed day of a month row names, None for a day that names none."""
-	slots = slots_of(month.slots)
-	return [slots.get(str(day), {}).get("report") for day in days_of(frappe.utils.cint(month.billed))]
-
-
-def _reports_with_body(names: set[str]) -> set[str]:
-	names = list(names)
-	kept = set()
-	for start in range(0, len(names), _IN_CHUNK):
-		kept.update(
-			frappe.get_all(
-				usage_reports.DOCTYPE,
-				filters={"name": ["in", names[start : start + _IN_CHUNK]], "body": ["is", "set"]},
-				pluck="name",
-			)
+def _unreported_months(since) -> list[Violation]:
+	month = frappe.qb.DocType(DOCTYPE)
+	rows = (
+		frappe.qb.from_(month)
+		.select(month.name, month.team, month.subject, month.month, month.unreported)
+		.where((month.unreported > 0) & (month.month >= since) & (month.pruned == 0))
+		.limit(200)
+	).run(as_dict=True)
+	return [
+		Violation(
+			check="M5",
+			team=row.team,
+			subject_doctype=DOCTYPE,
+			subject=row.name,
+			detail=f"{row.subject} ({row.month:%B %Y}): {row.unreported.bit_count()} billed day(s) name no Usage Report.",
+			actual=row.unreported.bit_count(),
 		)
-	return kept
+		for row in rows
+	]
+
+
+def _reports_without_body(since) -> list[Violation]:
+	reports = frappe.get_all(
+		usage_reports.DOCTYPE,
+		filters={"received_at": [">=", since], "body": ["is", "not set"]},
+		fields=["name", "service", "received_at"],
+		limit=200,
+	)
+	return [
+		Violation(
+			check="M5",
+			subject_doctype=usage_reports.DOCTYPE,
+			subject=report.name,
+			detail=f"The {report.service} report received {report.received_at} keeps no body. Restore the file from a backup.",
+		)
+		for report in reports
+	]

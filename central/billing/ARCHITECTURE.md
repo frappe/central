@@ -752,9 +752,10 @@ Usage months (ADR 0028, #207): every writer stores a line in the day slot of its
     of a month row older than that with no open day and no Open correction, keeps its masks,
     quantity and terms, and sets `pruned`; prune_reports deletes Usage Reports received before
     the cutoff with their files; both page by name through platform.jobs.each_isolated
-  → readiness M5: a day billed in the last two months whose slot names no Usage Report with a
-    kept body; M6: a report body that sample_report_bodies (daily, 20 random reports of the last
-    35 days) found no longer matching its SHA-256 (`damaged_at`)
+  → readiness M5: a day billed in the last two months whose slot names no Usage Report (the
+    writer and the stamper keep these days in the `unreported` mask, so the check reads no slots),
+    and a report of those months that keeps no body; M6: a report body that sample_report_bodies
+    (daily, 20 random reports of the last 35 days) found no longer matching its SHA-256 (`damaged_at`)
   → a reused subject name bills each day on the subscription whose row first held it
   → usage_recount rates one row per subscription, resource type, dimension and month (the
     rated row, counted_at set) from the open day slots; invoicing reads rated rows and Usage

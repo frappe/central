@@ -25,7 +25,7 @@ SETTLED = (BILLED, CREDITED, CREDIT_DUE, NO_CHARGE)
 DAY_FIELDS = tuple(f"d{day:02d}" for day in range(1, 32))
 WRITTEN = "written"
 CORRECTED = "corrected"
-MASKS = ("filled", "billed", "written_off", "estimated", "open_days")
+MASKS = ("filled", "billed", "written_off", "estimated", "open_days", "unreported")
 
 _META_FIELDS = ("name", "creation", "modified", "owner", "modified_by")
 _KEY_FIELDS = ("service", "subject", "meter", "dimension", "month", "subscription")
@@ -216,6 +216,8 @@ class MonthRow:
 		table = frappe.qb.DocType(DOCTYPE)
 		record = self.record
 		record["open_days"] = record["filled"] & ~record["billed"] & ~record["written_off"]
+		reported = sum(bit(int(day)) for day, slot in self.slots.items() if slot.get("report"))
+		record["unreported"] = record["billed"] & ~reported
 		query = frappe.qb.update(table).set(table.slots, json.dumps(self.slots, sort_keys=True))
 		for name in (*MASKS, "carries_bundle", *(DAY_FIELDS[day - 1] for day in self.changed_days)):
 			query = query.set(table[name], record[name])

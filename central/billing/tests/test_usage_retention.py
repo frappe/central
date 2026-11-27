@@ -117,6 +117,19 @@ class TestUsageRetention(BillingTestCase):
 		[violation] = [v for v in checks("M5") if v.subject == name]
 		self.assertEqual(violation.actual, 1)
 
+	def test_a_billed_day_is_traced_without_reading_its_slots(self):
+		today = frappe.utils.getdate()
+		name = self.write(today.replace(day=2))
+		self.assertEqual(frappe.db.get_value(usage_month.DOCTYPE, name, "unreported"), 0)
+		self.write(today.replace(day=3), report="")
+		self.assertEqual(frappe.db.get_value(usage_month.DOCTYPE, name, "unreported"), bit(3))
+
+	def test_a_recent_report_without_its_body_is_a_readiness_row(self):
+		report = usage_reports.record_lines(STORAGE_SERVICE, usage_reports.READ_BY_CENTRAL, [line(TODAY)])
+		frappe.db.set_value(usage_reports.DOCTYPE, report, "body", None)
+
+		self.assertIn(report, {violation.subject for violation in checks("M5")})
+
 	def test_a_damaged_body_found_by_the_sample_is_a_readiness_row(self):
 		intact = usage_reports.record_lines(STORAGE_SERVICE, usage_reports.READ_BY_CENTRAL, [line(TODAY)])
 		damaged = usage_reports.record_lines(STORAGE_SERVICE, usage_reports.READ_BY_CENTRAL, [line(TODAY, 9)])

@@ -26,3 +26,5 @@ def on_doctype_update() -> None:
 	frappe.db.add_index("Usage Month", ["service", "month", "aggregation"])
 	frappe.db.add_index("Usage Month", ["changed_at"])
 	frappe.db.add_index("Usage Month", ["invoice"])
+	# The evidence check reads only the rows with a billed day that names no report.
+	frappe.db.add_index("Usage Month", ["unreported", "month"])
