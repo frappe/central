@@ -790,7 +790,10 @@ Usage months (ADR 0028, #207): every writer stores a line in the day slot of its
   → usage_recount rates one row per subscription, resource type, dimension and month (the
     rated row, counted_at set) from the open day slots; invoicing reads rated rows and Usage
     Rollup rows; stamp_invoice stamps the rated row and each counted slot
-  → Central's own reads and estimates keep their lines as a Usage Report of their own
+  → Central's own reads and estimates keep their lines as a Usage Report of their own; each line
+    carries its evidence: a storage read names what Cargo answered (read cargo.bucket_usage, at,
+    used_bytes), a Grove read its landing window, requests, tokens and the SHA-256 of Grove's
+    model entry (read grove.usage), and an estimate the day and report it copied
 
 AI (ADR 0027): grove_bridge.read_ai_usage (hourly) → day slot per team, model, landing day (USD)
   → usage_recount → one rated Usage Month per subscription, month and model, at

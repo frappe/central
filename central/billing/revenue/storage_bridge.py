@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import datetime
 from collections.abc import Callable
 
 import frappe
@@ -190,7 +191,9 @@ class RegionRead:
 def _reading(name: str, meter) -> dict:
 	bucket = frappe.get_doc("Team Service", name)
 	used = frappe.utils.flt(bucket.get_usage().get("used_bytes"))
-	return meter.get_day_row(bucket, utc_today(), used, as_of=frappe.utils.now_datetime())
+	return meter.get_day_row(
+		bucket, utc_today(), used, as_of=frappe.utils.now_datetime(), evidence=_read_evidence(used)
+	)
 
 
 def _bundled_reading(bucket, meter, day) -> dict:
@@ -201,4 +204,21 @@ def _bundled_reading(bucket, meter, day) -> dict:
 		# The bucket was never attached, so it holds nothing.
 		usage = {}
 	used = frappe.utils.flt(usage.get("used_bytes"))
-	return meter.get_day_row(bucket, day, used, included=bucket.included, as_of=frappe.utils.now_datetime())
+	return meter.get_day_row(
+		bucket,
+		day,
+		used,
+		included=bucket.included,
+		as_of=frappe.utils.now_datetime(),
+		evidence=_read_evidence(used),
+	)
+
+
+def _read_evidence(used: float) -> dict:
+	"""What Cargo answered when Central read the bucket, and when."""
+	return {
+		"v": 1,
+		"read": "cargo.bucket_usage",
+		"at": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+		"used_bytes": int(used),
+	}

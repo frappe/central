@@ -6,11 +6,14 @@ import json
 
 import frappe
 
-from central.billing.revenue import usage_reports
+from central.billing.revenue import usage_ledger, usage_month, usage_reports
 from central.billing.revenue.service_reports import MAXIMUM_EVIDENCE
 from central.billing.revenue.usage_month import bit
+from central.billing.tests import test_usage_month
+from central.billing.tests.test_ai_billing import TEAM_USD, AIBillingCase
+from central.billing.tests.test_bundled_buckets import BundledServerFixture
 from central.billing.tests.test_service_reports import GB, TEAM, ServiceReportsCase, line
-from central.billing.tests.utils import usage_days
+from central.billing.tests.utils import BillingTestCase, ensure_team, usage_days
 from central.services.doctype.service.service import STORAGE_EVIDENCE_KEYS
 
 
@@ -94,3 +97,62 @@ class TestPushedEvidence(EvidenceCase):
 		[day] = usage_days(team=TEAM)
 		[kept] = json.loads(usage_reports.get_body(day.report))["lines"]
 		self.assertEqual(kept["evidence"]["readings"], 3)
+
+
+def kept_line(day) -> dict:
+	"""The line of the report that set a stored day."""
+	lines = json.loads(usage_reports.get_body(day.report))["lines"]
+	return next(kept for kept in lines if str(kept["day"]) == str(day.day) and kept["subject"] == day.subject)
+
+
+class TestCentralLineEvidence(BundledServerFixture, BillingTestCase):
+	"""Central's own reads and estimates name how they got their value."""
+
+	def setUp(self):
+		self.set_up_bundled_server()
+
+	def underived_days(self) -> int:
+		return sum(frappe.get_all("Usage Month", filters={"subject": self.bucket}, pluck="underived"))
+
+	def test_a_storage_read_names_what_cargo_answered(self):
+		self.read("2026-06-01", 100)
+		[day] = usage_days(subject=self.bucket)
+		evidence = kept_line(day)["evidence"]
+		self.assertEqual((evidence["read"], evidence["used_bytes"]), ("cargo.bucket_usage", 100 * GB))
+		self.assertTrue(evidence["at"].endswith("Z"))
+		self.assertEqual(self.underived_days(), 0)
+
+	def test_an_estimate_names_the_day_it_copied(self):
+		self.read("2026-06-01", 100)
+		usage_ledger.fill_missing_days("2026-06-05")
+		read, estimated = usage_days(subject=self.bucket)
+		self.assertEqual(
+			kept_line(estimated)["evidence"],
+			{"v": 1, "estimate": {"copied_day": "2026-06-01", "report": read.report}},
+		)
+		self.assertEqual(self.underived_days(), 0)
+
+
+class TestGroveReadEvidence(AIBillingCase):
+	def test_a_grove_read_names_its_window_and_answer(self):
+		self.land(TEAM_USD, "2026-06-10", {"claude-sonnet": 0.25})
+		self.read("2026-06-10")
+		[day] = self.days(TEAM_USD)
+		evidence = kept_line(day)["evidence"]
+		self.assertEqual(
+			(evidence["read"], evidence["window"][0], evidence["requests"], evidence["tokens"]),
+			("grove.usage", "2026-06-10T00:00:00Z", 1, 10),
+		)
+		self.assertEqual(len(evidence["sha256"]), 64)
+		self.assertEqual(frappe.db.get_value("Usage Month", day.month_row, "underived"), 0)
+
+
+class TestSegmentDays(BillingTestCase):
+	def setUp(self):
+		ensure_team(test_usage_month.TEAM)
+
+	def test_a_segment_day_counts_as_derived(self):
+		usage_month.write_lines([test_usage_month.line(3, 1, segment="segment-1")], None, "Segment")
+		usage_month.write_lines([test_usage_month.line(4, 1)], "report-1", "Read By Central")
+		underived = frappe.db.get_value("Usage Month", {"subject": test_usage_month.SUBJECT}, "underived")
+		self.assertEqual(underived, bit(4))

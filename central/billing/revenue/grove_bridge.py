@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import datetime
+import hashlib
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -9,7 +10,7 @@ import frappe
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue.service_reports import MAXIMUM_DIMENSION
 from central.billing.revenue.usage_ledger import CentralLines, utc_today, write_central_days
-from central.billing.revenue.usage_reports import READ_BY_CENTRAL
+from central.billing.revenue.usage_reports import READ_BY_CENTRAL, canonical_json
 from central.integrations.grove import GroveClient
 from central.services.doctype.service.service import (
 	AI_METER,
@@ -112,9 +113,22 @@ def landing_rows(client: GroveClient, team_service, meter, day: str) -> list[dic
 			source_amount=model["cost"],
 			source_currency="USD",
 			as_of=as_of,
+			evidence=_read_evidence(model, start, until),
 		)
 		for model in models
 	]
+
+
+def _read_evidence(model: dict, start: datetime.datetime, until: datetime.datetime) -> dict:
+	"""The landing window Central read from Grove, and a hash of what Grove answered for the model."""
+	return {
+		"v": 1,
+		"read": "grove.usage",
+		"window": [_rfc3339(start), _rfc3339(until)],
+		"requests": frappe.utils.cint(model.get("requests")),
+		"tokens": frappe.utils.cint(model.get("tokens")),
+		"sha256": hashlib.sha256(canonical_json(model)).hexdigest(),
+	}
 
 
 def subscribe_ai_teams() -> None:

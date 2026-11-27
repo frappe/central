@@ -192,7 +192,16 @@ def _estimated(row, day: datetime.date, subject) -> dict:
 	# A server resized since its last reading has that day's bundle, not the reading's.
 	line = {name: row.get(name) for name in _LINE_FIELDS}
 	included = subject.get("included", row.included)
-	return {**line, "day": day, "included": included, "estimated": 1, "as_of": None, "copied_day": row.day}
+	evidence = {"v": 1, "estimate": {"copied_day": str(row.day), "report": row.report}}
+	return {
+		**line,
+		"day": day,
+		"included": included,
+		"estimated": 1,
+		"as_of": None,
+		"copied_day": row.day,
+		"evidence": evidence,
+	}
 
 
 def _live_subjects(services: set, day: datetime.date) -> dict:
