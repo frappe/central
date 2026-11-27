@@ -5,6 +5,7 @@ import CopyableValue from '@/components/common/CopyableValue.vue'
 import { useAI } from '@/composables/useAI'
 import { getErrorMessage } from '@/lib/feedback'
 import { capitalise } from '@/lib/format'
+import { limitChips, limitsFor } from '@/lib/limits'
 import type { AIDialect } from '@/types/ai'
 import LucideAudioLines from '~icons/lucide/audio-lines'
 import LucideBinary from '~icons/lucide/binary'
@@ -39,6 +40,14 @@ defineProps<Props>()
 
 const { ai, models, modelsLoading, modelsError, modelsGeography, loadModels } =
 	useAI()
+
+// A plan that counts per model: each model's limits, shared by the whole team.
+const showLimits = computed(() => ai.value?.spend?.limit_scope === 'Model')
+const limitsOf = (model: string) =>
+	limitChips(
+		limitsFor(ai.value?.spend?.limits ?? [], model, modelsGeography.value),
+		'for the whole team',
+	)
 
 const geographies = computed(() => ai.value?.geographies ?? [])
 const geographyOptions = computed(() =>
@@ -117,6 +126,13 @@ watch(
 						Output
 					</th>
 					<th
+						v-if="showLimits"
+						scope="col"
+						class="hidden pb-2 font-normal lg:table-cell"
+					>
+						Rate limits
+					</th>
+					<th
 						scope="col"
 						class="hidden pb-2 text-right font-normal md:table-cell"
 					>
@@ -173,6 +189,26 @@ watch(
 									:aria-label="capitalise(modality)"
 								/>
 							</Tooltip>
+						</span>
+					</td>
+
+					<td
+						v-if="showLimits"
+						class="hidden border-t border-outline-gray-1 py-2.5 pr-3 text-sm text-ink-gray-6 lg:table-cell"
+					>
+						<span class="flex flex-wrap items-center gap-x-2">
+							<template
+								v-for="(chip, index) in limitsOf(model.name)"
+								:key="chip.key"
+							>
+								<span v-if="index" aria-hidden="true">·</span>
+								<Tooltip :text="chip.text">
+									<span class="tabular-nums">{{ chip.label }}</span>
+								</Tooltip>
+							</template>
+							<span v-if="!limitsOf(model.name).length" class="text-ink-gray-5">
+								No limit
+							</span>
 						</span>
 					</td>
 
