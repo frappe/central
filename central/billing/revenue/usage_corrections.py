@@ -9,7 +9,6 @@ from frappe import _
 from frappe.query_builder import Case
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
-from central.billing.platform.invariants import Violation
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue.metered_lines import MAXIMUM_DESCRIPTION
 from central.billing.revenue.metering import metered_plan_for
@@ -99,66 +98,6 @@ def write_off_expired(today=None) -> int:
 		written += len(each_isolated("Usage correction write-off", CORRECTION, page, _write_off))
 		after = page[-1]
 	return written
-
-
-def check_credit_due_corrections() -> list[Violation]:
-	"""Every lower value for a billed day has had its credit note issued by an operator.
-
-	Issue the credit note for the difference, then mark the correction Credited."""
-	correction = frappe.qb.DocType(CORRECTION)
-	month = frappe.qb.DocType(DOCTYPE)
-	rows = (
-		frappe.qb.from_(correction)
-		.join(month)
-		.on(correction.parent == month.name)
-		.select(
-			correction.name,
-			correction.idx,
-			correction.day,
-			correction.billed_value,
-			correction.value,
-			month.name.as_("month_row"),
-			month.team,
-			month.subject,
-			month.month,
-		)
-		.where(correction.status == CREDIT_DUE)
-		.orderby(correction.name)
-		.limit(200)
-	).run(as_dict=True)
-	later = _later_values(rows)
-	return [
-		Violation(
-			check="M4",
-			team=row.team,
-			subject_doctype=DOCTYPE,
-			subject=row.month_row,
-			detail=_credit_due_detail(row, later.get(row.name, [])),
-		)
-		for row in rows
-	]
-
-
-def _later_values(rows: list) -> dict[str, list]:
-	"""For each Credit Due correction, the corrections of its day made after it."""
-	corrections = corrections_of(list({row.month_row for row in rows}))
-	return {
-		row.name: [
-			c
-			for c in corrections.get(row.month_row, [])
-			if c.day == row.day and frappe.utils.cint(c.idx) > frappe.utils.cint(row.idx)
-		]
-		for row in rows
-	}
-
-
-def _credit_due_detail(row, later: list) -> str:
-	detail = f"{row.subject} on {_day_of(row):%d %b %Y}: billed {row.billed_value}, now {row.value}."
-	if later:
-		# A later value may undo the drop, so the operator sees it before issuing a credit note.
-		values = ", ".join(f"{c.value} ({c.status})" for c in later)
-		detail += f" Later values of this day: {values}; check them before crediting."
-	return detail + f" Issue the credit note, then mark correction {row.name} Credited."
 
 
 class BilledMonth:

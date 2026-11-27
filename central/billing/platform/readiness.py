@@ -12,7 +12,7 @@ from central.billing.catalog.subscriptions import active_segments
 from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.india_gst import INDIA
 from central.billing.platform.invariants import Violation
-from central.billing.revenue import credits, usage_corrections, usage_retention
+from central.billing.revenue import credits, usage_correction_checks, usage_retention
 from central.billing.revenue.exchange_rates import month_rate
 
 STALLED_HOURS = 3
@@ -668,7 +668,7 @@ CHECKS = {
 	"M1": ("Storage usage is read daily", check_storage_usage_is_recorded),
 	"M2": ("Converted usage has an exchange rate", check_converted_usage_has_a_rate),
 	"M3": ("Public IPv4 is billed", check_public_ipv4_is_billed),
-	"M4": ("Lower usage values have a credit note", usage_corrections.check_credit_due_corrections),
+	"M4": ("Lower usage values have a credit note", usage_correction_checks.check_credit_due_corrections),
 	"M5": ("Billed usage days name their evidence", usage_retention.check_billed_days_name_a_report),
 	"M6": ("Usage report bodies are intact", usage_retention.check_report_bodies_are_intact),
 	"W1": ("Billed teams can pay", check_billed_teams_can_pay),
