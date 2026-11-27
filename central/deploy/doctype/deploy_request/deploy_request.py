@@ -408,11 +408,6 @@ class DeployRequest(PipelineBuilder):
 		last_heard = last_reported or self.step_started
 		return time_diff_in_seconds(now_datetime(), last_heard) > BUILD_REPORT_TIMEOUT_SECONDS
 
-	@property
-	def step_started(self) -> datetime:
-		task = self.flags.current_pipeline_task
-		return frappe.db.get_value("Pipeline Task", task, "creation") if task else self.creation
-
 	def find_or_create_virtual_machine(self, app: DeployApp) -> str:
 		"""Link the app's VM: the one Atlas already has for it, or a new one at this deploy's plan.
 		The caller holds the app's lock, so Atlas is never asked for a second VM."""
@@ -500,12 +495,6 @@ class DeployRequest(PipelineBuilder):
 			"health_timeout": self.health_timeout or DEFAULT_HEALTH_TIMEOUT_SECONDS,
 			"secrets": secrets,
 		}
-
-	def wait(self, message: str, for_: int) -> None:
-		"""Try this step again later, or fail the deploy once this step has waited `for_` seconds."""
-		if time_diff_in_seconds(now_datetime(), self.step_started) > for_:
-			frappe.throw(message, DeployTimeoutError)
-		self.defer_current_task(message)
 
 	def on_pipeline_success(self, pipeline: Pipeline) -> None:
 		self.set_status("Succeeded")
