@@ -128,7 +128,7 @@ watch(
 					<th
 						v-if="showLimits"
 						scope="col"
-						class="hidden pb-2 font-normal lg:table-cell"
+						class="hidden pb-2 pr-8 font-normal lg:table-cell"
 					>
 						Rate limits
 					</th>
@@ -194,9 +194,9 @@ watch(
 
 					<td
 						v-if="showLimits"
-						class="hidden border-t border-outline-gray-1 py-2.5 pr-3 text-sm text-ink-gray-6 lg:table-cell"
+						class="hidden whitespace-nowrap border-t border-outline-gray-1 py-2.5 pr-8 text-sm text-ink-gray-6 lg:table-cell"
 					>
-						<span class="flex flex-wrap items-center gap-x-2">
+						<span class="flex items-center gap-x-2">
 							<template
 								v-for="(chip, index) in limitsOf(model.name)"
 								:key="chip.key"
