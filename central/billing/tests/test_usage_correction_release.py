@@ -2,6 +2,8 @@
 # For license information, please see license.txt
 """A reissue gives back the corrections its invoice billed, so the replacement bills the true day."""
 
+import frappe
+
 from central.billing.platform import readiness
 from central.billing.revenue import usage_corrections
 from central.billing.tests.test_usage_corrections import MONTH_TEAM, OneMonthFixture, credit_due_rows
@@ -73,6 +75,72 @@ class TestReleasedCorrections(OneMonthFixture, BillingTestCase):
 		self.assertEqual(self.statuses(), [(12, "Written Off", "invoice-x"), (13, "Billed", "invoice-y")])
 		self.assertEqual(len(reissued_rows(self.month_row)), 1)
 
+	def test_a_reissue_under_two_later_drops_rates_only_the_latest(self):
+		self.bill_a_rise_on_invoice_x_then_a_drop()
+		self.correct(10, 10.5, hour=22)
+		usage_corrections.rate_open(MONTH_TEAM)
+
+		usage_corrections.release("invoice-x", MONTH_TEAM)
+		rated = usage_corrections.rate_open(MONTH_TEAM)
+
+		# The 11 between is closed without a line; only the 10.5 the day bills now is rated.
+		self.assertEqual(
+			self.statuses(), [(12, "Written Off", None), (11, "Written Off", None), (10.5, "Open", None)]
+		)
+		self.assertEqual([line["quantity"] for line in rated.lines], [0.5])
+		self.assertEqual(credit_due_rows(self.month_row), [])
+		self.assertEqual(reissued_rows(self.month_row), [])
+
+	def test_a_reissue_rates_a_later_open_value_below_a_reopened_one(self):
+		self.bill_a_rise_on_invoice_x_then_a_drop()
+		self.correct(10, 10.5, hour=22)
+
+		usage_corrections.release("invoice-x", MONTH_TEAM)
+		rated = usage_corrections.rate_open(MONTH_TEAM)
+
+		self.assertEqual(
+			self.statuses(), [(12, "Written Off", None), (11, "Written Off", None), (10.5, "Open", None)]
+		)
+		self.assertEqual([line["quantity"] for line in rated.lines], [0.5])
+		self.assertEqual(credit_due_rows(self.month_row), [])
+
+	def bill_twice_then_reissue_the_first(self) -> None:
+		"""Day 10 billed 10, then 12 on invoice X, then 13 on invoice Y, then X reissued."""
+		self.bill({10: 10, 11: 10})
+		self.correct(10, 12, hour=18)
+		usage_corrections.stamp(usage_corrections.rate_open(MONTH_TEAM), "invoice-x", MONTH_TEAM)
+		self.correct(10, 13, hour=20)
+		usage_corrections.stamp(usage_corrections.rate_open(MONTH_TEAM), "invoice-y", MONTH_TEAM)
+		usage_corrections.release("invoice-x", MONTH_TEAM)
+
+	def test_reissuing_the_later_invoice_too_bills_the_whole_rise(self):
+		self.bill_twice_then_reissue_the_first()
+
+		usage_corrections.release("invoice-y", MONTH_TEAM)
+		rated = usage_corrections.rate_open(MONTH_TEAM)
+
+		self.assertEqual([line["quantity"] for line in rated.lines], [3])
+		self.assertEqual(self.statuses(), [(12, "Written Off", None), (13, "Open", None)])
+		self.assertEqual(reissued_rows(self.month_row), [])
+
+	def test_billing_by_hand_settles_the_reissued_value(self):
+		self.bill_twice_then_reissue_the_first()
+		replaced = self.corrections()[0].name
+
+		usage_corrections.mark_billed_by_hand(replaced, "invoice HB-1")
+
+		self.assertEqual(self.statuses(), [(12, "Billed By Hand", "invoice-x"), (13, "Billed", "invoice-y")])
+		self.assertEqual(reissued_rows(self.month_row), [])
+		# The hand-billed value is what the day bills under the 13 if Y is reissued too.
+		usage_corrections.release("invoice-y", MONTH_TEAM)
+		self.assertEqual([line["quantity"] for line in usage_corrections.rate_open(MONTH_TEAM).lines], [1])
+
+	def test_only_a_value_left_for_an_operator_is_billed_by_hand(self):
+		self.bill_a_rise_on_invoice_x_then_a_drop()
+
+		with self.assertRaises(frappe.ValidationError):
+			usage_corrections.mark_billed_by_hand(self.corrections()[1].name, "invoice HB-1")
+
 	def test_a_second_reissue_gives_back_every_value_it_billed(self):
 		self.bill_a_rise_on_invoice_x_then_a_drop()
 		self.correct(10, 13, hour=22)
@@ -83,6 +151,8 @@ class TestReleasedCorrections(OneMonthFixture, BillingTestCase):
 		usage_corrections.release("invoice-x2", MONTH_TEAM)
 		reissued = usage_corrections.rate_open(MONTH_TEAM)
 
-		self.assertEqual([line["quantity"] for line in billed.lines], [1, 2])
+		self.assertEqual([line["quantity"] for line in billed.lines], [3])
 		self.assertEqual(reissued.lines, billed.lines)
-		self.assertEqual(self.statuses(), [(12, "Written Off", None), (11, "Open", None), (13, "Open", None)])
+		self.assertEqual(
+			self.statuses(), [(12, "Written Off", None), (11, "Written Off", None), (13, "Open", None)]
+		)

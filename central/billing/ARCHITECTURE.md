@@ -757,13 +757,20 @@ Usage months (ADR 0028, #207): every writer stores a line in the day slot of its
   → a reissue (lifecycle.reissue_invoice → usage_recount.release_invoice →
     usage_corrections.release) gives back each correction Billed on the cancelled invoice, by
     what later values of the same day did: none settled, it goes back Open and the replacement
-    bills it again; only Credit Due or No Charge later ones, they were rated against the
-    cancelled value, so it goes Written Off and they go back Open with billed_value set to what
-    the day bills without it, and the next draft rates them again (a day billed 10, 12 billed on
-    the cancelled invoice, 11 Credit Due: the replacement bills 1, not 2 with 1 owed back); a
-    later Billed or Credited one moved money against it, so nothing is re-rated or undone: it
+    bills it again; only Credit Due, No Charge or Open later ones, they were rated against the
+    cancelled value, so it goes Written Off, the day's latest value goes back Open with
+    billed_value set to what the day bills without it, and the ones in between go Written Off
+    with no invoice and no line (a day billed 10, 12 billed on the cancelled invoice, 11 Credit
+    Due, 10.5 Credit Due: the replacement bills 0.5, with no credit note owed); a later Billed,
+    Credited or Billed By Hand one moved money against it, so nothing is re-rated or undone: it
     goes Written Off keeping its invoice, and readiness M7 lists it within its 90-day window for
-    an operator to bill the units it added by hand
+    an operator to bill the units it added by hand, then mark it Billed By Hand (Usage Month
+    form, Mark Billed By Hand; api/admin/corrections.mark_usage_billed_by_hand, System Manager,
+    with a comment); a Billed By Hand value sets what its day bills, like Billed
+  → when a later release rates the day again without such a value (the later invoice is
+    reissued too), release clears its invoice and comments on the Usage Month, so M7 drops it
+    and the next draft bills the whole rise (10, 12 on X, 13 on Y, X then Y reissued: the
+    replacement bills 3); M7 never asks to bill what a draft bills
   → a correction bills only within 90 days of the invoice that billed its day
     (billed_invoice_date); a month below the minimum keeps a positive one Open; the daily
     write_off_expired marks a higher value past the window Written Off and comments on the Usage
@@ -1020,7 +1027,8 @@ The team and the signed-in user are counted apart, and either one can lock. A us
 | A line's Project breakdown is missing/wrong | `generate._tag_projects`/`_resource_project_map` — is the resource's Subscription tagged, is its Project `enabled`? A disabled Project's lines carry no tag by design (§2.1); check `Invoice Line Item.project`/`project_title` on a real invoice, or the same fields on a forecast line |
 | Tagging a subscription into a Project is refused | `Subscription.validate_project` — same-team? Project `enabled`? `catalog.subscriptions.enforce_project_headroom` — would the tag push the Project's committed run-rate (`project_run_rate`) past its `spending_limit`? (blocks new tagging only, §2.1) |
 | ERPNext out of sync | `erpnext_sync` (async, never rolls back the invoice; check retry backoff) |
-| A late usage value was not billed | the Usage Month's Corrections tab: Open waits for the next draft (a month below the minimum keeps a higher value Open); Credit Due lowers the bill (readiness M4, an operator issues the credit note); No Charge stayed inside the bundle or allowance and changes nothing; Written Off was a higher value that came more than 90 days after the invoice that billed the day (a lower one is rated at any age), or a value a reissue gave back that a later value replaced (one that keeps its invoice is listed by readiness M7); Billed names the invoice. A day a reissue gave back is billed with its own value first |
+| A late usage value was not billed | the Usage Month's Corrections tab: Open waits for the next draft (a month below the minimum keeps a higher value Open); Credit Due lowers the bill (readiness M4, an operator issues the credit note); No Charge stayed inside the bundle or allowance and changes nothing; Written Off was a higher value that came more than 90 days after the invoice that billed the day (a lower one is rated at any age), or a value a reissue gave back that a later value replaced (one that keeps its invoice is listed by readiness M7 until an operator bills it by hand and marks it Billed By Hand); Billed names the invoice. A day a reissue gave back is billed with its own value first |
+| Readiness M7 lists a reissued usage correction | a reissue gave back a correction a later Billed or Credited value was rated against (`usage_corrections._release_one`); bill the units the row names by hand, then Mark Billed By Hand on the Usage Month (status Billed By Hand). A row that drops by itself was rated again by a later release (`_unmark_replaced`) and the next draft bills it |
 | A dispute names a day the Usage Month has no value for | is `pruned` set? The month is older than 13 months: its totals and terms stay, the day values and reports are gone. Otherwise readiness M5 lists billed days whose report is missing, M6 a report whose body no longer matches its hash |
 | A server's public IPv4 is not on the invoice | readiness M3; is there a `network` Usage Month for the server with that day filled (`subject` = server name)? Did the server's subscription have an open segment that day (a trial or a day paused throughout bills nothing)? Is the day before `Service.bill_from` (written off)? |
 | Draft fails with "unpriced metered usage: IP" | the `public-ipv4` plan has no Catalog Rate for the team's currency and the server's region; add it, then run the draft again: every unbilled IPv4 day of the open month bills |

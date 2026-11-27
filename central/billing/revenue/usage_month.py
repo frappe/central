@@ -19,9 +19,10 @@ BILLED = "Billed"
 CREDITED = "Credited"
 NO_CHARGE = "No Charge"
 WRITTEN_OFF = "Written Off"
-# A correction in one of these states sets what its day bills: billed, credited, owed as a credit, or
-# rated as changing nothing. A written-off value was never billed, so it does not.
-SETTLED = (BILLED, CREDITED, CREDIT_DUE, NO_CHARGE)
+BILLED_BY_HAND = "Billed By Hand"
+# A correction in one of these states sets what its day bills: billed, credited, owed as a credit,
+# rated as changing nothing, or billed by an operator. A written-off value was never billed, so it does not.
+SETTLED = (BILLED, CREDITED, CREDIT_DUE, NO_CHARGE, BILLED_BY_HAND)
 DAY_FIELDS = tuple(f"d{day:02d}" for day in range(1, 32))
 WRITTEN = "written"
 CORRECTED = "corrected"
@@ -488,7 +489,7 @@ def corrections_of(names: list[str]) -> dict[str, list]:
 	rows = frappe.get_all(
 		CORRECTION,
 		filters={"parent": ["in", names], "parenttype": DOCTYPE},
-		fields=["name", "parent", "idx", "day", "value", "as_of", "status", "report"],
+		fields=["name", "parent", "idx", "day", "value", "as_of", "status", "report", "invoice"],
 		order_by="idx asc, creation asc",
 	)
 	by_parent: dict[str, list] = {}

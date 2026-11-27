@@ -66,3 +66,19 @@ def mark_usage_credited(correction: str, reason: str) -> dict:
 		"correction": correction,
 		"status": frappe.db.get_value("Usage Month Correction", correction, "status"),
 	}
+
+
+@frappe.whitelist(methods=["POST"])
+def mark_usage_billed_by_hand(correction: str, reason: str) -> dict:
+	"""Record that what a reissued usage correction added was billed by hand."""
+	# Platform staff only: it closes a readiness M7 row, so a team must never clear its own debt.
+	authz.require_operator()
+	from central.billing.revenue.usage_corrections import mark_billed_by_hand
+
+	if not (reason or "").strip():
+		frappe.throw(_("Name the invoice that billed this correction by hand."), frappe.ValidationError)
+	mark_billed_by_hand(correction, reason.strip())
+	return {
+		"correction": correction,
+		"status": frappe.db.get_value("Usage Month Correction", correction, "status"),
+	}

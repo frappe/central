@@ -6,7 +6,7 @@ import datetime
 import frappe
 
 from central.billing.platform.invariants import Violation
-from central.billing.revenue.usage_corrections import WINDOW_DAYS
+from central.billing.revenue.usage_corrections import WINDOW_DAYS, get_day_of
 from central.billing.revenue.usage_month import CORRECTION, CREDIT_DUE, DOCTYPE, WRITTEN_OFF, corrections_of
 
 
@@ -57,6 +57,7 @@ def check_reissued_corrections() -> list[Violation]:
 		.join(month)
 		.on(correction.parent == month.name)
 		.select(
+			correction.name,
 			correction.day,
 			correction.value,
 			correction.billable_delta,
@@ -92,9 +93,12 @@ def check_reissued_corrections() -> list[Violation]:
 
 def _reissued_detail(row) -> str:
 	"""The readiness detail for one correction a reissue left to an operator."""
-	billed = f"{row.subject} on {_day_of(row):%d %b %Y}: {row.value} was billed on {row.invoice}"
+	billed = f"{row.subject} on {get_day_of(row):%d %b %Y}: {row.value} was billed on {row.invoice}"
 	later = "a later charge or credit note of this day was rated against it"
-	return f"{billed}, which was reissued, and {later}. Bill the {row.billable_delta} it added by hand."
+	return (
+		f"{billed}, which was reissued, and {later}. Bill the {row.billable_delta} it added by hand, "
+		f"then mark correction {row.name} Billed By Hand."
+	)
 
 
 def _later_values(rows: list) -> dict[str, list]:
@@ -112,13 +116,9 @@ def _later_values(rows: list) -> dict[str, list]:
 
 def _credit_due_detail(row, later: list) -> str:
 	"""The readiness detail for one Credit Due correction."""
-	detail = f"{row.subject} on {_day_of(row):%d %b %Y}: billed {row.billed_value}, now {row.value}."
+	detail = f"{row.subject} on {get_day_of(row):%d %b %Y}: billed {row.billed_value}, now {row.value}."
 	if later:
 		# A later value may undo the drop, so the operator sees it before issuing a credit note.
 		values = ", ".join(f"{c.value} ({c.status})" for c in later)
 		detail += f" Later values of this day: {values}; check them before crediting."
 	return detail + f" Issue the credit note, then mark correction {row.name} Credited."
-
-
-def _day_of(row) -> datetime.date:
-	return frappe.utils.getdate(row.month).replace(day=frappe.utils.cint(row.day))

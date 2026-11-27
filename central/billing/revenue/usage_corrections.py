@@ -14,6 +14,7 @@ from central.billing.revenue.metered_lines import MAXIMUM_DESCRIPTION
 from central.billing.revenue.metering import metered_plan_for
 from central.billing.revenue.usage_month import (
 	BILLED,
+	BILLED_BY_HAND,
 	CORRECTION,
 	CREDIT_DUE,
 	CREDITED,
@@ -97,8 +98,9 @@ def _release_one(correction, day: list, reason: str, team: str) -> None:
 	later = [c for c in day if frappe.utils.cint(c.idx) > frappe.utils.cint(correction.idx)]
 	if not any(c.status in SETTLED for c in later):
 		_move(correction.name, OPEN, team, reason=reason, invoice=None)
+		_unmark_replaced(correction, day)
 		return
-	if any(c.status in (BILLED, CREDITED) for c in later):
+	if any(c.status in (BILLED, CREDITED, BILLED_BY_HAND) for c in later):
 		# A later charge or credit note was rated against this value and money moved on it, so
 		# nothing is re-rated; keeping the invoice marks it for an operator (readiness M7).
 		_move(correction.name, WRITTEN_OFF, team, reason=f"{reason}; a later value was rated against it")
@@ -107,15 +109,42 @@ def _release_one(correction, day: list, reason: str, team: str) -> None:
 	# again against what the day bills without it.
 	_move(correction.name, WRITTEN_OFF, team, reason=f"{reason}; a later value replaced it", invoice=None)
 	_rerate(later, _value_before(correction, day), reason, team)
+	_unmark_replaced(correction, day)
 
 
 def _rerate(later: list, baseline: float, reason: str, team: str) -> None:
-	"""Reopen the later values rated against a given-back value, now against `baseline`."""
-	for c in later:
-		if c.status in (CREDIT_DUE, NO_CHARGE):
-			_move(c.name, OPEN, team, reason=reason, billed_value=baseline)
-		elif c.status == OPEN:
-			frappe.db.set_value(CORRECTION, c.name, "billed_value", baseline, update_modified=False)
+	"""Rate the day's latest value again against `baseline`, and close the ones in between."""
+	live = [c for c in later if c.status in (CREDIT_DUE, NO_CHARGE, OPEN)]
+	if not live:
+		return
+	# Only the latest value is what the day bills; rating each in between would bill a rise and
+	# owe back a fall that cancel out, and leave a credit note for an operator to issue.
+	for c in live[:-1]:
+		_move(
+			c.name, WRITTEN_OFF, team, reason=f"{reason}; a later value of the day replaced it", invoice=None
+		)
+	latest = live[-1]
+	if latest.status == OPEN:
+		frappe.db.set_value(CORRECTION, latest.name, "billed_value", baseline, update_modified=False)
+	else:
+		_move(latest.name, OPEN, team, reason=reason, billed_value=baseline)
+
+
+def _unmark_replaced(correction, day: list) -> None:
+	"""Clear the readiness M7 marker of earlier written-off values the day is now rated again without."""
+	earlier = [c for c in day if frappe.utils.cint(c.idx) < frappe.utils.cint(correction.idx)]
+	for c in reversed(earlier):
+		# A settled value is the baseline the day is rated against, so values before it stay as they are.
+		if c.status in SETTLED:
+			return
+		if c.status == WRITTEN_OFF and c.invoice:
+			# The next draft rates the day from below this value, so it bills what this value added.
+			frappe.db.set_value(CORRECTION, c.name, "invoice", None, update_modified=False)
+			frappe.get_doc(DOCTYPE, correction.parent).add_comment(
+				"Info",
+				f"Correction of day {c.day} to {c.value}, billed on {c.invoice} and reissued, is billed "
+				"again by the next draft, so it no longer needs billing by hand.",
+			)
 
 
 def _value_before(correction, day: list) -> float:
@@ -132,6 +161,21 @@ def mark_credited(name: str, reason: str) -> None:
 	_move(name, CREDITED, team, reason=reason)
 	frappe.get_doc(DOCTYPE, correction.parent).add_comment(
 		"Info", f"Correction of day {correction.day} credited: {reason}"
+	)
+
+
+def mark_billed_by_hand(name: str, reason: str) -> None:
+	"""Record that an operator billed by hand what a reissued correction added."""
+	correction = frappe.get_doc(CORRECTION, name, for_update=True)
+	if correction.status != WRITTEN_OFF or not correction.invoice:
+		frappe.throw(
+			_("Only a correction a reissue left for billing by hand can be marked billed by hand."),
+			frappe.ValidationError,
+		)
+	team = frappe.db.get_value(DOCTYPE, correction.parent, "team")
+	_move(name, BILLED_BY_HAND, team, reason=reason)
+	frappe.get_doc(DOCTYPE, correction.parent).add_comment(
+		"Info", f"Correction of day {correction.day} billed by hand: {reason}"
 	)
 
 
@@ -284,14 +328,14 @@ def _line(carrier, correction, delta: float) -> dict:
 		"quantity": delta,
 		"rate": rate,
 		"days": 0,
-		"charge_date": _day_of(correction),
+		"charge_date": get_day_of(correction),
 		"amount": frappe.utils.flt(delta * rate, 2),
 	}
 
 
 def get_description(correction) -> str:
 	"""The line text: what was corrected, the day, and the report it replaces with the one that corrected it."""
-	day = _day_of(correction)
+	day = get_day_of(correction)
 	subject = " ".join(part for part in (correction.subject, correction.dimension) if part)
 	text = _("Correction · {0} · {1} · report {2} → {3}")
 	parts = (f"{day.day} {day:%b %Y}", correction.original_report or "-", correction.report or "-")
@@ -405,5 +449,6 @@ def _move(name: str, status: str, team: str | None, reason: str, **values) -> No
 	correction.db_update()
 
 
-def _day_of(row) -> datetime.date:
+def get_day_of(row) -> datetime.date:
+	"""The date of a correction's day."""
 	return frappe.utils.getdate(row.month).replace(day=frappe.utils.cint(row.day))
