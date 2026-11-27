@@ -205,12 +205,7 @@ def _holding_rows(days: list) -> dict[tuple, str]:
 		},
 		fields=["name", "service", "subject", "meter", "dimension", "month", "filled"],
 	)
-	return {
-		(*_day_key(row), number): row.name
-		for row in rows
-		for number in range(1, 32)
-		if row.filled & usage_month.bit(number)
-	}
+	return {(*_day_key(row), number): row.name for row in rows for number in usage_month.days_of(row.filled)}
 
 
 def _fold_rollups(rollups: list) -> list:
@@ -254,24 +249,11 @@ def _fold_rollup(rollup, carrier) -> None:
 
 
 def _carrier_of(rollup, meter) -> frappe._dict:
-	"""The month row of the rollup's month that is rated, else the first; one is made if none."""
+	"""The month row that carries the rollup's month, on the subscription that holds that month's days."""
 	month = usage_month.month_of(rollup.period_start)
-	rows = [row for row in meter.rows if row.month == month]
-	if not rows:
-		# Only late days of closed months were counted into this month.
-		usage_month.insert_month(meter, month)
-		rows = frappe.get_all(
-			usage_month.DOCTYPE,
-			filters={
-				"subscription": meter.subscription,
-				"resource_type": meter.resource_type,
-				"dimension": meter.dimension,
-				"month": month,
-			},
-			fields=["name", "month", "counted_at", "invoice"],
-		)
-	rows = sorted(rows, key=lambda row: row.name)
-	return next((row for row in rows if row.counted_at), rows[0])
+	held = sorted((row for row in meter.rows if row.month == month), key=lambda row: row.name)
+	subscription = held[0].subscription if held else meter.subscription
+	return usage_month.carrier_of(frappe._dict(meter, subscription=subscription), month)
 
 
 def _meters_of(rollups: list) -> dict[tuple, frappe._dict]:

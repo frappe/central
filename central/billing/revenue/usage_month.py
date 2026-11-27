@@ -8,10 +8,11 @@ from dataclasses import dataclass, field
 import frappe
 from frappe.query_builder import Order
 
+from central.billing.revenue.usage_reports import ESTIMATED
+
 DOCTYPE = "Usage Month"
 CORRECTION = "Usage Month Correction"
 LEVEL = "Level"
-ESTIMATED = "Estimated"
 OPEN = "Open"
 CREDIT_DUE = "Credit Due"
 PENDING = (OPEN, CREDIT_DUE)
@@ -50,6 +51,7 @@ def bit(day: int) -> int:
 
 
 def month_of(on) -> datetime.date:
+	"""The first day of the month of `on`."""
 	return frappe.utils.getdate(on).replace(day=1)
 
 
@@ -110,6 +112,16 @@ def insert_month(meter, month) -> None:
 	_insert_missing([{**row, "subject": meter.day_subject, "day": month}], frappe.utils.now_datetime())
 
 
+def carrier_of(meter, month) -> frappe._dict:
+	"""The locked month row that carries a meter's rating for a month: the one already rated, else the first by name."""
+	rows = _rated_rows(meter, month)
+	if not rows:
+		# Only late days of closed months: the month gets a row with no days of its own.
+		insert_month(meter, month)
+		rows = _rated_rows(meter, month)
+	return next((row for row in rows if row.counted_at), rows[0])
+
+
 def release_days(invoice: str, team: str, since) -> None:
 	"""Unmark the days a cancelled invoice billed. Only rows stamped since it was made can hold one."""
 	now = frappe.utils.now_datetime()
@@ -124,7 +136,7 @@ class MonthRow:
 
 	def __init__(self, record: dict, corrections: list):
 		self.record = record
-		self.slots = _slots(record.get("slots"))
+		self.slots = slots_of(record.get("slots"))
 		self.corrections = corrections
 		self.changed_days: set[int] = set()
 		self.is_changed = False
@@ -157,7 +169,7 @@ class MonthRow:
 				included=frappe.utils.flt(self.slots.get(str(day), {}).get("included")),
 				aggregation=self.record["aggregation"],
 			)
-			for day in _days_of(frappe.utils.cint(self.record["open_days"]))
+			for day in days_of(frappe.utils.cint(self.record["open_days"]))
 		]
 
 	def apply(self, row: dict, report: str | None, source: str, now) -> str | None:
@@ -175,7 +187,7 @@ class MonthRow:
 
 	def stamp(self, mask: int, invoice: str, now) -> None:
 		"""Mark the days of `mask` as billed by the invoice."""
-		for day in _days_of(mask):
+		for day in days_of(mask):
 			self.slots[str(day)]["invoice"] = invoice
 		self.record["billed"] |= mask
 		self.stamped_at = now
@@ -183,7 +195,7 @@ class MonthRow:
 
 	def release(self, invoice: str) -> None:
 		"""Unmark the days the invoice billed."""
-		for day in _days_of(self.record["billed"]):
+		for day in days_of(self.record["billed"]):
 			if self.slots.get(str(day), {}).get("invoice") == invoice:
 				del self.slots[str(day)]["invoice"]
 				self.record["billed"] &= ~bit(day)
@@ -363,8 +375,23 @@ def subjects_with_day(service: str, day) -> set[str]:
 	)
 
 
+def invoice_of_day(row, day: int) -> str | None:
+	"""The invoice that billed a day of a month row, or None."""
+	return slots_of(row.get("slots")).get(str(day), {}).get("invoice")
+
+
+def billed_days_of(rows: list, invoice: str) -> list[tuple]:
+	"""Each (month row, day, slot) of `rows` that the invoice billed."""
+	return [
+		(row, int(day), slot)
+		for row in rows
+		for day, slot in slots_of(row.get("slots")).items()
+		if slot.get("invoice") == invoice
+	]
+
+
 def _day_row(month, day: int) -> frappe._dict:
-	slot = _slots(month.slots).get(str(day), {})
+	slot = slots_of(month.slots).get(str(day), {})
 	return frappe._dict(
 		{key: month[key] for key in (*_KEY_FIELDS, *_CONTEXT_FIELDS)},
 		month_row=month.name,
@@ -384,15 +411,16 @@ def _day_row(month, day: int) -> frappe._dict:
 
 
 def _filled_days(month) -> list[int]:
-	return _days_of(frappe.utils.cint(month.filled))
+	return days_of(frappe.utils.cint(month.filled))
 
 
-def _days_of(mask: int) -> list[int]:
+def days_of(mask: int) -> list[int]:
 	"""The days whose bit is set in `mask`."""
 	return [day for day in range(1, 32) if mask & bit(day)]
 
 
-def _slots(value) -> dict:
+def slots_of(value) -> dict:
+	"""The slots of a month row, from its stored JSON."""
 	if isinstance(value, dict):
 		return value
 	return json.loads(value) if value else {}
@@ -479,6 +507,22 @@ def _locked(condition, with_corrections: bool = False) -> list[MonthRow]:
 	billed = [month.name for month in found if month.billed] if with_corrections else []
 	corrections = _corrections_of(billed)
 	return [MonthRow(month, corrections.get(month.name, [])) for month in found]
+
+
+def _rated_rows(meter, month) -> list[frappe._dict]:
+	table = frappe.qb.DocType(DOCTYPE)
+	return (
+		frappe.qb.from_(table)
+		.select(table.name, table.counted_at, table.invoice, table.rate_date, table.terms_corrected)
+		.where(
+			(table.subscription == meter.subscription)
+			& (table.resource_type == meter.resource_type)
+			& (table.dimension == meter.dimension)
+			& (table.month == month)
+		)
+		.orderby(table.name, order=Order.asc)
+		.for_update()
+	).run(as_dict=True)
 
 
 def _corrections_of(names: list[str]) -> dict[str, list]:

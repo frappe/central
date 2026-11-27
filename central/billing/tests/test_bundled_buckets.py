@@ -8,7 +8,7 @@ import frappe
 
 from central.billing.api.dashboard._shared import _describe_line, _qty
 from central.billing.platform import invariants, readiness
-from central.billing.revenue import rollup_updates, storage_bridge, usage_ledger, usage_recount
+from central.billing.revenue import rollup_updates, storage_bridge, usage_ledger, usage_rating, usage_recount
 from central.billing.revenue.bundled_buckets import bundled_buckets
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.tests.utils import (
@@ -395,16 +395,16 @@ class TestBundleCount(IntegrationTestCase):
 
 	def test_a_used_up_amount_bills_the_month_above_its_bundle(self):
 		days = [self.day(f"2026-06-{d:02d}", 0.4, 10) for d in range(1, 31)]
-		self.assertAlmostEqual(usage_recount.billable_above_bundle(days, 12), 2)  # 12 TB used, 10 TB included
+		self.assertAlmostEqual(usage_rating.billable_above_bundle(days, 12), 2)  # 12 TB used, 10 TB included
 
 	def test_a_bundle_scales_with_the_days_its_plan_ran(self):
 		days = [self.day(f"2026-06-{d:02d}", 0.4, 10) for d in range(16, 31)]
-		self.assertAlmostEqual(usage_recount.billable_above_bundle(days, 6), 1)  # 15 of 30 days give 5 TB
+		self.assertAlmostEqual(usage_rating.billable_above_bundle(days, 6), 1)  # 15 of 30 days give 5 TB
 
 	def test_a_held_amount_bills_each_day_above_its_bundle(self):
 		days = [self.day("2026-06-01", 3, 1, "Level"), self.day("2026-06-02", 0, 1, "Level")]
 		# The 2nd day's unused address does not cover the 1st day's two extra ones.
-		self.assertAlmostEqual(usage_recount.billable_above_bundle(days, 3 / 30), 2 / 30)
+		self.assertAlmostEqual(usage_rating.billable_above_bundle(days, 3 / 30), 2 / 30)
 
 	def test_only_a_month_with_a_bundle_counts_one(self):
 		days = [self.day("2026-06-01", 3, 0, "Level")]

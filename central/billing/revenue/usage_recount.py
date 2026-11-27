@@ -15,7 +15,8 @@ from central.billing.revenue import usage_corrections, usage_fold, usage_month
 from central.billing.revenue.exchange_rates import fix_month_rate
 from central.billing.revenue.metering import metered_plan_for, rollup_terms
 from central.billing.revenue.rollup_updates import recounted_allowance, rerated
-from central.billing.revenue.usage_month import DOCTYPE, LEVEL
+from central.billing.revenue.usage_month import DOCTYPE, month_of
+from central.billing.revenue.usage_rating import billable_above_bundle, day_weight
 
 WATERMARK = "usage_recount_watermark"
 PAGE_SIZE = 200
@@ -73,7 +74,7 @@ def recount_page(months: list[str]) -> None:
 
 def recount_team(team: str, period_end) -> Counted:
 	"""Recompute the team's usage for the month that ends on `period_end`, and return what was counted."""
-	month = _month_of(period_end)
+	month = month_of(period_end)
 	counted = Counted()
 	for subscription, resource_type, dimension in _unbilled_meters(team, period_end):
 		written = recount_month(subscription, resource_type, month, drafting=True, dimension=dimension)
@@ -123,7 +124,7 @@ def recount_month(
 	meter = _meter(subscription, resource_type, dimension)
 	if not meter:
 		return None
-	month = _month_of(month)
+	month = month_of(month)
 	drafted = month if drafting else None
 	closed = _closed_months(meter, keep_open=drafted)
 	for _ in range(MONTHS_AHEAD):
@@ -176,7 +177,7 @@ def _meter(subscription: str, resource_type: str, dimension: str = ""):
 def _write_month(meter, month: datetime.date, closed: set, final: bool) -> MonthCount | None:
 	"""Count the month's own unbilled days and the late days of closed months onto its rated row."""
 	rows = usage_month.locked_meter_months(meter.subscription, meter.resource_type, meter.dimension, month)
-	days = [day for row in rows for day in row.get_open_days() if _month_of(day.day) in (closed | {month})]
+	days = [day for row in rows for day in row.get_open_days() if month_of(day.day) in (closed | {month})]
 	currency = get_team_currency(meter.team)
 	quantity = sum(day_weight(day) for day in days)
 	counted = {
@@ -189,7 +190,7 @@ def _write_month(meter, month: datetime.date, closed: set, final: bool) -> Month
 		"quantity": quantity,
 		"locked_terms": _cost_terms(meter, currency, month, final),
 	}
-	carrier = _carrier(meter, month, rows)
+	carrier = usage_month.carrier_of(meter, month)
 	if not _rate(carrier, counted):
 		return None
 	masks: dict[str, int] = {}
@@ -198,34 +199,10 @@ def _write_month(meter, month: datetime.date, closed: set, final: bool) -> Month
 	return MonthCount(month, carrier.name, masks, quantity)
 
 
-def _carrier(meter, month: datetime.date, rows: list):
-	"""The month row that carries the month's rating: the one already rated, else the first by name."""
-	own = [row.record for row in rows if row.record["month"] == month]
-	if not own:
-		# Only late days of closed months: the month gets a row with no days of its own.
-		usage_month.insert_month(meter, month)
-		own = [
-			row.record
-			for row in usage_month.locked_meter_months(
-				meter.subscription, meter.resource_type, meter.dimension, month
-			)
-			if row.record["month"] == month
-		]
-	names = [row["name"] for row in own]
-	rated = frappe.get_all(
-		DOCTYPE,
-		filters={"name": ["in", names], "counted_at": ["is", "set"]},
-		fields=["name", "rate_date", "terms_corrected"],
-		order_by="name asc",
-		limit=1,
-	)
-	return rated[0] if rated else frappe._dict(name=names[0], is_new=True)
-
-
 def _rate(carrier, counted: dict) -> str | None:
 	"""Rate the month on its row and return the row, or None when there are no terms to bill it at."""
 	now = frappe.utils.now_datetime()
-	if carrier.get("is_new"):
+	if not carrier.counted_at:
 		terms = rollup_terms(counted)
 		if not terms:
 			return None
@@ -283,7 +260,7 @@ def _closed_months(meter, keep_open: datetime.date | None) -> set[datetime.date]
 		filters={"team": meter.team, "outcome": ["!=", FAILED]},
 		pluck="period_end",
 	)
-	return {_month_of(on) for on in billed} | ({_month_of(on) for on in drafted} - {keep_open})
+	return {month_of(on) for on in billed} | ({month_of(on) for on in drafted} - {keep_open})
 
 
 def _changed_months(since, now) -> set[str]:
@@ -315,7 +292,7 @@ def _unbilled_meters(team: str, period_end) -> set[tuple]:
 			.where(
 				(table.team == team)
 				& (table.open_days != 0)
-				& (table.month <= _month_of(period_end))
+				& (table.month <= month_of(period_end))
 				& table.resource_type.isnotnull()
 			)
 		).run()
@@ -338,20 +315,8 @@ def _cost_terms(meter, currency: str, month: datetime.date, final: bool) -> frap
 	)
 
 
-def _month_of(on) -> datetime.date:
-	return frappe.utils.getdate(on).replace(day=1)
-
-
 def _next_month(month: datetime.date) -> datetime.date:
 	return _month_end(month) + datetime.timedelta(days=1)
-
-
-def day_weight(day) -> float:
-	"""A Level day counts as its peak over the days in its own month; a Sum day as its total."""
-	quantity = frappe.utils.flt(day.quantity)
-	if day.aggregation != LEVEL:
-		return quantity
-	return quantity / _days_in_month(day.day)
 
 
 def _bundle(meter, days: list, quantity: float) -> dict:
@@ -386,24 +351,6 @@ def _is_live(resource_type: str) -> bool:
 	"""Whether the resource's metered family reads its rate live."""
 	plan = metered_plan_for(resource_type)
 	return bool(plan and plan.pricing_mode == "Live")
-
-
-def billable_above_bundle(days: list, quantity: float) -> float:
-	"""The month's quantity above the bundle: each Level day above its own, a Sum month above its share."""
-	if all(day.aggregation == LEVEL for day in days):
-		return sum(
-			max(0.0, frappe.utils.flt(day.quantity) - frappe.utils.flt(day.included))
-			/ _days_in_month(day.day)
-			for day in days
-		)
-	# A Sum meter writes a day for each day its plan ran, so the bundle scales with those days.
-	share = sum(frappe.utils.flt(day.included) / _days_in_month(day.day) for day in days)
-	return max(0.0, quantity - share)
-
-
-def _days_in_month(on) -> int:
-	on = frappe.utils.getdate(on)
-	return calendar.monthrange(on.year, on.month)[1]
 
 
 def _month_end(month: datetime.date) -> datetime.date:

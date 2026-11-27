@@ -2,7 +2,6 @@
 # For license information, please see license.txt
 
 import datetime
-import json
 from dataclasses import dataclass, field
 
 import frappe
@@ -14,7 +13,17 @@ from central.billing.platform.invariants import Violation
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue.metered_lines import MAXIMUM_DESCRIPTION
 from central.billing.revenue.metering import metered_plan_for
-from central.billing.revenue.usage_month import BILLED, CORRECTION, CREDIT_DUE, DAY_FIELDS, DOCTYPE, OPEN
+from central.billing.revenue.usage_month import (
+	BILLED,
+	CORRECTION,
+	CREDIT_DUE,
+	DAY_FIELDS,
+	DOCTYPE,
+	OPEN,
+	billed_days_of,
+	invoice_of_day,
+)
+from central.billing.revenue.usage_rating import billable_above_bundle, day_weight
 from central.billing.states import transition
 
 # A correction is billed only within this many days of the invoice that billed its day.
@@ -53,7 +62,7 @@ def rate_open(team: str, today=None) -> Corrections:
 	rated = Corrections()
 	months: dict[tuple, BilledMonth | None] = {}
 	for correction in _open_corrections(team, frappe.utils.getdate(today)):
-		invoice = _slots(correction.slots).get(str(correction.day), {}).get("invoice")
+		invoice = invoice_of_day(correction, correction.day)
 		# A day a cancelled invoice gave back is billed again with its own value first.
 		if not invoice:
 			continue
@@ -158,8 +167,6 @@ class BilledMonth:
 
 	def get_billable(self, changed: tuple | None = None) -> float:
 		"""The month's billable quantity with the billed values, and with `changed` = (day key, value) applied."""
-		from central.billing.revenue.usage_recount import billable_above_bundle, day_weight
-
 		days = [
 			frappe._dict(day, quantity=changed[1] if changed and key == changed[0] else day.billed)
 			for key, day in self.days.items()
@@ -311,19 +318,17 @@ def _billed_days(invoice: str, meter: dict, month) -> dict[tuple, frappe._dict]:
 		filters={**meter, "month": ["<=", month], "billed": ["!=", 0]},
 		fields=["name", "month", "aggregation", "slots", *DAY_FIELDS],
 	)
-	days = {}
-	for row in rows:
-		for number, slot in _slots(row.slots).items():
-			if slot.get("invoice") != invoice:
-				continue
-			first = frappe.utils.flt(row[DAY_FIELDS[int(number) - 1]])
-			days[(row.name, int(number))] = frappe._dict(
-				day=row.month.replace(day=int(number)),
-				aggregation=row.aggregation,
-				included=frappe.utils.flt(slot.get("included")),
-				first=first,
-				billed=first,
-			)
+	days = {
+		(row.name, day): frappe._dict(
+			day=row.month.replace(day=day),
+			aggregation=row.aggregation,
+			included=frappe.utils.flt(slot.get("included")),
+			first=frappe.utils.flt(row[DAY_FIELDS[day - 1]]),
+		)
+		for row, day, slot in billed_days_of(rows, invoice)
+	}
+	for day in days.values():
+		day.billed = day.first
 	for correction in _billed_corrections(list({name for name, _day in days})):
 		if (key := (correction.parent, correction.day)) in days:
 			days[key].billed = frappe.utils.flt(correction.value)
@@ -386,9 +391,3 @@ def _move(name: str, status: str, team: str | None, reason: str, **values) -> No
 
 def _day_of(row) -> datetime.date:
 	return frappe.utils.getdate(row.month).replace(day=frappe.utils.cint(row.day))
-
-
-def _slots(value) -> dict:
-	if isinstance(value, dict):
-		return value
-	return json.loads(value) if value else {}

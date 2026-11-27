@@ -2,14 +2,13 @@
 # For license information, please see license.txt
 
 import datetime
-import json
 
 import frappe
 
 from central.billing.platform.invariants import Violation
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue import usage_reports
-from central.billing.revenue.usage_month import CORRECTION, DAY_FIELDS, DOCTYPE, OPEN, bit
+from central.billing.revenue.usage_month import CORRECTION, DAY_FIELDS, DOCTYPE, OPEN, days_of, slots_of
 
 # Usage evidence is kept this long; a dispute window must end well before it.
 RETENTION_MONTHS = 13
@@ -191,12 +190,8 @@ def _missing_evidence(months: list) -> dict[str, int]:
 
 def _billed_reports(month) -> list[str | None]:
 	"""The report each billed day of a month row names, None for a day that names none."""
-	slots = json.loads(month.slots) if month.slots else {}
-	return [
-		slots.get(str(day), {}).get("report")
-		for day in range(1, 32)
-		if frappe.utils.cint(month.billed) & bit(day)
-	]
+	slots = slots_of(month.slots)
+	return [slots.get(str(day), {}).get("report") for day in days_of(frappe.utils.cint(month.billed))]
 
 
 def _reports_with_body(names: set[str]) -> set[str]:
