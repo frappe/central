@@ -4,6 +4,7 @@
 from unittest.mock import MagicMock, call, patch
 
 import frappe
+from cloudtoolkit.pipeline.doctype.pipeline.exceptions import PipelineWaitTimeoutError
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 
@@ -11,7 +12,6 @@ from central.deploy.doctype.deploy_request.deploy_request import (
 	BUILD_REPORT_TIMEOUT_SECONDS,
 	DeployRequest,
 	DeploySupersededError,
-	DeployTimeoutError,
 )
 from central.deploy.tests.test_deploy_billing import catalog, make_size
 from central.infrastructure.doctype.github_connection.test_github_connection import make_team
@@ -331,7 +331,7 @@ class IntegrationTestDeployWait(IntegrationTestCase):
 		self.request.flags.current_pipeline_task = task.name
 		later = add_to_date(task.creation, seconds=seconds)
 		with (
-			patch("central.deploy.doctype.deploy_request.deploy_request.now_datetime", return_value=later),
+			patch("cloudtoolkit.pipeline.doctype.pipeline.pipeline_builder.now_datetime", return_value=later),
 			patch.object(DeployRequest, "defer_current_task") as defer,
 		):
 			self.request.wait("Build not finished.", for_=300)
@@ -341,7 +341,7 @@ class IntegrationTestDeployWait(IntegrationTestCase):
 		self.run_wait_after(10).assert_called_once_with("Build not finished.")
 
 	def test_a_step_that_waited_too_long_fails(self):
-		with self.assertRaises(DeployTimeoutError):
+		with self.assertRaises(PipelineWaitTimeoutError):
 			self.run_wait_after(400)
 
 	def test_an_agent_that_reported_recently_is_not_silent(self):
