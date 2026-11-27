@@ -16,8 +16,8 @@ BYTES_PER_GB = 1_000_000_000
 # Grove keeps cost to nine decimal places of a dollar.
 NANO_PER_UNIT = 1_000_000_000
 # What each pushed line's evidence must carry, so a disputed day can be worked out again.
-STORAGE_EVIDENCE_KEYS = "v,peak,peak_at,readings"
-AI_EVIDENCE_KEYS = "v,requests,records,pricings"
+STORAGE_EVIDENCE_KEYS = "peak,peak_at,readings"
+AI_EVIDENCE_KEYS = "requests,records,pricings"
 
 # Seeded disabled: an operator turns a service on once it holds the secret it signs with.
 SERVICES = (
