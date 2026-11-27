@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, dayjs, Tooltip } from 'frappe-ui'
+import { Button, dayjs, Popover, Tooltip } from 'frappe-ui'
 import { AreaChart, useChartTokens } from 'frappe-ui/charts'
 import { computed, ref } from 'vue'
 import MonthlyLimit from '@/components/services/llm/MonthlyLimit.vue'
@@ -154,7 +154,9 @@ const refresh = async (): Promise<void> => {
 	>
 		<div v-if="hasTraffic" class="flex flex-col gap-3 px-4 py-4 md:px-6">
 			<div class="flex items-center justify-between gap-3">
-				<div class="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1">
+				<div
+					class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:gap-x-5"
+				>
 					<h2 class="flex items-center gap-1.5 text-sm-medium text-ink-gray-6">
 						<span
 							class="lucide-calendar-days size-4 text-ink-gray-4"
@@ -164,7 +166,7 @@ const refresh = async (): Promise<void> => {
 					</h2>
 					<p
 						v-if="rateLabel"
-						class="flex items-center gap-1.5 text-sm text-ink-gray-5"
+						class="hidden items-center gap-1.5 text-sm text-ink-gray-5 sm:flex"
 					>
 						<span
 							class="lucide-tag size-3.5 shrink-0 text-ink-gray-4"
@@ -172,20 +174,43 @@ const refresh = async (): Promise<void> => {
 						/>
 						{{ rateLabel }}
 					</p>
+					<Popover v-if="rateLabel" align="start" arrow>
+						<template #trigger>
+							<Button
+								class="-my-1 !rounded-full !text-ink-gray-4 sm:hidden"
+								variant="ghost"
+								size="xs"
+								icon="lucide-tag"
+								label="Billing rate"
+							/>
+						</template>
+						<p class="max-w-64 px-3 py-2 text-sm text-ink-gray-7">
+							{{ rateLabel }}
+						</p>
+					</Popover>
 				</div>
 
-				<Tooltip
-					:text="usage?.as_of ? `Counted ${formatDateTime(usage.as_of)}` : 'Refresh usage'"
-				>
-					<Button
-						class="!rounded-full !text-ink-gray-5 hover:!text-ink-gray-8"
-						variant="ghost"
-						icon-left="lucide-refresh-cw"
-						:label="usage?.as_of ? `Updated ${timeAgo(usage.as_of)}` : 'Refresh usage'"
-						:loading="refreshing"
-						@click="refresh"
-					/>
-				</Tooltip>
+				<div class="flex shrink-0 items-center gap-1 text-sm text-ink-gray-5">
+					<Tooltip
+						v-if="usage?.as_of"
+						:text="`Counted ${formatDateTime(usage.as_of)}`"
+					>
+						<span class="hidden sm:inline"
+							>Updated {{ timeAgo(usage.as_of) }}</span
+						>
+					</Tooltip>
+					<Tooltip text="Refresh usage">
+						<Button
+							class="-my-1 -mr-1.5 !rounded-full !text-ink-gray-5 hover:!text-ink-gray-8"
+							variant="ghost"
+							size="xs"
+							icon="lucide-refresh-cw"
+							label="Refresh usage"
+							:loading="refreshing"
+							@click="refresh"
+						/>
+					</Tooltip>
+				</div>
 			</div>
 
 			<div class="grid gap-4 lg:grid-cols-7 lg:gap-6">
