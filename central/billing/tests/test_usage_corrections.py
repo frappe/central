@@ -306,8 +306,6 @@ class OneMonthFixture:
 
 
 class TestCorrectionsOfOneMonth(OneMonthFixture, BillingTestCase):
-	"""June's Sum days billed by one invoice at 1 a unit, corrected later."""
-
 	def bill_a_rise_and_a_drop(self) -> None:
 		"""A share of 100 over June's 30 days, 120 billed; day 10 rises 15 and day 20 drops 30."""
 		self.bill({day: {20: 33}.get(day, 3) for day in range(1, 31)}, included=100)
