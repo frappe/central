@@ -372,10 +372,10 @@ const revokeText = __(
 			<thead>
 				<tr class="text-sm text-ink-gray-5">
 					<th scope="col" class="pb-2 font-normal">{{ __('Name') }}</th>
-					<th scope="col" class="hidden pb-2 font-normal sm:table-cell">
+					<th scope="col" class="hidden w-1/5 pb-2 font-normal sm:table-cell">
 						{{ __('Geography') }}
 					</th>
-					<th scope="col" class="hidden pb-2 font-normal md:table-cell">
+					<th scope="col" class="hidden w-1/5 pb-2 font-normal md:table-cell">
 						{{ __('Created') }}
 					</th>
 					<th v-if="prepaid" scope="col" class="w-36 pb-2 font-normal">
