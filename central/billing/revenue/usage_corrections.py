@@ -25,9 +25,9 @@ from central.billing.revenue.usage_month import (
 	SETTLED,
 	WRITTEN_OFF,
 	billed_value,
-	corrections_of,
 )
 from central.billing.revenue.usage_month_days import billed_days_of, invoice_of_day
+from central.billing.revenue.usage_month_rows import corrections_of
 from central.billing.revenue.usage_rating import billable_above_bundle, day_weight
 from central.billing.states import transition
 

@@ -1,19 +1,30 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
-import datetime
 import json
 from dataclasses import dataclass, field
 
 import frappe
 from frappe.query_builder import Order
 
+from central.billing.revenue.usage_month_rows import (
+	CONTEXT_FIELDS,
+	CORRECTION,
+	DOCTYPE,
+	KEY_FIELDS,
+	corrections_of,
+	insert_missing,
+	month_for,
+	month_of,
+	rated_rows,
+	row_key,
+)
 from central.billing.revenue.usage_reports import ESTIMATED
 
-DOCTYPE = "Usage Month"
-CORRECTION = "Usage Month Correction"
 LEVEL = "Level"
-PEAKS = (LEVEL, "State")
+# A state meter, such as addresses held, weighs its days like a level meter.
+STATE = "State"
+PEAKS = (LEVEL, STATE)
 OPEN = "Open"
 CREDIT_DUE = "Credit Due"
 BILLED = "Billed"
@@ -29,9 +40,6 @@ WRITTEN = "written"
 CORRECTED = "corrected"
 MASKS = ("filled", "billed", "written_off", "estimated", "open_days", "unreported")
 
-_META_FIELDS = ("name", "creation", "modified", "owner", "modified_by")
-KEY_FIELDS = ("service", "subject", "meter", "dimension", "month", "subscription")
-CONTEXT_FIELDS = ("aggregation", "team", "resource_type", "unit")
 READ_FIELDS = (
 	*KEY_FIELDS,
 	*CONTEXT_FIELDS,
@@ -58,18 +66,13 @@ def bit(day: int) -> int:
 	return 1 << (day - 1)
 
 
-def month_of(on) -> datetime.date:
-	"""The first day of the month of `on`."""
-	return frappe.utils.getdate(on).replace(day=1)
-
-
 def write_lines(rows: list[dict], report: str | None, source: str) -> Written:
 	"""Write merged day lines into their month rows, under one lock for the whole batch."""
 	if not rows:
 		return Written()
 	now = frappe.utils.now_datetime()
 	try:
-		_insert_missing(rows, now)
+		insert_missing(rows, now)
 		months = _locked_months(rows)
 	except frappe.QueryDeadlockError:
 		# Another worker changed one of these rows after this transaction began. Under snapshot
@@ -77,7 +80,7 @@ def write_lines(rows: list[dict], report: str | None, source: str) -> Written:
 		return Written(conflicts=list(rows))
 	written = Written()
 	for row in rows:
-		month = _month_for(months, row)
+		month = month_for(months, row)
 		if month is None:
 			written.conflicts.append(row)
 			continue
@@ -117,16 +120,16 @@ def insert_month(meter, month) -> None:
 	row = {
 		name: meter.get(name) for name in (*CONTEXT_FIELDS, "service", "meter", "dimension", "subscription")
 	}
-	_insert_missing([{**row, "subject": meter.day_subject, "day": month}], frappe.utils.now_datetime())
+	insert_missing([{**row, "subject": meter.day_subject, "day": month}], frappe.utils.now_datetime())
 
 
 def carrier_of(meter, month) -> frappe._dict:
 	"""The locked month row that carries a meter's rating for a month: the one already rated, else the first by name."""
-	rows = _rated_rows(meter, month)
+	rows = rated_rows(meter, month)
 	if not rows:
 		# Only late days of closed months: the month gets a row with no days of its own.
 		insert_month(meter, month)
-		rows = _rated_rows(meter, month)
+		rows = rated_rows(meter, month)
 	return next((row for row in rows if row.counted_at), rows[0])
 
 
@@ -398,51 +401,6 @@ def _set_optional(slot: dict, key: str, value) -> None:
 		slot.pop(key, None)
 
 
-def _key(row) -> tuple:
-	return (
-		row["service"],
-		row["subject"],
-		row["meter"],
-		row.get("dimension") or "",
-		month_of(row.get("day") or row.get("month")),
-	)
-
-
-def _month_for(months: dict, row: dict) -> MonthRow | None:
-	"""The row that holds the line's day, else the row of the line's subscription."""
-	candidates = months.get(_key(row), [])
-	day = frappe.utils.getdate(row["day"]).day
-	for month in candidates:
-		if month.has_day(day):
-			return month
-	# A row inserted by a worker that committed after this transaction began is not seen.
-	return next((month for month in candidates if month.record["subscription"] == row["subscription"]), None)
-
-
-def _insert_missing(rows: list[dict], now) -> None:
-	"""Insert an empty month row for each line's month and subscription that has none."""
-	user = frappe.session.user
-	keys = {(*_key(row), row["subscription"]): row for row in rows}
-	values = [
-		(
-			frappe.generate_hash(length=12),
-			now,
-			now,
-			user,
-			user,
-			*key,
-			*(row.get(name) for name in CONTEXT_FIELDS),
-		)
-		for key, row in keys.items()
-	]
-	frappe.db.bulk_insert(
-		DOCTYPE,
-		[*_META_FIELDS, *KEY_FIELDS, *CONTEXT_FIELDS],
-		values,
-		ignore_duplicates=True,
-	)
-
-
 def _locked_months(rows: list[dict]) -> dict[tuple, list[MonthRow]]:
 	"""The month rows of these lines, by month key."""
 	table = frappe.qb.DocType(DOCTYPE)
@@ -454,7 +412,7 @@ def _locked_months(rows: list[dict]) -> dict[tuple, list[MonthRow]]:
 	)
 	months: dict[tuple, list[MonthRow]] = {}
 	for month in found:
-		months.setdefault(_key(month.record), []).append(month)
+		months.setdefault(row_key(month.record), []).append(month)
 	return months
 
 
@@ -471,30 +429,3 @@ def _locked(condition, with_corrections: bool = False) -> list[MonthRow]:
 	billed = [month.name for month in found if month.billed] if with_corrections else []
 	corrections = corrections_of(billed)
 	return [MonthRow(month, corrections.get(month.name, [])) for month in found]
-
-
-def _rated_rows(meter, month) -> list[frappe._dict]:
-	meter_month = {key: meter[key] for key in ("subscription", "resource_type", "dimension")}
-	return frappe.qb.get_query(
-		DOCTYPE,
-		filters={**meter_month, "month": month},
-		fields=["name", "counted_at", "invoice", "rate_date", "terms_corrected"],
-		order_by="name asc",
-		for_update=True,
-	).run(as_dict=True)
-
-
-def corrections_of(names: list[str]) -> dict[str, list]:
-	"""The corrections of these month rows by row, in the order they were made."""
-	if not names:
-		return {}
-	rows = frappe.get_all(
-		CORRECTION,
-		filters={"parent": ["in", names], "parenttype": DOCTYPE},
-		fields=["name", "parent", "idx", "day", "value", "as_of", "status", "report", "invoice"],
-		order_by="idx asc, creation asc",
-	)
-	by_parent: dict[str, list] = {}
-	for row in rows:
-		by_parent.setdefault(row.parent, []).append(row)
-	return by_parent

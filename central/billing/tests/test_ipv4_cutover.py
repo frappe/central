@@ -11,6 +11,7 @@ from central.billing.catalog.pricing import get_catalog_rates, set_catalog_rates
 from central.billing.revenue import usage_segments
 from central.billing.revenue.invoicing.lines import _subscription_clusters
 from central.billing.revenue.usage_ledger import utc_day_start, write_central_days
+from central.billing.revenue.usage_month import STATE
 from central.billing.tests.test_ipv4_days import CLUSTER, JUNE, VM_PLAN, IPv4DaysTestCase, at
 from central.billing.tests.utils import add_segment
 from central.patches.v0_0 import bill_public_ipv4_per_day
@@ -209,7 +210,7 @@ class TestSegmentMigration(SegmentMigrationTestCase):
 		self.assertTrue(usage_segments.is_state_meter(NETWORK_SERVICE, PUBLIC_IPV4_METER))
 		self.assertEqual(
 			set(frappe.get_all("Usage Month", {"subject": self.server}, pluck="aggregation")),
-			{usage_segments.STATE},
+			{STATE},
 		)
 
 	def test_a_holder_whose_days_reach_yesterday_stays_open_from_its_first_day(self):

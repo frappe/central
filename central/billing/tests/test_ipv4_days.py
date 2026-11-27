@@ -13,6 +13,7 @@ from central.billing.platform import readiness
 from central.billing.revenue import usage_recount, usage_segments
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.usage_ledger import utc_day_start, utc_today
+from central.billing.revenue.usage_month import STATE
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import add_segment, make_plan, seed_running_resource, usage_days
 from central.services.doctype.service.service import NETWORK_SERVICE, PUBLIC_IPV4_METER
@@ -40,7 +41,7 @@ class IPv4DaysTestCase(IntegrationTestCase):
 		frappe.db.delete("Virtual Machine", {"team": self.team})
 		self.addCleanup(frappe.db.delete, "Virtual Machine", {"team": self.team})
 		self.set_service(bill_from=BEFORE_JUNE)
-		self.set_meter_aggregation(usage_segments.STATE)
+		self.set_meter_aggregation(STATE)
 		make_plan(VM_PLAN)
 		self.subscription = seed_running_resource(
 			self.team, self.server, CLUSTER, VM_PLAN, rate=1000, currency=self.currency

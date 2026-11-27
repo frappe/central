@@ -21,12 +21,11 @@ from central.billing.platform.jobs import each_isolated
 from central.billing.platform.records import save_billing_record
 from central.billing.revenue import usage_month
 from central.billing.revenue.usage_ledger import utc_day_start, utc_day_window, utc_today
-from central.billing.revenue.usage_month import month_of
+from central.billing.revenue.usage_month import STATE, month_of
 from central.billing.revenue.usage_month_days import subjects_with_day
 from central.services.doctype.service.service import NETWORK_SERVICE, PUBLIC_IPV4_METER, ensure_services
 
 DOCTYPE = "Usage Segment"
-STATE = "State"
 STATE_REPORT = "State Report"
 TERMINATION = "Termination"
 OPERATOR = "Operator"

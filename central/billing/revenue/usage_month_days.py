@@ -5,16 +5,15 @@
 import frappe
 
 from central.billing.revenue.usage_month import (
-	CONTEXT_FIELDS,
 	DAY_FIELDS,
 	DOCTYPE,
-	KEY_FIELDS,
 	READ_FIELDS,
 	bit,
 	days_of,
 	month_of,
 	slots_of,
 )
+from central.billing.revenue.usage_month_rows import CONTEXT_FIELDS, KEY_FIELDS
 
 
 def day_rows(filters: dict, day=None) -> list[frappe._dict]:

@@ -10,7 +10,7 @@ from central.billing.doctype.subscription_change.subscription_change import (
 )
 from central.billing.revenue import usage_segments
 from central.billing.revenue.usage_ledger import utc_day_start, utc_day_window, utc_today
-from central.billing.revenue.usage_month import DAY_FIELDS, days_of, month_of
+from central.billing.revenue.usage_month import DAY_FIELDS, STATE, days_of, month_of
 from central.billing.revenue.usage_month_days import day_rows
 from central.services.doctype.service.service import NETWORK_SERVICE, PUBLIC_IPV4_METER, ensure_services
 
@@ -151,12 +151,12 @@ def set_state_meter() -> None:
 		"Service Meter",
 		{"parent": NETWORK_SERVICE, "meter_key": PUBLIC_IPV4_METER},
 		"aggregation",
-		usage_segments.STATE,
+		STATE,
 	)
 	table = frappe.qb.DocType("Usage Month")
 	(
 		frappe.qb.update(table)
-		.set(table.aggregation, usage_segments.STATE)
+		.set(table.aggregation, STATE)
 		.where((table.service == NETWORK_SERVICE) & (table.meter == PUBLIC_IPV4_METER))
 	).run()
 
