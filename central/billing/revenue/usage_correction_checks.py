@@ -6,7 +6,8 @@ import datetime
 import frappe
 
 from central.billing.platform.invariants import Violation
-from central.billing.revenue.usage_month import CORRECTION, CREDIT_DUE, DOCTYPE, corrections_of
+from central.billing.revenue.usage_corrections import WINDOW_DAYS
+from central.billing.revenue.usage_month import CORRECTION, CREDIT_DUE, DOCTYPE, WRITTEN_OFF, corrections_of
 
 
 def check_credit_due_corrections() -> list[Violation]:
@@ -45,6 +46,55 @@ def check_credit_due_corrections() -> list[Violation]:
 		)
 		for row in rows
 	]
+
+
+def check_reissued_corrections() -> list[Violation]:
+	"""Every value a reissue gave back under a later charge or credit note has been settled by an operator."""
+	correction = frappe.qb.DocType(CORRECTION)
+	month = frappe.qb.DocType(DOCTYPE)
+	rows = (
+		frappe.qb.from_(correction)
+		.join(month)
+		.on(correction.parent == month.name)
+		.select(
+			correction.day,
+			correction.value,
+			correction.billable_delta,
+			correction.invoice,
+			month.name.as_("month_row"),
+			month.team,
+			month.subject,
+			month.month,
+		)
+		# Only release writes off a correction that names an invoice; past its window nothing is charged.
+		.where(
+			(correction.status == WRITTEN_OFF)
+			& correction.invoice.isnotnull()
+			& (
+				correction.billed_invoice_date
+				>= frappe.utils.getdate() - datetime.timedelta(days=WINDOW_DAYS)
+			)
+		)
+		.orderby(correction.name)
+		.limit(200)
+	).run(as_dict=True)
+	return [
+		Violation(
+			check="M7",
+			team=row.team,
+			subject_doctype=DOCTYPE,
+			subject=row.month_row,
+			detail=_reissued_detail(row),
+		)
+		for row in rows
+	]
+
+
+def _reissued_detail(row) -> str:
+	"""The readiness detail for one correction a reissue left to an operator."""
+	billed = f"{row.subject} on {_day_of(row):%d %b %Y}: {row.value} was billed on {row.invoice}"
+	later = "a later charge or credit note of this day was rated against it"
+	return f"{billed}, which was reissued, and {later}. Bill the {row.billable_delta} it added by hand."
 
 
 def _later_values(rows: list) -> dict[str, list]:

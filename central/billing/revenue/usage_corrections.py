@@ -21,6 +21,7 @@ from central.billing.revenue.usage_month import (
 	DOCTYPE,
 	NO_CHARGE,
 	OPEN,
+	SETTLED,
 	WRITTEN_OFF,
 	billed_value,
 	corrections_of,
@@ -75,9 +76,53 @@ def stamp(corrections: Corrections, invoice: str, team: str) -> None:
 
 
 def release(invoice: str, team: str) -> None:
-	"""Reopen the corrections a cancelled invoice billed, so the invoice that replaces it bills them again."""
-	for name in frappe.get_all(CORRECTION, filters={"invoice": invoice, "status": BILLED}, pluck="name"):
-		_move(name, OPEN, team, reason=f"{invoice} was cancelled", invoice=None)
+	"""Give back the corrections a cancelled invoice billed, so the invoice that replaces it bills the true day."""
+	billed = frappe.get_all(
+		CORRECTION, filters={"invoice": invoice, "status": BILLED}, fields=["name", "parent", "idx", "day"]
+	)
+	by_row = corrections_of(list({correction.parent for correction in billed}))
+	given_back = {correction.name for correction in billed}
+	for correction in billed:
+		# Another correction of the day billed on this invoice is given back too, so it replaced nothing.
+		day = [
+			c
+			for c in by_row.get(correction.parent, [])
+			if c.day == correction.day and (c.name == correction.name or c.name not in given_back)
+		]
+		_release_one(correction, day, f"{invoice} was cancelled", team)
+
+
+def _release_one(correction, day: list, reason: str, team: str) -> None:
+	"""Reopen a given-back correction, or write it off when a later value of its day replaced it."""
+	later = [c for c in day if frappe.utils.cint(c.idx) > frappe.utils.cint(correction.idx)]
+	if not any(c.status in SETTLED for c in later):
+		_move(correction.name, OPEN, team, reason=reason, invoice=None)
+		return
+	if any(c.status in (BILLED, CREDITED) for c in later):
+		# A later charge or credit note was rated against this value and money moved on it, so
+		# nothing is re-rated; keeping the invoice marks it for an operator (readiness M7).
+		_move(correction.name, WRITTEN_OFF, team, reason=f"{reason}; a later value was rated against it")
+		return
+	# Nothing was charged or credited against this value: write it off, and rate the later values
+	# again against what the day bills without it.
+	_move(correction.name, WRITTEN_OFF, team, reason=f"{reason}; a later value replaced it", invoice=None)
+	_rerate(later, _value_before(correction, day), reason, team)
+
+
+def _rerate(later: list, baseline: float, reason: str, team: str) -> None:
+	"""Reopen the later values rated against a given-back value, now against `baseline`."""
+	for c in later:
+		if c.status in (CREDIT_DUE, NO_CHARGE):
+			_move(c.name, OPEN, team, reason=reason, billed_value=baseline)
+		elif c.status == OPEN:
+			frappe.db.set_value(CORRECTION, c.name, "billed_value", baseline, update_modified=False)
+
+
+def _value_before(correction, day: list) -> float:
+	"""What the day billed before this correction: the latest settled one made before it, else its slot."""
+	earlier = [c for c in day if frappe.utils.cint(c.idx) < frappe.utils.cint(correction.idx)]
+	first = frappe.db.get_value(DOCTYPE, correction.parent, DAY_FIELDS[correction.day - 1])
+	return billed_value(earlier, correction.day, frappe.utils.flt(first))
 
 
 def mark_credited(name: str, reason: str) -> None:

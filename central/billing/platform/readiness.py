@@ -671,6 +671,7 @@ CHECKS = {
 	"M4": ("Lower usage values have a credit note", usage_correction_checks.check_credit_due_corrections),
 	"M5": ("Billed usage days name their evidence", usage_retention.check_billed_days_name_a_report),
 	"M6": ("Usage report bodies are intact", usage_retention.check_report_bodies_are_intact),
+	"M7": ("Reissued usage corrections are settled", usage_correction_checks.check_reissued_corrections),
 	"W1": ("Billed teams can pay", check_billed_teams_can_pay),
 	"W2": ("Promotional credit expires", check_promotional_credit_expires),
 	"X1": ("No staging trials outside staging", check_no_staging_trials_outside_staging),
