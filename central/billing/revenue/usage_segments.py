@@ -1,6 +1,10 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""State meters kept as Usage Segments, and the day slots of Usage Month projected from them."""
+"""State meters kept as Usage Segments, and the day slots of Usage Month projected from them.
+
+A subject doctype plugs in through the `billing_segment_subjects` hook, which names a module with
+billed_windows(subjects, before) and team_subjects(team). Its writer calls set_quantity.
+"""
 
 import datetime
 
@@ -9,10 +13,6 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.query_builder import Order
 
-from central.billing.doctype.subscription_change.subscription_change import (
-	RATED_CHANGE_TYPES,
-	SEGMENT_CHANGE_TYPES,
-)
 from central.billing.doctype.usage_segment.usage_segment import get_last_segment
 from central.billing.platform.jobs import each_isolated
 from central.billing.platform.records import save_billing_record
@@ -31,6 +31,9 @@ MIGRATION = "Migration"
 # The source a projected day slot names; the slot also names the segment it came from.
 SEGMENT = "Segment"
 PAGE_SIZE = 500
+SUBJECTS_HOOK = "billing_segment_subjects"
+# Subject doctypes already logged as having no provider, so each is logged once per process.
+_unregistered: set[str] = set()
 
 
 def set_quantity(
@@ -116,8 +119,8 @@ def project_team(team: str, period_end) -> int:
 	until = frappe.utils.getdate(period_end)
 	# A day of the month before can land after that month closed, and still bills in this draft.
 	since = frappe.utils.add_months(month_of(until), -1)
-	# A server moved to the team keeps its segments under the old team, so its subscriptions count too.
-	subjects = sorted(set(_team_subjects(team, since, until)) | set(_team_servers(team)))
+	# A subject moved to the team keeps its segments under the old team, so its subscriptions count too.
+	subjects = sorted(set(_team_subjects(team, since, until)) | set(_billed_subjects(team)))
 	return project(subjects, since, until) if subjects else 0
 
 
@@ -177,21 +180,6 @@ def _project_doctype(doctype: str, names: list[str], since, until) -> int:
 	return sum(counts)
 
 
-def _server_billed_windows(servers: list[str], before) -> dict[str, list]:
-	"""Each server's billed stretches before `before`, from the change that opened billing to the one that closed it."""
-	windows: dict[str, list] = {}
-	opened: dict[str, frappe._dict] = {}
-	for row in _server_changes(servers, before):
-		if row.change_type in RATED_CHANGE_TYPES:
-			# A plan change while billed keeps the same stretch open.
-			opened.setdefault(row.subscription, row)
-		elif first := opened.pop(row.subscription, None):
-			windows.setdefault(row.server, []).append(_window(first, row.effective_at))
-	for first in opened.values():
-		windows.setdefault(first.server, []).append(_window(first, None))
-	return windows
-
-
 def _utc_days(since, until) -> list[tuple]:
 	"""Each UTC day from `since` to `until`, with its start and end in system time."""
 	since, until = frappe.utils.getdate(since), frappe.utils.getdate(until)
@@ -207,8 +195,7 @@ def _day_lines(service: str, meter_key: str, segments: list, since, until) -> li
 		return []
 	since = max(frappe.utils.getdate(since), frappe.utils.getdate(bill_from))
 	before = utc_day_start(frappe.utils.getdate(until) + datetime.timedelta(days=1))
-	windows = _server_billed_windows(list({segment.subject for segment in segments}), before)
-	held = _held_days(segments, windows, _utc_days(since, until))
+	held = _held_days(segments, _billed_windows(segments, before), _utc_days(since, until))
 	_keep_written_subscriptions(held, service, meter_key, since, until)
 	meter = frappe.get_doc("Service", service).get_meter(meter_key)
 	now = frappe.utils.now_datetime()
@@ -272,30 +259,6 @@ def _is_more(kept, segment, window) -> bool:
 	return quantity > kept.quantity or (quantity == kept.quantity and window.start < kept.billed_from)
 
 
-def _window(first, end) -> frappe._dict:
-	return frappe._dict(subscription=first.subscription, team=first.team, start=first.effective_at, end=end)
-
-
-def _server_changes(servers: list[str], before) -> list:
-	"""The changes that open or close billing on the servers' subscriptions, oldest first."""
-	if not servers:
-		return []
-	change = frappe.qb.DocType("Subscription Change")
-	subscription = frappe.qb.DocType("Subscription")
-	return (
-		frappe.qb.from_(change)
-		.join(subscription)
-		.on(change.subscription == subscription.name)
-		.select(subscription.server_id.as_("server"), subscription.team, change.subscription)
-		.select(change.change_type, change.effective_at)
-		.where(subscription.server_id.isin(servers))
-		.where(change.change_type.isin(list(SEGMENT_CHANGE_TYPES)))
-		.where(change.effective_at < before)
-		.orderby(change.effective_at, order=Order.asc)
-		.orderby(change.creation, order=Order.asc)
-	).run(as_dict=True)
-
-
 def _segments_of(subjects: list[str], since, until) -> dict[tuple, list]:
 	"""The segments of the subjects held at some moment from `since` to `until`, by service and meter."""
 	if not subjects:
@@ -303,7 +266,7 @@ def _segments_of(subjects: list[str], since, until) -> dict[tuple, list]:
 	table = frappe.qb.DocType(DOCTYPE)
 	rows = (
 		frappe.qb.from_(table)
-		.select(table.name, table.service, table.meter, table.subject, table.quantity)
+		.select(table.name, table.service, table.meter, table.subject_doctype, table.subject, table.quantity)
 		.select(table.starts_at, table.ends_at)
 		.where(table.subject.isin(subjects))
 		.where(table.starts_at < utc_day_window(until)[1])
@@ -329,14 +292,39 @@ def _team_subjects(team: str, since, until) -> list[str]:
 	).run(pluck=True)
 
 
-def _team_servers(team: str) -> list[str]:
-	"""The servers the team's subscriptions bill."""
-	return frappe.get_all(
-		"Subscription",
-		filters={"team": team, "server_id": ["is", "set"]},
-		pluck="server_id",
-		distinct=True,
-	)
+def _billed_windows(segments: list, before) -> dict[str, list]:
+	"""The billed windows of the segments' subjects before `before`, from each subject doctype's provider."""
+	by_doctype: dict[str, set] = {}
+	for segment in segments:
+		by_doctype.setdefault(segment.subject_doctype, set()).add(segment.subject)
+	windows: dict[str, list] = {}
+	for doctype, subjects in by_doctype.items():
+		if provider := _provider(doctype):
+			windows.update(provider.billed_windows(sorted(subjects), before))
+	return windows
+
+
+def _billed_subjects(team: str) -> list[str]:
+	"""The subjects of every registered doctype that the team's subscriptions bill."""
+	return [subject for doctype in _providers() for subject in _provider(doctype).team_subjects(team)]
+
+
+def _providers() -> dict[str, list[str]]:
+	return frappe.get_hooks(SUBJECTS_HOOK) or {}
+
+
+def _provider(doctype: str):
+	"""The module that knows when a doctype's subjects were billed, else None."""
+	paths = _providers().get(doctype)
+	if paths:
+		return frappe.get_module(paths[-1])
+	if doctype not in _unregistered:
+		# A segment of an unknown doctype bills nothing, and the rest of the recount still runs.
+		_unregistered.add(doctype)
+		frappe.logger("billing").warning(
+			f"No {SUBJECTS_HOOK} provider for {doctype}; its segments bill nothing."
+		)
+	return None
 
 
 def _changed_subjects(since) -> list[tuple[str, str]]:

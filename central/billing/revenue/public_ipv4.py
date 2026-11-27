@@ -1,15 +1,24 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""The public IPv4 addresses a server holds, recorded as a state meter on the network service."""
+"""The public IPv4 addresses a server holds, recorded as a state meter on the network service.
+
+It is also the segment ledger's provider for Virtual Machine: when a server was billed, and which
+servers a team's subscriptions bill.
+"""
 
 import datetime
 
 import frappe
 from frappe.model.document import Document
+from frappe.query_builder import Order
 
 from central.billing.catalog.pricing import resolve_rate
 from central.billing.catalog.public_ips import get_public_ipv4_rates
 from central.billing.catalog.subscriptions import server_segments
+from central.billing.doctype.subscription_change.subscription_change import (
+	RATED_CHANGE_TYPES,
+	SEGMENT_CHANGE_TYPES,
+)
 from central.billing.revenue.usage_ledger import utc_today
 from central.billing.revenue.usage_segments import (
 	OPERATOR,
@@ -93,3 +102,52 @@ def find_unbilled_addresses() -> list[tuple[frappe._dict, str]]:
 		for segment in server_segments(servers)
 		if resolve_rate(rates, segment.currency, segment.cluster) is None
 	]
+
+
+def billed_windows(servers: list[str], before) -> dict[str, list]:
+	"""Each server's billed windows before `before`, from the change that opened billing to the one that closed it."""
+	windows: dict[str, list] = {}
+	opened: dict[str, frappe._dict] = {}
+	for row in _server_changes(servers, before):
+		if row.change_type in RATED_CHANGE_TYPES:
+			# A plan change while billed keeps the same window open.
+			opened.setdefault(row.subscription, row)
+		elif first := opened.pop(row.subscription, None):
+			windows.setdefault(row.server, []).append(_window(first, row.effective_at))
+	for first in opened.values():
+		windows.setdefault(first.server, []).append(_window(first, None))
+	return windows
+
+
+def team_subjects(team: str) -> list[str]:
+	"""The servers the team's subscriptions bill."""
+	return frappe.get_all(
+		"Subscription",
+		filters={"team": team, "server_id": ["is", "set"]},
+		pluck="server_id",
+		distinct=True,
+	)
+
+
+def _window(first, end) -> frappe._dict:
+	return frappe._dict(subscription=first.subscription, team=first.team, start=first.effective_at, end=end)
+
+
+def _server_changes(servers: list[str], before) -> list:
+	"""The changes that open or close billing on the servers' subscriptions, oldest first."""
+	if not servers:
+		return []
+	change = frappe.qb.DocType("Subscription Change")
+	subscription = frappe.qb.DocType("Subscription")
+	return (
+		frappe.qb.from_(change)
+		.join(subscription)
+		.on(change.subscription == subscription.name)
+		.select(subscription.server_id.as_("server"), subscription.team, change.subscription)
+		.select(change.change_type, change.effective_at)
+		.where(subscription.server_id.isin(servers))
+		.where(change.change_type.isin(list(SEGMENT_CHANGE_TYPES)))
+		.where(change.effective_at < before)
+		.orderby(change.effective_at, order=Order.asc)
+		.orderby(change.creation, order=Order.asc)
+	).run(as_dict=True)

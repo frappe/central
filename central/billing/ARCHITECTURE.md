@@ -822,8 +822,16 @@ Server bundles (#188): a server plan's Plan Includes row is the server's bundle 
   → storage: storage_bridge reads each server's backup bucket (bundled_buckets: tenant, region and
     server name it) beside the team buckets; a paused or ended server's bucket is not read
 Public IPv4 (#197, #200, #208): a state meter, kept as Usage Segments and billed as day slots
-  → revenue/public_ipv4.py holds the IPv4 writer, the cutover day and the M3 check;
-    revenue/usage_segments.py holds the generic segment ledger and its projection into day slots
+  → revenue/public_ipv4.py holds the IPv4 writer, the cutover day, the M3 check and the segment
+    provider for Virtual Machine; revenue/usage_segments.py holds the generic segment ledger and its
+    projection into day slots, and knows no subject doctype
+  → a new state add-on (seats, licences) plugs in with two steps: (1) add its subject doctype to
+    the `billing_segment_subjects` hook in hooks.py, mapped to a module that defines
+    billed_windows(subjects, before) (each subject's billed windows: start, end or None while
+    open, subscription, team) and team_subjects(team) (the subjects a team's draft must project,
+    including ones moved to the team); (2) call usage_segments.set_quantity from the subject's
+    save with a State meter on its service. A segment whose doctype has no provider is logged once
+    per process and projects nothing; the rest of the recount still runs
   → service `network`, meter `public_ipv4` (aggregation State, resource type IP, unit Nos);
     `central_reads` stays on, because no other service reports addresses
   → one writer: VirtualMachine.sync_billing calls public_ipv4.record_public_ipv4 when the status

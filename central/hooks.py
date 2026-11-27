@@ -381,6 +381,13 @@ after_migrate = [
 	"central.users.ensure_staff_role_profile",
 ]
 
+# Usage Segment subjects: each subject doctype names the module that tells the segment ledger
+# when its subjects were billed and which of them a team's draft bills. The module defines
+# billed_windows(subjects, before) and team_subjects(team); see revenue/usage_segments.py.
+billing_segment_subjects = {
+	"Virtual Machine": "central.billing.revenue.public_ipv4",
+}
+
 # Testing
 # -------
 

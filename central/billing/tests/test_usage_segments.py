@@ -3,6 +3,7 @@
 """A Usage Segment is only added and closed once, and a subject has one open segment per meter."""
 
 import datetime
+from unittest.mock import patch
 
 import frappe
 
@@ -68,6 +69,17 @@ class TestUsageSegmentRecord(BillingTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			usage_segments.close_segment(self.segment.name, at("2026-05-31"), usage_segments.OPERATOR)
 
+	def test_a_subject_doctype_with_no_provider_bills_nothing_and_logs_once(self):
+		before = frappe.db.get_value("Service", NETWORK_SERVICE, "bill_from")
+		self.addCleanup(frappe.db.set_value, "Service", NETWORK_SERVICE, "bill_from", before)
+		frappe.db.set_value("Service", NETWORK_SERVICE, "bill_from", "2026-01-01")
+
+		with patch.object(usage_segments, "_unregistered", set()), patch("frappe.logger") as logger:
+			self.assertEqual(usage_segments.project([SUBJECT], "2026-06-01", "2026-06-30"), 0)
+			self.assertEqual(usage_segments.project([SUBJECT], "2026-06-01", "2026-06-30"), 0)
+
+		logger.return_value.warning.assert_called_once()
+
 	def insert(self, starts_at):
 		return usage_segments.insert_segment(**self.values(starts_at))
 
@@ -76,6 +88,8 @@ class TestUsageSegmentRecord(BillingTestCase):
 			"service": NETWORK_SERVICE,
 			"meter": METER,
 			"subject": SUBJECT,
+			# No billing_segment_subjects provider knows this doctype.
+			"subject_doctype": "ToDo",
 			"team": TEAM,
 			"quantity": 1,
 			"starts_at": starts_at,
