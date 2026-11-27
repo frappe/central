@@ -10,8 +10,9 @@ from central.billing.doctype.subscription_change.subscription_change import (
 )
 from central.billing.revenue import public_ipv4, usage_segments
 from central.billing.revenue.usage_ledger import utc_day_start, utc_day_window, utc_today
-from central.billing.revenue.usage_month import DAY_FIELDS, STATE, days_of, month_of
+from central.billing.revenue.usage_month import DAY_FIELDS, STATE, days_of
 from central.billing.revenue.usage_month_days import day_rows
+from central.billing.revenue.usage_month_rows import month_of
 from central.services.doctype.service.service import NETWORK_SERVICE, PUBLIC_IPV4_METER, ensure_services
 
 PATCH = "central.patches.v0_0.move_public_ipv4_to_segments"

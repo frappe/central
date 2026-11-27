@@ -18,8 +18,10 @@ from central.billing.platform.jobs import each_isolated
 from central.billing.platform.records import save_billing_record
 from central.billing.revenue import usage_month
 from central.billing.revenue.usage_ledger import utc_day_start, utc_day_window, utc_today
-from central.billing.revenue.usage_month import STATE, month_of
+from central.billing.revenue.usage_month import STATE
 from central.billing.revenue.usage_month_days import subjects_with_day
+from central.billing.revenue.usage_month_rows import DOCTYPE as MONTH_DOCTYPE
+from central.billing.revenue.usage_month_rows import month_of
 
 DOCTYPE = "Usage Segment"
 STATE_REPORT = "State Report"
@@ -230,7 +232,7 @@ def _written_days(service: str, meter: str, subjects: list[str], since, until) -
 	if not subjects:
 		return {}
 	rows = frappe.get_all(
-		usage_month.DOCTYPE,
+		MONTH_DOCTYPE,
 		filters={
 			"service": service,
 			"meter": meter,

@@ -15,11 +15,9 @@ from central.billing.revenue.metering import metered_plan_for
 from central.billing.revenue.usage_month import (
 	BILLED,
 	BILLED_BY_HAND,
-	CORRECTION,
 	CREDIT_DUE,
 	CREDITED,
 	DAY_FIELDS,
-	DOCTYPE,
 	NO_CHARGE,
 	OPEN,
 	SETTLED,
@@ -27,7 +25,7 @@ from central.billing.revenue.usage_month import (
 	billed_value,
 )
 from central.billing.revenue.usage_month_days import billed_days_of, invoice_of_day
-from central.billing.revenue.usage_month_rows import corrections_of
+from central.billing.revenue.usage_month_rows import CORRECTION, DOCTYPE, corrections_of
 from central.billing.revenue.usage_rating import billable_above_bundle, day_weight
 from central.billing.states import transition
 

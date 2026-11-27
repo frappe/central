@@ -15,7 +15,7 @@ from central.billing.revenue import usage_corrections, usage_fold, usage_month, 
 from central.billing.revenue.exchange_rates import fix_month_rate
 from central.billing.revenue.metering import metered_plan_for, rollup_terms
 from central.billing.revenue.rollup_updates import recounted_allowance, rerated
-from central.billing.revenue.usage_month import DOCTYPE, month_of
+from central.billing.revenue.usage_month_rows import DOCTYPE, month_of
 from central.billing.revenue.usage_rating import billable_above_bundle, day_weight
 
 WATERMARK = "usage_recount_watermark"

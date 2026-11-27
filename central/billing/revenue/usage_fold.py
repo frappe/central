@@ -6,6 +6,7 @@ from frappe import _
 
 from central.billing.revenue import usage_month, usage_reports
 from central.billing.revenue.rollup_updates import is_allowance_corrected, is_version_mark
+from central.billing.revenue.usage_month_rows import DOCTYPE, month_of
 from central.services.doctype.service.service import is_read_by_central
 
 WATERMARK = "usage_month_fold_watermark"
@@ -191,7 +192,7 @@ def _day_key(row) -> tuple:
 		row.subject,
 		row.meter,
 		row.dimension or "",
-		usage_month.month_of(row.get("day") or row.month),
+		month_of(row.get("day") or row.month),
 	)
 
 
@@ -200,10 +201,10 @@ def _holding_rows(days: list) -> dict[tuple, str]:
 	if not days:
 		return {}
 	rows = frappe.get_all(
-		usage_month.DOCTYPE,
+		DOCTYPE,
 		filters={
 			"subject": ["in", list({day.subject for day in days})],
-			"month": ["in", list({usage_month.month_of(day.day) for day in days})],
+			"month": ["in", list({month_of(day.day) for day in days})],
 		},
 		fields=["name", "service", "subject", "meter", "dimension", "month", "filled"],
 	)
@@ -231,7 +232,7 @@ def _fold_rollup(rollup, carrier) -> None:
 		return
 	billed = max(0.0, frappe.utils.flt(rollup.quantity) - frappe.utils.flt(rollup.locked_allowance))
 	frappe.db.set_value(
-		usage_month.DOCTYPE,
+		DOCTYPE,
 		carrier.name,
 		{
 			"resource_id": rollup.resource_id,
@@ -252,7 +253,7 @@ def _fold_rollup(rollup, carrier) -> None:
 
 def _carrier_of(rollup, meter) -> frappe._dict:
 	"""The month row that carries the rollup's month, on the subscription that holds that month's days."""
-	month = usage_month.month_of(rollup.period_start)
+	month = month_of(rollup.period_start)
 	held = sorted((row for row in meter.rows if row.month == month), key=lambda row: row.name)
 	subscription = held[0].subscription if held else meter.subscription
 	return usage_month.carrier_of(frappe._dict(meter, subscription=subscription), month)
@@ -269,7 +270,7 @@ def _meters_of(rollups: list) -> dict[tuple, frappe._dict]:
 	).run(as_dict=True)
 	resource_of = {owner.name: owner.service_subject or owner.server_id for owner in owners}
 	months = frappe.get_all(
-		usage_month.DOCTYPE,
+		DOCTYPE,
 		filters={"subscription": ["in", list(resource_of) or [""]]},
 		fields=[
 			"name",
@@ -305,11 +306,11 @@ def _check_totals(days: list, rollups: list) -> None:
 	expected_quantity: dict = {}
 	for rollup in rollups:
 		if not rollup.superseded_by:
-			key = (rollup.team, usage_month.month_of(rollup.period_start))
+			key = (rollup.team, month_of(rollup.period_start))
 			expected_quantity[key] = expected_quantity.get(key, 0.0) + frappe.utils.flt(rollup.quantity)
 	expected_days: dict = {}
 	for day in days:
-		key = (day.team, usage_month.month_of(day.day))
+		key = (day.team, month_of(day.day))
 		expected_days[key] = expected_days.get(key, 0) + 1
 	quantity, filled = _month_totals()
 	for key, value in expected_quantity.items():
@@ -328,9 +329,7 @@ def _month_totals() -> tuple[dict, dict]:
 	"""Each team's counted quantity and number of days, by month."""
 	quantity: dict = {}
 	filled: dict = {}
-	for month in frappe.get_all(
-		usage_month.DOCTYPE, fields=["team", "month", "quantity", "counted_at", "filled"]
-	):
+	for month in frappe.get_all(DOCTYPE, fields=["team", "month", "quantity", "counted_at", "filled"]):
 		key = (month.team, month.month)
 		if month.counted_at:
 			quantity[key] = quantity.get(key, 0.0) + frappe.utils.flt(month.quantity)

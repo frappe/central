@@ -8,7 +8,8 @@ import frappe
 from central.billing.platform.invariants import Violation
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue import usage_reports
-from central.billing.revenue.usage_month import CORRECTION, DAY_FIELDS, DOCTYPE, OPEN
+from central.billing.revenue.usage_month import DAY_FIELDS, OPEN
+from central.billing.revenue.usage_month_rows import CORRECTION, DOCTYPE
 
 # Usage evidence is kept this long; a dispute window must end well before it.
 RETENTION_MONTHS = 13

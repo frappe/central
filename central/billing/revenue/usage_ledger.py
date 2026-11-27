@@ -7,7 +7,8 @@ import frappe
 from frappe import _
 
 from central.billing.revenue import usage_month, usage_month_days, usage_reports
-from central.billing.revenue.usage_month import DOCTYPE, LEVEL, Written, is_newer, month_of
+from central.billing.revenue.usage_month import LEVEL, Written, is_newer
+from central.billing.revenue.usage_month_rows import DOCTYPE, month_of
 
 # A UTC day is estimated only after the day has ended and late lines have had 48 hours.
 ESTIMATE_AFTER_DAYS = 3

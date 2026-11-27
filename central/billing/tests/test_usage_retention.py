@@ -10,6 +10,7 @@ import frappe
 from central.billing.platform import readiness
 from central.billing.revenue import usage_month, usage_month_days, usage_reports, usage_retention
 from central.billing.revenue.usage_month import bit
+from central.billing.revenue.usage_month_rows import DOCTYPE
 from central.billing.tests.utils import BillingTestCase, ensure_team
 from central.services.doctype.service.service import STORAGE_SERVICE, ensure_services
 
@@ -51,19 +52,19 @@ class TestUsageRetention(BillingTestCase):
 		if report is None:
 			report = usage_reports.record_lines(STORAGE_SERVICE, usage_reports.READ_BY_CENTRAL, [line(day)])
 		usage_month.write_lines([line(day)], report or None, "Read By Central")
-		name = frappe.db.get_value(usage_month.DOCTYPE, {"subject": SUBJECT, "month": day.replace(day=1)})
+		name = frappe.db.get_value(DOCTYPE, {"subject": SUBJECT, "month": day.replace(day=1)})
 		if billed:
 			usage_month.stamp_days({name: bit(day.day)}, "INV-TEST")
 		return name
 
 	def test_an_old_billed_month_keeps_its_totals_and_drops_its_days(self):
 		name = self.write(OLD.replace(day=14))
-		frappe.db.set_value(usage_month.DOCTYPE, name, {"quantity": 0.97, "locked_rate": 2.5})
+		frappe.db.set_value(DOCTYPE, name, {"quantity": 0.97, "locked_rate": 2.5})
 
 		usage_retention.prune_old_months(TODAY)
 
 		month = frappe.db.get_value(
-			usage_month.DOCTYPE,
+			DOCTYPE,
 			name,
 			["pruned", "slots", "d14", "quantity", "locked_rate", "billed"],
 			as_dict=True,
@@ -83,7 +84,7 @@ class TestUsageRetention(BillingTestCase):
 		)
 
 		self.assertEqual((written.count, written.corrections, written.conflicts), (0, 0, []))
-		month = frappe.get_doc(usage_month.DOCTYPE, name)
+		month = frappe.get_doc(DOCTYPE, name)
 		self.assertEqual((month.filled, month.d15, month.slots, month.corrections), (bit(14), 0, None, []))
 
 	def test_a_month_with_something_left_to_bill_is_kept(self):
@@ -91,11 +92,11 @@ class TestUsageRetention(BillingTestCase):
 		self.write(TODAY.replace(day=1))
 		with_correction = self.write(OLD.replace(month=9, day=3))
 		usage_month.write_lines([line(OLD.replace(month=9, day=3), 60)], None, "Read By Central")
-		self.assertEqual(frappe.get_doc(usage_month.DOCTYPE, with_correction).corrections[0].status, "Open")
+		self.assertEqual(frappe.get_doc(DOCTYPE, with_correction).corrections[0].status, "Open")
 
 		usage_retention.prune_old_months(TODAY)
 
-		pruned = frappe.get_all(usage_month.DOCTYPE, filters={"subject": SUBJECT, "pruned": 1}, pluck="name")
+		pruned = frappe.get_all(DOCTYPE, filters={"subject": SUBJECT, "pruned": 1}, pluck="name")
 		self.assertEqual(pruned, [])
 
 	def test_an_old_report_is_deleted_with_its_body(self):
@@ -120,9 +121,9 @@ class TestUsageRetention(BillingTestCase):
 	def test_a_billed_day_is_traced_without_reading_its_slots(self):
 		today = frappe.utils.getdate()
 		name = self.write(today.replace(day=2))
-		self.assertEqual(frappe.db.get_value(usage_month.DOCTYPE, name, "unreported"), 0)
+		self.assertEqual(frappe.db.get_value(DOCTYPE, name, "unreported"), 0)
 		self.write(today.replace(day=3), report="")
-		self.assertEqual(frappe.db.get_value(usage_month.DOCTYPE, name, "unreported"), bit(3))
+		self.assertEqual(frappe.db.get_value(DOCTYPE, name, "unreported"), bit(3))
 
 	def test_a_recent_report_without_its_body_is_a_readiness_row(self):
 		report = usage_reports.record_lines(STORAGE_SERVICE, usage_reports.READ_BY_CENTRAL, [line(TODAY)])

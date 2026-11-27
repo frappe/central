@@ -9,6 +9,7 @@ import frappe
 
 from central.billing.revenue import usage_month, usage_month_days
 from central.billing.revenue.usage_month import OPEN, bit
+from central.billing.revenue.usage_month_rows import DOCTYPE
 from central.billing.tests.test_credits import run_workers
 from central.billing.tests.utils import BillingTestCase, ensure_team
 
@@ -54,7 +55,7 @@ class TestUsageMonth(BillingTestCase):
 		return usage_month_days.day_rows({"team": TEAM})
 
 	def month(self, subscription: str = SUBSCRIPTION):
-		return frappe.get_doc(usage_month.DOCTYPE, {"subject": SUBJECT, "subscription": subscription})
+		return frappe.get_doc(DOCTYPE, {"subject": SUBJECT, "subscription": subscription})
 
 	def open_days(self) -> list[int]:
 		[month] = usage_month.locked_meter_months(SUBSCRIPTION, "Storage", "", datetime.date(2026, 6, 1))
@@ -76,7 +77,7 @@ class TestUsageMonth(BillingTestCase):
 	def test_one_row_holds_every_day_of_the_month(self):
 		self.write(line(1, 10), line(2, 20))
 		self.write(line(30, 30))
-		self.assertEqual(frappe.db.count(usage_month.DOCTYPE, {"subject": SUBJECT}), 1)
+		self.assertEqual(frappe.db.count(DOCTYPE, {"subject": SUBJECT}), 1)
 		self.assertEqual([d.quantity for d in self.days()], [10, 20, 30])
 
 	def test_a_level_day_keeps_its_peak(self):
@@ -153,11 +154,11 @@ class TestUsageMonth(BillingTestCase):
 
 	def write_after_another_worker(self, quantity: float):
 		"""Write day 1 in a transaction that began before another worker committed the month row."""
-		frappe.get_all(usage_month.DOCTYPE, limit=1)  # Opens this transaction's snapshot first.
+		frappe.get_all(DOCTYPE, limit=1)  # Opens this transaction's snapshot first.
 		on_own_connection(lambda: usage_month.write_lines([line(1, 10)], "report-1", "Read By Central"))
 		self.addCleanup(
 			on_own_connection,
-			lambda: frappe.db.delete(usage_month.DOCTYPE, {"subject": SUBJECT}),
+			lambda: frappe.db.delete(DOCTYPE, {"subject": SUBJECT}),
 		)
 		# Ends this transaction first, so the cleanup is not waiting on its row lock.
 		self.addCleanup(frappe.db.rollback)

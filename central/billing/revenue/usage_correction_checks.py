@@ -7,8 +7,8 @@ import frappe
 
 from central.billing.platform.invariants import Violation
 from central.billing.revenue.usage_corrections import WINDOW_DAYS, get_day_of
-from central.billing.revenue.usage_month import CORRECTION, CREDIT_DUE, DOCTYPE, WRITTEN_OFF
-from central.billing.revenue.usage_month_rows import corrections_of
+from central.billing.revenue.usage_month import CREDIT_DUE, WRITTEN_OFF
+from central.billing.revenue.usage_month_rows import CORRECTION, DOCTYPE, corrections_of
 
 
 def check_credit_due_corrections() -> list[Violation]:
