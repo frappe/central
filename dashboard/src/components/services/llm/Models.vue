@@ -119,16 +119,16 @@ watch(
 						Model
 					</th>
 					<th scope="col" class="pb-2 font-normal">Model key</th>
-					<th scope="col" class="hidden w-28 pb-2 font-normal md:table-cell">
+					<th scope="col" class="hidden w-20 pb-2 font-normal md:table-cell">
 						Input
 					</th>
-					<th scope="col" class="hidden w-28 pb-2 font-normal md:table-cell">
+					<th scope="col" class="hidden w-20 pb-2 font-normal md:table-cell">
 						Output
 					</th>
 					<th
 						v-if="showLimits"
 						scope="col"
-						class="hidden pb-2 pr-8 font-normal lg:table-cell"
+						class="hidden pb-2 pr-6 font-normal lg:table-cell"
 					>
 						Rate limits
 					</th>
@@ -167,7 +167,9 @@ watch(
 						{{ model.display_name }}
 					</td>
 
-					<td class="border-t border-outline-gray-1 py-2.5 pr-3">
+					<td
+						class="border-t border-outline-gray-1 py-2.5 pr-3 md:whitespace-nowrap"
+					>
 						<CopyableValue :value="model.name" label="Model key" />
 					</td>
 
@@ -194,7 +196,7 @@ watch(
 
 					<td
 						v-if="showLimits"
-						class="hidden whitespace-nowrap border-t border-outline-gray-1 py-2.5 pr-8 text-sm text-ink-gray-6 lg:table-cell"
+						class="hidden whitespace-nowrap border-t border-outline-gray-1 py-2.5 pr-6 text-sm text-ink-gray-6 lg:table-cell"
 					>
 						<span class="flex items-center gap-x-2">
 							<template

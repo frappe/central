@@ -2,6 +2,7 @@
 import { Button, dayjs, Tooltip } from 'frappe-ui'
 import { AreaChart, useChartTokens } from 'frappe-ui/charts'
 import { computed, ref } from 'vue'
+import MonthlyLimit from '@/components/services/llm/MonthlyLimit.vue'
 import { useAI } from '@/composables/useAI'
 import { formatDateTime, timeAgo } from '@/lib/datetime'
 import { reportError, successToast } from '@/lib/feedback'
@@ -19,7 +20,6 @@ defineEmits<{ create: []; quickstart: [] }>()
 const { ai, apiKeys, refreshing, refreshUsage } = useAI()
 
 const usage = computed(() => ai.value?.usage)
-const spend = computed(() => ai.value?.spend)
 const billingRate = computed(() => ai.value?.billing_rate ?? null)
 
 // Usage in the team's billing currency at the month's rate, which its invoice uses too.
@@ -138,21 +138,6 @@ const bareChart = {
 	yAxis: { show: false },
 }
 
-const limitPercent = computed(() => {
-	const limit = spend.value?.spend_limit ?? 0
-	return limit > 0
-		? Math.min(((spend.value?.committed ?? 0) / limit) * 100, 100)
-		: 0
-})
-
-const limitBarClass = computed(() =>
-	limitPercent.value >= 100
-		? 'bg-surface-red-5'
-		: limitPercent.value >= 80
-			? 'bg-surface-amber-7'
-			: 'bg-surface-gray-7',
-)
-
 const refresh = async (): Promise<void> => {
 	try {
 		await refreshUsage()
@@ -165,75 +150,76 @@ const refresh = async (): Promise<void> => {
 
 <template>
 	<section
-		class="grid overflow-hidden rounded-6 border border-outline-gray-2 bg-surface-base lg:grid-cols-3"
+		class="overflow-hidden rounded-8 border border-outline-gray-2 bg-surface-base"
 	>
-		<div
-			v-if="hasTraffic"
-			class="flex flex-col justify-between gap-3 px-4 py-3.5 md:px-5 md:py-4.5 lg:col-span-2"
-		>
+		<div v-if="hasTraffic" class="flex flex-col gap-3 px-4 py-4 md:px-6">
 			<div class="flex items-center justify-between gap-3">
 				<h2 class="flex items-center gap-1.5 text-sm-medium text-ink-gray-6">
 					<span
-						class="lucide-calendar size-4 text-ink-gray-4"
+						class="lucide-calendar-days size-4 text-ink-gray-4"
 						aria-hidden="true"
 					/>
 					{{ monthLabel }}
 				</h2>
 
-				<div class="flex items-center gap-1">
-					<Tooltip
-						v-if="usage?.as_of"
-						:text="`Counted ${formatDateTime(usage.as_of)}`"
-					>
-						<span class="text-sm text-ink-gray-5">
-							Updated {{ timeAgo(usage.as_of) }}
-						</span>
-					</Tooltip>
-					<Tooltip text="Refresh usage">
-						<Button
-							class="-my-1"
-							variant="ghost"
-							size="xs"
-							label="Refresh usage"
-							icon="lucide-refresh-cw"
-							:loading="refreshing"
-							@click="refresh"
-						/>
-					</Tooltip>
-				</div>
+				<Tooltip
+					:text="usage?.as_of ? `Counted ${formatDateTime(usage.as_of)}` : 'Refresh usage'"
+				>
+					<Button
+						class="!rounded-full"
+						variant="ghost"
+						icon-left="lucide-refresh-cw"
+						:label="usage?.as_of ? `Updated ${timeAgo(usage.as_of)}` : 'Refresh usage'"
+						:loading="refreshing"
+						@click="refresh"
+					/>
+				</Tooltip>
 			</div>
 
-			<div
-				class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-8"
-			>
-				<div class="min-w-0">
-					<p class="text-8xl-semibold tabular-nums text-ink-gray-9">
+			<div class="grid gap-4 lg:grid-cols-7 lg:gap-6">
+				<div class="flex min-w-0 flex-col lg:col-span-4 lg:justify-center">
+					<p class="truncate text-8xl-semibold tabular-nums text-ink-gray-9">
 						{{ billed(usage?.cost) }}
 					</p>
-					<p class="mt-2 text-p-base text-ink-gray-5">
-						Spent this month on
-						<span class="tabular-nums text-ink-gray-7"
-							>{{ usage?.requests.toLocaleString() }}</span
-						>
-						requests and
-						<Tooltip
-							:text="`${usage?.tokens.toLocaleString()} input and output tokens`"
-						>
-							<span class="tabular-nums text-ink-gray-7"
-								>{{ compactNumber(usage?.tokens ?? 0) }}</span
+					<p class="mt-1 flex items-start gap-2 text-p-base text-ink-gray-5">
+						<span
+							class="lucide-chart-no-axes-column mt-0.5 size-4 shrink-0 text-ink-gray-6"
+							aria-hidden="true"
+						/>
+						<span>
+							Spent this month on
+							<span class="tabular-nums text-ink-gray-9"
+								>{{ usage?.requests.toLocaleString() }}</span
 							>
-						</Tooltip>
-						tokens.
+							requests and
+							<Tooltip
+								:text="`${usage?.tokens.toLocaleString()} input and output tokens`"
+							>
+								<span class="tabular-nums text-ink-gray-9"
+									>{{ compactNumber(usage?.tokens ?? 0) }}</span
+								>
+							</Tooltip>
+							tokens.
+						</span>
 					</p>
-					<p v-if="rateLabel" class="mt-1 text-p-sm text-ink-gray-5">
-						{{ rateLabel }}
-					</p>
+					<div
+						v-if="rateLabel"
+						class="mt-3 border-t border-outline-gray-1 pt-2.5"
+					>
+						<span
+							class="inline-flex items-center gap-1.5 rounded-full border border-outline-gray-1 bg-surface-gray-1 px-3 py-1.5 text-sm text-ink-gray-6"
+						>
+							<span class="lucide-tag size-3.5 shrink-0" aria-hidden="true" />
+							{{ rateLabel }}
+						</span>
+					</div>
 				</div>
+
 				<figure
-					class="pace-chart flex w-full shrink-0 flex-col gap-2 rounded-5 bg-surface-gray-1 px-3 py-2.5 sm:w-fit"
+					class="pace-chart flex min-w-0 flex-col gap-2 rounded-7 border border-outline-gray-1 bg-surface-gray-1 px-3.5 pb-3 pt-2.5 lg:col-span-3"
 				>
 					<div
-						class="h-16"
+						class="h-12"
 						role="img"
 						:aria-label="`Spend this month so far, on pace for ${billed(projected)} by ${monthEnd}`"
 					>
@@ -248,22 +234,18 @@ const refresh = async (): Promise<void> => {
 						/>
 					</div>
 					<figcaption class="text-xs text-ink-gray-5">
-						<span>
-							On pace for
-							<span class="tabular-nums text-ink-gray-8"
-								>{{ billed(projected) }}</span
-							>
-							by {{ monthEnd }}
-						</span>
+						On pace for
+						<span class="tabular-nums text-ink-gray-9"
+							>{{ billed(projected) }}</span
+						>
+						by {{ monthEnd }}
 					</figcaption>
+					<MonthlyLimit class="border-t border-outline-gray-2 pt-2.5" />
 				</figure>
 			</div>
 		</div>
 
-		<div
-			v-else
-			class="flex flex-col gap-5 px-4 py-3.5 md:px-5 md:py-4.5 lg:col-span-2"
-		>
+		<div v-else class="flex flex-col gap-5 px-4 py-3.5 md:px-5 md:py-4.5">
 			<div>
 				<h2 class="text-lg-semibold text-ink-gray-9">
 					Make your first request
@@ -327,49 +309,11 @@ const refresh = async (): Promise<void> => {
 					/>
 				</li>
 			</ol>
-		</div>
 
-		<dl
-			class="flex flex-col gap-4 border-t border-outline-gray-2 px-4 py-3.5 text-base md:px-5 md:py-4.5 lg:border-l lg:border-t-0"
-		>
-			<div class="flex flex-col gap-2">
-				<div class="flex items-center justify-between gap-3">
-					<dt class="flex items-center gap-1.5 text-ink-gray-5">
-						Monthly limit
-						<Tooltip
-							text="Your keys' caps and this month's spend, out of what your plan allows a month. Usage is billed at the end of the month."
-						>
-							<span
-								class="lucide-info size-3.5 text-ink-gray-4"
-								aria-label="What the monthly limit is"
-							/>
-						</Tooltip>
-					</dt>
-					<dd v-if="spend?.spend_limit" class="tabular-nums text-ink-gray-5">
-						<span class="text-base-medium text-ink-gray-9">
-							{{ usd(spend.committed) }}
-						</span>
-						/ {{ usd(spend.spend_limit) }}
-					</dd>
-					<dd v-else class="text-ink-gray-5">Not on your plan</dd>
-				</div>
-				<div
-					v-if="spend?.spend_limit"
-					class="h-1 overflow-hidden rounded-full bg-surface-gray-2"
-					role="meter"
-					:aria-valuenow="Math.round(limitPercent)"
-					aria-valuemin="0"
-					aria-valuemax="100"
-					aria-label="Share of the monthly limit taken"
-				>
-					<div
-						class="h-full rounded-full transition-[width] duration-300 ease-out"
-						:class="limitBarClass"
-						:style="{ width: `${limitPercent}%` }"
-					/>
-				</div>
-			</div>
-		</dl>
+			<MonthlyLimit
+				class="rounded-5 bg-surface-gray-1 px-3 py-2.5 sm:max-w-xs"
+			/>
+		</div>
 	</section>
 </template>
 
