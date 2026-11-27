@@ -28,14 +28,35 @@ export interface LimitChip {
 	text: string
 }
 
-// One chip per limit: `10 RPM gpt-6-luna`, the model's id when the row names one; the long form
-// goes in its tooltip. A row at 0 is no limit there: `∞ RPM gpt-6-luna`.
-export const limitChips = (limits: AIRateLimit[]): LimitChip[] =>
-	limits.map((limit) => {
-		const model = limit.model_key ? ` ${limit.model_key.split('/').pop()}` : ''
-		return {
-			key: `${limit.model_key}:${limit.metric}:${limit.window}`,
-			label: `${limit.value ? compactNumber(limit.value) : '∞'} ${METRIC_LETTERS[limit.metric] ?? limit.metric}${WINDOW_LETTERS[limit.window] ?? ''}${model}`,
-			text: `${limit.value ? limit.value.toLocaleString() : 'No limit on'} ${METRIC_WORDS[limit.metric] ?? limit.metric} ${WINDOW_WORDS[limit.window] ?? limit.window} on ${limit.model_key || 'every model'}`,
-		}
-	})
+// The rows that hold on `model` in `geography`: the ones naming it and, on every metric and
+// window none of those covers, the ones naming no model.
+export const limitsFor = (
+	limits: AIRateLimit[],
+	model: string,
+	geography: string,
+): AIRateLimit[] => {
+	const slot = (limit: AIRateLimit) => `${limit.metric}:${limit.window}`
+	const reaching = limits.filter(
+		(limit) => !limit.geography || limit.geography === geography,
+	)
+	const named = reaching.filter((limit) => limit.model_key === model)
+	const covered = new Set(named.map(slot))
+	return [
+		...named,
+		...reaching.filter(
+			(limit) => !limit.model_key && !covered.has(slot(limit)),
+		),
+	]
+}
+
+// One chip per limit, `20 RPM`; the long form goes in its tooltip and ends with `counted`
+// (`per key`). A row at 0 is no limit: `∞ RPM`.
+export const limitChips = (
+	limits: AIRateLimit[],
+	counted: string,
+): LimitChip[] =>
+	limits.map((limit) => ({
+		key: `${limit.model_key}:${limit.metric}:${limit.window}`,
+		label: `${limit.value ? compactNumber(limit.value) : '∞'} ${METRIC_LETTERS[limit.metric] ?? limit.metric}${WINDOW_LETTERS[limit.window] ?? ''}`,
+		text: `${limit.value ? limit.value.toLocaleString() : 'No limit on'} ${METRIC_WORDS[limit.metric] ?? limit.metric} ${WINDOW_WORDS[limit.window] ?? limit.window} ${counted}`,
+	}))

@@ -26,6 +26,8 @@ export interface AIModel {
 // 0 is no limit.
 export interface AIRateLimit {
 	model_key: string
+	// Where a row naming a vendor's model holds; blank holds everywhere.
+	geography?: string
 	metric: 'requests' | 'total_tokens' | string
 	window: '1m' | '1h' | '1d' | '1M' | string
 	value: number
@@ -40,9 +42,11 @@ export interface AISpend {
 	capped: number
 	committed: number
 	spend_limit: number
-	// The team's rate limits, counted per model for the team as a whole however many keys it
-	// holds. None: uncapped.
+	// The team's rate limits; none: uncapped. `limit_scope` says who they are counted for: the
+	// team as a whole on each model (shown on the Models tab), or each key on its own with every
+	// model together (shown on the API keys tab).
 	limits: AIRateLimit[]
+	limit_scope: 'Model' | 'Key'
 	suspended: boolean
 	// Whether the gateways keep the team's prompts and outputs for a short time, for support.
 	log_payloads: boolean
