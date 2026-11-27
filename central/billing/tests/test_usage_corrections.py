@@ -8,7 +8,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.platform import alerts, readiness
-from central.billing.revenue import usage_corrections
+from central.billing.revenue import usage_corrections, usage_month
 from central.billing.revenue.invoicing import generate
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.invoicing.lifecycle import reissue_invoice
@@ -20,9 +20,12 @@ from central.billing.tests.test_usage_month_invoicing import (
 	TEAM_BUCKET,
 	StorageMonthsFixture,
 )
-from central.billing.tests.utils import BillingTestCase, usage_days
+from central.billing.tests.utils import BillingTestCase, ensure_team, usage_days
 
 AUGUST_PERIOD = ("2026-08-01", "2026-08-31")
+MONTH_TEAM = "team-correction-month"
+MONTH_SUBJECT = "correction-month-subject"
+MONTH_INVOICE = "correction-month-invoice"
 
 
 def credit_due_rows(month_row: str) -> list:
@@ -115,9 +118,10 @@ class TestStorageCorrections(StorageMonthsFixture, BillingTestCase):
 		# A closed correction is never replaced; a later value is a new one against the billed value.
 		self.read("2026-06-30", 300)
 		corrections = frappe.get_doc("Usage Month", row.month_row).corrections
+		# A value rated as no change is what the day bills now, so the next one is weighed against it.
 		self.assertEqual(
 			[(c.status, c.billed_value, c.value) for c in corrections],
-			[("No Charge", correction.billed_value, 120), ("Open", correction.billed_value, 300)],
+			[("No Charge", correction.billed_value, 120), ("Open", 120, 300)],
 		)
 
 	def test_a_month_below_the_minimum_keeps_the_correction_open(self):
@@ -231,3 +235,130 @@ class TestAICorrections(AIBillingCase):
 		self.assertEqual(correction.status, "Credit Due")
 		[violation] = credit_due_rows(row.month_row)
 		self.assertIn(correction.name, violation.detail)
+
+
+def sum_line(day: int, quantity: float, hour: int = 12, included: float = 0) -> dict:
+	bundle = {"included": included} if included else {}
+	return {
+		"service": "storage",
+		"meter": "bytes_stored",
+		"subject": MONTH_SUBJECT,
+		"dimension": "",
+		"day": datetime.date(2026, 6, day),
+		"aggregation": "Sum",
+		"team": MONTH_TEAM,
+		"subscription": "correction-month-subscription",
+		"resource_type": "Storage",
+		"unit": "GB",
+		"quantity": quantity,
+		"as_of": datetime.datetime(2026, 6, day, hour),
+		**bundle,
+	}
+
+
+class TestCorrectionsOfOneMonth(BillingTestCase):
+	"""June's Sum days billed by one invoice at 1 a unit, corrected later."""
+
+	def setUp(self):
+		ensure_team(MONTH_TEAM)
+
+	def bill(self, quantities: dict[int, float], included: float = 0, allowance: float = 0) -> None:
+		lines = [sum_line(day, quantity, included=included) for day, quantity in quantities.items()]
+		usage_month.write_lines(lines, "report-1", "Pushed")
+		self.month_row = frappe.db.get_value("Usage Month", {"subject": MONTH_SUBJECT})
+		usage_month.stamp_days(
+			{self.month_row: sum(usage_month.bit(day) for day in quantities)}, MONTH_INVOICE
+		)
+		terms = {"locked_allowance": allowance, "locked_rate": 1, "currency": "USD"}
+		frappe.db.set_value(
+			"Usage Month",
+			self.month_row,
+			{
+				**terms,
+				"invoice": MONTH_INVOICE,
+				"counted_at": frappe.utils.now_datetime(),
+				"quantity": sum(quantities.values()),
+				"resource_id": MONTH_SUBJECT,
+			},
+		)
+
+	def correct(self, day: int, quantity: float, hour: int) -> None:
+		usage_month.write_lines([sum_line(day, quantity, hour=hour)], f"report-{hour}", "Pushed")
+		# No Invoice row backs the test invoice, so the window starts today.
+		frappe.db.set_value(
+			"Usage Month Correction",
+			{"parent": self.month_row, "billed_invoice_date": ["is", "not set"]},
+			"billed_invoice_date",
+			frappe.utils.getdate(),
+		)
+
+	def corrections(self) -> list:
+		return frappe.get_doc("Usage Month", self.month_row).corrections
+
+	def test_a_resend_of_a_credited_value_adds_no_correction(self):
+		self.bill({10: 10, 11: 10})
+		self.correct(10, 5, hour=18)
+		usage_corrections.rate_open(MONTH_TEAM)
+		[correction] = self.corrections()
+		self.assertEqual((correction.status, correction.billable_delta), ("Credit Due", -5))
+		usage_corrections.mark_credited(correction.name, "credit note CN-1")
+
+		self.correct(10, 5, hour=20)
+
+		self.assertEqual([(c.status, c.value) for c in self.corrections()], [("Credited", 5)])
+		self.assertEqual(usage_corrections.rate_open(MONTH_TEAM).lines, [])
+		self.assertEqual(credit_due_rows(self.month_row), [])
+
+	def test_a_resend_of_a_value_rated_as_no_change_adds_no_correction(self):
+		self.bill({10: 10, 11: 10}, allowance=100)
+		self.correct(10, 5, hour=18)
+		usage_corrections.rate_open(MONTH_TEAM)
+		self.assertEqual([c.status for c in self.corrections()], ["No Charge"])
+
+		self.correct(10, 5, hour=20)
+
+		self.assertEqual([(c.status, c.value) for c in self.corrections()], [("No Charge", 5)])
+		self.assertEqual(credit_due_rows(self.month_row), [])
+
+	def test_corrections_of_one_bundled_month_net_to_the_true_month(self):
+		# A share of 100 over June's 30 days, 120 billed: 20 above it. Day 10 drops 30, day 20 adds 15.
+		self.bill({day: {10: 33}.get(day, 3) for day in range(1, 31)}, included=100)
+		self.correct(10, 3, hour=18)
+		self.correct(20, 18, hour=18)
+
+		rated = usage_corrections.rate_open(MONTH_TEAM)
+
+		# The true month is 105, 5 above the share: the 20 billed above it is owed back and the 5 billed.
+		self.assertEqual(
+			[(c.day, c.status, c.billable_delta) for c in self.corrections()],
+			[(10, "Credit Due", -20), (20, "Open", 5)],
+		)
+		self.assertEqual([(line["quantity"], line["amount"]) for line in rated.lines], [(5, 5)])
+
+	def test_a_rise_rated_before_a_drop_nets_to_the_true_month_too(self):
+		self.bill({day: {20: 33}.get(day, 3) for day in range(1, 31)}, included=100)
+		self.correct(10, 18, hour=18)
+		self.correct(20, 3, hour=18)
+
+		rated = usage_corrections.rate_open(MONTH_TEAM)
+
+		# 15 billed for day 10 and 30 owed back for day 20: 20 + 15 - 30 is the true month's 5.
+		self.assertEqual([line["quantity"] for line in rated.lines], [15])
+		self.assertEqual([(c.day, c.billable_delta) for c in self.corrections()], [(10, 15), (20, -30)])
+
+	def test_a_lower_value_after_a_write_off_is_rated_against_the_billed_value(self):
+		self.bill({10: 10})
+		self.correct(10, 15, hour=18)
+		ended = frappe.utils.getdate() - datetime.timedelta(days=usage_corrections.WINDOW_DAYS + 1)
+		frappe.db.set_value(
+			"Usage Month Correction", {"parent": self.month_row}, "billed_invoice_date", ended
+		)
+		self.assertEqual(usage_corrections.write_off_expired(), 1)
+
+		self.correct(10, 6, hour=20)
+		usage_corrections.rate_open(MONTH_TEAM)
+
+		self.assertEqual(
+			[(c.status, c.billed_value, c.value, c.billable_delta) for c in self.corrections()],
+			[("Written Off", 10, 15, 0), ("Credit Due", 10, 6, -4)],
+		)

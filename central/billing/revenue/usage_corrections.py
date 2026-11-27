@@ -17,10 +17,15 @@ from central.billing.revenue.usage_month import (
 	BILLED,
 	CORRECTION,
 	CREDIT_DUE,
+	CREDITED,
 	DAY_FIELDS,
 	DOCTYPE,
+	NO_CHARGE,
 	OPEN,
+	WRITTEN_OFF,
 	billed_days_of,
+	billed_value,
+	corrections_of,
 	invoice_of_day,
 )
 from central.billing.revenue.usage_rating import billable_above_bundle, day_weight
@@ -29,9 +34,6 @@ from central.billing.states import transition
 # A correction is billed only within this many days of the invoice that billed its day.
 # A lower value is still rated after it: the window limits what we charge, never a credit we owe.
 WINDOW_DAYS = 90
-CREDITED = "Credited"
-NO_CHARGE = "No Charge"
-WRITTEN_OFF = "Written Off"
 PAGE_SIZE = 500
 _CARRIER_FIELDS = (
 	"name",
@@ -186,7 +188,9 @@ class BilledMonth:
 		return self.get_billable((key, value)) - self.get_billable()
 
 	def apply(self, key: tuple, value: float) -> None:
-		self.days[key].billed = value
+		"""Rate later corrections against the month with this day's new value in it."""
+		if key in self.days:
+			self.days[key].billed = value
 
 
 def _rate(month: BilledMonth, correction, team: str, rated: Corrections) -> None:
@@ -196,19 +200,18 @@ def _rate(month: BilledMonth, correction, team: str, rated: Corrections) -> None
 	frappe.db.set_value(CORRECTION, correction.name, "billable_delta", delta, update_modified=False)
 	# Float noise from summing day weights must not bill, or credit, a zero change.
 	rounded = frappe.utils.flt(delta, frappe.get_precision(CORRECTION, "billable_delta"))
-	if rounded < 0:
-		_move(correction.name, CREDIT_DUE, team, reason="the new value lowers the bill")
-		return
-	if rounded == 0:
-		_close_unchanged(correction, team)
-		return
-	if not correction.billable:
+	if rounded > 0 and not correction.billable:
 		# Past its window a charge is not billed; write_off_expired closes it.
 		return
-	# Later corrections of the same month are weighed against this one, as the invoice bills them together.
+	# A credit owed or a value rated as no change sets the month too, so the next correction is rated against it.
 	month.apply(key, frappe.utils.flt(correction.value))
-	rated.lines.append(_line(month.carrier, correction, delta))
-	rated.names.append(correction.name)
+	if rounded < 0:
+		_move(correction.name, CREDIT_DUE, team, reason="the new value lowers the bill")
+	elif rounded == 0:
+		_close_unchanged(correction, team)
+	else:
+		rated.lines.append(_line(month.carrier, correction, delta))
+		rated.names.append(correction.name)
 
 
 def _close_unchanged(correction, team: str) -> None:
@@ -318,32 +321,21 @@ def _billed_days(invoice: str, meter: dict, month) -> dict[tuple, frappe._dict]:
 		filters={**meter, "month": ["<=", month], "billed": ["!=", 0]},
 		fields=["name", "month", "aggregation", "slots", *DAY_FIELDS],
 	)
-	days = {
-		(row.name, day): frappe._dict(
-			day=row.month.replace(day=day),
-			aggregation=row.aggregation,
-			included=frappe.utils.flt(slot.get("included")),
-			first=frappe.utils.flt(row[DAY_FIELDS[day - 1]]),
-		)
+	corrections = corrections_of([row.name for row in rows])
+	return {
+		(row.name, day): _billed_day(row, day, slot, corrections.get(row.name, []))
 		for row, day, slot in billed_days_of(rows, invoice)
 	}
-	for day in days.values():
-		day.billed = day.first
-	for correction in _billed_corrections(list({name for name, _day in days})):
-		if (key := (correction.parent, correction.day)) in days:
-			days[key].billed = frappe.utils.flt(correction.value)
-	return days
 
 
-def _billed_corrections(rows: list[str]) -> list[frappe._dict]:
-	"""The billed corrections of these month rows, in the order they were made, so the latest wins."""
-	if not rows:
-		return []
-	return frappe.get_all(
-		CORRECTION,
-		filters={"parent": ["in", rows], "parenttype": DOCTYPE, "status": BILLED},
-		fields=["parent", "day", "value"],
-		order_by="idx asc",
+def _billed_day(row, day: int, slot: dict, corrections: list) -> frappe._dict:
+	first = frappe.utils.flt(row[DAY_FIELDS[day - 1]])
+	return frappe._dict(
+		day=row.month.replace(day=day),
+		aggregation=row.aggregation,
+		included=frappe.utils.flt(slot.get("included")),
+		first=first,
+		billed=billed_value(corrections, day, first),
 	)
 
 

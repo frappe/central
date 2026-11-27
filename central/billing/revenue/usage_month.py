@@ -15,8 +15,13 @@ CORRECTION = "Usage Month Correction"
 LEVEL = "Level"
 OPEN = "Open"
 CREDIT_DUE = "Credit Due"
-PENDING = (OPEN, CREDIT_DUE)
 BILLED = "Billed"
+CREDITED = "Credited"
+NO_CHARGE = "No Charge"
+WRITTEN_OFF = "Written Off"
+# A correction in one of these states sets what its day bills: billed, credited, owed as a credit, or
+# rated as changing nothing. A written-off value was never billed, so it does not.
+SETTLED = (BILLED, CREDITED, CREDIT_DUE, NO_CHARGE)
 DAY_FIELDS = tuple(f"d{day:02d}" for day in range(1, 32))
 WRITTEN = "written"
 CORRECTED = "corrected"
@@ -266,29 +271,36 @@ class MonthRow:
 
 	def _correct(self, day: int, row: dict, report: str | None) -> str | None:
 		"""Keep a later value of a billed day as a correction. The billed value never changes."""
-		pending = self._correction(day, PENDING)
 		current = self.get_day(day)
-		effective = frappe._dict(current, invoice=None)
-		if pending:
-			effective.update(quantity=pending.value, as_of=pending.as_of, estimated=False)
-		if not is_newer(effective, row) or frappe.utils.flt(row["quantity"]) == effective.quantity:
+		last = self._last_value(day, current)
+		if not is_newer(last, row) or frappe.utils.flt(row["quantity"]) == last.quantity:
 			return None
-		billed = self._correction(day, (BILLED,))
-		billed_value = billed.value if billed else current.quantity
-		if pending:
-			frappe.db.delete(CORRECTION, {"name": pending.name})
-			self.corrections.remove(pending)
-		if frappe.utils.flt(row["quantity"]) != frappe.utils.flt(billed_value):
-			original = billed.report if billed else current.report
-			self._add_correction(day, row, report, billed_value, original, current.invoice)
+		dropped = self._drop_open(day)
+		settled = settled_correction(self.corrections, day)
+		billed = billed_value(self.corrections, day, current.quantity)
+		if frappe.utils.flt(row["quantity"]) == billed:
+			return CORRECTED if dropped else None
+		original = settled.report if settled else current.report
+		self._add_correction(day, row, report, billed, original, current.invoice)
 		return CORRECTED
 
-	def _correction(self, day: int, statuses: tuple):
-		"""The latest correction of a day in one of `statuses`, or None."""
-		found = [c for c in self.corrections if c.day == day and c.status in statuses]
-		return found[-1] if found else None
+	def _last_value(self, day: int, current) -> frappe._dict:
+		"""The day's latest value: its latest correction of any state, else its billed slot."""
+		found = [c for c in self.corrections if c.day == day]
+		if not found:
+			return frappe._dict(current, invoice=None)
+		latest = found[-1]
+		return frappe._dict(current, invoice=None, quantity=latest.value, as_of=latest.as_of, estimated=False)
 
-	def _add_correction(self, day: int, row: dict, report, billed_value: float, original, invoice) -> None:
+	def _drop_open(self, day: int) -> list:
+		"""Remove the day's open correction, which a newer value replaces, and return what was removed."""
+		found = [c for c in self.corrections if c.day == day and c.status == OPEN]
+		for correction in found:
+			frappe.db.delete(CORRECTION, {"name": correction.name})
+			self.corrections.remove(correction)
+		return found
+
+	def _add_correction(self, day: int, row: dict, report, billed: float, original, invoice) -> None:
 		# The dispute window runs from the invoice that billed the day, whichever invoice bills the correction.
 		billed_on = frappe.db.get_value("Invoice", invoice, "creation")
 		correction = frappe.get_doc(
@@ -299,7 +311,7 @@ class MonthRow:
 				"parentfield": "corrections",
 				"idx": len(self.corrections) + 1,
 				"day": day,
-				"billed_value": billed_value,
+				"billed_value": billed,
 				"value": frappe.utils.flt(row["quantity"]),
 				"original_report": original,
 				"report": report,
@@ -342,6 +354,18 @@ def _is_as_new(row: dict, current) -> bool:
 	if not current.get("as_of"):
 		return True
 	return frappe.utils.get_datetime(row["as_of"]) >= frappe.utils.get_datetime(current.get("as_of"))
+
+
+def settled_correction(corrections: list, day: int):
+	"""The latest correction of a day that set what the day bills, or None."""
+	found = [c for c in corrections if c.day == day and c.status in SETTLED]
+	return found[-1] if found else None
+
+
+def billed_value(corrections: list, day: int, first: float) -> float:
+	"""What a billed day bills now: its latest settled correction's value, else the value first billed."""
+	settled = settled_correction(corrections, day)
+	return frappe.utils.flt(settled.value if settled else first)
 
 
 def day_rows(filters: dict, day=None) -> list[frappe._dict]:
@@ -505,7 +529,7 @@ def _locked(condition, with_corrections: bool = False) -> list[MonthRow]:
 		.for_update()
 	).run(as_dict=True)
 	billed = [month.name for month in found if month.billed] if with_corrections else []
-	corrections = _corrections_of(billed)
+	corrections = corrections_of(billed)
 	return [MonthRow(month, corrections.get(month.name, [])) for month in found]
 
 
@@ -525,7 +549,8 @@ def _rated_rows(meter, month) -> list[frappe._dict]:
 	).run(as_dict=True)
 
 
-def _corrections_of(names: list[str]) -> dict[str, list]:
+def corrections_of(names: list[str]) -> dict[str, list]:
+	"""The corrections of these month rows by row, in the order they were made."""
 	if not names:
 		return {}
 	rows = frappe.get_all(
