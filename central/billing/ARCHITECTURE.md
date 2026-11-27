@@ -723,20 +723,27 @@ platform.sync.record_meter_rollups  (Central writes the runtime it bills)
 
 Usage months (ADR 0028, #207): every writer stores a line in the day slot of its Usage Month
   → one row per service, subject, meter, dimension, month and subscription, d01 to d31, bit masks
-    (filled, billed, written off, estimated, open) and a JSON slot per day: source (Pushed, Read By
+    (filled, billed, written off, estimated, open, unreported) and a JSON slot per day: source (Pushed, Read By
     Central, Estimated), the Usage Report that set it, as_of, landed_at, the bundle, the invoice
   → usage_month.write_lines locks the batch's rows in name order; a lock refused under snapshot
-    isolation returns the whole batch as conflicts, which the service sends again
+    isolation returns the whole batch as conflicts, which the service sends again; the refusal
+    rolls back the whole transaction, so a pushed report is kept after its lines, and Central's
+    own reads (usage_ledger.CentralLines) fail the job, which reads again
   → an unbilled day takes a newer value under ADR 0026's rules; a billed day never changes: a
     later value, higher or lower, is kept as an Open Usage Month Correction; a newer value
-    replaces an Open or Credit Due correction of the same day (never a Billed, Credited, No Charge
-    or Written Off one)
+    replaces an Open correction of the same day (never a Billed, Credit Due, Credited, No Charge
+    or Written Off one), and a value equal to the day's latest correction adds nothing
+  → what a billed day bills now (usage_month.billed_value) is the value of its latest Billed,
+    Credit Due, Credited or No Charge correction, else its slot's value; a Written Off value was
+    never billed, so it does not count. A new correction's billed_value is that value
   → every team draft, billable or not (usage_corrections.rate_open), rates each Open correction against the rated row
     that billed its day: billable quantity with the new value minus billable quantity with the
-    values billed, at that row's locked rate, allowance and AI rate (a live-priced family takes
+    values the days bill now, at that row's locked rate, allowance and AI rate (a live-priced family takes
     the rate on the invoice line); a positive delta is one line on the next invoice, "Correction
     · <subject> · 14 Mar 2026 · report <original> → <new>", with charge_date the corrected day,
-    and the invoice stamps the correction Billed; a reissue reopens it and bills it again
+    and the invoice stamps the correction Billed; a reissue reopens it and bills it again;
+    corrections of one month are rated in day order, each against the month with the earlier
+    ones applied, Credit Due and No Charge included, so together they bill the true month
   → a negative delta goes Credit Due and never makes a negative line: readiness M4 lists it
     until an operator issues the credit note and marks it Credited (Usage Month form, Mark
     Credited); nothing lowers a bill automatically
