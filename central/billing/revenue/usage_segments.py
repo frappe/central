@@ -146,13 +146,13 @@ def project(subjects: list[str], since, until) -> int:
 	return written.count + written.corrections
 
 
-def _held_days(segments: list, windows: dict[str, list], days: list[tuple]) -> dict[tuple, frappe._dict]:
-	"""The most each subject held at once on each day while it was billed, by (subject, day)."""
+def _held_days(segments: list, windows: dict[str, list], days: list[tuple], cap) -> dict[tuple, frappe._dict]:
+	"""The most each subject held at once on each day while it was billed, before `cap`, by (subject, day)."""
 	found: dict[tuple, frappe._dict] = {}
 	for segment in segments:
 		for window in windows.get(segment.subject, []):
 			start = max(segment.starts_at, window.start)
-			end = min(segment.ends_at or datetime.datetime.max, window.end or datetime.datetime.max)
+			end = min(segment.ends_at or cap, window.end or cap, cap)
 			# Held and billed at the same moment, not only on the same day.
 			if start < end:
 				_add_days(found, segment, window, (start, end), days)
@@ -195,10 +195,11 @@ def _day_lines(service: str, meter_key: str, segments: list, since, until) -> li
 		return []
 	since = max(frappe.utils.getdate(since), frappe.utils.getdate(bill_from))
 	before = utc_day_start(frappe.utils.getdate(until) + datetime.timedelta(days=1))
-	held = _held_days(segments, _billed_windows(segments, before), _utc_days(since, until))
+	now = frappe.utils.now_datetime()
+	# A draft written before its period ends must not count the days still to come.
+	held = _held_days(segments, _billed_windows(segments, before), _utc_days(since, until), min(before, now))
 	_keep_written_subscriptions(held, service, meter_key, since, until)
 	meter = frappe.get_doc("Service", service).get_meter(meter_key)
-	now = frappe.utils.now_datetime()
 	return [
 		meter.get_day_row(found, day, found.quantity, dimension="", as_of=now, segment=found.segment)
 		for (_, day), found in held.items()

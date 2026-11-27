@@ -156,6 +156,12 @@ class TestIPv4DayBilling(IPv4DaysTestCase):
 		add_segment(self.subscription, "Created", 1000, at("2026-06-15", hours=12), plan=VM_PLAN)
 		self.assertEqual(self.days(), JUNE[14:])
 
+	def test_a_draft_before_the_month_ends_counts_no_day_still_to_come(self):
+		self.hold(at("2026-06-01"))
+
+		with patch("frappe.utils.now_datetime", return_value=at("2026-06-20", hours=5)):
+			self.assertEqual(self.days(), JUNE[:20])
+
 	def test_the_termination_day_bills_once(self):
 		self.hold(at("2026-06-01"))
 		add_segment(self.subscription, "Cancelled", None, at("2026-06-20", hours=10))
