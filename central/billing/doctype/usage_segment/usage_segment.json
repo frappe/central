@@ -102,12 +102,12 @@
    "reqd": 1
   },
   {
-   "description": "State Report: the region reported the change. Termination: the subject ended. Operator: an operator corrected the record. Migration: made from the day values kept before this record existed.",
+   "description": "State Report: the service reported the change. Operator: an operator corrected the record. Migration: made from the day values kept before this record existed.",
    "fieldname": "opened_source",
    "fieldtype": "Select",
    "in_standard_filter": 1,
    "label": "Opened By Source",
-   "options": "State Report\nTermination\nOperator\nMigration",
+   "options": "State Report\nOperator\nMigration",
    "read_only": 1,
    "reqd": 1
   },
@@ -123,7 +123,7 @@
    "read_only": 1
   },
   {
-   "description": "When the region saw the change, the patch name, or the operator's note.",
+   "description": "When the service reported the change, the patch name, or the operator's note.",
    "fieldname": "opened_reference",
    "fieldtype": "Data",
    "label": "Opened Reference",
@@ -143,6 +143,7 @@
    "read_only": 1
   },
   {
+   "description": "State Report: the service reported the change. Termination: the subject ended. Operator: an operator corrected the record. Migration: made from the day values kept before this record existed.",
    "fieldname": "closed_source",
    "fieldtype": "Select",
    "label": "Closed By Source",
@@ -161,6 +162,7 @@
    "read_only": 1
   },
   {
+   "description": "When the service reported the change, the patch name, or the operator's note.",
    "fieldname": "closed_reference",
    "fieldtype": "Data",
    "label": "Closed Reference",
@@ -182,7 +184,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-27 12:00:00.000000",
+ "modified": "2026-11-27 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Usage Segment",
