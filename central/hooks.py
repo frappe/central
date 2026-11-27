@@ -236,6 +236,7 @@ doc_events = {
 			"Usage Month",
 			"Usage Rollup",
 			"Usage Report",
+			"Usage Segment",
 			"Webhook Event",
 			"Billing Event",
 			"Top-up Order",
@@ -499,6 +500,7 @@ _BILLING_TEAM_RECORDS = (
 	"Top-up Order",
 	"Usage Month",
 	"Usage Rollup",
+	"Usage Segment",
 )
 
 permission_query_conditions = {

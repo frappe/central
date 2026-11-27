@@ -138,11 +138,11 @@
    "reqd": 1
   },
   {
-   "description": "Level: each day's peak. Sum: each day's total.",
+   "description": "Level: each day's peak. Sum: each day's total. State: the most held at once on each day, from the Usage Segments.",
    "fieldname": "aggregation",
    "fieldtype": "Select",
    "label": "Aggregation",
-   "options": "Level\nSum",
+   "options": "Level\nSum\nState",
    "read_only": 1,
    "reqd": 1
   },

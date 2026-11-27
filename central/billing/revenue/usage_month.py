@@ -13,6 +13,7 @@ from central.billing.revenue.usage_reports import ESTIMATED
 DOCTYPE = "Usage Month"
 CORRECTION = "Usage Month Correction"
 LEVEL = "Level"
+PEAKS = (LEVEL, "State")
 OPEN = "Open"
 CREDIT_DUE = "Credit Due"
 BILLED = "Billed"
@@ -217,8 +218,7 @@ class MonthRow:
 		table = frappe.qb.DocType(DOCTYPE)
 		record = self.record
 		record["open_days"] = record["filled"] & ~record["billed"] & ~record["written_off"]
-		reported = sum(bit(int(day)) for day, slot in self.slots.items() if slot.get("report"))
-		record["unreported"] = record["billed"] & ~reported
+		record["unreported"] = record["billed"] & ~_answerable_days(self.slots)
 		query = frappe.qb.update(table).set(table.slots, json.dumps(self.slots, sort_keys=True))
 		for name in (*MASKS, "carries_bundle", *(DAY_FIELDS[day - 1] for day in self.changed_days)):
 			query = query.set(table[name], record[name])
@@ -241,7 +241,7 @@ class MonthRow:
 
 	def _replace(self, day: int, row: dict, report: str | None, source: str, now) -> None:
 		current = self.get_day(day)
-		if current.aggregation == LEVEL:
+		if current.aggregation in PEAKS:
 			# An older reading may still raise the peak, but never brings back the bundle it was read with.
 			raises = current.estimated or current.quantity < frappe.utils.flt(row["quantity"])
 			as_new = current.estimated or _is_as_new(row, current)
@@ -258,6 +258,7 @@ class MonthRow:
 		slot = self.slots[str(day)]
 		self.record[DAY_FIELDS[day - 1]] = frappe.utils.flt(row["quantity"])
 		slot.update(source=ESTIMATED if row.get("estimated") else source, report=report)
+		_set_optional(slot, "segment", row.get("segment"))
 		_set_optional(slot, "amount", frappe.utils.flt(row.get("source_amount")))
 		_set_optional(slot, "currency", row.get("source_currency"))
 		self.changed_days.add(day)
@@ -339,13 +340,10 @@ def is_newer(current, row: dict) -> bool:
 		return False
 	if current.get("estimated"):
 		return True
-	if current.get("aggregation") == LEVEL:
-		return _is_higher(row, current) or _is_rebundled(row, current)
+	if current.get("aggregation") in PEAKS:
+		is_higher = frappe.utils.flt(row["quantity"]) > frappe.utils.flt(current.get("quantity"))
+		return is_higher or _is_rebundled(row, current)
 	return frappe.utils.get_datetime(row["as_of"]) > frappe.utils.get_datetime(current.get("as_of"))
-
-
-def _is_higher(row: dict, current) -> bool:
-	return frappe.utils.flt(row["quantity"]) > frappe.utils.flt(current.get("quantity"))
 
 
 def _is_rebundled(row: dict, current) -> bool:
@@ -386,6 +384,10 @@ def slots_of(value) -> dict:
 	if isinstance(value, dict):
 		return value
 	return json.loads(value) if value else {}
+
+
+def _answerable_days(slots: dict) -> int:
+	return sum(bit(int(day)) for day, slot in slots.items() if slot.get("report") or slot.get("segment"))
 
 
 def _set_optional(slot: dict, key: str, value) -> None:

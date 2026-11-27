@@ -6,20 +6,20 @@ import calendar
 
 import frappe
 
-from central.billing.revenue.usage_month import LEVEL
+from central.billing.revenue.usage_month import PEAKS
 
 
 def day_weight(day) -> float:
-	"""A Level day counts as its peak over the days in its own month; a Sum day as its total."""
+	"""A Level or State day counts as its peak over the days in its own month; a Sum day as its total."""
 	quantity = frappe.utils.flt(day.quantity)
-	if day.aggregation != LEVEL:
+	if day.aggregation not in PEAKS:
 		return quantity
 	return quantity / _days_in_month(day.day)
 
 
 def billable_above_bundle(days: list, quantity: float) -> float:
-	"""The month's quantity above the bundle: each Level day above its own, a Sum month above its share."""
-	if all(day.aggregation == LEVEL for day in days):
+	"""The month's quantity above the bundle: each Level or State day above its own, a Sum month above its share."""
+	if all(day.aggregation in PEAKS for day in days):
 		return sum(
 			max(0.0, frappe.utils.flt(day.quantity) - frappe.utils.flt(day.included))
 			/ _days_in_month(day.day)

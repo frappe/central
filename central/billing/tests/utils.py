@@ -86,6 +86,7 @@ class BillingTestCase(IntegrationTestCase):
 		"Usage Rollup",
 		"Usage Check",
 		"Usage Report",
+		"Usage Segment",
 		"Payment Method",
 		"Tax Profile",
 		"Billing Profile",
