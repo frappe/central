@@ -242,12 +242,12 @@ def _row(service, line: dict, subject, as_of: datetime.datetime) -> dict:
 		source_amount=line.get("amount"),
 		source_currency=line.get("currency"),
 		as_of=as_of,
-		evidence=_evidence_of(service, line),
+		evidence=evidence_of(service, line),
 		**bundle,
 	)
 
 
-def _evidence_of(service, line: dict) -> dict | None:
+def evidence_of(service, line: dict) -> dict | None:
 	"""The line's evidence when it is well formed and carries every key its meter names, else None."""
 	# A line with missing or malformed evidence is still stored: its value bills, and its day is
 	# marked as having no derivation.

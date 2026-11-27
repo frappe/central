@@ -85,9 +85,9 @@ def get_body(name: str) -> bytes | None:
 	return gzip.decompress(frappe.get_doc("File", file).get_content())
 
 
-def is_intact(name: str) -> bool:
-	"""Whether the kept body still has the hash recorded when it was received."""
-	body = get_body(name)
+def is_intact(name: str, body: bytes | None = None) -> bool:
+	"""Whether the kept body, or `body` read from it already, still has the hash recorded when it was received."""
+	body = get_body(name) if body is None else body
 	if body is None:
 		return False
 	return hmac.compare_digest(
@@ -95,10 +95,10 @@ def is_intact(name: str) -> bool:
 	)
 
 
-def has_valid_signature(name: str) -> bool:
-	"""Whether the kept body verifies against the signature it came with, under the service's secret."""
+def has_valid_signature(name: str, body: bytes | None = None) -> bool:
+	"""Whether the kept body, or `body` read from it already, verifies against the signature it came with."""
 	report = frappe.db.get_value(DOCTYPE, name, ["service", "signature", "secret_fingerprint"], as_dict=True)
-	body = get_body(name)
+	body = get_body(name) if body is None else body
 	if not (report and report.signature and body is not None):
 		return False
 	# A rotated secret cannot verify a body signed with the old one.

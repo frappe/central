@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 """Cost-Explorer financial aggregates: billed/collected/outstanding, the revenue
 trend chart, spend breakdowns, payment success rates, aging, and trial subsidy.
+Also the evidence behind a billed usage day, for a dispute.
 """
 
 import frappe
@@ -15,6 +16,7 @@ from central.billing.api.admin._shared import (
 )
 from central.billing.authz import require_operator
 from central.billing.doctype.invoice.invoice import is_owed, owed_filters
+from central.billing.revenue.usage_evidence import DayEvidence
 
 
 @frappe.whitelist()
@@ -229,3 +231,10 @@ def list_all_invoices(status: str | None = None, team: str | None = None, limit:
 	for r in rows:
 		r["outstanding"] = frappe.utils.flt(frappe.utils.flt(r.total) - frappe.utils.flt(r.amount_paid), 2)
 	return rows
+
+
+@frappe.whitelist()
+def get_usage_day_evidence(month_row: str, day: int) -> dict:
+	"""The value of one day of a Usage Month, the signed report that set it and how its service worked it out."""
+	require_operator()
+	return DayEvidence.of(month_row, frappe.utils.cint(day))

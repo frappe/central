@@ -918,7 +918,7 @@ Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
     again. It is false for a malformed line, an unknown meter and a bad value, dimension, amount,
     currency or day format; the service never sends these again
   → each line may carry `evidence`, how the service worked out its value (ADR 0028, #209). It
-    stays only in the kept body, never in the slot. service_reports._evidence_of keeps it as the
+    stays only in the kept body, never in the slot. service_reports.evidence_of keeps it as the
     day's derivation when it is an object with an integer `v` from 1 to 99, at most 8 KB as
     canonical JSON, and every key its Service Meter names in `evidence_keys` (storage: v, peak,
     peak_at, readings; ai: v, requests, records, pricings). Missing or malformed evidence never
@@ -926,6 +926,12 @@ Pushed usage (ADR 0026, #204): a service signs a report to api.metering.report
     without a derivation. MonthRow._set_value clears the day's `underived` bit when the line has
     evidence or a segment and sets it otherwise; a correction keeps its derivation in its
     correcting report
+  → usage_evidence.DayEvidence.of(month row, day) answers a dispute (operators:
+    api/admin/revenue.get_usage_day_evidence): the day's value and source, the report that set
+    it (SHA-256, whether its body is kept, intact and validly signed), the body's line for the
+    day and its derivation (the evidence, the segment, or "none"), then the same for each
+    correction of the day from its correcting report; each body is read once per call, and of
+    two lines for the same day the one whose value the day holds is taken
   → report_subjects.subjects_by_day resolves the subjects once per distinct day in the report
     with bundled_buckets.billed_subjects_of(service, day, names): the service's Team Services
     with a subscription, made by the end of that UTC day; for storage, a server's backup bucket on a day its server billed, with
