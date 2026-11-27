@@ -144,11 +144,12 @@ Usage Rollup ──team                            (a metered total a service re
 Usage Month ──team, ──subscription, ──invoice  (one subject's metered values for one UTC month, one slot per day, per dimension such as the AI model; the rated row of a month also holds its quantity and terms)
 Usage Month Correction (child)                 (a later value for a day an invoice already billed)
 Usage Report ──service                         (one accepted report, or one read or estimate by Central, with its raw body as evidence)
+Usage Segment ──team, ──service                (one stretch of time a subject held a quantity of a state meter, such as a server's public IPv4; added and closed once, never edited or deleted)
 Usage Check                                    (Central's own reading of a pushed service's day, against the stored day; kept 7 days)
 Monthly Exchange Rate                          (the USD rate one month bills converted usage at: the rate API's rate for the 1st, kept from the 2nd or at the month's draft)
 ```
 
-Money records (Invoice, Payment Attempt, Refund, Credit Ledger Entry, Credit Wallet, Usage Day, Usage Month, Usage Rollup, Usage Report, Webhook Event, Billing Event, Top-up Order) are read-only in Desk and keep a change history, except Usage Day, Usage Month and Usage Report, which billing writes in bulk. Usage Day is retired: the patch `fold_usage_days_into_months` folds it into Usage Month and it is kept read-only. `platform.records` refuses an edit or delete that billing code did not make through `save_billing_record` or `delete_billing_record`, Administrator included. The `ignore_permissions` flag alone does not allow the change. A `db_set` or `frappe.db.set_value` write does not run validation, so it needs no mark. A person changes them through the action that owns the change: cancel, refund, retry.
+Money records (Invoice, Payment Attempt, Refund, Credit Ledger Entry, Credit Wallet, Usage Day, Usage Month, Usage Rollup, Usage Report, Usage Segment, Webhook Event, Billing Event, Top-up Order) are read-only in Desk and keep a change history, except Usage Day, Usage Month, Usage Report and Usage Segment, which billing writes in bulk. A Usage Segment is only inserted and then closed once: its controller refuses every other change and every delete, so an operator corrects one by closing it and opening the next (source Operator). Usage Day is retired: the patch `fold_usage_days_into_months` folds it into Usage Month and it is kept read-only. `platform.records` refuses an edit or delete that billing code did not make through `save_billing_record` or `delete_billing_record`, Administrator included. The `ignore_permissions` flag alone does not allow the change. A `db_set` or `frappe.db.set_value` write does not run validation, so it needs no mark. A person changes them through the action that owns the change: cancel, refund, retry.
 
 **Payment plumbing**
 ```
@@ -244,8 +245,7 @@ flowchart LR
     H1 --> CDI["collect_due_invoices → settle page jobs"]
     H1 --> RSU["storage_bridge.read_storage_usage → one job per page of 100 buckets"]
     H1 --> RAI["grove_bridge.read_ai_usage → one job per page of 200 AI teams"]
-    H1 --> RIP["public_ipv4_usage.read_public_ipv4 → today's IPv4 day per server"]
-    H1 --> RCC["usage_recount.recount_changed → recount page jobs"]
+    H1 --> RCC["usage_recount.recount_changed → segment days, then recount page jobs"]
 
     subgraph INSTALL["install/migrate/before_tests"]
         ECM["ensure_catalog_masters, ensure_constraints, ..."]
@@ -281,8 +281,7 @@ Dunning, reconciliation, the e-mandate cycle, credit expiry, card expiry, setup 
 | hourly | `revenue.invoicing.collect_due_invoices` | collect every uncollected invoice whose month has closed, as page jobs; record progress on the Billing Run once the draft tick has started it |
 | hourly | `revenue.storage_bridge.read_storage_usage` | until Cargo reports usage itself: read every billed bucket, and each billed server's backup bucket, in pages of 100, one job per page, and keep each UTC day's peak in the day slot of the bucket's Usage Month, under one Usage Report per page; a failed bucket never stops its page, and the last page of a region writes one Error Log that names how many of the region's buckets the run could not read |
 | hourly | `revenue.grove_bridge.read_ai_usage` | until Grove reports usage itself: subscribe AI teams that now have a billing currency, then read each AI team's cost per model that landed at Grove from the team's `usage_read_until` day through today (UTC), at most 7 days a run, as one day slot per model and landing day, under one Usage Report per page; a team read in full moves its `usage_read_until` to the last day read, so a missed hour, an outage or a late subscription is caught up; a team never read starts at the later of `Service.bill_from` and the day AI was turned on; a correction lands as a negative day; one Error Log per page names the teams it could not read, and their day does not move |
-| hourly | `revenue.public_ipv4_usage.read_public_ipv4` | write today's day slot for every server that holds a public IPv4, is not Terminated, and whose subscription had an open segment at some moment of the day, in pages of 500 through `platform.jobs.each_isolated`; the first run of a UTC day also writes yesterday, so hours the scheduler missed still count, and sets the watermark default `public_ipv4_swept_day` only when every page of yesterday wrote |
-| hourly | `revenue.usage_recount.recount_changed` | fold Usage Days and recounted rollups an older worker wrote after the fold patch (`usage_fold.fold_stragglers`), then recount the usage months whose day slots changed since the last run, as page jobs |
+| hourly | `revenue.usage_recount.recount_changed` | fold Usage Days and recounted rollups an older worker wrote after the fold patch (`usage_fold.fold_stragglers`), write the day slots of the Usage Segments opened or closed since the last run (from the 1st of the month before) and today's slot of each open segment that has none yet (with yesterday), in pages of 500 through `platform.jobs.each_isolated` (`usage_segments.project_changed`), then recount the usage months whose day slots changed since the last run, as page jobs |
 | cron `30 17 * * *` (12:00 UTC) | `revenue.usage_checks.sample_storage` | only while Cargo pushes storage (`Service.central_reads` off): read every billed bucket and each billed server's backup bucket once, in pages of 100 queued as `sample_team_page` and `sample_bundled_page`, with the same readers `storage_bridge` bills with, and keep the reading as a Usage Check for the next day's comparison |
 | cron `30 7 * * *` (02:00 UTC) | `revenue.usage_checks.check_yesterday` | only for a service that pushes: mark a storage day whose stored peak is more than 1 % below Central's sample, read each AI team's landing day from Grove with `grove_bridge.read_days` (failures logged as "Usage check: N AI team(s) not read") and mark a model that differs by more than 0.01 USD, then delete Usage Checks older than 7 days; writes no day value |
 | daily | `revenue.usage_corrections.write_off_expired` | mark Written Off each Open Usage Month Correction with a value higher than the billed one whose day was billed more than 90 days ago (a lower value is never written off), in pages of 500 through `platform.jobs.each_isolated`, with a comment on its Usage Month |
@@ -519,7 +518,7 @@ central.api.servers.create_server | create_composed_server
 
 Resize: `central.api.servers.resize_server` → `catalog.subscriptions.begin_resize` (validates, persists a Resource Action) → `central.integrations.resource_actions` → `apply_resize_billing` → `resize_composed_subscription` → new Subscription Change (re-prices).
 
-Pause and resume: `catalog.subscriptions.pause_billing` writes a `Paused` change on the server's subscription, which closes its segment. A public IPv4 bills as a day value only on a day the server's segment was open at some moment, so a day paused throughout bills no address. `resume_billing` checks the team and project headroom, then writes a `Resumed` change that carries the rate locked before the pause. A Start on a paused server reopens its billing through the same headroom checks, and does not need `billing:manage`. A `Running` report from the region never enables a paused subscription again.
+Pause and resume: `catalog.subscriptions.pause_billing` writes a `Paused` change on the server's subscription, which closes its segment. A public IPv4 day bills only when the address was held at a moment the server's segment was open, so a day paused throughout bills no address. `resume_billing` checks the team and project headroom, then writes a `Resumed` change that carries the rate locked before the pause. A Start on a paused server reopens its billing through the same headroom checks, and does not need `billing:manage`. A `Running` report from the region never enables a paused subscription again.
 
 ### B. Bill a period (draft → open → collect)
 ```mermaid
@@ -558,8 +557,9 @@ flowchart TD
     → generate_team_invoice (per team, aggregates every cluster it runs in)
       → reconcile_subscription (correct drift if stale)
       → lines.compute_line_items  (day-weighted, from Subscription Change rate-snapshot segments)
-      → usage_recount.recount_team (usage months from the unbilled day slots; a month whose draft
-        billed nothing is closed, and its late days go on the next month)
+      → usage_recount.recount_team (first writes the day slots of the team's Usage Segments for the
+        month and the month before, then usage months from the unbilled day slots; a month whose
+        draft billed nothing is closed, and its late days go on the next month)
       → + metering.metered_line_items   (max(0, qty−allowance) × rate)
       → usage_recount.stamp_invoice marks exactly the month rows and day slots it counted; only
         reissue_invoice releases them, a cancel alone keeps them billed
@@ -724,7 +724,7 @@ platform.sync.record_meter_rollups  (Central writes the runtime it bills)
 Usage months (ADR 0028, #207): every writer stores a line in the day slot of its Usage Month
   → one row per service, subject, meter, dimension, month and subscription, d01 to d31, bit masks
     (filled, billed, written off, estimated, open, unreported) and a JSON slot per day: source (Pushed, Read By
-    Central, Estimated), the Usage Report that set it, as_of, landed_at, the bundle, the invoice
+    Central, Estimated, Segment), the Usage Report or Usage Segment that set it, as_of, landed_at, the bundle, the invoice
   → usage_month.write_lines locks the batch's rows in name order; a lock refused under snapshot
     isolation returns the whole batch as conflicts, which the service sends again; the refusal
     rolls back the whole transaction, so a pushed report is kept after its lines, and Central's
@@ -819,26 +819,34 @@ Server bundles (#188): a server plan's Plan Includes row is the server's bundle 
     allowance (a Live family keeps its live rate and applies it)
   → storage: storage_bridge reads each server's backup bucket (bundled_buckets: tenant, region and
     server name it) beside the team buckets; a paused or ended server's bucket is not read
-Public IPv4 (#197, #200): one Level day slot per server and UTC day on the server's subscription
-  → service `network`, meter `public_ipv4` (Level, resource type IP, unit Nos); `central_reads`
-    stays on, because no other service reports addresses
-  → writers: VirtualMachine.sync_billing sees an address and queues
-    public_ipv4_usage.write_server_day after commit (job id per server and day) with the count it
-    saw, so an address released before the job runs still bills its day; and the hourly
-    read_public_ipv4 sweep (see the scheduled table). write_days keeps the highest count, so both
-    are idempotent
-  → no writer writes a day while Service `network` is missing or its bill_from is empty
-    (public_ipv4_usage.cutover_day is None): until the cutover patch runs (a deploy runs the new
-    code before migrate), the per-address subscriptions still bill. The writers write nothing
-    and raise nothing, and the sweep still marks the day before swept, because a day before
-    bill_from is written off
-  → a fresh install marks the cutover patch done without running it, so after_install
-    public_ipv4_usage.start_on_install sets bill_from to the install's UTC day when it is empty
-    (a fresh site holds no per-address subscription, so nothing bills twice)
-  → a day is written only when the server's subscription had an open segment at some moment of it
-    (public_ipv4_usage.billed_servers_on over catalog.subscriptions.server_segments, which
-    bundled_buckets also reads): a trial server (no subscription) is free until it converts, a
-    Stopped server bills, a day paused throughout does not
+Public IPv4 (#197, #200, #208): a state meter, kept as Usage Segments and billed as day slots
+  → service `network`, meter `public_ipv4` (aggregation State, resource type IP, unit Nos);
+    `central_reads` stays on, because no other service reports addresses
+  → one writer: VirtualMachine.sync_billing calls usage_segments.record_public_ipv4 when the status
+    or public_ipv4 changes, in the same transaction as the report, under the server's row lock.
+    set_quantity reads the last segment FOR UPDATE: the same count writes nothing; a new count
+    closes the open segment and opens the next one at the region's state_observed_at (source State
+    Report, Termination for a Terminated server, Operator for a save that carries no report). A
+    time before the last segment's start or end is moved up to it, so segments never overlap.
+    Unique open_key (service|meter|subject while open) allows one open segment per subject
+  → no segment is written while the meter's aggregation is not State (a deploy runs the new code
+    before migrate), and no day slot while Service.bill_from is empty (usage_segments.cutover_day)
+  → a fresh install marks the cutover patches done without running them, so after_install
+    usage_segments.start_on_install sets bill_from to the install's UTC day when it is empty
+    (a fresh site holds no per-address subscription, so nothing bills twice); service.SERVICES
+    seeds the meter as State
+  → usage_segments.project writes the day slots: a UTC day bills when the address was held at the
+    same moment the server was billed (the intersection of the segment with a billed stretch of
+    the server's subscription, from Created, Resumed or Plan Changed to Paused or Cancelled), not
+    only on the same day. Example: billing paused at 06:00 and an address attached at 20:00 bills
+    no day. The value is the most held at once that day, on the subscription billed then; the
+    slot's source is Segment and it names the segment (its report is empty, and M5 counts the
+    segment as its evidence). A trial server (no subscription) is free until it converts, a
+    Stopped server bills, a day paused throughout does not, a termination day bills once
+  → project runs in recount_team before the draft counts the days, and hourly in recount_changed;
+    a State day weighs as a Level day (higher wins on an unbilled day; never estimated). A late
+    report that lands on a billed day is kept as a correction; one that lands on an unfilled day of
+    a drafted month bills in the next open month. Segments are never pruned
   → included is always 0: no plan bundles an address. IPv6 is free
   → usage_recount bills the month as count ÷ days in the month per day, at the current Catalog
     Rate of the Live metered plan that models IP (`public-ipv4` under Live Metered Resources,
@@ -848,18 +856,24 @@ Public IPv4 (#197, #200): one Level day slot per server and UTC day on the serve
   → a day with no IP price for the team's currency and region is still written; the unpriced guard
     in metering.metered_line_items fails the team's draft until an operator adds the rate, and the
     next run bills every unbilled day of the open month
-  → readiness M3: a billed server that holds an address and has no IP price in its team's currency
-    for its region; a server with no address is never listed
+  → readiness M3 (usage_segments.find_unbilled_addresses): a server with an open segment that is
+    billed now and has no IP price in its team's currency for its region
   → cutover (patch bill_public_ipv4_per_day): on the UTC day C it runs, it copies every IP
     Resource Type Catalog Rate (regional ones too) onto the plan and deletes them, sets
-    Service.bill_from = C when empty, gives each enabled per-address subscription a Cancelled
-    change at 00:00 UTC on C (or at its own last change, if later) and disables it, and writes
-    day C for every holder; an hour before C bills on the old segment and every hour from C as a
-    day
-  → a server whose per-address segment billed some hour of a day (it closed after 00:00 UTC on C,
-    for example a pause or a detach) gets no day value for that day from any writer
-    (public_ipv4_usage.billed_per_address), so those hours bill only on the old segment. Only day
-    C is checked: every per-address segment is closed by C, so no later day overlaps one
+    Service.bill_from = C when empty, and gives each enabled per-address subscription a Cancelled
+    change at 00:00 UTC on C (or at its own last change, if later) and disables it; an hour
+    before C bills on the old segment and every hour from C as a day
+  → patch move_public_ipv4_to_segments (once, after fold_usage_days_into_months): each run of
+    consecutive billed days (written-off days left out) becomes a closed segment from 00:00 UTC of
+    its first day to 00:00 UTC after its last (or now, for an address released today); a server
+    that holds an address now keeps its last run open when it reaches yesterday or today, else
+    opens at now (a trial server too). It sets the meter and its month rows to State, clears the
+    `public_ipv4_swept_day` default and writes the open months again, logging each day that
+    changed (none is expected). Slots and stamps already written are kept. It does nothing more
+    once a segment exists
+  → a holder whose per-address segment billed some hour of C (it closed after 00:00 UTC on C, for
+    example a pause or a detach) and has no slot on C starts at 00:00 UTC on C+1
+    (move_public_ipv4_to_segments.billed_per_address), so those hours bill only on the old segment
   → accepted gap: on C, a per-address subscription that paused or detached after 00:00 UTC and
     then resumed or re-attached bills only its hours before the pause; the patch closes it at the
     resume and the day is skipped, so the hours after go unbilled (at most one address-day per
@@ -1030,7 +1044,8 @@ The team and the signed-in user are counted apart, and either one can lock. A us
 | A late usage value was not billed | the Usage Month's Corrections tab: Open waits for the next draft (a month below the minimum keeps a higher value Open); Credit Due lowers the bill (readiness M4, an operator issues the credit note); No Charge stayed inside the bundle or allowance and changes nothing; Written Off was a higher value that came more than 90 days after the invoice that billed the day (a lower one is rated at any age), or a value a reissue gave back that a later value replaced (one that keeps its invoice is listed by readiness M7 until an operator bills it by hand and marks it Billed By Hand); Billed names the invoice. A day a reissue gave back is billed with its own value first |
 | Readiness M7 lists a reissued usage correction | a reissue gave back a correction a later Billed or Credited value was rated against (`usage_corrections._release_one`); bill the units the row names by hand, then Mark Billed By Hand on the Usage Month (status Billed By Hand). A row that drops by itself was rated again by a later release (`_unmark_replaced`) and the next draft bills it |
 | A dispute names a day the Usage Month has no value for | is `pruned` set? The month is older than 13 months: its totals and terms stay, the day values and reports are gone. Otherwise readiness M5 lists billed days whose report is missing, M6 a report whose body no longer matches its hash |
-| A server's public IPv4 is not on the invoice | readiness M3; is there a `network` Usage Month for the server with that day filled (`subject` = server name)? Did the server's subscription have an open segment that day (a trial or a day paused throughout bills nothing)? Is the day before `Service.bill_from` (written off)? |
+| A server's public IPv4 is not on the invoice | readiness M3; is there a Usage Segment for the server (`subject` = server name) held that day, and is its meter's aggregation State? Was the address held at a moment the server's subscription was billed (a trial, a day paused throughout, or an address attached after the pause bills nothing)? Is the day before `Service.bill_from`? The draft writes the days itself (`usage_segments.project_team`); the `network` Usage Month slot names the segment |
+| A public IPv4 bills a day the customer says it was released | the server's Usage Segments: who opened and closed each one, the source (State Report, Termination, Operator, Migration), the reference (the region's observed and reported times) and when; and the server's Subscription Change rows for the billed stretches. A segment is never edited: close it and open a new one to correct it |
 | Draft fails with "unpriced metered usage: IP" | the `public-ipv4` plan has no Catalog Rate for the team's currency and the server's region; add it, then run the draft again: every unbilled IPv4 day of the open month bills |
 | Catalog masters missing | `taxonomy_setup.ensure_catalog_masters` (runs on install/migrate/before_tests) |
 | Money rounding off | money is float `Currency` (major units); check the rate field's decimal **precision** holds sub-cent rates, and that minor-unit conversion happens *only* in `gateways/` |
