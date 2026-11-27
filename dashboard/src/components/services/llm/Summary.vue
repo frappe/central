@@ -178,7 +178,7 @@ const refresh = async (): Promise<void> => {
 					:text="usage?.as_of ? `Counted ${formatDateTime(usage.as_of)}` : 'Refresh usage'"
 				>
 					<Button
-						class="!rounded-full"
+						class="!rounded-full !text-ink-gray-5 hover:!text-ink-gray-8"
 						variant="ghost"
 						icon-left="lucide-refresh-cw"
 						:label="usage?.as_of ? `Updated ${timeAgo(usage.as_of)}` : 'Refresh usage'"
