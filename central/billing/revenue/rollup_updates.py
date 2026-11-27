@@ -51,10 +51,11 @@ def live_rollup(name: str) -> str:
 
 
 def override_terms(rollup: str, rate=None, allowance=None, reason: str | None = None) -> str:
-	"""Re-price one rollup by writing a new version of it, never by editing the old.
+	"""Re-price one rollup a service reported by writing a new version of it, never by editing the old.
 
 	Locked terms are what makes a metered charge auditable, so a correction adds a row
-	and points the old one at it. The quantity carries over; only the terms move.
+	and points the old one at it. The quantity carries over; only the terms move. A usage
+	month is re-priced in place instead, with its old and new terms kept in a comment.
 	"""
 	name = live_rollup(rollup)
 	old = frappe.get_doc("Usage Rollup", name)

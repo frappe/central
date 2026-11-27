@@ -6,7 +6,7 @@ This reconciles the metered rail only — it deliberately excludes fixed plan/bu
 fees on both sides so the two columns are directly comparable (coverage ≈ 100% when
 billing is correct):
 
-  Usage value = Σ max(0, quantity − allowance) × locked_rate over Usage Month and Usage Rollup rows —
+  Usage value = Σ max(0, quantity − allowance) × locked_rate over Usage Month and Usage Rollup rows:
                 the billable OVERAGE Central metered (usage within the allowance is
                 free, so it is not counted).
   Invoiced    = Σ(amount) of the METERED invoice line items (resource_type ≠ "bundle")
