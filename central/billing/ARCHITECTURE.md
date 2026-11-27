@@ -820,9 +820,11 @@ Server bundles (#188): a server plan's Plan Includes row is the server's bundle 
   → storage: storage_bridge reads each server's backup bucket (bundled_buckets: tenant, region and
     server name it) beside the team buckets; a paused or ended server's bucket is not read
 Public IPv4 (#197, #200, #208): a state meter, kept as Usage Segments and billed as day slots
+  → revenue/public_ipv4.py holds the IPv4 writer, the cutover day and the M3 check;
+    revenue/usage_segments.py holds the generic segment ledger and its projection into day slots
   → service `network`, meter `public_ipv4` (aggregation State, resource type IP, unit Nos);
     `central_reads` stays on, because no other service reports addresses
-  → one writer: VirtualMachine.sync_billing calls usage_segments.record_public_ipv4 when the status
+  → one writer: VirtualMachine.sync_billing calls public_ipv4.record_public_ipv4 when the status
     or public_ipv4 changes, in the same transaction as the report, under the server's row lock.
     set_quantity reads the last segment FOR UPDATE: the same count writes nothing; a new count
     closes the open segment and opens the next one at the region's state_observed_at (source State
@@ -830,9 +832,9 @@ Public IPv4 (#197, #200, #208): a state meter, kept as Usage Segments and billed
     time before the last segment's start or end is moved up to it, so segments never overlap.
     Unique open_key (service|meter|subject while open) allows one open segment per subject
   → no segment is written while the meter's aggregation is not State (a deploy runs the new code
-    before migrate), and no day slot while Service.bill_from is empty (usage_segments.cutover_day)
+    before migrate), and no day slot while Service.bill_from is empty (public_ipv4.cutover_day)
   → a fresh install marks the cutover patches done without running them, so after_install
-    usage_segments.start_on_install sets bill_from to the install's UTC day when it is empty
+    public_ipv4.start_on_install sets bill_from to the install's UTC day when it is empty
     (a fresh site holds no per-address subscription, so nothing bills twice); service.SERVICES
     seeds the meter as State
   → usage_segments.project writes the day slots: a UTC day bills when the address was held at the
@@ -856,7 +858,7 @@ Public IPv4 (#197, #200, #208): a state meter, kept as Usage Segments and billed
   → a day with no IP price for the team's currency and region is still written; the unpriced guard
     in metering.metered_line_items fails the team's draft until an operator adds the rate, and the
     next run bills every unbilled day of the open month
-  → readiness M3 (usage_segments.find_unbilled_addresses): a server with an open segment that is
+  → readiness M3 (public_ipv4.find_unbilled_addresses): a server with an open segment that is
     billed now and has no IP price in its team's currency for its region
   → cutover (patch bill_public_ipv4_per_day): on the UTC day C it runs, it copies every IP
     Resource Type Catalog Rate (regional ones too) onto the plan and deletes them, sets

@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""State meters, such as the public IPv4 addresses of a server, kept as Usage Segments."""
+"""State meters kept as Usage Segments, and the day slots of Usage Month projected from them."""
 
 import datetime
 
@@ -9,9 +9,6 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.query_builder import Order
 
-from central.billing.catalog.pricing import resolve_rate
-from central.billing.catalog.public_ips import get_public_ipv4_rates
-from central.billing.catalog.subscriptions import server_segments
 from central.billing.doctype.subscription_change.subscription_change import (
 	RATED_CHANGE_TYPES,
 	SEGMENT_CHANGE_TYPES,
@@ -23,7 +20,6 @@ from central.billing.revenue import usage_month
 from central.billing.revenue.usage_ledger import utc_day_start, utc_day_window, utc_today
 from central.billing.revenue.usage_month import STATE, month_of
 from central.billing.revenue.usage_month_days import subjects_with_day
-from central.services.doctype.service.service import NETWORK_SERVICE, PUBLIC_IPV4_METER, ensure_services
 
 DOCTYPE = "Usage Segment"
 STATE_REPORT = "State Report"
@@ -113,72 +109,6 @@ def _not_before(at, last) -> datetime.datetime:
 	return max(at, frappe.utils.get_datetime(last.ends_at or last.starts_at))
 
 
-def count_addresses(public_ipv4: str | None) -> int:
-	"""The public IPv4 addresses a server holds. Its one field holds at most one today."""
-	return 1 if public_ipv4 else 0
-
-
-def record_public_ipv4(server: Document) -> None:
-	"""Record the public IPv4 addresses a server holds from when the region saw them, and none once it ends."""
-	is_terminated = server.status == "Terminated"
-	held = 0 if is_terminated else count_addresses(server.public_ipv4)
-	is_observed = bool(server.state_observed_at) and server.has_value_changed("state_observed_at")
-	# The region's clock, so a report that lands late still starts the segment when the change happened.
-	at = server.state_observed_at if is_observed else frappe.utils.now_datetime()
-	source = _source_of(is_terminated, is_observed)
-	reference = str(server.last_reported_at or server.state_observed_at) if is_observed else None
-	set_quantity(NETWORK_SERVICE, PUBLIC_IPV4_METER, server, held, at, source, reference)
-
-
-def _source_of(is_terminated: bool, is_observed: bool) -> str:
-	if is_terminated:
-		return TERMINATION
-	# A save that carries no region report is an operator's edit.
-	return STATE_REPORT if is_observed else OPERATOR
-
-
-def start_on_install() -> None:
-	"""Bill public IPv4 from the day a fresh site is installed."""
-	# A fresh install marks the cutover patch done without running it, and holds no
-	# per-address subscription, so its days can start at once.
-	# Called again here so the service exists whatever order the install hooks run in.
-	ensure_services()
-	if not cutover_day():
-		frappe.db.set_value("Service", NETWORK_SERVICE, "bill_from", utc_today())
-
-
-def cutover_day() -> datetime.date | None:
-	"""The first UTC day public IPv4 bills on its server, or None before the cutover."""
-	bill_from = frappe.db.get_value("Service", NETWORK_SERVICE, "bill_from")
-	return frappe.utils.getdate(bill_from) if bill_from else None
-
-
-def held_addresses() -> dict[str, int]:
-	"""Each server that holds a public IPv4 now, with how many it holds."""
-	rows = frappe.get_all(
-		"Virtual Machine",
-		filters={"public_ipv4": ["is", "set"], "status": ["!=", "Terminated"]},
-		fields=["name", "public_ipv4"],
-	)
-	return {row.name: count_addresses(row.public_ipv4) for row in rows}
-
-
-def find_unbilled_addresses() -> list[tuple[frappe._dict, str]]:
-	"""Each billed server holding an address that has no price in its team's currency for its region."""
-	servers = open_subjects(NETWORK_SERVICE, PUBLIC_IPV4_METER)
-	if not servers:
-		return []
-	rates = get_public_ipv4_rates()
-	return [
-		(
-			segment,
-			f"Holds a public IPv4 with no price in {segment.currency} for {segment.cluster}, so its draft invoice is held.",
-		)
-		for segment in server_segments(servers)
-		if resolve_rate(rates, segment.currency, segment.cluster) is None
-	]
-
-
 def project_team(team: str, period_end) -> int:
 	"""Write the state days of a team's subjects for the month a draft bills and the month before."""
 	until = frappe.utils.getdate(period_end)
@@ -223,20 +153,28 @@ def held_days(segments: list, windows: dict[str, list], days: list[tuple]) -> di
 	return found
 
 
-def _project_pages(subjects: list[str], since, until) -> int:
-	"""Project the subjects one page at a time, so a failed page never stops the rest."""
-	names = sorted(set(subjects))
+def _project_pages(subjects: list[tuple[str, str]], since, until) -> int:
+	"""Project the subjects of each doctype one page at a time, so a failed page never stops the rest."""
+	by_doctype: dict[str, set] = {}
+	for doctype, subject in subjects:
+		by_doctype.setdefault(doctype, set()).add(subject)
+	return sum(
+		_project_doctype(doctype, sorted(names), since, until) for doctype, names in by_doctype.items()
+	)
+
+
+def _project_doctype(doctype: str, names: list[str], since, until) -> int:
 	pages = {names[start]: names[start : start + PAGE_SIZE] for start in range(0, len(names), PAGE_SIZE)}
 	counts = each_isolated(
 		"Usage segment days",
-		"Virtual Machine",
+		doctype,
 		list(pages),
 		lambda first: project(pages[first], since, until),
 	)
 	return sum(counts)
 
 
-def _billed_windows(servers: list[str], before) -> dict[str, list]:
+def _server_billed_windows(servers: list[str], before) -> dict[str, list]:
 	"""Each server's billed stretches before `before`, from the change that opened billing to the one that closed it."""
 	windows: dict[str, list] = {}
 	opened: dict[str, frappe._dict] = {}
@@ -266,7 +204,7 @@ def _day_lines(service: str, meter_key: str, segments: list, since, until) -> li
 		return []
 	since = max(frappe.utils.getdate(since), frappe.utils.getdate(bill_from))
 	before = utc_day_start(frappe.utils.getdate(until) + datetime.timedelta(days=1))
-	windows = _billed_windows(list({segment.subject for segment in segments}), before)
+	windows = _server_billed_windows(list({segment.subject for segment in segments}), before)
 	meter = frappe.get_doc("Service", service).get_meter(meter_key)
 	now = frappe.utils.now_datetime()
 	return [
@@ -356,19 +294,27 @@ def _team_subjects(team: str, since, until) -> list[str]:
 	).run(pluck=True)
 
 
-def _changed_subjects(since) -> list[str]:
-	"""The subjects of the segments opened or closed since `since`."""
-	return frappe.get_all(DOCTYPE, filters={"modified": [">", since]}, pluck="subject", distinct=True)
+def _changed_subjects(since) -> list[tuple[str, str]]:
+	"""The subjects, with their doctype, of the segments opened or closed since `since`."""
+	return frappe.get_all(
+		DOCTYPE,
+		filters={"modified": [">", since]},
+		fields=["subject_doctype", "subject"],
+		distinct=True,
+		as_list=True,
+	)
 
 
-def _subjects_without_day(today) -> list[str]:
-	"""The subjects that hold a state now and have no value for today yet."""
-	rows = frappe.get_all(DOCTYPE, filters={"ends_at": ["is", "not set"]}, fields=["service", "subject"])
+def _subjects_without_day(today) -> list[tuple[str, str]]:
+	"""The subjects, with their doctype, that hold a state now and have no value for today yet."""
+	rows = frappe.get_all(
+		DOCTYPE, filters={"ends_at": ["is", "not set"]}, fields=["service", "subject_doctype", "subject"]
+	)
 	by_service: dict[str, set] = {}
 	for row in rows:
-		by_service.setdefault(row.service, set()).add(row.subject)
-	return [
-		subject
-		for service, subjects in by_service.items()
-		for subject in subjects - subjects_with_day(service, today)
-	]
+		by_service.setdefault(row.service, set()).add((row.subject_doctype, row.subject))
+	missing = []
+	for service, subjects in by_service.items():
+		with_day = subjects_with_day(service, today)
+		missing += [(doctype, subject) for doctype, subject in subjects if subject not in with_day]
+	return missing

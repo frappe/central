@@ -10,7 +10,7 @@ import frappe
 from central.billing.api.dashboard._shared import _describe_line
 from central.billing.catalog.pricing import get_catalog_rates, set_catalog_rates
 from central.billing.platform import readiness
-from central.billing.revenue import usage_recount, usage_segments
+from central.billing.revenue import public_ipv4, usage_recount, usage_segments
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.usage_ledger import utc_day_start, utc_today
 from central.billing.revenue.usage_month import STATE
@@ -335,8 +335,8 @@ class TestIPv4Install(IPv4DaysTestCase):
 
 	def test_a_fresh_install_bills_from_its_install_day(self):
 		frappe.db.set_value("Service", NETWORK_SERVICE, "bill_from", None)
-		with patch.object(usage_segments, "utc_today", return_value=datetime.date(2026, 6, 20)):
-			usage_segments.start_on_install()
+		with patch.object(public_ipv4, "utc_today", return_value=datetime.date(2026, 6, 20)):
+			public_ipv4.start_on_install()
 
 		self.assertEqual(
 			frappe.db.get_value("Service", NETWORK_SERVICE, "bill_from"), datetime.date(2026, 6, 20)
@@ -344,12 +344,12 @@ class TestIPv4Install(IPv4DaysTestCase):
 
 	def test_a_fresh_install_runs_the_start_hook(self):
 		self.assertIn(
-			"central.billing.revenue.usage_segments.start_on_install", frappe.get_hooks("after_install")
+			"central.billing.revenue.public_ipv4.start_on_install", frappe.get_hooks("after_install")
 		)
 
 	def test_install_keeps_a_cutover_day_already_set(self):
-		with patch.object(usage_segments, "utc_today", return_value=datetime.date(2026, 6, 20)):
-			usage_segments.start_on_install()
+		with patch.object(public_ipv4, "utc_today", return_value=datetime.date(2026, 6, 20)):
+			public_ipv4.start_on_install()
 
 		self.assertEqual(frappe.db.get_value("Service", NETWORK_SERVICE, "bill_from"), BEFORE_JUNE)
 

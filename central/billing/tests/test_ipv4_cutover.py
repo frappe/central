@@ -8,7 +8,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.catalog.pricing import get_catalog_rates, set_catalog_rates
-from central.billing.revenue import usage_segments
+from central.billing.revenue import public_ipv4, usage_segments
 from central.billing.revenue.invoicing.lines import _subscription_clusters
 from central.billing.revenue.usage_ledger import utc_day_start, write_central_days
 from central.billing.revenue.usage_month import STATE
@@ -183,7 +183,7 @@ class SegmentMigrationTestCase(AddressSubscriptionTestCase):
 
 	def migrate(self, today: str, now=None) -> int:
 		today = frappe.utils.getdate(today)
-		cutover = usage_segments.cutover_day()
+		cutover = public_ipv4.cutover_day()
 		segment_patch.SegmentMigration(cutover, today, now or at(str(today), hours=12)).run()
 		segment_patch.set_state_meter()
 		return segment_patch.reproject(cutover, today)

@@ -8,7 +8,7 @@ from central.billing.doctype.subscription_change.subscription_change import (
 	RATED_CHANGE_TYPES,
 	SEGMENT_CHANGE_TYPES,
 )
-from central.billing.revenue import usage_segments
+from central.billing.revenue import public_ipv4, usage_segments
 from central.billing.revenue.usage_ledger import utc_day_start, utc_day_window, utc_today
 from central.billing.revenue.usage_month import DAY_FIELDS, STATE, days_of, month_of
 from central.billing.revenue.usage_month_days import day_rows
@@ -23,7 +23,7 @@ def execute():
 	"""Keep public IPv4 as segments: one per run of billed days, and an open one for each address held now."""
 	ensure_services()
 	today, now = utc_today(), frappe.utils.now_datetime()
-	cutover = usage_segments.cutover_day()
+	cutover = public_ipv4.cutover_day()
 	if not frappe.db.exists("Usage Segment", {"service": NETWORK_SERVICE, "meter": PUBLIC_IPV4_METER}):
 		SegmentMigration(cutover, today, now).run()
 	set_state_meter()
@@ -38,7 +38,7 @@ class SegmentMigration:
 	def __init__(self, cutover: datetime.date | None, today: datetime.date, now: datetime.datetime):
 		self.cutover, self.today, self.now = cutover, today, now
 		self.billed = billed_days()
-		self.holders = usage_segments.held_addresses()
+		self.holders = public_ipv4.held_addresses()
 		self.teams = {**self.billed.teams, **_server_teams(list(self.holders))}
 		without_cutover_day = [name for name in self.holders if (name, cutover) not in self.billed.days]
 		self.late = starts_late(cutover, today, without_cutover_day)

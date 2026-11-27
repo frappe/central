@@ -436,9 +436,9 @@ class VirtualMachine(SystemRecord):
 
 	def sync_public_ipv4_billing(self) -> None:
 		"""Record the public IPv4 addresses this server holds, in the same transaction as the report."""
-		from central.billing.revenue import usage_segments
+		from central.billing.revenue.public_ipv4 import record_public_ipv4
 
-		usage_segments.record_public_ipv4(self)
+		record_public_ipv4(self)
 
 	def disable_active_subscription(self):
 		"""Cancel and disable this terminated server's subscription, running or paused.
