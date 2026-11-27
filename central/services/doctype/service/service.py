@@ -61,7 +61,7 @@ SERVICES = (
 		"meters": [
 			{
 				"meter_key": PUBLIC_IPV4_METER,
-				"aggregation": "Level",
+				"aggregation": "State",
 				"resource_type": "IP",
 				"unit": "Nos",
 				"unit_divisor": 1,
