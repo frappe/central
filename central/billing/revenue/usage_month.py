@@ -28,11 +28,11 @@ CORRECTED = "corrected"
 MASKS = ("filled", "billed", "written_off", "estimated", "open_days", "unreported")
 
 _META_FIELDS = ("name", "creation", "modified", "owner", "modified_by")
-_KEY_FIELDS = ("service", "subject", "meter", "dimension", "month", "subscription")
-_CONTEXT_FIELDS = ("aggregation", "team", "resource_type", "unit")
-_READ_FIELDS = (
-	*_KEY_FIELDS,
-	*_CONTEXT_FIELDS,
+KEY_FIELDS = ("service", "subject", "meter", "dimension", "month", "subscription")
+CONTEXT_FIELDS = ("aggregation", "team", "resource_type", "unit")
+READ_FIELDS = (
+	*KEY_FIELDS,
+	*CONTEXT_FIELDS,
 	"name",
 	"carries_bundle",
 	"pruned",
@@ -113,7 +113,7 @@ def locked_meter_months(subscription: str, resource_type: str, dimension: str, m
 def insert_month(meter, month) -> None:
 	"""Insert an empty row for a meter's month, to carry a month that has only late days."""
 	row = {
-		name: meter.get(name) for name in (*_CONTEXT_FIELDS, "service", "meter", "dimension", "subscription")
+		name: meter.get(name) for name in (*CONTEXT_FIELDS, "service", "meter", "dimension", "subscription")
 	}
 	_insert_missing([{**row, "subject": meter.day_subject, "day": month}], frappe.utils.now_datetime())
 
@@ -374,76 +374,6 @@ def billed_value(corrections: list, day: int, first: float) -> float:
 	return frappe.utils.flt(settled.value if settled else first)
 
 
-def day_rows(filters: dict, day=None) -> list[frappe._dict]:
-	"""The filled days of the month rows that match `filters`, one dict per day, oldest first."""
-	# A row past retention keeps no day values.
-	filters = {"pruned": 0, **filters}
-	if day:
-		filters = {**filters, "month": month_of(day)}
-	months = frappe.get_all(DOCTYPE, filters=filters, fields=list(_READ_FIELDS), order_by="month asc")
-	days = [_day_row(month, number) for month in months for number in _filled_days(month)]
-	if day:
-		days = [row for row in days if row.day == frappe.utils.getdate(day)]
-	return sorted(days, key=lambda row: (row.day, row.dimension, row.subject))
-
-
-def subjects_with_day(service: str, day) -> set[str]:
-	"""The subjects of a service that have a value for a UTC day."""
-	table = frappe.qb.DocType(DOCTYPE)
-	day = frappe.utils.getdate(day)
-	return set(
-		(
-			frappe.qb.from_(table)
-			.select(table.subject)
-			.distinct()
-			.where(
-				(table.service == service)
-				& (table.month == month_of(day))
-				& (table.filled.bitwiseand(bit(day.day)) != 0)
-			)
-		).run(pluck=True)
-	)
-
-
-def invoice_of_day(row, day: int) -> str | None:
-	"""The invoice that billed a day of a month row, or None."""
-	return slots_of(row.get("slots")).get(str(day), {}).get("invoice")
-
-
-def billed_days_of(rows: list, invoice: str) -> list[tuple]:
-	"""Each (month row, day, slot) of `rows` that the invoice billed."""
-	return [
-		(row, int(day), slot)
-		for row in rows
-		for day, slot in slots_of(row.get("slots")).items()
-		if slot.get("invoice") == invoice
-	]
-
-
-def _day_row(month, day: int) -> frappe._dict:
-	slot = slots_of(month.slots).get(str(day), {})
-	return frappe._dict(
-		{key: month[key] for key in (*_KEY_FIELDS, *_CONTEXT_FIELDS)},
-		month_row=month.name,
-		day=month.month.replace(day=day),
-		quantity=frappe.utils.flt(month[DAY_FIELDS[day - 1]]),
-		included=frappe.utils.flt(slot.get("included")),
-		estimated=int(bool(month.estimated & bit(day))),
-		written_off=int(bool(month.written_off & bit(day))),
-		invoice=slot.get("invoice"),
-		as_of=frappe.utils.get_datetime(slot["as_of"]) if slot.get("as_of") else None,
-		landed_at=frappe.utils.get_datetime(slot["landed_at"]) if slot.get("landed_at") else None,
-		source=slot.get("source"),
-		report=slot.get("report"),
-		source_amount=frappe.utils.flt(slot.get("amount")),
-		source_currency=slot.get("currency"),
-	)
-
-
-def _filled_days(month) -> list[int]:
-	return days_of(frappe.utils.cint(month.filled))
-
-
 def days_of(mask: int) -> list[int]:
 	"""The days whose bit is set in `mask`."""
 	return [day for day in range(1, 32) if mask & bit(day)]
@@ -497,13 +427,13 @@ def _insert_missing(rows: list[dict], now) -> None:
 			user,
 			user,
 			*key,
-			*(row.get(name) for name in _CONTEXT_FIELDS),
+			*(row.get(name) for name in CONTEXT_FIELDS),
 		)
 		for key, row in keys.items()
 	]
 	frappe.db.bulk_insert(
 		DOCTYPE,
-		[*_META_FIELDS, *_KEY_FIELDS, *_CONTEXT_FIELDS],
+		[*_META_FIELDS, *KEY_FIELDS, *CONTEXT_FIELDS],
 		values,
 		ignore_duplicates=True,
 	)
@@ -529,7 +459,7 @@ def _locked(condition, with_corrections: bool = False) -> list[MonthRow]:
 	table = frappe.qb.DocType(DOCTYPE)
 	found = (
 		frappe.qb.from_(table)
-		.select(*(table[name] for name in _READ_FIELDS))
+		.select(*(table[name] for name in READ_FIELDS))
 		.where(condition)
 		.orderby(table.name, order=Order.asc)
 		.for_update()
@@ -540,18 +470,13 @@ def _locked(condition, with_corrections: bool = False) -> list[MonthRow]:
 
 
 def _rated_rows(meter, month) -> list[frappe._dict]:
-	table = frappe.qb.DocType(DOCTYPE)
-	return (
-		frappe.qb.from_(table)
-		.select(table.name, table.counted_at, table.invoice, table.rate_date, table.terms_corrected)
-		.where(
-			(table.subscription == meter.subscription)
-			& (table.resource_type == meter.resource_type)
-			& (table.dimension == meter.dimension)
-			& (table.month == month)
-		)
-		.orderby(table.name, order=Order.asc)
-		.for_update()
+	meter_month = {key: meter[key] for key in ("subscription", "resource_type", "dimension")}
+	return frappe.qb.get_query(
+		DOCTYPE,
+		filters={**meter_month, "month": month},
+		fields=["name", "counted_at", "invoice", "rate_date", "terms_corrected"],
+		order_by="name asc",
+		for_update=True,
 	).run(as_dict=True)
 
 

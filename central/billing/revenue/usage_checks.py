@@ -20,7 +20,7 @@ from central.billing.revenue.storage_bridge import (
 	team_bucket_reader,
 )
 from central.billing.revenue.usage_ledger import utc_today
-from central.billing.revenue.usage_month import day_rows
+from central.billing.revenue.usage_month_days import day_rows
 from central.services.doctype.service.service import (
 	AI_METER,
 	AI_SERVICE,

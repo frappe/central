@@ -6,7 +6,7 @@ import datetime
 import frappe
 from frappe import _
 
-from central.billing.revenue import usage_month, usage_reports
+from central.billing.revenue import usage_month, usage_month_days, usage_reports
 from central.billing.revenue.usage_month import DOCTYPE, LEVEL, Written, is_newer, month_of
 
 # A UTC day is estimated only after the day has ended and late lines have had 48 hours.
@@ -181,7 +181,7 @@ def _level_days(months: set) -> list:
 		limit_start=start,
 		limit_page_length=READ_PAGE,
 	):
-		days += usage_month.day_rows({"name": ["in", page]})
+		days += usage_month_days.day_rows({"name": ["in", page]})
 		start += READ_PAGE
 	return days
 

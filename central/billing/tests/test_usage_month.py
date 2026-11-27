@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import frappe
 
-from central.billing.revenue import usage_month
+from central.billing.revenue import usage_month, usage_month_days
 from central.billing.revenue.usage_month import OPEN, bit
 from central.billing.tests.test_credits import run_workers
 from central.billing.tests.utils import BillingTestCase, ensure_team
@@ -51,7 +51,7 @@ class TestUsageMonth(BillingTestCase):
 		return usage_month.write_lines(list(lines), report, source)
 
 	def days(self):
-		return usage_month.day_rows({"team": TEAM})
+		return usage_month_days.day_rows({"team": TEAM})
 
 	def month(self, subscription: str = SUBSCRIPTION):
 		return frappe.get_doc(usage_month.DOCTYPE, {"subject": SUBJECT, "subscription": subscription})
@@ -148,8 +148,8 @@ class TestUsageMonth(BillingTestCase):
 
 	def test_subjects_with_a_value_for_a_day_are_found_by_its_bit(self):
 		self.write(line(14, 30))
-		self.assertIn(SUBJECT, usage_month.subjects_with_day(SERVICE, "2026-06-14"))
-		self.assertNotIn(SUBJECT, usage_month.subjects_with_day(SERVICE, "2026-06-15"))
+		self.assertIn(SUBJECT, usage_month_days.subjects_with_day(SERVICE, "2026-06-14"))
+		self.assertNotIn(SUBJECT, usage_month_days.subjects_with_day(SERVICE, "2026-06-15"))
 
 	def write_after_another_worker(self, quantity: float):
 		"""Write day 1 in a transaction that began before another worker committed the month row."""

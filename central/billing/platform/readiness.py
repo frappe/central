@@ -330,7 +330,7 @@ def check_storage_usage_is_recorded() -> list[Violation]:
 	"""Every billed bucket, a server's backup bucket too, that existed yesterday (UTC) has a value for it."""
 	from central.billing.revenue.bundled_buckets import billed_storage_subjects
 	from central.billing.revenue.usage_ledger import utc_today
-	from central.billing.revenue.usage_month import subjects_with_day
+	from central.billing.revenue.usage_month_days import subjects_with_day
 	from central.services.doctype.service.service import STORAGE_SERVICE
 
 	# Only the buckets billed yesterday: not one made after it ended (UTC), nor a server's paused all day.

@@ -11,7 +11,7 @@ from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.pricing import set_catalog_rates
 from central.billing.revenue import usage_month
-from central.billing.revenue.usage_month import day_rows
+from central.billing.revenue.usage_month_days import day_rows
 from central.billing.tests.accounting_fake import ACCOUNTING_URL, SYNC_MODE
 
 _SWEEP_DEADLOCK_RETRIES = 3

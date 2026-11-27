@@ -8,7 +8,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.platform import readiness
-from central.billing.revenue import usage_month, usage_reports, usage_retention
+from central.billing.revenue import usage_month, usage_month_days, usage_reports, usage_retention
 from central.billing.revenue.usage_month import bit
 from central.billing.tests.utils import BillingTestCase, ensure_team
 from central.services.doctype.service.service import STORAGE_SERVICE, ensure_services
@@ -72,7 +72,7 @@ class TestUsageRetention(BillingTestCase):
 			(month.pruned, month.slots, month.d14, month.quantity, month.locked_rate, month.billed),
 			(1, None, 0, 0.97, 2.5, bit(14)),
 		)
-		self.assertEqual(usage_month.day_rows({"subject": SUBJECT}), [])
+		self.assertEqual(usage_month_days.day_rows({"subject": SUBJECT}), [])
 
 	def test_a_line_for_a_month_past_retention_is_ignored(self):
 		name = self.write(OLD.replace(day=14))
