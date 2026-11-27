@@ -209,7 +209,7 @@ def _day_lines(service: str, meter_key: str, segments: list, since, until) -> li
 def _keep_written_subscriptions(held: dict, service: str, meter: str, since, until) -> None:
 	"""Keep each day on the subscription whose month row already holds it."""
 	subjects = list({key[0] for key in held})
-	# A team edit can bill two subscriptions of one server on one day, and the day bills only once.
+	# A team edit can bill two subscriptions of one subject on one day, and the day bills only once.
 	for key, written in _written_days(service, meter, subjects, since, until).items():
 		if key in held:
 			held[key].update(written)
