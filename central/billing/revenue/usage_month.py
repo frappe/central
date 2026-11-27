@@ -282,7 +282,7 @@ class MonthRow:
 		if not is_newer(last, row) or frappe.utils.flt(row["quantity"]) == last.quantity:
 			return None
 		dropped = self._drop_open(day)
-		settled = settled_correction(self.corrections, day)
+		settled = _settled_correction(self.corrections, day)
 		billed = billed_value(self.corrections, day, current.quantity)
 		if frappe.utils.flt(row["quantity"]) == billed:
 			return CORRECTED if dropped else None
@@ -362,7 +362,7 @@ def _is_as_new(row: dict, current) -> bool:
 	return frappe.utils.get_datetime(row["as_of"]) >= frappe.utils.get_datetime(current.get("as_of"))
 
 
-def settled_correction(corrections: list, day: int):
+def _settled_correction(corrections: list, day: int):
 	"""The latest correction of a day that set what the day bills, or None."""
 	found = [c for c in corrections if c.day == day and c.status in SETTLED]
 	return found[-1] if found else None
@@ -370,7 +370,7 @@ def settled_correction(corrections: list, day: int):
 
 def billed_value(corrections: list, day: int, first: float) -> float:
 	"""What a billed day bills now: its latest settled correction's value, else the value first billed."""
-	settled = settled_correction(corrections, day)
+	settled = _settled_correction(corrections, day)
 	return frappe.utils.flt(settled.value if settled else first)
 
 

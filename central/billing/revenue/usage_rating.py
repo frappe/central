@@ -14,21 +14,22 @@ def day_weight(day) -> float:
 	quantity = frappe.utils.flt(day.quantity)
 	if day.aggregation != LEVEL:
 		return quantity
-	return quantity / days_in_month(day.day)
+	return quantity / _days_in_month(day.day)
 
 
 def billable_above_bundle(days: list, quantity: float) -> float:
 	"""The month's quantity above the bundle: each Level day above its own, a Sum month above its share."""
 	if all(day.aggregation == LEVEL for day in days):
 		return sum(
-			max(0.0, frappe.utils.flt(day.quantity) - frappe.utils.flt(day.included)) / days_in_month(day.day)
+			max(0.0, frappe.utils.flt(day.quantity) - frappe.utils.flt(day.included))
+			/ _days_in_month(day.day)
 			for day in days
 		)
 	# A Sum meter writes a day for each day its plan ran, so the bundle scales with those days.
-	share = sum(frappe.utils.flt(day.included) / days_in_month(day.day) for day in days)
+	share = sum(frappe.utils.flt(day.included) / _days_in_month(day.day) for day in days)
 	return max(0.0, quantity - share)
 
 
-def days_in_month(on) -> int:
+def _days_in_month(on) -> int:
 	on = frappe.utils.getdate(on)
 	return calendar.monthrange(on.year, on.month)[1]
