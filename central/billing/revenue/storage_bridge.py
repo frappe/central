@@ -7,7 +7,7 @@ from collections.abc import Callable
 import frappe
 
 from central.billing.revenue.bundled_buckets import bundled_buckets
-from central.billing.revenue.usage_ledger import utc_today, write_central_days
+from central.billing.revenue.usage_ledger import system_time, utc_stamp, utc_today, write_central_days
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
 from central.services.doctype.service.service import (
 	STORAGE_METER,
@@ -191,9 +191,7 @@ class RegionRead:
 def _reading(name: str, meter) -> dict:
 	bucket = frappe.get_doc("Team Service", name)
 	used = frappe.utils.flt(bucket.get_usage().get("used_bytes"))
-	return meter.get_day_row(
-		bucket, utc_today(), used, as_of=frappe.utils.now_datetime(), evidence=_read_evidence(used)
-	)
+	return _read_row(bucket, meter, utc_today(), used)
 
 
 def _bundled_reading(bucket, meter, day) -> dict:
@@ -204,21 +202,11 @@ def _bundled_reading(bucket, meter, day) -> dict:
 		# The bucket was never attached, so it holds nothing.
 		usage = {}
 	used = frappe.utils.flt(usage.get("used_bytes"))
-	return meter.get_day_row(
-		bucket,
-		day,
-		used,
-		included=bucket.included,
-		as_of=frappe.utils.now_datetime(),
-		evidence=_read_evidence(used),
-	)
+	return _read_row(bucket, meter, day, used, included=bucket.included)
 
 
-def _read_evidence(used: float) -> dict:
-	"""What Cargo answered when Central read the bucket, and when."""
-	return {
-		"v": 1,
-		"read": "cargo.bucket_usage",
-		"at": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-		"used_bytes": int(used),
-	}
+def _read_row(bucket, meter, day, used: float, **values) -> dict:
+	"""A day line of what Cargo answered, read and named as evidence at one moment."""
+	now = datetime.datetime.now(datetime.UTC)
+	evidence = {"v": 1, "read": "cargo.bucket_usage", "at": utc_stamp(now), "used_bytes": int(used)}
+	return meter.get_day_row(bucket, day, used, as_of=system_time(now), evidence=evidence, **values)

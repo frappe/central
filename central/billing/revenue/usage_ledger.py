@@ -126,6 +126,16 @@ def utc_today() -> datetime.date:
 	return datetime.datetime.now(datetime.UTC).date()
 
 
+def utc_stamp(moment: datetime.datetime) -> str:
+	"""A UTC moment as an RFC 3339 string ending in Z, to the second."""
+	return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def system_time(moment: datetime.datetime) -> datetime.datetime:
+	"""A UTC moment in naive system time, as Frappe stores it."""
+	return frappe.utils.convert_utc_to_system_timezone(moment).replace(tzinfo=None)
+
+
 def _utc_date(today) -> datetime.date:
 	return frappe.utils.getdate(today) if today else utc_today()
 
@@ -133,7 +143,7 @@ def _utc_date(today) -> datetime.date:
 def utc_day_start(day) -> datetime.datetime:
 	"""The moment a UTC day begins, in system time."""
 	start = datetime.datetime.combine(frappe.utils.getdate(day), datetime.time(), datetime.UTC)
-	return frappe.utils.convert_utc_to_system_timezone(start).replace(tzinfo=None)
+	return system_time(start)
 
 
 def utc_day_window(day) -> tuple[datetime.datetime, datetime.datetime]:

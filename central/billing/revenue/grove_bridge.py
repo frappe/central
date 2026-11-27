@@ -9,7 +9,13 @@ import frappe
 
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue.service_reports import MAXIMUM_DIMENSION
-from central.billing.revenue.usage_ledger import CentralLines, utc_today, write_central_days
+from central.billing.revenue.usage_ledger import (
+	CentralLines,
+	system_time,
+	utc_stamp,
+	utc_today,
+	write_central_days,
+)
 from central.billing.revenue.usage_reports import READ_BY_CENTRAL, canonical_json
 from central.integrations.grove import GroveClient
 from central.services.doctype.service.service import (
@@ -97,9 +103,9 @@ def landing_rows(client: GroveClient, team_service, meter, day: str) -> list[dic
 	start = datetime.datetime.combine(frappe.utils.getdate(day), datetime.time(), datetime.UTC)
 	until = min(start + ONE_DAY, now)
 	usage = client.get_usage(
-		[team_service.external_id], pulled_after=_rfc3339(start), pulled_until=_rfc3339(until)
+		[team_service.external_id], pulled_after=utc_stamp(start), pulled_until=utc_stamp(until)
 	)
-	as_of = frappe.utils.convert_utc_to_system_timezone(now).replace(tzinfo=None)
+	as_of = system_time(now)
 	models = usage.get("model_summary") or []
 	# Fails the team rather than cutting the name: two cut names could merge and lose one model's cost.
 	if too_long := [model["model"] for model in models if len(model["model"]) > MAXIMUM_DIMENSION]:
@@ -124,7 +130,7 @@ def _read_evidence(model: dict, start: datetime.datetime, until: datetime.dateti
 	return {
 		"v": 1,
 		"read": "grove.usage",
-		"window": [_rfc3339(start), _rfc3339(until)],
+		"window": [utc_stamp(start), utc_stamp(until)],
 		"requests": frappe.utils.cint(model.get("requests")),
 		"tokens": frappe.utils.cint(model.get("tokens")),
 		"sha256": hashlib.sha256(canonical_json(model)).hexdigest(),
@@ -192,7 +198,3 @@ def _utc_day(moment: datetime.datetime) -> datetime.date:
 	"""The UTC day of a system-time moment."""
 	zone = ZoneInfo(frappe.utils.get_system_timezone())
 	return frappe.utils.get_datetime(moment).replace(tzinfo=zone).astimezone(datetime.UTC).date()
-
-
-def _rfc3339(moment: datetime.datetime) -> str:
-	return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
