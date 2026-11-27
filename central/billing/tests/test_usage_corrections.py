@@ -362,3 +362,54 @@ class TestCorrectionsOfOneMonth(BillingTestCase):
 			[(c.status, c.billed_value, c.value, c.billable_delta) for c in self.corrections()],
 			[("Written Off", 10, 15, 0), ("Credit Due", 10, 6, -4)],
 		)
+
+
+class TestLivePricedCorrectionRate(BillingTestCase):
+	"""A live-priced month bills a correction at the rate on the month's own invoice line."""
+
+	invoice = "live-rate-invoice"
+
+	def setUp(self):
+		live = frappe._dict(name="live-plan", pricing_mode="Live")
+		self.enterContext(patch.object(usage_corrections, "metered_plan_for", return_value=live))
+		self.enterContext(patch.object(usage_corrections, "get_catalog_rates", return_value=[]))
+		self.enterContext(patch.object(usage_corrections, "resolve_rate", return_value=3.0))
+		# Child rows are not swept with the tracked doctypes.
+		self.addCleanup(frappe.db.delete, "Invoice Line Item", {"parent": self.invoice})
+		for description, charge_date, rate in (
+			("gpt-4o · 2 USD at 84.1", None, 2.0),
+			# A correction line names the day it corrects, and another model has its own line.
+			("Correction · gpt-4o · 10 Jun 2026", "2026-06-10", 9.0),
+			("claude-sonnet · 1 USD at 84.1", None, 7.0),
+		):
+			frappe.get_doc(
+				{
+					"doctype": "Invoice Line Item",
+					"parent": self.invoice,
+					"parenttype": "Invoice",
+					"parentfield": "items",
+					"subscription_resource": "live-subject",
+					"resource_type": "AI Usage",
+					"description": description,
+					"charge_date": charge_date,
+					"rate": rate,
+				}
+			).db_insert()
+
+	def rate_of(self, dimension: str) -> float:
+		carrier = frappe._dict(
+			resource_id="live-subject",
+			resource_type="AI Usage",
+			dimension=dimension,
+			currency="INR",
+			cluster=None,
+			locked_rate=1.0,
+		)
+		return usage_corrections._billed_rate(carrier, self.invoice)
+
+	def test_the_rate_is_the_one_on_the_months_own_line_for_its_model(self):
+		self.assertEqual(self.rate_of("gpt-4o"), 2.0)
+		self.assertEqual(self.rate_of("claude-sonnet"), 7.0)
+
+	def test_a_month_inside_its_allowance_had_no_line_and_takes_todays_rate(self):
+		self.assertEqual(self.rate_of("mistral-large"), 3.0)
