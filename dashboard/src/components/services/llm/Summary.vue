@@ -335,10 +335,6 @@ const refresh = async (): Promise<void> => {
 					/>
 				</li>
 			</ol>
-
-			<MonthlyLimit
-				class="rounded-5 bg-surface-gray-1 px-3 py-2.5 sm:max-w-xs"
-			/>
 		</div>
 	</section>
 </template>
