@@ -23,7 +23,7 @@ from central.billing.tests.test_ai_billing import (
 	rate_on,
 	run_inline,
 )
-from central.billing.tests.utils import central_reads, usage_month_of
+from central.billing.tests.utils import central_reads, refused_lock, usage_month_of
 from central.services.doctype.service.service import AI_SERVICE
 
 JULY = ("2026-07-01", "2026-07-31")
@@ -144,6 +144,18 @@ class TestAIBillingMonths(AIBillingCase):
 		self.assertEqual(self.days(TEAM_USD), [])
 		# Not marked read, so Grove's reports or a later page still own the day.
 		self.assertEqual(str(frappe.db.get_value("Team Service", service, "usage_read_until")), "2026-06-11")
+
+	def test_a_page_whose_lock_is_refused_keeps_each_teams_read_day(self):
+		for team in (TEAM_USD, TEAM_INR):
+			frappe.db.set_value("Team Service", self.services[team].name, "usage_read_until", "2026-06-11")
+			self.land(team, "2026-06-12", {"gpt-4o": 1.0})
+		# The refused lock rolls the page back; the job fails, so it reads the same days again.
+		with refused_lock(), self.assertRaises(frappe.QueryDeadlockError):
+			self.read_page("2026-06-12", TEAM_USD, TEAM_INR)
+		for team in (TEAM_USD, TEAM_INR):
+			self.assertEqual(self.days(team), [])
+			read_until = frappe.db.get_value("Team Service", self.services[team].name, "usage_read_until")
+			self.assertEqual(str(read_until), "2026-06-11")
 
 	def test_a_team_never_read_starts_at_bill_from_and_catches_up_a_week_a_run(self):
 		frappe.db.set_value("Service", AI_SERVICE, "bill_from", "2026-06-01")

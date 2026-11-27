@@ -12,7 +12,7 @@ from unittest.mock import patch
 import frappe
 
 from central.billing.catalog.subscriptions import provision_service_subscription
-from central.billing.revenue import report_subjects, service_reports, usage_ledger, usage_month
+from central.billing.revenue import report_subjects, service_reports, usage_ledger, usage_month, usage_reports
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	_clear_metered_plans,
@@ -20,6 +20,7 @@ from central.billing.tests.utils import (
 	ensure_team,
 	give_team_a_card,
 	make_plan,
+	refused_lock,
 	usage_days,
 )
 from central.services.doctype.team_service import team_service
@@ -113,10 +114,18 @@ class TestServiceReports(ServiceReportsCase):
 
 	def test_a_month_written_at_the_same_time_is_rejected_to_be_sent_again(self):
 		self.send([line("2026-06-20", 10)])
-		# Under snapshot isolation a month row another worker changed meanwhile refuses the lock.
-		with patch.object(usage_month, "_locked_months", side_effect=frappe.QueryDeadlockError):
+		reports = set(frappe.get_all("Usage Report", pluck="name"))
+		# Under snapshot isolation a month row another worker changed meanwhile refuses the lock,
+		# and the whole transaction is rolled back, the new month row of the 19th with it.
+		with refused_lock():
 			answer = self.send([line("2026-06-19", 8), line("2026-06-20", 12)])
 		self.assertEqual(answer["accepted"], 0)
+		# The report is still kept, with its body, as evidence of what was refused.
+		[report] = set(frappe.get_all("Usage Report", pluck="name")) - reports
+		self.assertEqual(
+			frappe.db.get_value("Usage Report", report, ["accepted_count", "rejected_count"]), (0, 2)
+		)
+		self.assertTrue(usage_reports.is_intact(report))
 		self.assertEqual(
 			[(r["day"], r["reason"], r["retry"]) for r in answer["rejected"]],
 			[

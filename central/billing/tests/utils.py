@@ -10,10 +10,12 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.pricing import set_catalog_rates
+from central.billing.revenue import usage_month
 from central.billing.revenue.usage_month import day_rows
 from central.billing.tests.accounting_fake import ACCOUNTING_URL, SYNC_MODE
 
 _SWEEP_DEADLOCK_RETRIES = 3
+_REFUSED_LOCK = "refused_usage_lock"
 
 
 @contextmanager
@@ -186,6 +188,19 @@ class BillingTestCase(IntegrationTestCase):
 		comments = list(set(_swept_comments()) - before["Comment"])
 		if comments:
 			frappe.db.delete("Comment", {"name": ["in", comments]})
+
+
+@contextmanager
+def refused_lock():
+	"""Refuse the usage month lock as MariaDB does: everything written since the block began is rolled back."""
+	frappe.db.savepoint(_REFUSED_LOCK)
+
+	def refuse(*args, **kwargs):
+		frappe.db.rollback(save_point=_REFUSED_LOCK)
+		raise frappe.QueryDeadlockError("Record has changed since last read")
+
+	with patch.object(usage_month, "_locked_months", side_effect=refuse):
+		yield
 
 
 def usage_days(day=None, **filters) -> list[frappe._dict]:

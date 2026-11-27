@@ -28,20 +28,24 @@ def accept_report(service_name: str | None, signature: str | None, raw_body: byt
 	service = verified_service(service_name, signature, raw_body)
 	report = _parsed(raw_body)
 	as_of = reported_at(report.get("as_of"))
-	evidence = usage_reports.record(
-		service.name,
-		usage_reports.PUSHED,
-		raw_body,
-		as_of=as_of,
-		signature=signature,
-		line_count=len(report["lines"]),
-	)
+	evidence = frappe.generate_hash(length=10)
 	if is_read_by_central_locked(service.name):
 		# Central's own reading still bills this service, so a pushed day would bill its usage twice.
 		reason = _("Central still reads this service; send it again after the switch")
 		answer = {"accepted": 0, "rejected": [_refused(line, reason, retry=True) for line in report["lines"]]}
 	else:
 		answer = _stored(service, report["lines"], as_of, evidence)
+	# Kept after the lines: a refused lock rolls back the whole transaction, and the report with its
+	# file must not go with it.
+	usage_reports.record(
+		service.name,
+		usage_reports.PUSHED,
+		raw_body,
+		as_of=as_of,
+		signature=signature,
+		line_count=len(report["lines"]),
+		name=evidence,
+	)
 	usage_reports.set_counts(evidence, answer["accepted"], len(answer["rejected"]))
 	_record_report(service.name, as_of)
 	return answer

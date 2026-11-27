@@ -9,7 +9,7 @@ import frappe
 from central.billing.catalog.subscriptions import provision_service_subscription
 from central.billing.doctype.billing_run_team.billing_run_team import INVOICED, record_outcome
 from central.billing.platform import invariants, readiness
-from central.billing.revenue import storage_bridge, usage_ledger, usage_month, usage_recount
+from central.billing.revenue import storage_bridge, usage_ledger, usage_recount
 from central.billing.revenue.invoicing.generate import generate_team_invoice, team_clusters
 from central.billing.revenue.invoicing.lifecycle import cancel_invoice, reissue_invoice
 from central.billing.revenue.metering import ingest_rollup
@@ -21,6 +21,7 @@ from central.billing.tests.utils import (
 	ensure_team,
 	give_team_a_card,
 	make_plan,
+	refused_lock,
 	usage_days,
 	usage_month_of,
 )
@@ -99,15 +100,13 @@ class TestUsageLedger(IntegrationTestCase):
 
 	def test_a_reading_whose_month_is_locked_by_another_worker_is_read_again(self):
 		self.read("2026-06-01", 10)
+		reports = frappe.db.count("Usage Report")
 		# Under snapshot isolation a row another worker changed after this transaction began
-		# refuses the lock; the page logs nothing and the next hour reads it again.
-		with (
-			patch.object(usage_month, "_locked_months", side_effect=frappe.QueryDeadlockError),
-			patch("frappe.log_error") as log_error,
-		):
+		# refuses the lock and rolls the transaction back; the page fails, so its job runs again.
+		with refused_lock(), self.assertRaises(frappe.QueryDeadlockError):
 			self.read("2026-06-01", 40)
-		log_error.assert_not_called()
 		self.assertEqual([d.quantity for d in self.days()], [10])
+		self.assertEqual(frappe.db.count("Usage Report"), reports, "no report of lines not stored")
 		self.read("2026-06-01", 40)
 		self.assertEqual([d.quantity for d in self.days()], [40])
 

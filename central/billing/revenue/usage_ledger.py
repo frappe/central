@@ -4,6 +4,7 @@
 import datetime
 
 import frappe
+from frappe import _
 
 from central.billing.revenue import usage_month, usage_reports
 from central.billing.revenue.usage_month import DOCTYPE, LEVEL, Written, is_newer, month_of
@@ -50,7 +51,7 @@ class CentralLines:
 		self.written: dict[str, int] = {}
 
 	def write(self, rows: list[dict]) -> Written:
-		"""Write the lines of each service under that service's report."""
+		"""Write the lines of each service under that service's report. Any line not stored fails the job."""
 		total = Written()
 		by_service: dict[str, list[dict]] = {}
 		for row in rows:
@@ -59,11 +60,14 @@ class CentralLines:
 			# The report is kept after its lines, so it is kept only when a line set a value.
 			name = self.names.setdefault(service, frappe.generate_hash(length=10))
 			written = write_days(lines, name, self.kind)
+			if written.conflicts:
+				# A refused lock rolls back the whole transaction, with every batch written before
+				# it, so the job fails and reads again rather than keep a report of lines not stored.
+				raise frappe.QueryDeadlockError(_("Usage days changed while they were written."))
 			self.lines.setdefault(service, []).extend(lines)
 			self.written[service] = self.written.get(service, 0) + written.count + written.corrections
 			total.count += written.count
 			total.corrections += written.corrections
-			total.conflicts += written.conflicts
 		return total
 
 	def keep(self) -> None:
