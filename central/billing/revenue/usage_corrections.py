@@ -61,19 +61,11 @@ class Corrections:
 def rate_open(team: str, today=None) -> Corrections:
 	"""Rate the team's open corrections: a line for each in its window that raises the bill, Credit Due or No Charge for the rest."""
 	rated = Corrections()
-	months: dict[tuple, BilledMonth | None] = {}
-	for correction in _open_corrections(team, frappe.utils.getdate(today)):
-		invoice = invoice_of_day(correction, correction.day)
-		# A day a cancelled invoice gave back is billed again with its own value first.
-		if not invoice:
-			continue
-		key = (invoice, correction.subscription, correction.resource_type, correction.dimension)
-		if key not in months:
-			months[key] = BilledMonth.load(*key)
-		if months[key] is None:
-			frappe.logger("billing").warning(f"Correction {correction.name} has no rated month to bill at")
-			continue
-		_rate(months[key], correction, team, rated)
+	pending = _with_months(_open_corrections(team, frappe.utils.getdate(today)))
+	# Falls settle first, so a rise is rated against settled values only and bills the same on
+	# every draft until an invoice stamps it, even when a draft is not stamped or is reissued.
+	for month, correction in sorted(pending, key=lambda pair: _is_rise(*pair)):
+		_rate(month, correction, team, rated)
 	return rated
 
 
@@ -121,6 +113,7 @@ def check_credit_due_corrections() -> list[Violation]:
 		.on(correction.parent == month.name)
 		.select(
 			correction.name,
+			correction.idx,
 			correction.day,
 			correction.billed_value,
 			correction.value,
@@ -133,16 +126,39 @@ def check_credit_due_corrections() -> list[Violation]:
 		.orderby(correction.name)
 		.limit(200)
 	).run(as_dict=True)
+	later = _later_values(rows)
 	return [
 		Violation(
 			check="M4",
 			team=row.team,
 			subject_doctype=DOCTYPE,
 			subject=row.month_row,
-			detail=f"{row.subject} on {_day_of(row):%d %b %Y}: billed {row.billed_value}, now {row.value}. Issue the credit note, then mark correction {row.name} Credited.",
+			detail=_credit_due_detail(row, later.get(row.name, [])),
 		)
 		for row in rows
 	]
+
+
+def _later_values(rows: list) -> dict[str, list]:
+	"""For each Credit Due correction, the corrections of its day made after it."""
+	corrections = corrections_of(list({row.month_row for row in rows}))
+	return {
+		row.name: [
+			c
+			for c in corrections.get(row.month_row, [])
+			if c.day == row.day and frappe.utils.cint(c.idx) > frappe.utils.cint(row.idx)
+		]
+		for row in rows
+	}
+
+
+def _credit_due_detail(row, later: list) -> str:
+	detail = f"{row.subject} on {_day_of(row):%d %b %Y}: billed {row.billed_value}, now {row.value}."
+	if later:
+		# A later value may undo the drop, so the operator sees it before issuing a credit note.
+		values = ", ".join(f"{c.value} ({c.status})" for c in later)
+		detail += f" Later values of this day: {values}; check them before crediting."
+	return detail + f" Issue the credit note, then mark correction {row.name} Credited."
 
 
 class BilledMonth:
@@ -190,6 +206,30 @@ class BilledMonth:
 		"""Rate later corrections against the month with this day's new value in it."""
 		if key in self.days:
 			self.days[key].billed = value
+
+
+def _with_months(corrections: list) -> list[tuple]:
+	"""Each correction with the billed month it is rated against, in day order."""
+	pending, months = [], {}
+	for correction in corrections:
+		invoice = invoice_of_day(correction, correction.day)
+		# A day a cancelled invoice gave back is billed again with its own value first.
+		if not invoice:
+			continue
+		key = (invoice, correction.subscription, correction.resource_type, correction.dimension)
+		if key not in months:
+			months[key] = BilledMonth.load(*key)
+		if months[key] is None:
+			frappe.logger("billing").warning(f"Correction {correction.name} has no rated month to bill at")
+			continue
+		pending.append((months[key], correction))
+	return pending
+
+
+def _is_rise(month: BilledMonth, correction) -> bool:
+	"""Whether a correction is above what its day bills now."""
+	day = month.days.get((correction.month_row, correction.day))
+	return bool(day) and frappe.utils.flt(correction.value) > frappe.utils.flt(day.billed)
 
 
 def _rate(month: BilledMonth, correction, team: str, rated: Corrections) -> None:
@@ -308,6 +348,7 @@ def _open_corrections(team: str, today: datetime.date) -> list[frappe._dict]:
 		.orderby(month.name)
 		.orderby(correction.day)
 		.orderby(correction.idx)
+		.orderby(correction.creation)
 		# A writer replaces an open correction under its month row's lock.
 		.for_update()
 	).run(as_dict=True)

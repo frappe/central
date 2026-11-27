@@ -237,7 +237,9 @@ class TestAICorrections(AIBillingCase):
 		self.assertIn(correction.name, violation.detail)
 
 
-def sum_line(day: int, quantity: float, hour: int = 12, included: float = 0) -> dict:
+def sum_line(
+	day: int, quantity: float, hour: int = 12, included: float = 0, meter: dict | None = None
+) -> dict:
 	bundle = {"included": included} if included else {}
 	return {
 		"service": "storage",
@@ -253,17 +255,23 @@ def sum_line(day: int, quantity: float, hour: int = 12, included: float = 0) -> 
 		"quantity": quantity,
 		"as_of": datetime.datetime(2026, 6, day, hour),
 		**bundle,
+		**(meter or {}),
 	}
 
 
-class TestCorrectionsOfOneMonth(BillingTestCase):
+class OneMonthFixture:
 	"""June's Sum days billed by one invoice at 1 a unit, corrected later."""
 
 	def setUp(self):
 		ensure_team(MONTH_TEAM)
 
-	def bill(self, quantities: dict[int, float], included: float = 0, allowance: float = 0) -> None:
-		lines = [sum_line(day, quantity, included=included) for day, quantity in quantities.items()]
+	def bill(
+		self, quantities: dict[int, float], included: float = 0, allowance: float = 0, meter=None
+	) -> None:
+		self.meter = meter
+		lines = [
+			sum_line(day, quantity, included=included, meter=meter) for day, quantity in quantities.items()
+		]
 		usage_month.write_lines(lines, "report-1", "Pushed")
 		self.month_row = frappe.db.get_value("Usage Month", {"subject": MONTH_SUBJECT})
 		usage_month.stamp_days(
@@ -283,7 +291,8 @@ class TestCorrectionsOfOneMonth(BillingTestCase):
 		)
 
 	def correct(self, day: int, quantity: float, hour: int) -> None:
-		usage_month.write_lines([sum_line(day, quantity, hour=hour)], f"report-{hour}", "Pushed")
+		line = sum_line(day, quantity, hour=hour, meter=self.meter)
+		usage_month.write_lines([line], f"report-{hour}", "Pushed")
 		# No Invoice row backs the test invoice, so the window starts today.
 		frappe.db.set_value(
 			"Usage Month Correction",
@@ -294,6 +303,19 @@ class TestCorrectionsOfOneMonth(BillingTestCase):
 
 	def corrections(self) -> list:
 		return frappe.get_doc("Usage Month", self.month_row).corrections
+
+
+class TestCorrectionsOfOneMonth(OneMonthFixture, BillingTestCase):
+	"""June's Sum days billed by one invoice at 1 a unit, corrected later."""
+
+	def bill_a_rise_and_a_drop(self) -> None:
+		"""A share of 100 over June's 30 days, 120 billed; day 10 rises 15 and day 20 drops 30."""
+		self.bill({day: {20: 33}.get(day, 3) for day in range(1, 31)}, included=100)
+		self.correct(10, 18, hour=18)
+		self.correct(20, 3, hour=18)
+
+	def deltas(self) -> list:
+		return [(c.day, c.status, c.billable_delta) for c in self.corrections()]
 
 	def test_a_resend_of_a_credited_value_adds_no_correction(self):
 		self.bill({10: 10, 11: 10})
@@ -336,15 +358,62 @@ class TestCorrectionsOfOneMonth(BillingTestCase):
 		self.assertEqual([(line["quantity"], line["amount"]) for line in rated.lines], [(5, 5)])
 
 	def test_a_rise_rated_before_a_drop_nets_to_the_true_month_too(self):
-		self.bill({day: {20: 33}.get(day, 3) for day in range(1, 31)}, included=100)
-		self.correct(10, 18, hour=18)
-		self.correct(20, 3, hour=18)
+		self.bill_a_rise_and_a_drop()
 
 		rated = usage_corrections.rate_open(MONTH_TEAM)
 
-		# 15 billed for day 10 and 30 owed back for day 20: 20 + 15 - 30 is the true month's 5.
-		self.assertEqual([line["quantity"] for line in rated.lines], [15])
-		self.assertEqual([(c.day, c.billable_delta) for c in self.corrections()], [(10, 15), (20, -30)])
+		# The drop settles first: 20 above the share owed back, then the rise bills the true month's 5.
+		self.assertEqual([line["quantity"] for line in rated.lines], [5])
+		self.assertEqual(self.deltas(), [(10, "Open", 5), (20, "Credit Due", -20)])
+
+	def test_a_draft_not_stamped_rates_the_rise_the_same_again(self):
+		self.bill_a_rise_and_a_drop()
+		first = usage_corrections.rate_open(MONTH_TEAM)
+
+		# Below the minimum the draft is forgiven and stamps nothing, so the next draft rates again.
+		again = usage_corrections.rate_open(MONTH_TEAM)
+
+		self.assertEqual(again.lines, first.lines)
+		self.assertEqual(again.names, first.names)
+		self.assertEqual(self.deltas(), [(10, "Open", 5), (20, "Credit Due", -20)])
+		# 20 billed above the share, plus the 5 billed and less the 20 owed, is the true month's 5.
+		self.assertEqual(20 + sum(c.billable_delta for c in self.corrections()), 5)
+
+	def test_a_reissued_draft_bills_the_rise_at_the_same_amount(self):
+		self.bill_a_rise_and_a_drop()
+		billed = usage_corrections.rate_open(MONTH_TEAM)
+		usage_corrections.stamp(billed, "first-invoice", MONTH_TEAM)
+
+		usage_corrections.release("first-invoice", MONTH_TEAM)
+		reissued = usage_corrections.rate_open(MONTH_TEAM)
+
+		self.assertEqual(
+			[line["amount"] for line in reissued.lines], [line["amount"] for line in billed.lines]
+		)
+		self.assertEqual(self.deltas(), [(10, "Open", 5), (20, "Credit Due", -20)])
+
+	def test_a_replaced_open_correction_leaves_the_newest_last(self):
+		self.bill({10: 10, 11: 10})
+		self.correct(10, 12, hour=18)
+		self.correct(11, 12, hour=18)
+
+		# Day 10's open correction is replaced; the new one must not share day 11's idx.
+		self.correct(10, 14, hour=20)
+
+		corrections = self.corrections()
+		self.assertEqual([(c.day, c.value, c.idx) for c in corrections], [(11, 12, 2), (10, 14, 3)])
+		self.correct(10, 16, hour=22)
+		self.assertEqual([(c.day, c.value) for c in self.corrections()], [(11, 12), (10, 16)])
+
+	def test_a_credit_due_row_names_a_later_value_of_its_day(self):
+		self.bill({10: 10, 11: 10})
+		self.correct(10, 5, hour=18)
+		usage_corrections.rate_open(MONTH_TEAM)
+		self.correct(10, 8, hour=20)
+
+		[violation] = credit_due_rows(self.month_row)
+
+		self.assertIn("Later values of this day: 8.0 (Open)", violation.detail)
 
 	def test_a_lower_value_after_a_write_off_is_rated_against_the_billed_value(self):
 		self.bill({10: 10})

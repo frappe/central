@@ -315,7 +315,8 @@ class MonthRow:
 				"parent": self.record["name"],
 				"parenttype": DOCTYPE,
 				"parentfield": "corrections",
-				"idx": len(self.corrections) + 1,
+				# Dropped open corrections leave gaps, so the next idx follows the highest, not the count.
+				"idx": max((frappe.utils.cint(c.idx) for c in self.corrections), default=0) + 1,
 				"day": day,
 				"billed_value": billed,
 				"value": frappe.utils.flt(row["quantity"]),
@@ -487,8 +488,8 @@ def corrections_of(names: list[str]) -> dict[str, list]:
 	rows = frappe.get_all(
 		CORRECTION,
 		filters={"parent": ["in", names], "parenttype": DOCTYPE},
-		fields=["name", "parent", "day", "value", "as_of", "status", "report"],
-		order_by="idx asc",
+		fields=["name", "parent", "idx", "day", "value", "as_of", "status", "report"],
+		order_by="idx asc, creation asc",
 	)
 	by_parent: dict[str, list] = {}
 	for row in rows:

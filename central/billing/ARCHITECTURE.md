@@ -742,11 +742,15 @@ Usage months (ADR 0028, #207): every writer stores a line in the day slot of its
     the rate on the invoice line); a positive delta is one line on the next invoice, "Correction
     · <subject> · 14 Mar 2026 · report <original> → <new>", with charge_date the corrected day,
     and the invoice stamps the correction Billed; a reissue reopens it and bills it again;
-    corrections of one month are rated in day order, each against the month with the earlier
-    ones applied, Credit Due and No Charge included, so together they bill the true month
+    corrections of one month settle the falls first (at or below what the day bills now: Credit
+    Due or No Charge, each applied to the month), then rate the rises in day order against that
+    settled month, so together they bill the true month and an unstamped or reissued draft
+    rates its rises to the same amounts again
   → a negative delta goes Credit Due and never makes a negative line: readiness M4 lists it
     until an operator issues the credit note and marks it Credited (Usage Month form, Mark
     Credited); nothing lowers a bill automatically
+  → readiness M4 names any later value of the same day with its status, so the operator sees a
+    superseded value before crediting
   → a delta of 0 at the field's precision (a value, higher or lower, that stays inside the
     bundle or allowance) goes No Charge, a terminal state with a comment on the Usage Month:
     no line, no M4 row
