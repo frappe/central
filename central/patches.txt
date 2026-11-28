@@ -134,3 +134,5 @@ central.patches.v0_0.move_github_installations
 central.patches.v0_0.bill_public_ipv4_per_day
 # Name each active Metal Server as Atlas titles its host (metal-bom-1, not metal-mumbai-1), and record the host ID.
 central.patches.v0_0.rename_metal_servers_to_atlas_hosts
+# A server resumed before the pause code carried the rate billed 0 from its resume: give it its rate back.
+central.patches.v0_0.repair_resumed_billing_rates

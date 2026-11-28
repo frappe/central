@@ -15,6 +15,7 @@ from central.billing.tests.utils import (
 	make_plan,
 	set_team_tier,
 )
+from central.patches.v0_0 import repair_resumed_billing_rates
 
 TEAM = "team-pause-billing"
 CLUSTER = "ap-south-1"
@@ -158,3 +159,30 @@ class TestPauseAndResume(PauseBillingTestBase):
 		frappe.db.set_value("Virtual Machine", self.server, {"status": "Stopped", "atlas_vm_id": "vm-paused"})
 		with patch("central.infrastructure.doctype.resource_action.resource_action.ResourceAction.enqueue"):
 			submit_command("start", TEAM, self.server)
+
+
+class TestRepairResumedBillingRates(PauseBillingTestBase):
+	def test_a_server_resumed_before_the_fix_bills_its_rate_again(self):
+		add_segment(self.subscription, "Created", 3000, "2026-06-01 00:00:00", plan=PLAN)
+		add_segment(self.subscription, "Paused", None, "2026-06-11 00:00:00")
+		# The old pause code: a Resumed row with the enabled flag as its value and no rate.
+		add_segment(self.subscription, "Resumed", 0, "2026-06-21 00:00:00", plan="1")
+		add_segment(self.subscription, "Paused", None, "2026-06-25 00:00:00")
+		add_segment(self.subscription, "Resumed", 0, "2026-06-28 00:00:00", plan="1")
+
+		repair_resumed_billing_rates.execute()
+
+		resumed = [c for c in self._changes(self.subscription) if c.change_type == "Resumed"]
+		self.assertEqual([(c.locked_rate, c.new_value) for c in resumed], [(3000, PLAN), (3000, PLAN)])
+		# 10 days before the first pause, 4 after the first resume and 3 after the second.
+		self.assertEqual(sum(line.amount for line in self._invoice_lines()), 1700.0)
+
+	def test_a_resume_that_carries_its_rate_is_left_alone(self):
+		add_segment(self.subscription, "Created", 3000, "2026-06-01 00:00:00", plan=PLAN)
+		add_segment(self.subscription, "Paused", None, "2026-06-11 00:00:00")
+		add_segment(self.subscription, "Resumed", 2500, "2026-06-21 00:00:00", plan=PLAN)
+
+		repair_resumed_billing_rates.execute()
+
+		[resumed] = [c for c in self._changes(self.subscription) if c.change_type == "Resumed"]
+		self.assertEqual(resumed.locked_rate, 2500)
