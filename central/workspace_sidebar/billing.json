@@ -422,6 +422,18 @@
    "collapsible": 1,
    "indent": 0,
    "keep_closed": 0,
+   "label": "Billing Summary",
+   "link_type": "URL",
+   "open_in_new_tab": 0,
+   "show_arrow": 0,
+   "type": "Link",
+   "url": "/insights/dashboards/billing-billing-summary"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "indent": 0,
+   "keep_closed": 0,
    "label": "Billing Health",
    "link_type": "URL",
    "open_in_new_tab": 0,
@@ -1139,7 +1151,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-11-16 00:00:00.000000",
+ "modified": "2026-11-28 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing",
