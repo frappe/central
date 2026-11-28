@@ -82,7 +82,7 @@ watch(
 				v-model="geography"
 				:options="geographyOptions"
 				align="end"
-				aria-label="Geography"
+				:aria-label="__('Geography')"
 			/>
 		</Teleport>
 
@@ -95,14 +95,14 @@ watch(
 			<p class="text-p-sm text-ink-gray-6">
 				{{ getErrorMessage(modelsError, "Couldn't load the models.") }}
 			</p>
-			<Button label="Retry" @click="loadModels(geography)" />
+			<Button :label="__('Retry')" @click="loadModels(geography)" />
 		</div>
 
 		<p
 			v-else-if="!models.length"
 			class="rounded-5 border border-dashed border-outline-gray-2 px-4 py-8 text-center text-p-sm text-ink-gray-5"
 		>
-			No models in this geography yet.
+			{{ __('No models in this geography yet.') }}
 		</p>
 
 		<table
@@ -113,30 +113,30 @@ watch(
 			<thead>
 				<tr class="text-sm text-ink-gray-5">
 					<th scope="col" class="hidden pb-2 font-normal md:table-cell">
-						Provider
+						{{ __('Provider') }}
 					</th>
 					<th scope="col" class="hidden pb-2 font-normal md:table-cell">
-						Model
+						{{ __('Model') }}
 					</th>
-					<th scope="col" class="pb-2 font-normal">Model key</th>
+					<th scope="col" class="pb-2 font-normal">{{ __('Model key') }}</th>
 					<th scope="col" class="hidden w-20 pb-2 font-normal md:table-cell">
-						Input
+						{{ __('Input') }}
 					</th>
 					<th scope="col" class="hidden w-20 pb-2 font-normal md:table-cell">
-						Output
+						{{ __('Output') }}
 					</th>
 					<th
 						v-if="showLimits"
 						scope="col"
 						class="hidden pb-2 pr-6 font-normal lg:table-cell"
 					>
-						Rate limits
+						{{ __('Rate limits') }}
 					</th>
 					<th
 						scope="col"
 						class="hidden pb-2 text-right font-normal md:table-cell"
 					>
-						API
+						{{ __('API') }}
 					</th>
 				</tr>
 			</thead>
@@ -150,12 +150,12 @@ watch(
 							{{ model.provider_display_name }}
 							<Tooltip
 								v-if="model.zero_data_retention"
-								text="Zero data retention: the provider keeps nothing of your requests."
+								:text="__('Zero data retention: the provider keeps nothing of your requests.')"
 							>
 								<LucideShieldCheck
 									class="size-4 text-ink-gray-5"
 									role="img"
-									aria-label="Zero data retention"
+									:aria-label="__('Zero data retention')"
 								/>
 							</Tooltip>
 						</span>
@@ -170,7 +170,7 @@ watch(
 					<td
 						class="border-t border-outline-gray-1 py-2.5 pr-3 md:whitespace-nowrap"
 					>
-						<CopyableValue :value="model.name" label="Model key" />
+						<CopyableValue :value="model.name" :label="__('Model key')" />
 					</td>
 
 					<td
@@ -209,7 +209,7 @@ watch(
 								</Tooltip>
 							</template>
 							<span v-if="!limitsOf(model.name).length" class="text-ink-gray-5">
-								No limit
+								{{ __('No limit') }}
 							</span>
 						</span>
 					</td>
