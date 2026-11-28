@@ -3,7 +3,9 @@
 
 import frappe
 from frappe import _
+from frappe.utils.caching import request_cache
 
+from central.billing import settings
 from central.billing.revenue.exchange_rate_feed import feed_rate
 from central.billing.revenue.usage_ledger import utc_today
 
@@ -30,6 +32,36 @@ def fix_month_rate(from_currency: str, to_currency: str, on, final: bool = False
 	if found.fixed or not _is_to_keep(key, found, final):
 		return found
 	return _store(key, found)
+
+
+def keep_report_rate(month) -> None:
+	"""Keep a closed month's USD to INR rate, so the reports convert that month at it."""
+	try:
+		fix_month_rate("USD", "INR", month, final=True)
+	except frappe.ValidationError:
+		# The reports fall back to the nearest kept month, and the run must still draft.
+		frappe.log_error(title="USD to INR rate not kept", message=frappe.get_traceback())
+
+
+def report_usd_to_inr(on=None) -> float:
+	"""The USD to INR rate the margin reports and dashboards use for the month of `on`. Reads only.
+
+	1. The rate set in Billing Settings, when one is set.
+	2. Else the kept rate of that month, or of the nearest month before it.
+	3. Else the earliest kept rate, for a month before any rate was kept.
+	4. Else 0, and the reports leave USD out.
+	"""
+	return settings.reporting_usd_to_inr() or _kept_usd_to_inr(month_key("USD", "INR", on)["month"])
+
+
+@request_cache
+def _kept_usd_to_inr(month) -> float:
+	pair = {"from_currency": "USD", "to_currency": "INR"}
+	for month_filter, order_by in ((["<=", month], "month desc"), ([">", month], "month asc")):
+		rate = frappe.db.get_value(DOCTYPE, {**pair, "month": month_filter}, "rate", order_by=order_by)
+		if rate:
+			return frappe.utils.flt(rate)
+	return 0.0
 
 
 def _is_to_keep(key: dict, found: frappe._dict, final: bool) -> bool:
