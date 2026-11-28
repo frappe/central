@@ -136,16 +136,6 @@ class AtlasClient:
 			if not page.get("has_more"):
 				return hosts
 
-	def get_host_id(self, title: str) -> str:
-		"""The ID of the region's Metal host named `title`."""
-		hosts = self.list_hosts()
-		for host in hosts:
-			if host.get("title") == title:
-				return host["id"]
-
-		titles = ", ".join(host.get("title") or host.get("id") for host in hosts)
-		frappe.throw(_("Atlas has no host named {0}. Its hosts are: {1}.").format(frappe.bold(title), titles))
-
 	def grant_host_access(self, host_id: str, email: str, expires_at: datetime) -> dict:
 		"""Open one host, or every host for `all`, to one person. A repeated grant moves the end time."""
 		path = f"hosts/{quote(host_id, safe='')}/access/grant"

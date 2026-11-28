@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import re
 from typing import Literal
 
 import frappe
@@ -74,11 +75,27 @@ class MetalServer(Document):
 
 	@frappe.whitelist(methods=["POST"])
 	def link_atlas_host(self) -> str:
-		"""Record the region's Atlas host whose title is this machine's name."""
+		"""Record the region's Atlas host that carries this machine's name."""
 		frappe.only_for("System Manager")
-		region = frappe.get_doc("Region", self.region)
-		self.db_set("atlas_host_id", AtlasClient.for_operator(region).get_host_id(self.name))
-		return self.atlas_host_id
+		hosts = AtlasClient.for_operator(frappe.get_doc("Region", self.region)).list_hosts()
+		host_id = self.find_atlas_host(hosts)
+		if not host_id:
+			titles = ", ".join(host.get("title") or host.get("id") for host in hosts)
+			frappe.throw(
+				_("Atlas has no host named {0}. Its hosts are: {1}.").format(frappe.bold(self.name), titles)
+			)
+
+		self.db_set("atlas_host_id", host_id)
+		return host_id
+
+	def find_atlas_host(self, hosts: list[dict]) -> str | None:
+		"""The ID of the host titled with this machine's name, or None.
+
+		Atlas titles a host with the region code where Central names the city, so
+		metal-mumbai-1 in region bom is the host metal-bom-1.
+		"""
+		titles = {self.name, re.sub(r"^metal-[^-]+-", f"metal-{self.region}-", self.name)}
+		return next((host["id"] for host in hosts if host.get("title") in titles), None)
 
 	@frappe.whitelist(methods=["POST"])
 	def get_credentials(self, kind: Literal["root", "bmc"]) -> dict[str, str | None]:
