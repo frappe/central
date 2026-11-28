@@ -3,6 +3,7 @@ from frappe import _
 from frappe.query_builder.functions import Count
 from frappe.utils.translations import _lt
 
+from central.api.models.servers import FirewallRulesetSummary
 from central.errors import handle_resource_operation
 from central.iam import can, can_on_any_server
 from central.infrastructure.doctype.virtual_machine.virtual_machine import get_team_server
@@ -19,7 +20,7 @@ def require_ruleset_manager(team: str) -> None:
 
 
 @frappe.whitelist(methods=["GET"])
-def list_firewall_rulesets(team: str) -> list[dict]:
+def list_firewall_rulesets(team: str) -> list[FirewallRulesetSummary]:
 	"""Return the team's rulesets, each with the number of servers that use it."""
 	if not can_on_any_server(frappe.session.user, team, "server:view"):
 		frappe.throw(_("You can't view this team's firewall rulesets."), frappe.PermissionError)

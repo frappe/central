@@ -96,6 +96,12 @@ export const sidebar: SidebarSection[] = [
 		],
 	},
 	{
+		text: 'Developers',
+		items: [
+			{ text: 'Use the API', link: '/developers/api' },
+		],
+	},
+	{
 		text: 'Help',
 		items: [
 			{ text: 'Contact support', link: '/help/support' },

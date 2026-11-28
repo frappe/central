@@ -274,6 +274,11 @@
    "group": "Access",
    "link_doctype": "WireGuard Device",
    "link_fieldname": "team"
+  },
+  {
+   "group": "Access",
+   "link_doctype": "API Key",
+   "link_fieldname": "team"
   }
  ],
  "modified": "2026-11-16 12:00:00.000000",

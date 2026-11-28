@@ -2,6 +2,7 @@ import frappe
 from frappe import _
 from frappe.utils.translations import _lt
 
+from central.api.models.servers import DeleteWireguardDeviceResponse, WireGuardDevice, WireGuardDevices
 from central.errors import handle_resource_operation
 from central.infrastructure.doctype.virtual_machine.firewall import is_blocking_devices
 from central.permissions import wireguard_device_has_permission
@@ -28,7 +29,7 @@ DEVICE_FIELDS = (
 
 @frappe.whitelist(methods=["GET"])
 @require_capability("server:wireguard", ACCESS_MESSAGE)
-def list_wireguard_devices(team: str) -> dict:
+def list_wireguard_devices(team: str) -> WireGuardDevices:
 	"""Return the team's devices with the gateway regions and the servers a device could reach."""
 	devices = frappe.get_list(
 		"WireGuard Device",
@@ -80,6 +81,7 @@ def list_wireguard_devices(team: str) -> dict:
 		device.can_delete = wireguard_device_has_permission(frappe._dict(device, team=team), ptype="delete")
 
 	for server in servers:
+		server.has_wireguard_access = bool(server.has_wireguard_access)
 		rules = frappe.parse_json(server.pop("firewall_rules"))
 		server.is_blocked_by_firewall = bool(rules) and is_blocking_devices(
 			bool(server.pop("is_firewall_enabled")), rules["inbound"]
@@ -91,7 +93,7 @@ def list_wireguard_devices(team: str) -> dict:
 @frappe.whitelist(methods=["POST"])
 @require_capability("server:wireguard", ACCESS_MESSAGE)
 @handle_resource_operation
-def create_wireguard_device(team: str, region: str, title: str, public_key: str) -> dict:
+def create_wireguard_device(team: str, region: str, title: str, public_key: str) -> WireGuardDevice:
 	"""Register a device with the region's gateway and return its settings."""
 	device = frappe.get_doc(
 		{
@@ -109,7 +111,7 @@ def create_wireguard_device(team: str, region: str, title: str, public_key: str)
 @frappe.whitelist(methods=["POST"])
 @require_capability("server:wireguard", ACCESS_MESSAGE)
 @handle_resource_operation
-def delete_wireguard_device(team: str, name: str) -> dict:
+def delete_wireguard_device(team: str, name: str) -> DeleteWireguardDeviceResponse:
 	"""Remove a device from its gateway. A gateway outage leaves it Removing until a retry works."""
 	device = frappe.get_doc("WireGuard Device", name)
 	if device.team != team:

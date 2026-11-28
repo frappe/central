@@ -30,6 +30,9 @@ const FirewallRulesetsForm = defineAsyncComponent(
 const WireGuardForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/WireGuardForm.vue'),
 )
+const ApiKeysForm = defineAsyncComponent(
+	() => import('@/components/settings/forms/ApiKeysForm.vue'),
+)
 
 export type SettingsTab =
 	| 'profile'
@@ -40,6 +43,7 @@ export type SettingsTab =
 	| 'ssh-keys'
 	| 'firewall-rulesets'
 	| 'wireguard'
+	| 'api-keys'
 
 /** The sidebar sections, in display order. */
 export const SETTINGS_GROUPS = ['Account', 'Administration', 'Access'] as const
@@ -144,6 +148,15 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 			"Connect a laptop or phone to your servers' private addresses through an encrypted tunnel.",
 		component: WireGuardForm,
 		requires: 'wireguard',
+	},
+	{
+		value: 'api-keys',
+		group: 'Access',
+		label: 'API Keys',
+		icon: 'lucide-braces',
+		title: 'API Keys',
+		description: 'Let a script or an agent use the API on one team.',
+		component: ApiKeysForm,
 	},
 ]
 

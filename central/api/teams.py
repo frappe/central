@@ -6,6 +6,27 @@ from frappe.query_builder import Order
 from frappe.rate_limiter import rate_limit
 from frappe.utils.translations import _lt
 
+from central.api.models.teams import (
+	AcceptInvitationResponse,
+	ArchiveChecks,
+	ArchiveTeamResponse,
+	CustomRole,
+	DeclineInvitationResponse,
+	DeleteCustomRoleResponse,
+	LeaveTeamResponse,
+	RemoveTeamMemberResponse,
+	ResendInvitationResponse,
+	RevokeInvitationResponse,
+	SentInvitation,
+	SetOnboardingStepResponse,
+	SetTeamLogoResponse,
+	SetTeamMemberRolesResponse,
+	SetTeamMemberStatusResponse,
+	TeamMember,
+	TeamName,
+	TeamRole,
+	TransferTeamOwnershipResponse,
+)
 from central.iam import can, expand_capabilities, get_all_capabilities
 from central.identity.doctype.team.archive import get_archive_checks, get_credit_balances
 from central.identity.doctype.team.team import Team
@@ -15,7 +36,7 @@ from central.utils.guards import require_capability, require_team_member
 
 @frappe.whitelist(methods=["GET"])
 @require_team_member
-def list_team_members(team: str) -> list[dict[str, Any]]:
+def list_team_members(team: str) -> list[TeamMember]:
 	"""Roster of the team the caller belongs to (user, full name, role grants, status,
 	owner flag) — one entry per user, folding their Team Member rows into a `roles` list."""
 	doc = frappe.get_doc("Team", team)
@@ -51,7 +72,7 @@ def list_team_members(team: str) -> list[dict[str, Any]]:
 
 @frappe.whitelist(methods=["GET"])
 @require_team_member
-def list_team_roles(team: str) -> list[dict[str, Any]]:
+def list_team_roles(team: str) -> list[TeamRole]:
 	"""System roles plus this team's custom roles, each with its capabilities —
 	one join (Team Role ⟕ Role Capability), grouped in order (system roles first)."""
 	role = frappe.qb.DocType("Team Role")
@@ -80,7 +101,7 @@ def list_team_roles(team: str) -> list[dict[str, Any]]:
 			entry = {
 				"name": row.name,
 				"role_name": row.role_name,
-				"is_system": row.is_system,
+				"is_system": bool(row.is_system),
 				"team": row.team,
 				"capabilities": [],
 			}
@@ -92,14 +113,14 @@ def list_team_roles(team: str) -> list[dict[str, Any]]:
 
 
 @frappe.whitelist(methods=["POST"])
-def create_team(team_name: str) -> dict[str, Any]:
+def create_team(team_name: str) -> TeamName:
 	"""Create a new team owned by the caller, with the caller as its active Owner."""
 	team = Team.create_for_current_user(team_name)
 	return {"name": team.name, "team_name": team.team_name}
 
 
 @frappe.whitelist(methods=["POST"])
-def set_onboarding_step(team: str, step: str, status: str) -> dict[str, Any]:
+def set_onboarding_step(team: str, step: str, status: str) -> SetOnboardingStepResponse:
 	"""Record that the owner finished or skipped one onboarding step. Owner only."""
 	frappe.get_doc("Team", team).set_onboarding_step(step, status)
 	return {"step": step, "status": status}
@@ -107,7 +128,7 @@ def set_onboarding_step(team: str, step: str, status: str) -> dict[str, Any]:
 
 @frappe.whitelist(methods=["POST"])
 @require_capability("team:edit", _lt("You can't rename this team. Ask a team admin to review your access."))
-def rename_team(team: str, team_name: str) -> dict[str, Any]:
+def rename_team(team: str, team_name: str) -> TeamName:
 	"""Rename a team. Team.validate re-checks team:edit on save."""
 	doc = frappe.get_doc("Team", team)
 	doc.team_name = team_name
@@ -120,7 +141,7 @@ def rename_team(team: str, team_name: str) -> dict[str, Any]:
 @require_capability(
 	"team:edit", _lt("You can't change this team's logo. Ask a team admin to review your access.")
 )
-def set_team_logo(team: str, file_url: str | None = None) -> dict[str, Any]:
+def set_team_logo(team: str, file_url: str | None = None) -> SetTeamLogoResponse:
 	"""Set the team logo to an uploaded image, or clear it. Team.validate re-checks team:edit."""
 	doc = frappe.get_doc("Team", team)
 	doc.team_logo = file_url or None
@@ -131,7 +152,7 @@ def set_team_logo(team: str, file_url: str | None = None) -> dict[str, Any]:
 
 @frappe.whitelist(methods=["POST"])
 @require_team_member
-def transfer_team_ownership(team: str, user: str) -> dict[str, Any]:
+def transfer_team_ownership(team: str, user: str) -> TransferTeamOwnershipResponse:
 	"""Hand the Owner role to another active member. Current-owner only."""
 	frappe.get_doc("Team", team).transfer_ownership(user)
 	return {"team": team, "owner": user}
@@ -139,14 +160,14 @@ def transfer_team_ownership(team: str, user: str) -> dict[str, Any]:
 
 @frappe.whitelist(methods=["GET"])
 @require_capability("team:delete", _lt("Only the team owner can archive this team."))
-def get_team_archive_checks(team: str) -> dict[str, Any]:
+def get_team_archive_checks(team: str) -> ArchiveChecks:
 	"""What still stops the team from being archived, and the credit that archiving forfeits."""
 	return {"checks": get_archive_checks(team), "credit_balances": get_credit_balances(team)}
 
 
 @frappe.whitelist(methods=["POST"])
 @require_capability("team:delete", _lt("Only the team owner can archive this team."))
-def archive_team(team: str) -> dict[str, Any]:
+def archive_team(team: str) -> ArchiveTeamResponse:
 	frappe.get_doc("Team", team).archive()
 	return {"team": team, "archived": True}
 
@@ -187,7 +208,7 @@ def invite_team_member(
 	resource_type: str = "*",
 	resource_name: str | None = None,
 	invitations: list[dict] | None = None,
-) -> str | list[dict[str, Any]]:
+) -> str | list[SentInvitation]:
 	"""Invite one person, or up to 10 with `invitations` (rows of email, role, resource_type,
 	resource_name). Rows return one result each: the invitation name or the refusal."""
 	doc = frappe.get_doc("Team", team)
@@ -208,29 +229,29 @@ def get_invitation(token: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
-def resend_invitation(invitation: str) -> dict[str, Any]:
+def resend_invitation(invitation: str) -> ResendInvitationResponse:
 	return frappe.get_doc("Team Invitation", invitation).resend()
 
 
 @frappe.whitelist(methods=["POST"])
-def revoke_invitation(invitation: str) -> dict[str, Any]:
+def revoke_invitation(invitation: str) -> RevokeInvitationResponse:
 	revoked = frappe.get_doc("Team Invitation", invitation).revoke()
 	return {"invitation": invitation, "revoked": revoked}
 
 
 @frappe.whitelist(methods=["POST"])
-def accept_invitation(invitation: str) -> dict[str, Any]:
+def accept_invitation(invitation: str) -> AcceptInvitationResponse:
 	return frappe.get_doc("Team Invitation", invitation).accept()
 
 
 @frappe.whitelist(methods=["POST"])
-def decline_invitation(invitation: str) -> dict[str, Any]:
+def decline_invitation(invitation: str) -> DeclineInvitationResponse:
 	declined = frappe.get_doc("Team Invitation", invitation).decline()
 	return {"invitation": invitation, "declined": declined}
 
 
 @frappe.whitelist(methods=["POST"])
-def set_team_member_roles(team: str, user: str, roles: list[dict] | str) -> dict:
+def set_team_member_roles(team: str, user: str, roles: list[dict] | str) -> SetTeamMemberRolesResponse:
 	roles = frappe.parse_json(roles)
 	frappe.get_doc("Team", team).set_member_roles(user, roles)
 
@@ -238,20 +259,20 @@ def set_team_member_roles(team: str, user: str, roles: list[dict] | str) -> dict
 
 
 @frappe.whitelist(methods=["POST"])
-def set_team_member_status(team: str, user: str, status: str) -> dict:
+def set_team_member_status(team: str, user: str, status: str) -> SetTeamMemberStatusResponse:
 	frappe.get_doc("Team", team).set_member_status(user, status)
 	return {"team": team, "user": user, "status": status}
 
 
 @frappe.whitelist(methods=["POST"])
-def remove_team_member(team: str, user: str) -> dict:
+def remove_team_member(team: str, user: str) -> RemoveTeamMemberResponse:
 	frappe.get_doc("Team", team).remove_member(user)
 	return {"team": team, "user": user, "removed": True}
 
 
 @frappe.whitelist(methods=["POST"])
 @require_team_member
-def leave_team(team: str) -> dict:
+def leave_team(team: str) -> LeaveTeamResponse:
 	frappe.get_doc("Team", team).leave()
 	return {"team": team, "left": True}
 
@@ -261,7 +282,7 @@ def leave_team(team: str) -> dict:
 	"team:manage_members",
 	_lt("You can't manage roles for this team. Ask a team admin to review your access."),
 )
-def create_custom_role(team: str, role_name: str, capabilities: list | str) -> dict:
+def create_custom_role(team: str, role_name: str, capabilities: list | str) -> CustomRole:
 	"""Create a team-scoped custom Team Role granting exactly `capabilities`."""
 	capabilities = frappe.parse_json(capabilities)  # the console posts a JSON-encoded array
 	valid = set(get_all_capabilities())
@@ -298,7 +319,7 @@ def create_custom_role(team: str, role_name: str, capabilities: list | str) -> d
 
 
 @frappe.whitelist(methods=["POST"])
-def delete_custom_role(role: str) -> dict:
+def delete_custom_role(role: str) -> DeleteCustomRoleResponse:
 	"""Delete a team-scoped custom role through its controller rules."""
 	doc = frappe.get_doc("Team Role", role)
 	# TeamRole.on_trash enforces customer authorization because DocType RBAC is operator-only.

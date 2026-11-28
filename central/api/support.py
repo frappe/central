@@ -7,6 +7,7 @@ from frappe import _
 from frappe.rate_limiter import rate_limit
 
 from central import support
+from central.api.models.teams import RelatedHelp, TeamTicket, Ticket, TicketCategory
 from central.integrations.helpdesk import HelpdeskClient, HelpdeskUnavailable
 from central.utils.guards import require_support_team_member
 
@@ -22,8 +23,9 @@ def create_ticket(
 	description: str = "",
 	server: str | None = None,
 	site: str | None = None,
-) -> dict:
+) -> Ticket:
 	"""Open a support ticket for the caller's team.
+	`category` is a `key` and `issue_type` one of its issue labels from `get_ticket_options`.
 	A `server` or `site` is checked against the team first, then attached as context."""
 	support.validate_ticket(category, issue_type, description)
 	server_row = support.get_server(team, server) if server else None
@@ -41,7 +43,7 @@ def create_ticket(
 
 @frappe.whitelist(methods=["GET"])
 @require_support_team_member
-def get_ticket_options(team: str | None = None) -> list[dict]:
+def get_ticket_options(team: str | None = None) -> list[TicketCategory]:
 	"""The categories and issues a ticket can be about."""
 	return support.get_ticket_options()
 
@@ -49,7 +51,7 @@ def get_ticket_options(team: str | None = None) -> list[dict]:
 @frappe.whitelist(methods=["GET"])
 @rate_limit(limit=60, seconds=60, ip_based=False, user_based=True)
 @require_support_team_member
-def find_related(team: str | None = None, query: str = "") -> dict:
+def find_related(team: str | None = None, query: str = "") -> RelatedHelp:
 	"""Articles and the team's past tickets that match `query`, before a ticket is opened.
 	A query shorter than 3 characters skips Helpdesk, because it matches everything."""
 	query = query.strip()
@@ -81,7 +83,7 @@ def _search_or_empty(search: Callable, *args) -> tuple[list, bool]:
 
 @frappe.whitelist(methods=["GET"])
 @require_support_team_member
-def list_tickets(team: str | None = None) -> list[dict]:
+def list_tickets(team: str | None = None) -> list[TeamTicket]:
 	"""The team's open tickets, newest first. Only the caller's own tickets link to the portal."""
 	tickets = HelpdeskClient.from_settings().list_open_tickets(team, support.get_ticket_owner_filter(team))
 	return support.keep_own_ticket_links(tickets)

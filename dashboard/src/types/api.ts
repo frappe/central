@@ -58,7 +58,7 @@ export interface TeamMemberRow {
 export interface TeamRoleRow {
 	name: string
 	role_name: string
-	is_system: 0 | 1
+	is_system: boolean
 	team: string | null
 	capabilities: string[]
 }

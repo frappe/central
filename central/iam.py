@@ -44,6 +44,8 @@ SERVER_CAPABILITIES = frozenset(
 )
 # The scope of a team-wide grant. A scoped grant's scope is its server's name.
 ALL_SERVERS = "*"
+# The `Frappe-Authorization-Source` header value that marks a request signed with an API Key.
+API_KEY_SOURCE = "API Key"
 
 
 def expand_capabilities(caps: list[str]) -> list[str]:
@@ -61,8 +63,25 @@ def expand_capabilities(caps: list[str]) -> list[str]:
 	return list(caps) + extra
 
 
+def is_api_key_request() -> bool:
+	request = getattr(frappe.local, "request", None)
+	return bool(request) and request.headers.get("Frappe-Authorization-Source") == API_KEY_SOURCE
+
+
+def get_request_api_key(user: str):
+	"""The API Key that signed this request for `user`, or None. `api_key.authenticate` sets it."""
+	key = getattr(frappe.local, "api_key", None)
+	if not key and is_api_key_request():
+		# The auth hook did not narrow this key request, so it must not get the user's full rights.
+		raise frappe.AuthenticationError
+	return key if key and user == frappe.session.user else None
+
+
 def user_has_operator_bypass(user: str | None = None) -> bool:
-	"""The only non-team-membership bypass in Central IAM."""
+	"""The only non-team-membership bypass in Central IAM. An API Key never carries it."""
+	if get_request_api_key(user or frappe.session.user):
+		return False
+
 	# Resolve before the cached call: the request cache must key on the concrete
 	# user, never on a bare no-arg () that would pin the first caller's session
 	# user (e.g. Administrator) onto every later caller in the same request.
@@ -103,15 +122,20 @@ def get_user_team_names(user: str, statuses: tuple[str, ...] = ("Active",)) -> l
 		)
 		.orderby(team.name)
 	).run(as_dict=True)
+	key = get_request_api_key(user)
 
-	return [row.name for row in rows]
+	return [row.name for row in rows if not key or row.name == key.team]
 
 
 def is_active_team_member(user: str, team: str, statuses: tuple[str, ...] = ("Active",)) -> bool:
 	"""
 	Whether `user` is an active member of team `team` in one of `statuses`. A scoped
-	existence check — cheaper than resolving grants or listing every team.
+	existence check — cheaper than resolving grants or listing every team. An API Key
+	request belongs only to the key's team.
 	"""
+	key = get_request_api_key(user)
+	if key and team != key.team:
+		return False
 
 	member = frappe.qb.DocType("Team Member")
 	team_doc = frappe.qb.DocType("Team")
@@ -273,7 +297,22 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 			caps = [cap for cap in caps if cap in SERVER_CAPABILITIES]
 		grant["caps"] = caps
 
-	return dict(grants_by_team)
+	return _narrow_to_api_key(user, dict(grants_by_team))
+
+
+def _narrow_to_api_key(user: str, grants_by_team: dict[str, list[dict[str, Any]]]):
+	"""An API Key request keeps only the key's team and the capabilities its scopes grant."""
+	key = get_request_api_key(user)
+	if not key:
+		return grants_by_team
+
+	return {
+		team: [
+			{**grant, "caps": [cap for cap in grant["caps"] if cap in key.capabilities]} for grant in grants
+		]
+		for team, grants in grants_by_team.items()
+		if team == key.team
+	}
 
 
 def _get_grant_scope(row) -> str | None:

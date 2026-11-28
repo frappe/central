@@ -50,11 +50,11 @@ export interface ServerOverview {
 		application: string | null
 		/** The https:// address of the app's guide, or null when it has none. */
 		documentation_url: string | null
-		has_public_ipv6: 0 | 1
-		is_firewall_enabled: 0 | 1
-		is_termination_protected: 0 | 1
-		has_ipv4_internet: 0 | 1
-		has_wireguard_access: 0 | 1
+		has_public_ipv6: boolean
+		is_firewall_enabled: boolean
+		is_termination_protected: boolean
+		has_ipv4_internet: boolean
+		has_wireguard_access: boolean
 		/** Null until Central first reads the firewall from the region. */
 		firewall_rules: FirewallRules | null
 		/** The team rulesets the server uses. Empty when it has its own rules. */
@@ -69,7 +69,7 @@ export interface ServerOverview {
 			display_name: string | null
 			provider: string | null
 			country_code: string | null
-			has_wireguard_gateway: 0 | 1
+			has_wireguard_gateway: boolean
 		}
 	}
 }

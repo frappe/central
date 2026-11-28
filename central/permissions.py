@@ -328,6 +328,28 @@ def user_notification_preference_has_permission(
 	return _is_user_notification_setting_owned(doc, user)
 
 
+def api_key_query_conditions(user: str | None = None) -> str:
+	"""1. A System Manager sees every API key.
+	2. A user sees only their own keys.
+	"""
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return ""
+
+	return f"`tabAPI Key`.`user` = {frappe.db.escape(user)}"
+
+
+def api_key_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	"""1. A System Manager has every permission.
+	2. A user acts only on their own keys.
+	"""
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return True
+
+	return doc.user == user
+
+
 def notification_digest_setting_query_conditions(user: str | None = None) -> str:
 	"""1. A System Manager sees every digest setting.
 	2. A user sees only the digest setting owned by that user.

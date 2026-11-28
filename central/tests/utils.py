@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 """Shared fixtures for central tests."""
 
+import typing
 from contextlib import contextmanager
 
 import frappe
@@ -77,3 +78,14 @@ def central_limit(fieldname: str, value: int):
 	finally:
 		frappe.db.set_single_value("Central Settings", fieldname, previous)
 		frappe.clear_document_cache("Central Settings", "Central Settings")
+
+
+def assert_matches_model(test, value: dict, model) -> None:
+	"""`value` has the keys of `model`, a response TypedDict, and its yes/no fields are booleans.
+	Frappe does not check return hints, so this keeps a model from drifting from its endpoint."""
+	hints = typing.get_type_hints(model)
+	test.assertLessEqual(set(model.__required_keys__), set(value), model.__name__)
+	test.assertLessEqual(set(value), set(hints), model.__name__)
+	for key, hint in hints.items():
+		if hint is bool and key in value:
+			test.assertIsInstance(value[key], bool, f"{model.__name__}.{key}")
