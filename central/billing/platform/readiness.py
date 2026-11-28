@@ -71,6 +71,15 @@ def _billed_run_rates() -> dict[str, float]:
 # --- billing profile ----------------------------------------------------------
 
 
+def _teams_billed_this_month() -> set[str]:
+	"""Every external team the next run bills: one with a segment open at some moment of this month."""
+	now = frappe.utils.now_datetime()
+	month = (frappe.utils.get_datetime(frappe.utils.get_first_day(now)), now)
+	internal = _internal_teams()
+	# A segment that closed this month still bills, so open segments alone miss its team.
+	return {segment.team for segment in active_segments(during=month) if segment.team not in internal}
+
+
 def check_currency_matches_country() -> list[Violation]:
 	"""India is billed only in INR, and only India in INR."""
 	return [
@@ -115,7 +124,7 @@ def check_billed_teams_are_invoiceable() -> list[Violation]:
 	profiles = _profiles()
 	syncs = is_automatic()  # only then does a missing record hold the invoice
 	found = []
-	for team in _billed_run_rates():
+	for team in sorted(_teams_billed_this_month()):
 		profile = profiles.get(team)
 		missing = [
 			f
@@ -144,8 +153,17 @@ def check_accounting_setup() -> list[Violation]:
 	"""Billing Settings names every accounting record an issued invoice needs."""
 	from central.billing.ingester.connection import enabled
 
-	if not enabled() or not _billed_run_rates():
+	if not _billed_run_rates():
 		return []
+	if not enabled():
+		return [
+			Violation(
+				check="B4",
+				subject_doctype="Billing Settings",
+				subject="Billing Settings",
+				detail="Accounting sync is Off, so no invoice reaches the accounting system as a tax invoice.",
+			)
+		]
 	values = frappe.get_cached_doc("Billing Settings")
 	missing = [field for field in ACCOUNTING_FIELDS if not values.get(field)]
 	if not values.receivable_accounts:
@@ -245,15 +263,35 @@ def check_tier_changes_are_recorded() -> list[Violation]:
 # --- subscriptions and servers --------------------------------------------------
 
 
+def _plans_billed_at_source_cost() -> set[str]:
+	"""Plans whose usage bills at the service's own cost, converted at the month's rate, such as AI.
+
+	Their catalog rate is 0 by design, so a missing rate is no fault."""
+	meter = frappe.qb.DocType("Service Meter")
+	includes = frappe.qb.DocType("Plan Includes")
+	return set(
+		frappe.qb.from_(includes)
+		.join(meter)
+		.on(meter.resource_type == includes.resource_type)
+		.select(includes.parent)
+		.distinct()
+		.where(
+			(includes.parenttype == "Plan") & meter.cost_currency.isnotnull() & (meter.cost_currency != "")
+		)
+		.run(pluck=True)
+	)
+
+
 def check_subscriptions_are_priced() -> list[Violation]:
 	"""Every running subscription has a price: a locked rate, or a metered plan with a rate."""
 	from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
 
 	metered = set(frappe.get_all("Plan Category", filters={"billing_type": "Metered"}, pluck="name"))
 	categories = dict(frappe.get_all("Plan", fields=["name", "category"], as_list=True))
+	at_source_cost = _plans_billed_at_source_cost()
 	found = []
 	for segment in active_segments({"enabled": 1}):
-		if frappe.utils.flt(segment.locked_rate) > 0:
+		if frappe.utils.flt(segment.locked_rate) > 0 or segment.plan in at_source_cost:
 			continue
 		if categories.get(segment.plan) in metered and resolve_rate(
 			get_catalog_rates("Plan", segment.plan), segment.currency, segment.cluster
@@ -415,8 +453,10 @@ def check_billed_teams_can_pay() -> list[Violation]:
 	found = []
 	for team, rate in _billed_run_rates().items():
 		profile = profiles.get(team) or frappe._dict()
-		balance = balances.get((team, profile.currency), 0.0)
-		if rate <= balance or team in paying or profile.collection_mode == "Manual Checkout":
+		if team in paying or profile.collection_mode == "Manual Checkout":
+			continue
+		credit = _credit_at_next_run(team, profile.currency, balances.get((team, profile.currency), 0.0))
+		if rate <= credit:
 			continue
 		found.append(
 			Violation(
@@ -426,11 +466,23 @@ def check_billed_teams_can_pay() -> list[Violation]:
 				subject_doctype="Billing Profile",
 				subject=team,
 				expected=rate,
-				actual=balance,
-				detail="Credit does not cover a month and the team has no payment method, so its invoice will go unpaid.",
+				actual=credit,
+				detail="Credit left at the next run does not cover a month and the team has no payment method, so its invoice will go unpaid.",
 			)
 		)
 	return found
+
+
+def _credit_at_next_run(team: str, currency: str | None, balance: float) -> float:
+	"""The part of the wallet that has not expired when the next run draws on it."""
+	if balance <= 0:
+		return 0.0
+	next_run = frappe.utils.get_first_day(frappe.utils.nowdate(), d_months=1)
+	return sum(
+		frappe.utils.flt(lot.remaining)
+		for lot in credits.credit_lots(team, currency)
+		if not lot.expires_on or frappe.utils.getdate(lot.expires_on) >= next_run
+	)
 
 
 def check_promotional_credit_expires() -> list[Violation]:
