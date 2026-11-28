@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Signups module holds what a new customer gets: the [Product](doctype/product/SPEC.md) they sign up for, the free trial and the welcome credit. Operators start with the [Trials operator guide](../../spec/TRIALS_OPERATOR_GUIDE.md).
+The Signups module holds what a new customer gets: the [Product](doctype/product/SPEC.md) they sign up for, the free trial, the welcome credit and affiliate referrals. Operators start with the [Trials operator guide](../../spec/TRIALS_OPERATOR_GUIDE.md).
 
 ## Welcome credit
 
@@ -173,3 +173,36 @@ When a stop, a terminate, or the conversion job fails, Central writes the reason
 ### Operator alerts
 
 `central.signups.alerts.alert_failed_signups` runs every hour. When a signup site creation became Failed or Timed Out in the last hour, it sends one message that lists them, through the operator alert channel in Billing Settings (Raven, or email as a fallback). A signup should never fail, so one failure is enough. The check adds nothing to the signup path.
+
+## Affiliates
+
+An affiliate is a user who shares a link to Frappe Cloud. A user joins with the switch in Settings, and gets an Affiliate with the ID `AFF-.#####` and a random Code that never changes. The link is `/r/<code>`. An operator stops an Affiliate in Desk by unticking **Enabled**: it is then Paused, and the user cannot turn it on again. An Affiliate cannot be deleted.
+
+| Record | Field | Meaning |
+|---|---|---|
+| Affiliate | User, Code, Status, Enabled | Status is Active or Paused, and the user's switch sets it. |
+| Team | Affiliate, UTM Content | The Affiliate who referred the Team, and the post that held the link. Only a System Manager sees Affiliate. |
+| Affiliate Source | Title, Enabled | The sources Make a link offers. The ID, made once from the title such as `frappe-forum`, goes in the link and never changes. A new site starts with ten. |
+| Central Settings | Affiliate Cookie Days | How long a click counts. The default is 30. |
+
+### Click and referral
+
+1. `/r/<code>` reads `product` and the `utm_*` values, and ignores every other parameter. It keeps `utm_content` only as an `http` or `https` URL of at most 500 characters.
+2. When the visitor is a person, not a bot, the Affiliate is Active, and the IP address made 60 or fewer clicks in the last hour, Central saves the click in the `central_affiliate` cookie for Affiliate Cookie Days. The last click wins. Every click redirects to signup.
+3. When a user creates their first Team, Central reads the cookie again. The Team gets the Affiliate, the product of the link as its Landing Product, and the UTM values of the click, unless the click is older than Affiliate Cookie Days, the Affiliate is not Active, or the user is the Affiliate's own User. Central deletes the cookie once the Team is saved.
+
+The Affiliate is credited once, when the Team is created. A later Team of the same user gets no referral.
+
+### Performance
+
+The Affiliate page shows counts for the signed-in user's own Affiliate, never team names, for a period and a product. Central computes them each time from the Teams and stores no count.
+
+| Count | Rule |
+|---|---|
+| Signed up | Teams that link to the Affiliate |
+| Started | The Team has a Site |
+| Added a card | The Team has an Active Payment Method |
+| Paying | The Team has a Paid, Billable Invoice with an amount above 0 |
+| Still paying | A paying Team that paid in the last 35 days |
+
+Each step counts the later steps too. A Team counts under the product of its first trial Site, else its Landing Product, else Frappe Cloud.

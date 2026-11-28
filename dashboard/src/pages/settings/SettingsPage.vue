@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
 import { computed } from 'vue'
+import { useAffiliate } from '@/composables/useAffiliate'
 import { useAppMenu } from '@/composables/useAppMenu'
 import { useMyInvitations } from '@/composables/useMyInvitations'
 import { useSession } from '@/composables/useSession'
@@ -9,6 +10,7 @@ import {
 	SETTINGS_GROUPS,
 	useSettingsTabs,
 } from '@/composables/useSettings'
+import { __ } from '@/lib/translate'
 
 // Mobile's settings hub: the same tabs the desktop dialog lists in its sidebar,
 // in the same sections, as rows that push a page. Sign out stays here at the bottom — it ends the
@@ -17,6 +19,7 @@ const { activeTeamLabel } = useSession()
 const { availableTabs } = useSettingsTabs()
 const { currentUser, logoutAndRedirect } = useAppMenu()
 const { count: invitationCount } = useMyInvitations()
+const { isNew: isAffiliateNew } = useAffiliate()
 
 const available = computed(() =>
 	availableTabs.value.map((tab) => ({
@@ -30,7 +33,9 @@ const available = computed(() =>
 					? activeTeamLabel.value
 					: tab.value === 'invitations' && invitationCount.value
 						? `${invitationCount.value} pending`
-						: '',
+						: tab.value === 'affiliate' && isAffiliateNew.value
+							? __('New')
+							: '',
 	})),
 )
 

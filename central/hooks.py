@@ -137,6 +137,8 @@ jinja = {
 # only in a patch would exist on migrated sites and be silently ABSENT on fresh ones.
 # The money invariants are a property of the schema, not of a site's history (ADR 0018).
 after_install = [
+	"central.signups.affiliate_link.ensure_cookie_days",
+	"central.signups.doctype.affiliate_source.affiliate_source.ensure_affiliate_sources",
 	"central.infrastructure.doctype.blocked_domain.blocked_domain.seed_regional_domains",
 	"central.infrastructure.doctype.image_offering.image_offering.ensure_default_offerings",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
@@ -362,6 +364,8 @@ scheduler_events = {
 }
 
 after_migrate = [
+	"central.signups.affiliate_link.ensure_cookie_days",
+	"central.signups.doctype.affiliate_source.affiliate_source.ensure_affiliate_sources",
 	"central.infrastructure.doctype.blocked_domain.blocked_domain.seed_regional_domains",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.services.doctype.service.service.ensure_services",
@@ -382,6 +386,8 @@ after_migrate = [
 # Tests run on a fresh site (patches skipped), so seed the taxonomy masters the test
 # fixtures depend on — and apply the money constraints — before the suite runs.
 before_tests = [
+	"central.signups.affiliate_link.ensure_cookie_days",
+	"central.signups.doctype.affiliate_source.affiliate_source.ensure_affiliate_sources",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.services.doctype.service.service.ensure_services",
 	"central.billing.settings.ensure_snapshot_settings",
@@ -436,8 +442,8 @@ ignore_links_on_delete = ["Activity Event"]
 before_request = ["central.oidc.take_client_credentials"]
 after_request = ["central.integrations.metrics.count_request"]
 
-# The OpenID Connect discovery document of the Central issuer.
-page_renderer = ["central.oidc.DiscoveryPage"]
+# The OpenID Connect discovery document of the Central issuer, and affiliate links at /r/<code>.
+page_renderer = ["central.oidc.DiscoveryPage", "central.signups.affiliate_link.AffiliateLinkPage"]
 
 # Job Events
 # ----------

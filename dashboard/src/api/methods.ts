@@ -139,6 +139,10 @@ export const API = {
 	bucketUploadUrl: 'central.services.api.storage.get_upload_url',
 	deleteBucketObjects: 'central.services.api.storage.delete_objects',
 
+	getAffiliate: 'central.api.affiliates.get_affiliate',
+	setAffiliateProgram: 'central.api.affiliates.set_affiliate_program',
+	getAffiliatePerformance: 'central.api.affiliates.get_affiliate_performance',
+
 	getProduct: 'central.api.signups.get_product',
 	sendCode: 'central.api.auth.send_code',
 	verifyCode: 'central.api.auth.verify_code',

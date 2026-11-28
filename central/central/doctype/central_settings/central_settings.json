@@ -73,6 +73,8 @@
   "trial_servers_per_team",
   "column_break_trial_limits",
   "trial_idle_shutdown_minutes",
+  "affiliates_section",
+  "affiliate_cookie_days",
   "github_tab",
   "github_app_section",
   "github_app_id",
@@ -501,6 +503,19 @@
    "non_negative": 1
   },
   {
+   "fieldname": "affiliates_section",
+   "fieldtype": "Section Break",
+   "label": "Affiliates"
+  },
+  {
+   "default": "30",
+   "description": "Days a click on an affiliate link counts toward a signup.",
+   "fieldname": "affiliate_cookie_days",
+   "fieldtype": "Int",
+   "label": "Affiliate Cookie Days",
+   "non_negative": 1
+  },
+  {
    "fieldname": "github_tab",
    "fieldtype": "Tab Break",
    "label": "GitHub"
@@ -573,7 +588,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-25 12:00:00.000000",
+ "modified": "2026-11-28 21:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",
