@@ -132,3 +132,13 @@ central.patches.v0_0.move_advance_and_income_accounts_to_currency_rows
 central.patches.v0_0.move_github_installations
 # Bill each public IPv4 per UTC day on its server: end the per-address subscriptions where today starts (UTC).
 central.patches.v0_0.bill_public_ipv4_per_day
+# Keep usage as one row per subject, meter and month with a value per day; fold the Usage Days and recounted rollups into it.
+central.patches.v0_0.fold_usage_days_into_months
+# Keep public IPv4 as Usage Segments: a segment per run of billed days, and an open one for each address held now.
+central.patches.v0_0.move_public_ipv4_to_segments
+# Name the evidence keys each pushed storage and AI line carries.
+central.patches.v0_0.set_meter_evidence_keys
+# Count usage days with no derivation only from now: the days the fold and earlier writers stored are not counted.
+central.patches.v0_0.count_underived_days_from_now
+# Treat existing corrections as derived, as the days are. Only matters where earlier code already wrote rows (dev, test, staged deploys).
+central.patches.v0_0.mark_derived_usage_corrections

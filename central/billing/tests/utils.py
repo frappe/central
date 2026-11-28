@@ -10,9 +10,12 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.pricing import set_catalog_rates
+from central.billing.revenue import usage_month
+from central.billing.revenue.usage_month_days import day_rows
 from central.billing.tests.accounting_fake import ACCOUNTING_URL, SYNC_MODE
 
 _SWEEP_DEADLOCK_RETRIES = 3
+_REFUSED_LOCK = "refused_usage_lock"
 
 
 @contextmanager
@@ -77,10 +80,13 @@ class BillingTestCase(IntegrationTestCase):
 		"Entitlement Token",
 		"Commitment",
 		"Usage Day",
+		"Usage Month",
 		"Deleted Bucket",
 		"Monthly Exchange Rate",
 		"Usage Rollup",
 		"Usage Check",
+		"Usage Report",
+		"Usage Segment",
 		"Payment Method",
 		"Tax Profile",
 		"Billing Profile",
@@ -115,7 +121,7 @@ class BillingTestCase(IntegrationTestCase):
 
 	def run(self, result=None):
 		before = {doctype: set(frappe.get_all(doctype, pluck="name")) for doctype in self._TRACKED}
-		before["Comment"] = set(_payment_method_comments())
+		before["Comment"] = set(_swept_comments())
 		gateways = self._snapshot_gateways()
 		try:
 			# Billing Settings may point at a real accounting site. A test opts into the sync
@@ -175,19 +181,78 @@ class BillingTestCase(IntegrationTestCase):
 				continue
 			if doctype == "Team":
 				removed_teams = added
-			if doctype == "Plan":
-				frappe.db.delete("Plan Includes", {"parent": ["in", added]})
+			_delete_owned_rows(doctype, added)
 			frappe.db.delete(doctype, {"name": ["in", added]})
 		if removed_teams:
 			frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", removed_teams]})
-		# Notices, refund and release notes, and the "Deleted" note of a deleted method.
-		comments = list(set(_payment_method_comments()) - before["Comment"])
+		# Notices, refund and release notes, the "Deleted" note of a deleted method, and usage month notes.
+		comments = list(set(_swept_comments()) - before["Comment"])
 		if comments:
 			frappe.db.delete("Comment", {"name": ["in", comments]})
 
 
-def _payment_method_comments() -> list[str]:
-	return frappe.get_all("Comment", filters={"reference_doctype": "Payment Method"}, pluck="name")
+@contextmanager
+def refused_lock():
+	"""Refuse the usage month lock as MariaDB does: everything written since the block began is rolled back."""
+	frappe.db.savepoint(_REFUSED_LOCK)
+
+	def refuse(*args, **kwargs):
+		frappe.db.rollback(save_point=_REFUSED_LOCK)
+		raise frappe.QueryDeadlockError("Record has changed since last read")
+
+	with patch.object(usage_month, "_locked_months", side_effect=refuse):
+		yield
+
+
+def usage_days(day=None, **filters) -> list[frappe._dict]:
+	"""The stored days of the usage months that match `filters`, one dict per day, oldest first."""
+	return day_rows(filters, day=day)
+
+
+def usage_month_of(**filters) -> frappe._dict | None:
+	"""The rated usage month that matches `filters`, with its quantity, terms and invoice."""
+	return frappe.db.get_value(
+		"Usage Month",
+		{**filters, "counted_at": ["is", "set"]},
+		[
+			"name",
+			"quantity",
+			"locked_allowance",
+			"locked_rate",
+			"rate_date",
+			"currency",
+			"invoice",
+			"cluster",
+			"dimension",
+			"billed_quantity",
+		],
+		as_dict=True,
+	)
+
+
+def _delete_owned_rows(doctype: str, names: list[str]) -> None:
+	"""Delete the child rows and files these records own, which a raw delete leaves behind."""
+	if doctype == "Plan":
+		frappe.db.delete("Plan Includes", {"parent": ["in", names]})
+	if doctype == "Usage Report":
+		_delete_attached_files(doctype, names)
+	if doctype == "Usage Month":
+		frappe.db.delete("Usage Month Correction", {"parent": ["in", names]})
+
+
+def _delete_attached_files(doctype: str, names: list[str]) -> None:
+	"""Delete the files attached to these records, with their stored bytes."""
+	files = frappe.get_all(
+		"File", filters={"attached_to_doctype": doctype, "attached_to_name": ["in", names]}, pluck="name"
+	)
+	for file in files:
+		frappe.delete_doc("File", file, ignore_permissions=True, force=True)
+
+
+def _swept_comments() -> list[str]:
+	return frappe.get_all(
+		"Comment", filters={"reference_doctype": ["in", ["Payment Method", "Usage Month"]]}, pluck="name"
+	)
 
 
 # frappe.enqueue doesn't run inline in tests unless now=True, so patch it with this to

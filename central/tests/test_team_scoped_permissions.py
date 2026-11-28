@@ -180,7 +180,14 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 		self.assertTrue(billing_record_has_permission(frappe._dict(team=mine.name)))
 
 	def test_every_team_scoped_billing_doctype_is_wired_in_both_layers(self):
-		for doctype in ("Invoice", "Payment Attempt", "Credit Ledger Entry", "Top-up Order", "Refund"):
+		for doctype in (
+			"Invoice",
+			"Payment Attempt",
+			"Credit Ledger Entry",
+			"Top-up Order",
+			"Refund",
+			"Usage Segment",
+		):
 			with self.subTest(doctype=doctype):
 				self.assertIn(
 					"central.permissions.billing_record_query_conditions",

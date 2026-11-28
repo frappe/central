@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 
-from central.billing.revenue import grove_bridge, storage_bridge, usage_checks
+from central.billing.revenue import grove_bridge, storage_bridge, usage_checks, usage_month
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.services.doctype.service.service import AI_SERVICE, STORAGE_SERVICE
 from central.services.doctype.team_service.team_service import TeamService
@@ -46,18 +46,19 @@ class TestUsageChecks(IntegrationTestCase):
 		self.addCleanup(frappe.db.delete, "Team Service", {"external_id": BUCKET})
 
 	def stored_day(self, service, subject, quantity, dimension=""):
-		frappe.get_doc(
-			{
-				"doctype": "Usage Day",
-				"service": service,
-				"meter": "bytes_stored" if service == STORAGE_SERVICE else "cost",
-				"subject": subject,
-				"dimension": dimension,
-				"day": DAY,
-				"aggregation": "Level" if service == STORAGE_SERVICE else "Sum",
-				"quantity": quantity,
-			}
-		).db_insert()
+		line = {
+			"service": service,
+			"meter": "bytes_stored" if service == STORAGE_SERVICE else "cost",
+			"subject": subject,
+			"dimension": dimension,
+			"day": DAY,
+			"aggregation": "Level" if service == STORAGE_SERVICE else "Sum",
+			"team": "team-usage-checks",
+			"subscription": f"subscription-{subject}",
+			"quantity": quantity,
+			"as_of": frappe.utils.now_datetime(),
+		}
+		usage_month.write_lines([line], None, "Pushed")
 
 	def sample(self, gb: float, day=DAY, names=None):
 		with (

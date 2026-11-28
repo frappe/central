@@ -1,12 +1,13 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import datetime
 from collections.abc import Callable
 
 import frappe
 
 from central.billing.revenue.bundled_buckets import bundled_buckets
-from central.billing.revenue.usage_ledger import utc_today, write_days
+from central.billing.revenue.usage_ledger import system_time, utc_stamp, utc_today, write_central_days
 from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
 from central.services.doctype.service.service import (
 	STORAGE_METER,
@@ -45,13 +46,13 @@ def read_bundled_page(run: str, region: str, names: list[str], day=None) -> int:
 
 
 def team_bucket_reader(names: list[str]) -> tuple[list[str], Callable[[str], dict]]:
-	"""A page's team buckets, and the reader of one into today's Usage Day row."""
+	"""A page's team buckets, and the reader of one into today's day line."""
 	meter = frappe.get_doc("Service", STORAGE_SERVICE).get_meter(STORAGE_METER)
 	return names, lambda name: _reading(name, meter)
 
 
 def bundled_bucket_reader(names: list[str]) -> tuple[list[str], Callable[[str], dict]]:
-	"""A page's backup buckets that bill today, and the reader of one into today's Usage Day row."""
+	"""A page's backup buckets that bill today, and the reader of one into today's day line."""
 	meter = frappe.get_doc("Service", STORAGE_SERVICE).get_meter(STORAGE_METER)
 	# The reading is what the bucket holds now, so it belongs to the day it is read, even for a
 	# page queued before midnight.
@@ -90,7 +91,7 @@ def _write_readings(rows: list[dict]) -> int:
 	if not is_read_by_central_locked(STORAGE_SERVICE):
 		frappe.logger("billing").debug("storage page skipped: Cargo reports its usage now")
 		return 0
-	return write_days(rows).count
+	return write_central_days(rows).count
 
 
 def pages(buckets: dict[str, list[str]]) -> dict[str, list[list[str]]]:
@@ -190,7 +191,7 @@ class RegionRead:
 def _reading(name: str, meter) -> dict:
 	bucket = frappe.get_doc("Team Service", name)
 	used = frappe.utils.flt(bucket.get_usage().get("used_bytes"))
-	return meter.get_day_row(bucket, utc_today(), used, as_of=frappe.utils.now_datetime())
+	return _read_row(bucket, meter, utc_today(), used)
 
 
 def _bundled_reading(bucket, meter, day) -> dict:
@@ -201,4 +202,11 @@ def _bundled_reading(bucket, meter, day) -> dict:
 		# The bucket was never attached, so it holds nothing.
 		usage = {}
 	used = frappe.utils.flt(usage.get("used_bytes"))
-	return meter.get_day_row(bucket, day, used, included=bucket.included, as_of=frappe.utils.now_datetime())
+	return _read_row(bucket, meter, day, used, included=bucket.included)
+
+
+def _read_row(bucket, meter, day, used: float, **values) -> dict:
+	"""A day line of what Cargo answered, read and named as evidence at one moment."""
+	now = datetime.datetime.now(datetime.UTC)
+	evidence = {"v": 1, "read": "cargo.bucket_usage", "at": utc_stamp(now), "used_bytes": int(used)}
+	return meter.get_day_row(bucket, day, used, as_of=system_time(now), evidence=evidence, **values)

@@ -8,7 +8,6 @@ from central.billing.catalog.pricing import get_catalog_rates, set_catalog_rate
 from central.billing.catalog.subscriptions import cancel_subscription, latest_segment_by_subscription
 from central.billing.catalog.taxonomy_setup import ensure_catalog_masters
 from central.billing.revenue.metering import metered_plan_for
-from central.billing.revenue.public_ipv4_usage import held_addresses, write_ipv4_days
 from central.billing.revenue.usage_ledger import utc_day_start, utc_today
 from central.services.doctype.service.service import NETWORK_SERVICE, ensure_services
 
@@ -19,12 +18,10 @@ def execute():
 	ensure_services()
 	move_ip_rates_to_plan()
 	today = utc_today()
-	# A second run on a later day keeps the first cutover day. It is set before day C is
-	# written, because no IPv4 day is written while the cutover day is unset.
+	# A second run on a later day keeps the first cutover day.
 	if not frappe.db.get_value("Service", NETWORK_SERVICE, "bill_from"):
 		frappe.db.set_value("Service", NETWORK_SERVICE, "bill_from", today)
 	close_address_subscriptions(utc_day_start(today))
-	write_ipv4_days(today, held_addresses())
 
 
 def move_ip_rates_to_plan() -> None:

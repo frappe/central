@@ -12,6 +12,7 @@
   "unit_divisor",
   "cost_currency",
   "allow_negative",
+  "evidence_keys",
   "label"
  ],
  "fields": [
@@ -24,12 +25,12 @@
    "reqd": 1
   },
   {
-   "description": "Level: the day's peak. Sum: the day's total.",
+   "description": "Level: the day's peak. Sum: the day's total. State: a count held over time, such as public IPv4 addresses, kept as Usage Segments.",
    "fieldname": "aggregation",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Aggregation",
-   "options": "Level\nSum",
+   "options": "Level\nSum\nState",
    "reqd": 1
   },
   {
@@ -71,6 +72,12 @@
    "description": "A day may be below zero, such as a correction of an earlier day's cost."
   },
   {
+   "fieldname": "evidence_keys",
+   "fieldtype": "Small Text",
+   "label": "Evidence Keys",
+   "description": "The keys each pushed line's evidence must carry, separated by commas, such as peak,peak_at. A line without them is stored and marked as having no derivation."
+  },
+  {
    "fieldname": "label",
    "fieldtype": "Data",
    "label": "Label"
@@ -79,7 +86,7 @@
  "grid_page_length": 50,
  "istable": 1,
  "links": [],
- "modified": "2026-11-18 10:00:00.000000",
+ "modified": "2026-11-27 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Service Meter",

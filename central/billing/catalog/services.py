@@ -208,5 +208,9 @@ def _current_period_usage(subject: str) -> float:
 		"Usage Rollup",
 		filters={"resource_id": subject, "period_start": [">=", month_start]},
 		pluck="quantity",
+	) + frappe.get_all(
+		"Usage Month",
+		filters={"resource_id": subject, "month": [">=", month_start], "counted_at": ["is", "set"]},
+		pluck="quantity",
 	)
 	return frappe.utils.flt(sum(frappe.utils.flt(q) for q in rows))

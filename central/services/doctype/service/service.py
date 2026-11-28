@@ -15,6 +15,9 @@ PUBLIC_IPV4_METER = "public_ipv4"
 BYTES_PER_GB = 1_000_000_000
 # Grove keeps cost to nine decimal places of a dollar.
 NANO_PER_UNIT = 1_000_000_000
+# What each pushed line's evidence must carry, so a disputed day can be worked out again.
+STORAGE_EVIDENCE_KEYS = "peak,peak_at,readings"
+AI_EVIDENCE_KEYS = "requests,records,pricings"
 
 # Seeded disabled: an operator turns a service on once it holds the secret it signs with.
 SERVICES = (
@@ -30,6 +33,7 @@ SERVICES = (
 				"resource_type": "Storage",
 				"unit": "GB",
 				"unit_divisor": BYTES_PER_GB,
+				"evidence_keys": STORAGE_EVIDENCE_KEYS,
 				"label": "Storage",
 			},
 		],
@@ -48,6 +52,7 @@ SERVICES = (
 				"unit_divisor": NANO_PER_UNIT,
 				"cost_currency": "USD",
 				"allow_negative": 1,
+				"evidence_keys": AI_EVIDENCE_KEYS,
 				"label": "AI",
 			},
 		],
@@ -61,7 +66,7 @@ SERVICES = (
 		"meters": [
 			{
 				"meter_key": PUBLIC_IPV4_METER,
-				"aggregation": "Level",
+				"aggregation": "State",
 				"resource_type": "IP",
 				"unit": "Nos",
 				"unit_divisor": 1,

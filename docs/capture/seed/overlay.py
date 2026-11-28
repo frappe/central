@@ -229,7 +229,7 @@ def _new_public_key(comment: str) -> str:
 
 
 def _servers(team: str, keys: list[str]) -> list[dict]:
-	"""Write observed state directly. A save would queue a public IPv4 usage day job and region calls."""
+	"""Write observed state directly. A save would record a public IPv4 segment and make region calls."""
 	names = frappe.get_all("Virtual Machine", {"team": team}, pluck="name", order_by="creation asc")
 	servers = []
 	for index, (name, (title, image, subdomain)) in enumerate(zip(names, FLEET, strict=True), start=1):

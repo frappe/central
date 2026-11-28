@@ -10,9 +10,15 @@ from central.billing.catalog.plan_setup import AI_PLAN, ensure_ai_plan
 from central.billing.platform import readiness
 from central.billing.revenue import exchange_rates, grove_bridge, service_reports, usage_recount
 from central.billing.revenue.invoicing.generate import generate_team_invoice
-from central.billing.revenue.usage_ledger import write_days
+from central.billing.revenue.usage_ledger import write_central_days
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import central_reads, complete_billing_profile, ensure_team
+from central.billing.tests.utils import (
+	central_reads,
+	complete_billing_profile,
+	ensure_team,
+	usage_days,
+	usage_month_of,
+)
 from central.services import ai
 from central.services.doctype.service.service import AI_SERVICE, STORAGE_SERVICE, ensure_services
 
@@ -100,15 +106,11 @@ class AIBillingCase(IntegrationTestCase):
 	def read(self, *days: str, teams=None):
 		subjects = grove_bridge.billed_subjects(AI_SERVICE, teams or list(self.services))
 		with patch.object(grove_bridge.GroveClient, "from_settings", return_value=self.grove):
-			write_days(grove_bridge.read_days(subjects, {team: list(days) for team in subjects}).rows)
+			write_central_days(grove_bridge.read_days(subjects, {team: list(days) for team in subjects}).rows)
 
 	def days(self, team: str, **filters):
-		return frappe.get_all(
-			"Usage Day",
-			filters={"team": team, **filters},
-			fields=["day", "dimension", "quantity", "unit", "source_amount", "written_off", "invoice"],
-			order_by="day asc, dimension asc",
-		)
+		days = usage_days(team=team)
+		return [day for day in days if all(day[key] == value for key, value in filters.items())]
 
 	def invoice_lines(self, team: str, period=JUNE):
 		invoice = generate_team_invoice(team, *period)
@@ -243,9 +245,7 @@ class TestAIBilling(AIBillingCase):
 			generate_team_invoice(TEAM_INR, *JUNE)
 
 	def inr_rollup_rate(self):
-		rollup = frappe.get_all(
-			"Usage Rollup", filters={"team": TEAM_INR}, fields=["locked_rate", "rate_date"]
-		)[0]
+		rollup = usage_month_of(team=TEAM_INR)
 		return (rollup.locked_rate, str(rollup.rate_date))
 
 	def test_usage_before_billing_starts_is_kept_written_off(self):
@@ -277,8 +277,8 @@ class TestAIBilling(AIBillingCase):
 		with patch("frappe.enqueue", side_effect=run_inline):
 			usage_recount.recount_changed()
 		rollups = frappe.get_all(
-			"Usage Rollup",
-			filters={"team": TEAM_USD, "resource_type": "AI Usage"},
+			"Usage Month",
+			filters={"team": TEAM_USD, "resource_type": "AI Usage", "counted_at": ["is", "set"]},
 			fields=["dimension", "quantity", "locked_rate", "cluster"],
 			order_by="dimension asc",
 		)

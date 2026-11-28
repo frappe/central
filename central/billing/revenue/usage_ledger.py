@@ -2,22 +2,20 @@
 # For license information, please see license.txt
 
 import datetime
-from dataclasses import dataclass, field
 
 import frappe
-from frappe.query_builder import Case, Criterion
+from frappe import _
 
-DOCTYPE = "Usage Day"
-LEVEL = "Level"
-KEPT_MONTHS = 13
+from central.billing.revenue import usage_month, usage_month_days, usage_reports
+from central.billing.revenue.usage_month import LEVEL, Written, is_newer
+from central.billing.revenue.usage_month_rows import DOCTYPE, month_of
+
 # A UTC day is estimated only after the day has ended and late lines have had 48 hours.
 ESTIMATE_AFTER_DAYS = 3
 ESTIMATE_LOOKBACK_DAYS = 7
-DELETE_PAGE = 5000
-
-_META_FIELDS = ("name", "creation", "modified", "owner", "modified_by")
-# A line's own values, in the order they are inserted.
-_DAY_FIELDS = (
+READ_PAGE = 1000
+# What a line copied as an estimate carries from the reading it copies.
+_LINE_FIELDS = (
 	"service",
 	"meter",
 	"subject",
@@ -35,74 +33,59 @@ _DAY_FIELDS = (
 	"as_of",
 	"written_off",
 )
-_INSERT_FIELDS = (*_META_FIELDS, *_DAY_FIELDS, "landed_at", "estimated")
-# A new day without a bundle stores none.
-_INSERT_DEFAULTS = {"included": 0.0}
 
 
-@dataclass
-class Written:
-	"""How many lines a write stored, and the lines another worker stored first."""
-
-	count: int = 0
-	conflicts: list[dict] = field(default_factory=list)
-
-
-def write_days(rows: list[dict]) -> Written:
-	"""Store each line as its subject's row for its UTC day."""
-	# An existing day takes a line only when it is a real reading over an estimate, a higher Level
-	# peak, a Level day's new bundle or a newer Sum total. A billed day never changes.
-	rows = _merged(rows)
-	if not rows:
-		return Written()
-	now = frappe.utils.now_datetime()
-	existing = _existing_days(rows)
-	fresh = [row for row in rows if _key(row) not in existing]
-	conflicts = _insert(fresh, now)
-	changed = _changed(rows, existing)
-	for name, row in changed:
-		_update(name, row, now)
-	return Written(len(fresh) - len(conflicts) + len(changed), conflicts)
+def write_days(rows: list[dict], report: str | None, source: str) -> Written:
+	"""Store each line in its subject's month row, on the slot of its UTC day, naming its report."""
+	# An unbilled day takes a line only when it is a real reading over an estimate, a higher Level
+	# peak, a Level day's new bundle or a newer Sum total. A billed day is kept as a correction.
+	return usage_month.write_lines(_merged(rows), report, source)
 
 
-def is_newer(current, row: dict) -> bool:
-	"""Whether `row` should replace the stored day `current`."""
-	if current.get("invoice") or row.get("estimated"):
-		return False
-	if current.get("estimated"):
-		return True
-	if current.get("aggregation") == LEVEL:
-		return _is_higher(row, current) or _is_rebundled(row, current)
-	return frappe.utils.get_datetime(row["as_of"]) > frappe.utils.get_datetime(current.get("as_of"))
+class CentralLines:
+	"""Lines Central reads or estimates itself, kept as one report per service."""
+
+	def __init__(self, kind: str):
+		self.kind = kind
+		self.names: dict[str, str] = {}
+		self.lines: dict[str, list[dict]] = {}
+		self.written: dict[str, int] = {}
+
+	def write(self, rows: list[dict]) -> Written:
+		"""Write the lines of each service under that service's report. Any line not stored fails the job."""
+		total = Written()
+		by_service: dict[str, list[dict]] = {}
+		for row in rows:
+			by_service.setdefault(row["service"], []).append(row)
+		for service, lines in by_service.items():
+			# The report is kept after its lines, so it is kept only when a line set a value.
+			name = self.names.setdefault(service, frappe.generate_hash(length=10))
+			written = write_days(lines, name, self.kind)
+			if written.conflicts:
+				# A refused lock rolls back the whole transaction, with every batch written before
+				# it, so the job fails and reads again rather than keep a report of lines not stored.
+				raise frappe.QueryDeadlockError(_("Usage days changed while they were written."))
+			self.lines.setdefault(service, []).extend(lines)
+			self.written[service] = self.written.get(service, 0) + written.count + written.corrections
+			total.count += written.count
+			total.corrections += written.corrections
+		return total
+
+	def keep(self) -> None:
+		"""Keep a report for each service whose lines set a value."""
+		for service, lines in self.lines.items():
+			if not self.written.get(service):
+				continue
+			name = usage_reports.record_lines(service, self.kind, lines, name=self.names[service])
+			usage_reports.set_counts(name, self.written[service], 0)
 
 
-def _is_higher(row: dict, current) -> bool:
-	return frappe.utils.flt(row["quantity"]) > frappe.utils.flt(current.get("quantity"))
-
-
-def _is_rebundled(row: dict, current) -> bool:
-	"""Whether a reading no older than the day's last one says the plan's bundle changed, as a resize does."""
-	if "included" not in row:
-		return False
-	if frappe.utils.flt(row["included"]) == frappe.utils.flt(current.get("included")):
-		return False
-	return _is_as_new(row, current)
-
-
-def _is_as_new(row: dict, current) -> bool:
-	"""Whether `row` was read no earlier than the stored day's last reading."""
-	if not current.get("as_of"):
-		return True
-	return frappe.utils.get_datetime(row["as_of"]) >= frappe.utils.get_datetime(current.get("as_of"))
-
-
-def _changed(rows: list[dict], existing: dict) -> list[tuple]:
-	"""(stored day, line) for each line that should replace its stored day."""
-	return [
-		(existing[_key(row)].name, row)
-		for row in rows
-		if _key(row) in existing and is_newer(existing[_key(row)], row)
-	]
+def write_central_days(rows: list[dict], kind: str = usage_reports.READ_BY_CENTRAL) -> Written:
+	"""Write lines Central read itself and keep them as its own report."""
+	lines = CentralLines(kind)
+	written = lines.write(rows)
+	lines.keep()
+	return written
 
 
 def _merged(rows: list[dict]) -> list[dict]:
@@ -128,46 +111,29 @@ def _merged(rows: list[dict]) -> list[dict]:
 	return list(kept.values())
 
 
-def stamp_days(names: list[str], invoice: str) -> None:
-	"""Mark these unbilled days as billed by the invoice."""
-	if not names:
-		return
-	day = frappe.qb.DocType(DOCTYPE)
-	frappe.qb.update(day).set(day.invoice, invoice).where(day.name.isin(names) & day.invoice.isnull()).run()
-
-
-def release_days(invoice: str) -> None:
-	"""Unmark the days a cancelled invoice billed."""
-	day = frappe.qb.DocType(DOCTYPE)
-	frappe.qb.update(day).set(day.invoice, None).where(day.invoice == invoice).run()
-
-
 def fill_missing_days(today=None) -> int:
 	"""Daily: give a Level subject that went silent its last reading, marked estimated."""
 	last = _utc_date(today) - datetime.timedelta(days=ESTIMATE_AFTER_DAYS)
+	estimates = CentralLines(usage_reports.ESTIMATED)
 	written = 0
 	for offset in range(ESTIMATE_LOOKBACK_DAYS, -1, -1):
-		written += _estimate_day(last - datetime.timedelta(days=offset))
+		written += _estimate_day(last - datetime.timedelta(days=offset), estimates)
+	estimates.keep()
 	return written
-
-
-def prune_old_days(today=None) -> int:
-	"""Daily: delete billed or written-off days older than the kept months."""
-	# The monthly rollup keeps a billed day's total; a written-off day was never going to bill.
-	cutoff = frappe.utils.add_months(_utc_date(today).replace(day=1), -KEPT_MONTHS)
-	table = frappe.qb.DocType(DOCTYPE)
-	done = table.invoice.isnotnull() | (table.written_off == 1)
-	deleted = 0
-	while names := (
-		frappe.qb.from_(table).select(table.name).where((table.day < cutoff) & done).limit(DELETE_PAGE)
-	).run(pluck=True):
-		frappe.qb.from_(table).delete().where(table.name.isin(names)).run()
-		deleted += len(names)
-	return deleted
 
 
 def utc_today() -> datetime.date:
 	return datetime.datetime.now(datetime.UTC).date()
+
+
+def utc_stamp(moment: datetime.datetime) -> str:
+	"""A UTC moment as an RFC 3339 string ending in Z, to the second."""
+	return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def system_time(moment: datetime.datetime) -> datetime.datetime:
+	"""A UTC moment in naive system time, as Frappe stores it."""
+	return frappe.utils.convert_utc_to_system_timezone(moment).replace(tzinfo=None)
 
 
 def _utc_date(today) -> datetime.date:
@@ -177,7 +143,7 @@ def _utc_date(today) -> datetime.date:
 def utc_day_start(day) -> datetime.datetime:
 	"""The moment a UTC day begins, in system time."""
 	start = datetime.datetime.combine(frappe.utils.getdate(day), datetime.time(), datetime.UTC)
-	return frappe.utils.convert_utc_to_system_timezone(start).replace(tzinfo=None)
+	return system_time(start)
 
 
 def utc_day_window(day) -> tuple[datetime.datetime, datetime.datetime]:
@@ -186,7 +152,7 @@ def utc_day_window(day) -> tuple[datetime.datetime, datetime.datetime]:
 	return utc_day_start(day), utc_day_start(day + datetime.timedelta(days=1))
 
 
-def _estimate_day(day: datetime.date) -> int:
+def _estimate_day(day: datetime.date, estimates: CentralLines) -> int:
 	"""Copy each Level subject's last recent reading onto `day` when the subject is billed on it."""
 	# Not only yesterday's: a server paused until `day` has its last reading before the pause.
 	previous = _last_readings(day)
@@ -198,34 +164,54 @@ def _estimate_day(day: datetime.date) -> int:
 		for row in previous
 		if (row.service, row.subject) in live
 	]
-	return write_days(rows).count
+	return estimates.write(rows).count
 
 
 def _last_readings(day: datetime.date) -> list:
-	"""The latest Level row of each subject, meter and dimension in the lookback days before `day`."""
-	rows = frappe.get_all(
-		DOCTYPE,
-		filters={
-			"day": [
-				"between",
-				[day - datetime.timedelta(days=ESTIMATE_LOOKBACK_DAYS), day - datetime.timedelta(days=1)],
-			],
-			"aggregation": LEVEL,
-		},
-		fields=[*_DAY_FIELDS, "estimated"],
-		order_by="day desc",
-	)
+	"""The latest Level day of each subject, meter and dimension in the lookback days before `day`."""
+	first = day - datetime.timedelta(days=ESTIMATE_LOOKBACK_DAYS)
+	last = day - datetime.timedelta(days=1)
 	latest: dict = {}
-	for row in rows:
-		latest.setdefault((row.service, row.subject, row.meter, row.dimension or ""), row)
+	for row in _level_days({month_of(first), month_of(last)}):
+		if not first <= row.day <= last:
+			continue
+		key = (row.service, row.subject, row.meter, row.dimension)
+		if key not in latest or latest[key].day < row.day:
+			latest[key] = row
 	return list(latest.values())
 
 
+def _level_days(months: set) -> list:
+	"""Every filled day of the Level month rows of `months`, read a page at a time."""
+	days, start = [], 0
+	while page := frappe.get_all(
+		DOCTYPE,
+		filters={"month": ["in", list(months)], "aggregation": LEVEL, "filled": ["!=", 0]},
+		pluck="name",
+		order_by="name asc",
+		limit_start=start,
+		limit_page_length=READ_PAGE,
+	):
+		days += usage_month_days.day_rows({"name": ["in", page]})
+		start += READ_PAGE
+	return days
+
+
 def _estimated(row, day: datetime.date, subject) -> dict:
-	"""A subject's last reading as `day`'s estimate."""
+	"""A subject's last reading as `day`'s estimate, naming the day it copied."""
 	# A server resized since its last reading has that day's bundle, not the reading's.
+	line = {name: row.get(name) for name in _LINE_FIELDS}
 	included = subject.get("included", row.included)
-	return {**row, "day": day, "included": included, "estimated": 1, "as_of": None, "landed_at": None}
+	evidence = {"v": 1, "estimate": {"copied_day": str(row.day), "report": row.report}}
+	return {
+		**line,
+		"day": day,
+		"included": included,
+		"estimated": 1,
+		"as_of": None,
+		"copied_day": row.day,
+		"evidence": evidence,
+	}
 
 
 def _live_subjects(services: set, day: datetime.date) -> dict:
@@ -256,80 +242,3 @@ def _bill_from(services: set) -> dict:
 
 def _is_before_billing(row: dict, bill_from) -> int:
 	return int(bool(bill_from) and frappe.utils.getdate(row["day"]) < frappe.utils.getdate(bill_from))
-
-
-def _existing_days(rows: list[dict]) -> dict:
-	"""The stored days for these lines, by key. One query for the whole batch."""
-	day = frappe.qb.DocType(DOCTYPE)
-	return _days_where(
-		Criterion.all(
-			[
-				day.service.isin(list({row["service"] for row in rows})),
-				day.subject.isin(list({row["subject"] for row in rows})),
-				day.day.isin(list({frappe.utils.getdate(row["day"]) for row in rows})),
-			]
-		)
-	)
-
-
-def _days_where(condition) -> dict:
-	day = frappe.qb.DocType(DOCTYPE)
-	found = (
-		frappe.qb.from_(day)
-		.select(day.name, day.service, day.subject, day.meter, day.dimension, day.day, day.aggregation)
-		.select(day.quantity, day.included, day.as_of, day.estimated, day.invoice)
-		.where(condition)
-	).run(as_dict=True)
-	return {_key(row): row for row in found}
-
-
-def _insert(rows: list[dict], now) -> list[dict]:
-	"""Insert these new days, and return the lines whose day another worker inserted first."""
-	if not rows:
-		return []
-	user = frappe.session.user
-	names = [frappe.generate_hash(length=12) for _row in rows]
-	values = [
-		(
-			name,
-			now,
-			now,
-			user,
-			user,
-			*(row.get(field, _INSERT_DEFAULTS.get(field)) for field in _DAY_FIELDS),
-			now,
-			frappe.utils.cint(row.get("estimated")),
-		)
-		for name, row in zip(names, rows, strict=True)
-	]
-	frappe.db.bulk_insert(DOCTYPE, list(_INSERT_FIELDS), values, ignore_duplicates=True)
-	# A day another worker inserted during this transaction is left alone: under snapshot isolation
-	# any lock on that row is refused. This transaction sees its own inserts, so a missing name lost.
-	stored = set(frappe.get_all(DOCTYPE, filters={"name": ["in", names]}, pluck="name"))
-	return [row for name, row in zip(names, rows, strict=True) if name not in stored]
-
-
-def _update(name: str, row: dict, now) -> None:
-	"""Apply a newer line. The guard is in the WHERE, so a concurrent writer can never lower a day."""
-	day = frappe.qb.DocType(DOCTYPE)
-	# An older reading may still raise the peak, but never brings back the bundle it was read with.
-	as_new = (day.estimated == 1) | day.as_of.isnull() | (day.as_of <= row["as_of"])
-	# A line without a bundle compares and writes the stored one, so it never changes it.
-	included = row.get("included", day.included)
-	if row["aggregation"] == LEVEL:
-		raises = (day.estimated == 1) | (day.quantity < row["quantity"])
-		newer_than_stored = raises | ((day.included != included) & as_new)
-	else:
-		raises = newer_than_stored = (day.estimated == 1) | (day.as_of < row["as_of"])
-	(
-		frappe.qb.update(day)
-		# MariaDB assigns left to right, so the columns the CASEs read are set after them.
-		.set(day.source_amount, Case().when(raises, row.get("source_amount")).else_(day.source_amount))
-		.set(day.quantity, Case().when(raises, row["quantity"]).else_(day.quantity))
-		.set(day.included, Case().when(as_new, included).else_(day.included))
-		.set(day.as_of, Case().when(as_new, row.get("as_of")).else_(day.as_of))
-		.set(day.estimated, 0)
-		.set(day.landed_at, now)
-		.set(day.modified, now)
-		.where((day.name == name) & day.invoice.isnull() & newer_than_stored)
-	).run()
