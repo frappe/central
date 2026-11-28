@@ -5185,6 +5185,296 @@
    "sort_order": 80,
    "title": "Earned per month from paying servers",
    "workbook": "billing"
+  },
+  "billing-summary-cash-collected": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "cash_collected",
+      "data_type": "Decimal",
+      "id": "Cash collected",
+      "measure_name": "Cash collected"
+     }
+    ],
+    "number_formats": {
+     "Cash collected": {
+      "decimals": 0,
+      "prefix": "₹"
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Card, UPI and bought credit paid on last month's invoices, GST included.",
+   "name": "billing-summary-cash-collected",
+   "query": "billing-summary-query",
+   "title": "Cash collected",
+   "workbook": "billing",
+   "sort_order": 117
+  },
+  "billing-summary-paid-by-free-credit": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": true
+     }
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "paid_by_free_credit",
+      "data_type": "Decimal",
+      "id": "Paid by free credit",
+      "measure_name": "Paid by free credit"
+     }
+    ],
+    "number_formats": {
+     "Paid by free credit": {
+      "decimals": 0,
+      "prefix": "₹"
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Promotional credit spent on last month's invoices. No cash comes in for it.",
+   "name": "billing-summary-paid-by-free-credit",
+   "query": "billing-summary-query",
+   "title": "Paid by free credit",
+   "workbook": "billing",
+   "sort_order": 118
+  },
+  "billing-summary-teams-with-a-payment-method": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "teams_with_method",
+      "data_type": "Decimal",
+      "id": "With a payment method",
+      "measure_name": "With a payment method"
+     }
+    ],
+    "number_formats": {
+     "With a payment method": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Customers with an active card or UPI mandate.",
+   "name": "billing-summary-teams-with-a-payment-method",
+   "query": "billing-summary-query",
+   "title": "With a payment method",
+   "workbook": "billing",
+   "sort_order": 119
+  },
+  "billing-summary-free-credit-left": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "free_credit_left",
+      "data_type": "Decimal",
+      "id": "Free credit left",
+      "measure_name": "Free credit left"
+     }
+    ],
+    "number_formats": {
+     "Free credit left": {
+      "decimals": 0,
+      "prefix": "₹"
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Promotional credit still in customers' wallets.",
+   "name": "billing-summary-free-credit-left",
+   "query": "billing-summary-query",
+   "title": "Free credit left",
+   "workbook": "billing",
+   "sort_order": 120
+  },
+  "billing-summary-free-credit-expiring": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {
+      "negative_is_better": true
+     }
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "free_credit_expiring",
+      "data_type": "Decimal",
+      "id": "Expiring in 30 days",
+      "measure_name": "Expiring in 30 days"
+     }
+    ],
+    "number_formats": {
+     "Expiring in 30 days": {
+      "decimals": 0,
+      "prefix": "₹"
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Free credit that expires in the next 30 days, at most.",
+   "name": "billing-summary-free-credit-expiring",
+   "query": "billing-summary-query",
+   "title": "Expiring in 30 days",
+   "workbook": "billing",
+   "sort_order": 121
+  },
+  "billing-summary-bought-credit-left": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "bought_credit_left",
+      "data_type": "Decimal",
+      "id": "Bought credit left",
+      "measure_name": "Bought credit left"
+     }
+    ],
+    "number_formats": {
+     "Bought credit left": {
+      "decimals": 0,
+      "prefix": "₹"
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Credit customers paid for and have not spent.",
+   "name": "billing-summary-bought-credit-left",
+   "query": "billing-summary-query",
+   "title": "Bought credit left",
+   "workbook": "billing",
+   "sort_order": 122
+  },
+  "billing-summary-teams-on-free-credit": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "teams_on_free_credit",
+      "data_type": "Decimal",
+      "id": "On free credit",
+      "measure_name": "On free credit"
+     }
+    ],
+    "number_formats": {
+     "On free credit": {
+      "decimals": 0
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "Customers that still hold free credit.",
+   "name": "billing-summary-teams-on-free-credit",
+   "query": "billing-summary-query",
+   "title": "On free credit",
+   "workbook": "billing",
+   "sort_order": 123
+  },
+  "billing-summary-waived-for-our-own-teams": {
+   "chart_type": "Number",
+   "config": {
+    "filters": {
+     "filters": [],
+     "logical_operator": "And"
+    },
+    "number_column_options": [
+     {}
+    ],
+    "number_columns": [
+     {
+      "aggregation": "sum",
+      "column_name": "waived_internal",
+      "data_type": "Decimal",
+      "id": "Our own teams' usage",
+      "measure_name": "Our own teams' usage"
+     }
+    ],
+    "number_formats": {
+     "Our own teams' usage": {
+      "decimals": 0,
+      "prefix": "₹"
+     }
+    },
+    "sparkline": false
+   },
+   "description": null,
+   "folder": null,
+   "info": "What our own teams used last month. Waived, never collected.",
+   "name": "billing-summary-waived-for-our-own-teams",
+   "query": "billing-summary-query",
+   "title": "Our own teams' usage",
+   "workbook": "billing",
+   "sort_order": 124
   }
  },
  "creation": "2026-10-21 00:00:00.000000",
@@ -6689,6 +6979,404 @@
     }
    ],
    "workbook": "billing"
+  },
+  "billing-billing-summary": {
+   "items": [
+    {
+     "type": "text",
+     "text": "<h3><a href=\"/insights/dashboards/billing-p-l\">Money →</a></h3>",
+     "layout": {
+      "i": "section-0",
+      "x": 0,
+      "y": 0,
+      "w": 20,
+      "h": 2
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-mrr",
+     "layout": {
+      "i": "section-0-0",
+      "x": 0,
+      "y": 2,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-revenue-last-month",
+     "layout": {
+      "i": "section-0-1",
+      "x": 5,
+      "y": 2,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-summary-cash-collected",
+     "layout": {
+      "i": "section-0-2",
+      "x": 10,
+      "y": 2,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-summary-paid-by-free-credit",
+     "layout": {
+      "i": "section-0-3",
+      "x": 15,
+      "y": 2,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "text",
+     "text": "<h3><a href=\"/insights/dashboards/billing-billing-day\">Billing run →</a></h3>",
+     "layout": {
+      "i": "section-1",
+      "x": 0,
+      "y": 7,
+      "w": 20,
+      "h": 2
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-coverage-invoiced",
+     "layout": {
+      "i": "section-1-0",
+      "x": 0,
+      "y": 9,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-paid-by-credit-only",
+     "layout": {
+      "i": "section-1-1",
+      "x": 5,
+      "y": 9,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-held-for-billing-details",
+     "layout": {
+      "i": "section-1-2",
+      "x": 10,
+      "y": 9,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-run-errors",
+     "layout": {
+      "i": "section-1-3",
+      "x": 15,
+      "y": 9,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "text",
+     "text": "<h3><a href=\"/insights/dashboards/billing-billing-health\">Collections →</a></h3>",
+     "layout": {
+      "i": "section-2",
+      "x": 0,
+      "y": 14,
+      "w": 20,
+      "h": 2
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-still-to-collect-inr",
+     "layout": {
+      "i": "section-2-0",
+      "x": 0,
+      "y": 16,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-still-to-collect-usd",
+     "layout": {
+      "i": "section-2-1",
+      "x": 5,
+      "y": 16,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-overdue-invoices",
+     "layout": {
+      "i": "section-2-2",
+      "x": 10,
+      "y": 16,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-payment-success-30-days",
+     "layout": {
+      "i": "section-2-3",
+      "x": 15,
+      "y": 16,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "text",
+     "text": "<h3><a href=\"/insights/dashboards/billing-first-payment\">Customers →</a></h3>",
+     "layout": {
+      "i": "section-3",
+      "x": 0,
+      "y": 21,
+      "w": 20,
+      "h": 2
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-customers-who-pay",
+     "layout": {
+      "i": "section-3-0",
+      "x": 0,
+      "y": 23,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-summary-teams-with-a-payment-method",
+     "layout": {
+      "i": "section-3-1",
+      "x": 5,
+      "y": 23,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-converted-at-first-payment",
+     "layout": {
+      "i": "section-3-2",
+      "x": 10,
+      "y": 23,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-lost-at-first-payment",
+     "layout": {
+      "i": "section-3-3",
+      "x": 15,
+      "y": 23,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "text",
+     "text": "<h3><a href=\"/desk/query-report/Team%20Credit%20Balance\">Credit →</a></h3>",
+     "layout": {
+      "i": "section-4",
+      "x": 0,
+      "y": 28,
+      "w": 20,
+      "h": 2
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-summary-free-credit-left",
+     "layout": {
+      "i": "section-4-0",
+      "x": 0,
+      "y": 30,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-summary-free-credit-expiring",
+     "layout": {
+      "i": "section-4-1",
+      "x": 5,
+      "y": 30,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-summary-bought-credit-left",
+     "layout": {
+      "i": "section-4-2",
+      "x": 10,
+      "y": 30,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-summary-teams-on-free-credit",
+     "layout": {
+      "i": "section-4-3",
+      "x": 15,
+      "y": 30,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "text",
+     "text": "<h3><a href=\"/insights/dashboards/billing-unit-economics\">Margins →</a></h3>",
+     "layout": {
+      "i": "section-5",
+      "x": 0,
+      "y": 35,
+      "w": 20,
+      "h": 2
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-profit-or-loss-per-month",
+     "layout": {
+      "i": "section-5-0",
+      "x": 0,
+      "y": 37,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-spent-on-servers-that-pay-nothing",
+     "layout": {
+      "i": "section-5-1",
+      "x": 5,
+      "y": 37,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-idle-bare-metal-per-month",
+     "layout": {
+      "i": "section-5-2",
+      "x": 10,
+      "y": 37,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-summary-waived-for-our-own-teams",
+     "layout": {
+      "i": "section-5-3",
+      "x": 15,
+      "y": 37,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "text",
+     "text": "<h3><a href=\"/desk/query-report/Billing%20Invariant%20Violations\">Health →</a></h3>",
+     "layout": {
+      "i": "section-6",
+      "x": 0,
+      "y": 42,
+      "w": 20,
+      "h": 2
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-stuck-webhooks",
+     "layout": {
+      "i": "section-6-0",
+      "x": 0,
+      "y": 44,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-accounting-sync-failures",
+     "layout": {
+      "i": "section-6-1",
+      "x": 5,
+      "y": 44,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-invoices-on-hold",
+     "layout": {
+      "i": "section-6-2",
+      "x": 10,
+      "y": 44,
+      "w": 5,
+      "h": 5
+     }
+    },
+    {
+     "type": "chart",
+     "chart": "billing-past-due-subscriptions",
+     "layout": {
+      "i": "section-6-3",
+      "x": 15,
+      "y": 44,
+      "w": 5,
+      "h": 5
+     }
+    }
+   ],
+   "name": "billing-billing-summary",
+   "title": "Billing Summary",
+   "vertical_compact_layout": 1,
+   "visible_to_roles": [
+    {
+     "role": "System Manager"
+    }
+   ],
+   "workbook": "billing"
   }
  },
  "data_backup": null,
@@ -6697,7 +7385,7 @@
  "folders": [],
  "idx": 0,
  "is_standard": 1,
- "modified": "2026-11-28 13:00:00.000000",
+ "modified": "2026-11-28 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "billing",
@@ -7501,6 +8189,24 @@
    ],
    "sort_order": 26,
    "title": "Yield by region",
+   "use_live_connection": 1,
+   "workbook": "billing"
+  },
+  "billing-summary-query": {
+   "folder": null,
+   "is_builder_query": 0,
+   "is_native_query": 1,
+   "is_script_query": 0,
+   "name": "billing-summary-query",
+   "operations": [
+    {
+     "data_source": "Site DB",
+     "raw_sql": "WITH period AS (SELECT LAST_DAY(CURDATE() - INTERVAL 1 MONTH) AS period_end),\nrate AS (\n  SELECT COALESCE(NULLIF((SELECT CAST(value AS DECIMAL(12, 4)) FROM `tabSingles` WHERE doctype = 'Billing Settings' AND field = 'reporting_usd_to_inr'), 0), (SELECT r.rate FROM `tabMonthly Exchange Rate` r WHERE r.from_currency = 'USD' AND r.to_currency = 'INR' AND r.month <= CURDATE() ORDER BY r.month DESC LIMIT 1), (SELECT r.rate FROM `tabMonthly Exchange Rate` r WHERE r.from_currency = 'USD' AND r.to_currency = 'INR' ORDER BY r.month LIMIT 1), 0) AS usd\n),\ninternal AS (SELECT team FROM `tabBilling Profile` WHERE is_internal = 1),\ninvoices AS (\n  SELECT i.team, i.status, i.total, i.amount_paid, i.credit_applied, i.advance_applied,\n    CASE i.currency WHEN 'INR' THEN 1 WHEN 'USD' THEN r.usd ELSE 0 END AS fx\n  FROM `tabInvoice` i, period p, rate r\n  WHERE i.period_end = p.period_end AND i.invoice_type = 'Billable' AND i.status != 'Cancelled'\n),\npaying AS (\n  SELECT * FROM invoices WHERE status != 'Waived' AND team NOT IN (SELECT team FROM internal)\n),\nwallets AS (\n  SELECT w.team, w.balance,\n    CASE w.currency WHEN 'INR' THEN 1 WHEN 'USD' THEN r.usd ELSE 0 END AS fx,\n    COALESCE((SELECT SUM(e.amount) FROM `tabCredit Ledger Entry` e\n      WHERE e.team = w.team AND e.currency = w.currency AND e.entry_type = 'Credit' AND e.paid_in = 1), 0) AS bought,\n    COALESCE((SELECT SUM(e.amount) FROM `tabCredit Ledger Entry` e\n      WHERE e.team = w.team AND e.currency = w.currency AND e.entry_type = 'Credit' AND e.paid_in = 0\n        AND e.expires_on BETWEEN CURDATE() AND CURDATE() + INTERVAL 30 DAY), 0) AS expiring\n  FROM `tabCredit Wallet` w, rate r\n  WHERE w.balance > 0 AND w.team NOT IN (SELECT team FROM internal)\n),\n-- Free credit expires and bought credit does not, and a draw spends the soonest expiry\n-- first, so what is left of the wallet is bought credit before it is free credit.\ncredit AS (\n  SELECT team, fx, expiring, LEAST(balance, bought) AS bought_left, balance - LEAST(balance, bought) AS free_left\n  FROM wallets\n)\nSELECT\n  (SELECT COALESCE(SUM((amount_paid + advance_applied) * fx), 0) FROM paying) AS cash_collected,\n  (SELECT COALESCE(SUM((credit_applied - advance_applied) * fx), 0) FROM paying) AS paid_by_free_credit,\n  (SELECT COALESCE(SUM(total * fx), 0) FROM invoices WHERE status = 'Waived') AS waived_internal,\n  (SELECT COUNT(DISTINCT pm.team) FROM `tabPayment Method` pm\n    WHERE pm.status = 'Active' AND pm.team NOT IN (SELECT team FROM internal)) AS teams_with_method,\n  (SELECT COALESCE(SUM(free_left * fx), 0) FROM credit) AS free_credit_left,\n  (SELECT COALESCE(SUM(bought_left * fx), 0) FROM credit) AS bought_credit_left,\n  (SELECT COALESCE(SUM(LEAST(free_left, expiring) * fx), 0) FROM credit) AS free_credit_expiring,\n  (SELECT COUNT(*) FROM credit WHERE free_left > 0) AS teams_on_free_credit\n",
+     "type": "sql"
+    }
+   ],
+   "sort_order": 34,
+   "title": "Billing summary",
    "use_live_connection": 1,
    "workbook": "billing"
   }
