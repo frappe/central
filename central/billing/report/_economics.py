@@ -4,9 +4,9 @@
 import frappe
 from frappe.utils import add_months, flt, get_first_day, get_last_day, getdate
 
-from central.billing import settings
 from central.billing.report._inventory import cost_per_vcpu, region_capacity
 from central.billing.report._revenue import is_revenue
+from central.billing.revenue.exchange_rates import report_usd_to_inr
 from central.billing.revenue.tax import internal_teams
 
 VM_SERVICE = "VM Plans"
@@ -18,11 +18,11 @@ def billing_month(filters: dict) -> tuple:
 	return get_first_day(month), get_last_day(month)
 
 
-def to_inr(amount: float, currency: str | None) -> float | None:
-	"""`amount` in INR, or None for USD when Billing Settings gives no report rate."""
+def to_inr(amount: float, currency: str | None, on=None) -> float | None:
+	"""`amount` in INR at the report rate of the month of `on`, or None when there is no rate."""
 	if not amount or currency in (None, "INR"):
 		return flt(amount)
-	rate = settings.reporting_usd_to_inr() if currency == "USD" else 0
+	rate = report_usd_to_inr(on) if currency == "USD" else 0
 	return flt(amount) * rate if rate else None
 
 
@@ -84,7 +84,7 @@ class BilledMonth:
 		for row in rows:
 			row.service = row.category or (VM_SERVICE if row.resource_type == "bundle" else row.resource_type)
 			revenue = is_revenue(row.status, row.team, internal)
-			row.revenue_inr = to_inr(row.amount, row.currency) if revenue else 0.0
+			row.revenue_inr = to_inr(row.amount, row.currency, self.start) if revenue else 0.0
 			row.cost_inr = self._cost(row, days_in_month)
 		return rows
 
