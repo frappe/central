@@ -14,6 +14,8 @@ This page lists every billing report and Insights dashboard, and the question ea
 - Money is shown per currency. A report never adds INR and USD in one column, total or card.
 - Bare metal cost is in INR. USD revenue counts toward a margin at the rate the rate API gave for its month, kept in Monthly Exchange Rate. The monthly billing run keeps the closed month's rate. A month with no kept rate uses the nearest earlier month, or the earliest kept month. Billing Settings > Reports > USD to INR Rate for Reports overrides it when it is above 0, and a report filter can give another rate. With no rate at all, USD revenue is left out.
 - A month filter reads one billed month. Empty reads the last closed month.
+- Billing Summary shows money in INR. USD counts at the rate in Billing Settings > Reports > USD to INR Rate for Reports, or at the month's rate from the rate API when that is 0.
+- Free credit is credit with `paid_in` off: welcome, beta and other promotional grants. Free credit that an invoice spent is `credit_applied` less `advance_applied`. A wallet spends credit that expires first, and only free credit expires, so the part of a balance up to the credit the team bought is bought credit and the rest is free credit.
 
 ## Data the reports need
 
@@ -30,8 +32,11 @@ Used CPU, memory, disk and bandwidth come from the region's telemetry. Only serv
 
 ## Dashboards
 
+Start at **Billing Summary**. Each section title opens the dashboard or report behind it, and a click on a tile shows the rows behind its number.
+
 | Dashboard | Use it to |
 |---|---|
+| Billing Summary | See all of billing on one page: money, billing run, collections, customers, credit, margins and health. It also shows cash collected against what free credit paid, and free and bought credit left. |
 | Cloud Overview | See the whole business on one page: MRR, revenue, gross profit, growth, customers who pay, servers that pay nothing, machines, capacity used and idle cost. |
 | Billing Health | See the state of billing: run rate, money still to collect, payment success, failed and stuck payments, stuck webhooks, accounting sync failures, held invoices and past due subscriptions. |
 | Billing Day | Watch the monthly run for the month that just closed. The top section explains the invoice count: teams by month end, active subscriptions, teams with a subscription, and each team counted once as Invoiced, Waiting, Needs Action, Waived (Internal), Below Minimum, Nothing to Bill or No Subscription. Below it: invoices drafted and settled, how each settled, failed invoices, stall signal, run time, time to sync, and run history. |
