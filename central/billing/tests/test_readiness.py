@@ -5,8 +5,10 @@ from unittest.mock import patch
 
 import frappe
 
+from central.billing.catalog.plan_setup import AI_PLAN, ensure_ai_plan
 from central.billing.platform import alerts, invariants, readiness
 from central.billing.report.billing_invariant_violations import billing_invariant_violations as report
+from central.billing.revenue import credits
 from central.billing.tests.accounting_fake import sync_mode
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
@@ -19,6 +21,7 @@ from central.billing.tests.utils import (
 	make_plan,
 	set_team_tier,
 )
+from central.services.doctype.service.service import ensure_services
 
 TEAM = "team-readiness"
 CLUSTER = "ap-south-1"
@@ -67,9 +70,25 @@ class TestReadiness(IntegrationTestCase):
 		add_segment(self.subscription, "Plan Changed", 0, "2026-06-02 00:00:00")
 		self.assertEqual(len(_found("S1")), 1)
 
+	def test_a_plan_billed_at_its_source_cost_needs_no_rate(self):
+		ensure_ai_plan()
+		ensure_services()
+		add_segment(self.subscription, "Plan Changed", 0, "2026-06-02 00:00:00", plan=AI_PLAN)
+		frappe.db.set_value("Subscription", self.subscription, "plan", AI_PLAN)
+		self.assertEqual(_found("S1"), [])
+
 	def test_team_with_no_way_to_pay_is_found(self):
 		[violation] = _found("W1")
 		self.assertEqual((violation.expected, violation.actual), (1000, 0))
+
+	def test_credit_that_expires_before_the_next_run_does_not_pay_it(self):
+		next_run = frappe.utils.get_first_day(frappe.utils.nowdate(), d_months=1)
+		credits.grant_promotional_credits(TEAM, 5000, "INR", expires_on=frappe.utils.add_days(next_run, -1))
+		[violation] = _found("W1")
+		self.assertEqual((violation.expected, violation.actual), (1000, 0))
+
+		credits.grant_promotional_credits(TEAM, 5000, "INR", expires_on=next_run)
+		self.assertEqual(_found("W1"), [])
 
 	def test_team_on_manual_checkout_can_pay(self):
 		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Manual Checkout")
@@ -100,6 +119,13 @@ class TestReadiness(IntegrationTestCase):
 			[violation] = _found("B3")
 		self.assertIn("legal_name", violation.detail)
 
+	def test_team_whose_subscription_closed_this_month_is_still_checked(self):
+		add_segment(self.subscription, "Cancelled", 0, frappe.utils.now_datetime())
+		frappe.db.set_value("Billing Profile", TEAM, "legal_name", None)
+		with _accounting_sync(False):
+			[violation] = _found("B3")
+		self.assertIn("legal_name", violation.detail)
+
 	def test_team_not_in_the_accounting_system_is_found(self):
 		frappe.db.set_value("Billing Profile", TEAM, "profile_id", None)
 		with _accounting_sync(True):
@@ -107,7 +133,8 @@ class TestReadiness(IntegrationTestCase):
 
 	def test_incomplete_accounting_setup_is_found(self):
 		with _accounting_sync(False):
-			self.assertEqual(_found("B4", team=None), [])
+			[violation] = _found("B4", team=None)
+		self.assertIn("Accounting sync is Off", violation.detail)
 		with billing_settings(company=None), _accounting_sync(True):
 			[violation] = _found("B4", team=None)
 		self.assertIn("company", violation.detail)
