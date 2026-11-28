@@ -12,7 +12,7 @@ This page lists every billing report and Insights dashboard, and the question ea
 ## Rules every report follows
 
 - Money is shown per currency. A report never adds INR and USD in one column, total or card.
-- Bare metal cost is in INR. USD revenue counts toward a margin at Billing Settings > Reports > USD to INR Rate for Reports. A report filter can give another rate. At 0, USD revenue is left out.
+- Bare metal cost is in INR. USD revenue counts toward a margin at the rate the rate API gave for its month, kept in Monthly Exchange Rate. The monthly billing run keeps the closed month's rate. A month with no kept rate uses the nearest earlier month, or the earliest kept month. Billing Settings > Reports > USD to INR Rate for Reports overrides it when it is above 0, and a report filter can give another rate. With no rate at all, USD revenue is left out.
 - A month filter reads one billed month. Empty reads the last closed month.
 
 ## Data the reports need

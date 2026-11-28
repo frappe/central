@@ -5,8 +5,8 @@ import frappe
 from frappe.query_builder.functions import Count, Sum
 from frappe.utils import flt
 
-from central.billing import settings
 from central.billing.catalog.subscriptions import active_segments
+from central.billing.revenue.exchange_rates import report_usd_to_inr
 
 # A server holds region capacity until it is gone for good.
 RELEASED_STATUSES = ("Terminated", "Failed")
@@ -138,7 +138,7 @@ class Inventory:
 			return flt(amount)
 		rate = flt(self.filters.get(f"{currency.lower()}_to_inr"))
 		if not rate and currency == "USD":
-			rate = settings.reporting_usd_to_inr()
+			rate = report_usd_to_inr()
 		return flt(amount) * rate if rate else None
 
 

@@ -12,6 +12,8 @@ from frappe.tests import IntegrationTestCase
 from central.billing.catalog.pricing import set_catalog_rates
 from central.billing.tests.accounting_fake import ACCOUNTING_URL, SYNC_MODE
 
+RATE_API_URL = "central.billing.revenue.exchange_rate_feed.exchange_rate_url"
+
 _SWEEP_DEADLOCK_RETRIES = 3
 
 
@@ -118,11 +120,13 @@ class BillingTestCase(IntegrationTestCase):
 		before["Comment"] = set(_payment_method_comments())
 		gateways = self._snapshot_gateways()
 		try:
-			# Billing Settings may point at a real accounting site. A test opts into the sync
-			# and fakes the transport; a request that is not faked fails instead of leaving.
+			# Billing Settings may point at a real accounting site and a real rate API. A test opts
+			# into the sync and fakes the transport, and fakes the rate with `feed_rate`; a request
+			# that is not faked fails or finds no rate instead of leaving.
 			with (
 				patch(SYNC_MODE, return_value="Off"),
 				patch(ACCOUNTING_URL, side_effect=RuntimeError("tests never call the accounting system")),
+				patch(RATE_API_URL, return_value=None),
 			):
 				return super().run(result)
 		finally:
