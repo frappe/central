@@ -150,3 +150,18 @@ A month is final 30 days after it ends. Every failure keeps the gateway's failur
 | Billing Run Coverage | Why does a month have fewer invoices than teams? Each team that existed by month end gets one result with its reason: Invoiced, Waiting, Needs Action, Waived (Internal), Below Minimum, Nothing to Bill or No Subscription. The results add up to the team count. With no Month filter, the report shows the month that just closed, the same month as the Billing Day dashboard. |
 | Billing Activity | What happened to one team across profile, subscription, customer sync, invoice and payment steps, and which step failed? |
 | Billing Lookup | Can this team pay, how, what does it owe and cost a month, which methods failed and why, and what changed last? Cards show the profile, collection mode, the method charged first, the monthly cost, the amount owed and held, and the wallet. The Show filter lists billing events (with what happened to any money), subscriptions with their monthly cost and a total, subscription changes marked as upgrade or downgrade, payment methods, or open invoices. Open it from **Billing Summary** on the Team form. Operators only. |
+
+## Month figures
+
+`central.billing.report._month_figures.month_figures(month)` gives the figures of one billed month as one dictionary. The monthly Money Update reads it. It reuses the code of the reports above, so its numbers match them.
+
+| Section | What it contains | Read from |
+|---|---|---|
+| `headline`, `previous` | Billed revenue, cash collected, paid by free credit, held and waived, for the month and for the month before | The month's invoices and lines |
+| `customers` | Customers who paid cash, first payments, teams with a payment method, payment success rate, share of revenue from the 5 largest customers | Invoices, Payment Method, Payment Attempt |
+| `credit` | Bought and free credit left, free credit that expires in 30 and 60 days, teams on free credit | The wallet lots, today |
+| `collections` | Outstanding, overdue, invoices on hold, mandates to re-authorise | Owed invoices, today |
+| `services` | Revenue, cost and customers per service, and bundled plans against metered usage | The month's lines |
+| `margins` | Margin at list price against the actual margin, and the gap per funding class | Live servers, as a monthly run rate |
+
+All money is INR at the report rate of the month. `headline.unpriced_usd` is true when a USD amount had no rate and counts as 0.
