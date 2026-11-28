@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import re
+from urllib.parse import urlsplit
 
 import frappe
 from frappe import _
@@ -14,6 +15,10 @@ PRODUCT_KEY_PATTERN = re.compile(r"[a-z][a-z0-9-]*")
 # A Frappe app's module name, which Cargo writes as the image's app tag.
 # A path on the site itself, never another host.
 LANDING_ROUTE_PATTERN = re.compile(r"/[A-Za-z0-9_/-]*")
+# A path on the site, which can name a whitelisted method such as /api/method/app.module.method.
+CONNECTOR_ROUTE_PATTERN = re.compile(r"(?!.*(//|\.\.))/[A-Za-z0-9_./-]*")
+# A bare host name, such as mcp.example.com, with no scheme, port or path.
+HOST_PATTERN = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+")
 APP_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
 # A Frappe branch as Cargo writes it in the image's frappe_version tag.
 FRAPPE_VERSION_PATTERN = re.compile(r"develop|version-[0-9]+(-hotfix)?")
@@ -43,6 +48,8 @@ class Product(Document):
 		from central.signups.doctype.product_plan_note.product_plan_note import ProductPlanNote
 
 		ai_credit_note: DF.SmallText | None
+		connector_hosts: DF.SmallText | None
+		connector_route: DF.Data | None
 		email_notes: DF.Table[ProductEmailNote]
 		enabled: DF.Check
 		frappe_version: DF.Data
@@ -82,11 +89,24 @@ class Product(Document):
 		if self.landing_route and not LANDING_ROUTE_PATTERN.fullmatch(self.landing_route):
 			frappe.throw(_("Use a path on the site for the landing route, such as /raven."))
 
+		if self.connector_route and not CONNECTOR_ROUTE_PATTERN.fullmatch(self.connector_route):
+			frappe.throw(_("Use a path on the site for the connector route."))
+
+		self.validate_connector_hosts()
 		self.validate_emails()
 
 		plans = [row.plan for row in self.plan_notes]
 		if len(plans) != len(set(plans)):
 			frappe.throw(_("Add at most one note for each plan."))
+
+	def validate_connector_hosts(self) -> None:
+		"""One bare host per line, in lower case, so the check at sign in is an exact match."""
+		hosts = (self.connector_hosts or "").lower().split()
+		for host in hosts:
+			if not HOST_PATTERN.fullmatch(host):
+				frappe.throw(_("Use one host per line for connector hosts, such as mcp.example.com."))
+
+		self.connector_hosts = "\n".join(hosts) or None
 
 	def validate_emails(self) -> None:
 		"""An email client loads the logo without a session, so it must be a public file. An HTML
@@ -151,6 +171,18 @@ class Product(Document):
 			"note_html": row.note_html if row else None,
 			"getting_started_url": escape_html(url) if url else None,
 		}
+
+	def is_connector_return(self, url: str) -> bool:
+		"""A connector sign in returns only over https, to a host this product lists. A fragment
+		is refused, since the site is added to the query and must not land after it."""
+		parts = urlsplit(url)
+		hosts = (self.connector_hosts or "").split()
+		return (
+			bool(self.connector_route)
+			and parts.scheme == "https"
+			and not parts.fragment
+			and parts.netloc.lower() in hosts
+		)
 
 	def get_plan_notes(self) -> dict[str, str]:
 		"""The note for each plan, by plan name."""

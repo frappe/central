@@ -405,26 +405,36 @@ class Site(Document):
 
 		return is_ready
 
-	def get_login_url(self, user: str | None = None, product: str | None = None) -> str | None:
+	def get_login_url(
+		self, user: str | None = None, product: str | None = None, return_to: str | None = None
+	) -> str | None:
 		"""A one-click session for `user`, or for Administrator, on the site's public address.
 		Use the customer hostname once it answers, and the automatic address until then.
-		It lands on the page of `product`, or of the site's own product."""
+		It lands on the page of `product`, or of the site's own product. With `return_to`, it
+		lands on the product's connector route, which sends the user back to `return_to`."""
+		from central.api.email_oauth import add_query_params
 		from central.integrations.pilot import fetch_site_login_url, is_site_reachable
 
-		gateway, audience = self.get_pilot_access()
-		if not gateway or not audience:
-			return None
-
 		login_user, full_name = self.get_login_user(user)
+		path = self.get_connector_route(product, return_to) if return_to else self.get_landing_route(product)
 		# The image serves every name in its zone, so the chosen name answers once its route does.
 		is_chosen_name_ready = bool(self.subdomain) and is_site_reachable(f"https://{self.rename_target}")
 		if is_chosen_name_ready and not self.renamed_at:
 			self.db_set("renamed_at", frappe.utils.now_datetime())
 		host = self.rename_target if is_chosen_name_ready else self.name
+		if return_to and not login_user:
+			# A connector acts as the user who signs in, so it never gets an Administrator session.
+			return add_query_params(return_to, site=host)
+
+		gateway, audience = self.get_pilot_access()
+		if not gateway or not audience:
+			return None
+
 		pilot_names = self.get_pilot_site_names() if is_chosen_name_ready else [IMAGE_SITE_NAME]
 		for pilot_name in pilot_names:
 			if minted := fetch_site_login_url(gateway, audience, pilot_name, login_user, full_name):
-				return on_host(minted, host, self.get_landing_route(product))
+				url = on_host(minted, host, path)
+				return add_query_params(url, return_to=return_to) if return_to else url
 
 		return None
 
@@ -432,6 +442,16 @@ class Site(Document):
 		"""The product's page, where the app runs its own setup, instead of Desk."""
 		product = product or self.product
 		return frappe.db.get_value("Product", product, "landing_route") if product else None
+
+	def get_connector_route(self, product: str | None, return_to: str) -> str:
+		"""The product's page that sends a connector sign in back to `return_to`. A host the
+		product does not list is refused, so the login cannot carry a session elsewhere."""
+		product = product or self.product
+		signup_product = frappe.get_cached_doc("Product", product) if product else None
+		if not signup_product or not signup_product.is_connector_return(return_to):
+			frappe.throw(_("This app cannot sign in to your site."), frappe.ValidationError)
+
+		return signup_product.connector_route
 
 	def get_pilot_site_names(self) -> list[str]:
 		"""Try the stable image name first, then the name of a previously renamed site."""

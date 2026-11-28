@@ -8,7 +8,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import set_request
 
-from central.api.email_oauth import callback, get_active_providers, relay_token, start
+from central.api.email_oauth import add_query_params, callback, get_active_providers, relay_token, start
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.email_oauth.email_oauth import PROVIDER, PROVIDER_UNAVAILABLE
@@ -377,3 +377,18 @@ class TestEmailOAuth(IntegrationTestCase):
 				400, {"error": "invalid_grant"}, grant_type="refresh_token", refresh_token="old"
 			)
 		self.assertIn("invalid_grant", str(caught.exception))
+
+
+class TestAddQueryParams(IntegrationTestCase):
+	def test_params_go_in_the_query_and_replace_ones_already_there(self):
+		self.assertEqual(add_query_params("https://a.test/r", site="s.test"), "https://a.test/r?site=s.test")
+		self.assertEqual(add_query_params("https://a.test/r?", site="s.test"), "https://a.test/r?site=s.test")
+		self.assertEqual(
+			add_query_params("https://a.test/r?flow=1&site=evil.test", site="s.test"),
+			"https://a.test/r?flow=1&site=s.test",
+		)
+		self.assertEqual(
+			add_query_params("https://a.test/r?flow=1#frag", site="s.test"),
+			"https://a.test/r?flow=1&site=s.test#frag",
+		)
+		self.assertEqual(add_query_params("/login", next=None), "/login")

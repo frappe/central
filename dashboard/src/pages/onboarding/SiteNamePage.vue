@@ -83,7 +83,7 @@ onMounted(async () => {
 		}
 
 		const status = await readStatus()
-		if (status.site?.claimed)
+		if (status.site?.claimed && !route.query.return_to)
 			return router.replace({
 				path: '/servers',
 				query: { site: status.site.name },

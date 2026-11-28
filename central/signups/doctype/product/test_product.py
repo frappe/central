@@ -118,6 +118,51 @@ class IntegrationTestProduct(IntegrationTestCase):
 			with self.assertRaises(frappe.ValidationError):
 				product.save()
 
+	def test_the_connector_route_stays_on_the_site(self):
+		product = self.product("raven-connector-route")
+
+		for route in ("//evil.example.test/x", "/../admin", "/api//method", "https://evil.example.test"):
+			product.reload()
+			product.connector_route = route
+			with self.assertRaises(frappe.ValidationError):
+				product.save()
+
+	def test_connector_hosts_are_bare_hosts_in_lower_case(self):
+		product = self.product("raven-connector-hosts")
+
+		for hosts in (
+			"https://mcp.example.test",
+			"mcp.example.test/connect",
+			"mcp.example.test:443",
+			"a,b.test",
+		):
+			product.reload()
+			product.connector_hosts = hosts
+			with self.assertRaises(frappe.ValidationError):
+				product.save()
+
+		product.reload()
+		product.connector_hosts = "MCP.example.test\n  staging.example.test "
+		product.save()
+		self.assertEqual(product.connector_hosts, "mcp.example.test\nstaging.example.test")
+
+	def test_a_connector_returns_only_to_a_listed_https_host_without_a_fragment(self):
+		product = self.product("raven-connector-return")
+		product.connector_route = "/api/method/raven.connect"
+		product.connector_hosts = "mcp.example.test"
+		product.save()
+
+		self.assertTrue(product.is_connector_return("https://mcp.example.test/connect/return?flow=a"))
+		self.assertTrue(product.is_connector_return("https://MCP.example.test/connect/return"))
+		for url in (
+			"http://mcp.example.test/connect/return",
+			"https://mcp.example.test/connect/return#x",
+			"https://mcp.example.test:8443/connect/return",
+			"https://user@mcp.example.test/connect/return",
+			"https://evil.example.test/connect/return",
+		):
+			self.assertFalse(product.is_connector_return(url), url)
+
 	def test_a_product_key_is_a_lowercase_slug(self):
 		with self.assertRaises(frappe.ValidationError):
 			self.product("Raven App")

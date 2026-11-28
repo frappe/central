@@ -9,6 +9,7 @@ from central.api.sites import claim_site, get_site, login_site, onboarding_statu
 from central.errors import AtlasResourceGone
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.site.site import (
+	Site,
 	on_host,
 	poll_site_renames,
 	record_ready_sites,
@@ -333,6 +334,118 @@ class TestSiteRoutes(SiteOnAMachine):
 			state = login_site(self.site().name)
 
 		self.assertEqual(state["login_url"], "https://site-1z141z4.par-2.example.test/raven?sid=abc")
+
+	def connector_product(self) -> str:
+		product = frappe.get_doc(
+			{
+				"doctype": "Product",
+				"product_key": "connector-test",
+				"title": "Connector Test",
+				"signup_app": "crm",
+				"connector_route": "/api/method/crm.api.connector.return_to_connector",
+				"connector_hosts": "connect.example.test",
+			}
+		).insert(ignore_if_duplicate=True)
+		self.site().db_set("product", product.name)
+		return product.name
+
+	def test_a_connector_sign_in_lands_on_the_connector_route(self):
+		self.connector_product()
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch.object(Site, "get_login_user", return_value=("asha@example.test", "Asha Rao")),
+			patch(
+				"central.integrations.pilot.fetch_site_login_url",
+				return_value="https://site.local/desk?sid=abc",
+			),
+		):
+			state = login_site(self.site().name, return_to="https://connect.example.test/connect/return")
+
+		self.assertEqual(
+			state["login_url"],
+			"https://site-1z141z4.par-2.example.test/api/method/crm.api.connector.return_to_connector"
+			"?sid=abc&return_to=https%3A%2F%2Fconnect.example.test%2Fconnect%2Freturn",
+		)
+
+	def test_a_connector_never_gets_an_administrator_session(self):
+		self.connector_product()
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch("central.integrations.pilot.fetch_site_login_url") as login,
+		):
+			state = login_site(self.site().name, return_to="https://connect.example.test/connect/return")
+
+		login.assert_not_called()
+		self.assertEqual(
+			state["login_url"],
+			"https://connect.example.test/connect/return?site=site-1z141z4.par-2.example.test",
+		)
+
+	def test_a_connector_sign_in_to_an_unlisted_host_is_refused(self):
+		self.connector_product()
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch("central.integrations.pilot.fetch_site_login_url") as login,
+			self.assertRaises(frappe.ValidationError),
+		):
+			login_site(self.site().name, return_to="https://evil.example.test/connect/return")
+
+		login.assert_not_called()
+
+	def test_a_connector_sign_in_to_plain_http_or_with_a_fragment_is_refused(self):
+		self.connector_product()
+		for return_to in (
+			"http://connect.example.test/connect/return",
+			"https://connect.example.test/connect/return#x",
+		):
+			with (
+				patch("central.api.sites.is_site_reachable", return_value=True),
+				patch("central.integrations.pilot.fetch_site_login_url") as login,
+				self.assertRaises(frappe.ValidationError),
+			):
+				login_site(self.site().name, return_to=return_to)
+
+			login.assert_not_called()
+
+	def test_a_connector_gets_the_sites_address_without_pilot_access(self):
+		self.connector_product()
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch.object(Site, "get_pilot_access", return_value=(None, None)),
+		):
+			state = login_site(self.site().name, return_to="https://connect.example.test/connect/return")
+
+		self.assertEqual(
+			state["login_url"],
+			"https://connect.example.test/connect/return?site=site-1z141z4.par-2.example.test",
+		)
+
+	def test_a_connector_claim_without_a_site_user_does_not_claim_or_rename(self):
+		self.connector_product()
+		self.site().db_set("subdomain", "acme")
+		with patch("central.api.sites.is_site_reachable", return_value=True):
+			state = claim_site(self.site().name, return_to="https://connect.example.test/connect/return")
+
+		self.assertTrue(state["login_url"])
+		self.assertIsNone(self.site().claimed_at)
+		self.enqueue_doc.assert_not_called()
+
+	def test_a_connector_claim_that_signs_the_user_in_claims_the_site(self):
+		self.connector_product()
+		self.site().db_set("subdomain", "acme")
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch.object(Site, "get_login_user", return_value=("asha@example.test", "Asha Rao")),
+			patch(
+				"central.integrations.pilot.fetch_site_login_url",
+				return_value="https://site.local/desk?sid=abc",
+			),
+		):
+			state = claim_site(self.site().name, return_to="https://connect.example.test/connect/return")
+
+		self.assertTrue(state["login_url"])
+		self.assertTrue(self.site().claimed_at)
+		self.enqueue_doc.assert_called_once()
 
 	def test_a_site_is_ready_before_the_machine_reports_running(self):
 		"""The mirrored status still says Provisioning: only the site's own answer gates readiness."""

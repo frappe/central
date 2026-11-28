@@ -20,10 +20,11 @@ async function signOut() {
 	try {
 		await logout()
 		const product = queryString(route.query.product)
+		const signup = new URLSearchParams({ product })
+		const returnTo = queryString(route.query.return_to)
+		if (returnTo) signup.set('return_to', returnTo)
 		window.location.replace(
-			product
-				? `/dashboard/signup?${new URLSearchParams({ product })}`
-				: '/dashboard/login',
+			product ? `/dashboard/signup?${signup}` : '/dashboard/login',
 		)
 	} catch {
 		error.value = "We couldn't sign you out. Try again."

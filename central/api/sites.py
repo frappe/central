@@ -129,13 +129,15 @@ def create_trial_site(
 
 @frappe.whitelist(methods=["POST"])
 @handle_resource_operation
-def claim_site(name: str) -> dict:
+def claim_site(name: str, return_to: str | None = None) -> dict:
 	"""Return a login for the new site and schedule its rename to the customer's hostname.
-	A failed login leaves the site unclaimed, so the console can try again."""
+	A failed login leaves the site unclaimed, so the console can try again. `return_to` is
+	the AI app a connector sign in goes back to."""
 	site = authorized_site(name, "server:console")
-	state = site_state(site)
-
-	if state["login_url"]:
+	state = site_state(site, return_to=return_to)
+	# A connector without a site user only gets the site's address back, which is no sign in.
+	signs_in = not return_to or site.get_login_user(frappe.session.user)[0]
+	if state["login_url"] and signs_in:
 		site.mark_claimed()
 
 	return state
@@ -160,10 +162,12 @@ def get_site(name: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def login_site(name: str, product: str | None = None) -> dict:
+def login_site(name: str, product: str | None = None, return_to: str | None = None) -> dict:
 	"""Create a one-time site login. It signs in as Administrator, so it needs `server:console`.
-	It lands on the page of `product` when given, such as an app just installed on the site."""
-	return site_state(authorized_site(name, "server:console"), with_login=True, product=product)
+	It lands on the page of `product` when given, such as an app just installed on the site.
+	`return_to` is the AI app a connector sign in goes back to."""
+	site = authorized_site(name, "server:console")
+	return site_state(site, with_login=True, product=product, return_to=return_to)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -247,7 +251,9 @@ def terminate_site(name: str) -> dict:
 	return submit_command("terminate", site.team, site.server)
 
 
-def site_state(site: Site, with_login: bool = True, product: str | None = None) -> dict:
+def site_state(
+	site: Site, with_login: bool = True, product: str | None = None, return_to: str | None = None
+) -> dict:
 	"""The site's readiness: its machine is awake and the site answers.
 	A login is minted only when asked, because each one starts a real Administrator session.
 	Only the POST calls that ask for a login record readiness, because Frappe rolls back a GET."""
@@ -260,7 +266,7 @@ def site_state(site: Site, with_login: bool = True, product: str | None = None) 
 	login_pending = with_login and not ready
 	if ready and with_login:
 		try:
-			login_url = site.get_login_url(frappe.session.user, product)
+			login_url = site.get_login_url(frappe.session.user, product, return_to)
 		except PilotLoginPending:
 			login_pending = True
 

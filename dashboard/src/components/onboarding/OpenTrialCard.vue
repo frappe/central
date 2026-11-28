@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { Button, LoadingIndicator } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AuthErrorMessage from '@/components/auth/AuthErrorMessage.vue'
 import ProductLogo from '@/components/auth/ProductLogo.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import RotatingText from '@/components/common/RotatingText.vue'
 import { useOpenTrial } from '@/composables/useOpenTrial'
+import { queryString } from '@/lib/auth'
 import { formatDate, plural } from '@/lib/format'
 import type { OpenTrial } from '@/types/api'
 
@@ -22,6 +23,7 @@ interface OpenTrialCardProps {
 const props = defineProps<OpenTrialCardProps>()
 const emit = defineEmits<{ 'start-over': [] }>()
 
+const route = useRoute()
 const router = useRouter()
 const {
 	trial,
@@ -108,9 +110,13 @@ function upgrade(): void {
 
 function seeProgress(): void {
 	const product = props.trial.product
+	const returnTo = queryString(route.query.return_to)
 	router.push({
 		path: '/onboarding/provisioning',
-		query: product ? { product } : {},
+		query: {
+			...(product && { product }),
+			...(returnTo && { return_to: returnTo }),
+		},
 	})
 }
 
