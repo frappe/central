@@ -22,6 +22,7 @@ from central.billing.doctype.billing_run_team.billing_run_team import FAILED, ha
 from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.platform import metrics
 from central.billing.platform.jobs import each_isolated
+from central.billing.revenue.exchange_rates import keep_report_rate
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.invoicing.lifecycle import held_drafts, open_and_collect, settle_internal_teams
 from central.billing.states import record_team_event
@@ -513,6 +514,7 @@ def draft_monthly_invoices(today=None) -> dict:
 	"""
 	settle_internal_teams()
 	period_start, period_end = billing_period(today)
+	keep_report_rate(period_start)
 	snapshot(billing_run_status(today), "Drafting")
 	fanned = generate_draft_invoices(period_start, period_end, enqueue=True)
 	metrics.emit("billing.draft_tick", period_end=str(period_end), pages=len(fanned))

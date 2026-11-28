@@ -305,7 +305,7 @@
    "label": "USD to INR Rate for Reports",
    "non_negative": 1,
    "precision": "2",
-   "description": "Margin reports and dashboards turn USD revenue into INR at this rate, to compare it with the INR bare metal cost. Leave 0 to leave USD revenue out."
+   "description": "Margin reports and dashboards turn USD revenue into INR at this rate, to compare it with the INR bare metal cost. Leave 0 to use the rate the rate API gave for each month (Monthly Exchange Rate)."
   },
   {
    "fieldname": "section_break_exchange_rates",
@@ -614,7 +614,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-25 14:00:00.000000",
+ "modified": "2026-11-28 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing Settings",
