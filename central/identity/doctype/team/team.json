@@ -21,8 +21,10 @@
   "utm_source",
   "utm_medium",
   "utm_campaign",
+  "utm_content",
   "column_break_attribution",
   "landing_product",
+  "affiliate",
   "referrer"
  ],
  "fields": [
@@ -139,6 +141,13 @@
    "read_only": 1
   },
   {
+   "fieldname": "utm_content",
+   "fieldtype": "Small Text",
+   "label": "UTM Content",
+   "permlevel": 1,
+   "read_only": 1
+  },
+  {
    "fieldname": "column_break_attribution",
    "fieldtype": "Column Break"
   },
@@ -149,6 +158,14 @@
    "label": "Landing Product",
    "options": "Product",
    "read_only": 1
+  },
+  {
+   "fieldname": "affiliate",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Affiliate",
+   "options": "Affiliate",
+   "permlevel": 1
   },
   {
    "description": "The page that linked to the first signup page.",
@@ -276,7 +293,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-11-16 12:00:00.000000",
+ "modified": "2026-11-28 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Identity",
  "name": "Team",

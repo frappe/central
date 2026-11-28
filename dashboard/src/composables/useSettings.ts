@@ -15,6 +15,9 @@ const NotificationsForm = defineAsyncComponent(
 const PreferencesForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/PreferencesForm.vue'),
 )
+const AffiliateForm = defineAsyncComponent(
+	() => import('@/components/settings/forms/AffiliateForm.vue'),
+)
 const TeamForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/TeamForm.vue'),
 )
@@ -35,6 +38,7 @@ export type SettingsTab =
 	| 'profile'
 	| 'notifications'
 	| 'preferences'
+	| 'affiliate'
 	| 'team'
 	| 'invitations'
 	| 'ssh-keys'
@@ -93,6 +97,15 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		title: 'Preferences',
 		description: 'Manage your personal preferences.',
 		component: PreferencesForm,
+	},
+	{
+		value: 'affiliate',
+		group: 'Account',
+		label: __('Affiliate'),
+		icon: 'lucide-megaphone',
+		title: __('Affiliate'),
+		description: __('Share Frappe with a link and see the signups it brings.'),
+		component: AffiliateForm,
 	},
 	{
 		value: 'team',

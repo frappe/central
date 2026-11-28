@@ -1,8 +1,10 @@
 import { type Component, computed, defineAsyncComponent } from 'vue'
+import { useAffiliate } from '@/composables/useAffiliate'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { openSearch } from '@/composables/useSearch'
 import { features } from '@/lib/features'
+import { __ } from '@/lib/translate'
 
 const NotificationsPanel = defineAsyncComponent(
 	() => import('@/components/notifications/NotificationsPanel.vue'),
@@ -31,6 +33,7 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 
 	const { canViewServers, canViewBilling, canViewServices, isMember } =
 		useCapabilities()
+	const { isJoined, isPausedByFrappe } = useAffiliate()
 
 	return [
 		{
@@ -66,6 +69,13 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					icon: 'lucide-users',
 					to: '/team/members',
 					condition: isMember.value,
+				},
+				{
+					label: __('Affiliate'),
+					icon: 'lucide-megaphone',
+					to: '/affiliate',
+					// A paused affiliate keeps its page, so it still sees its earlier numbers.
+					condition: isJoined.value || isPausedByFrappe.value,
 				},
 			],
 		},

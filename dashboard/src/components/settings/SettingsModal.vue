@@ -12,6 +12,7 @@ import {
 	SettingsSidebar,
 } from 'frappe-ui'
 import { computed, watch } from 'vue'
+import { useAffiliate } from '@/composables/useAffiliate'
 import { useMyInvitations } from '@/composables/useMyInvitations'
 import { useMyProfile } from '@/composables/useMyProfile'
 import {
@@ -27,6 +28,7 @@ import {
 const { profile } = useMyProfile()
 const { availableTabs: tabs } = useSettingsTabs()
 const { count: invitationCount } = useMyInvitations()
+const { isNew: isAffiliateNew } = useAffiliate()
 
 // What's yours and what the team's are different kinds of setting, so they get
 // their own sections rather than one long list.
@@ -81,6 +83,16 @@ watch(tabs, (available) => {
 							:label="String(invitationCount)"
 							:aria-label="`${invitationCount} pending`"
 						/>
+					</template>
+					<template
+						v-else-if="tab.value === 'affiliate' && isAffiliateNew"
+						#suffix
+					>
+						<Badge theme="violet" :label="__('New')">
+							<template #prefix>
+								<span class="lucide-sparkles size-3" aria-hidden="true" />
+							</template>
+						</Badge>
 					</template>
 				</SettingsNavItem>
 			</SettingsNavGroup>

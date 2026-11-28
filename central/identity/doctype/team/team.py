@@ -33,6 +33,7 @@ class Team(TeamLifecycle, Document):
 		from central.identity.doctype.team_member.team_member import TeamMember
 		from central.identity.doctype.team_onboarding_step.team_onboarding_step import TeamOnboardingStep
 
+		affiliate: DF.Link | None
 		is_staging_trial: DF.Check
 		landing_product: DF.Link | None
 		members: DF.Table[TeamMember]
@@ -45,6 +46,7 @@ class Team(TeamLifecycle, Document):
 		team_name: DF.Data
 		tenant_id: DF.Int
 		utm_campaign: DF.Data | None
+		utm_content: DF.SmallText | None
 		utm_medium: DF.Data | None
 		utm_source: DF.Data | None
 	# end: auto-generated types
@@ -52,11 +54,26 @@ class Team(TeamLifecycle, Document):
 	@classmethod
 	def create_for_current_user(cls, team_name: str, attribution: dict | None = None) -> "Team":
 		"""Create a team that the session user owns, with the signup's first-touch attribution.
-		Only the user's first team gets billing provisioned at creation."""
+		Only the user's first team gets billing provisioned and the affiliate referral."""
+		from central.signups.affiliate_link import forget_referral, get_referral
+
 		is_first_team = not frappe.db.exists("Team", {"owner_user": frappe.session.user})
-		team = frappe.get_doc({"doctype": "Team", "team_name": team_name, **(attribution or {})}).insert()
+		referral = get_referral(frappe.session.user) if is_first_team else {}
+		team = frappe.get_doc(
+			{
+				"doctype": "Team",
+				"team_name": team_name,
+				**(attribution or {}),
+				**referral,
+			}
+		)
+		# These are System Manager only (permlevel 1). Central sets them from a checked referral.
+		team.flags.ignore_permlevel_for_fields = ["affiliate", "utm_content"]
+		team.insert()
 		if is_first_team:
 			team.provision_billing()
+		if referral:
+			forget_referral()
 
 		return team
 
@@ -90,7 +107,10 @@ class Team(TeamLifecycle, Document):
 		self.is_staging_trial = int(billing_settings.provision_teams_as_trial())
 		# The trial flag is System Manager only (permlevel 1), and Frappe would reset it to its
 		# default for any other creator. Central sets it here, so the creator's level does not apply.
-		self.flags.ignore_permlevel_for_fields = ["is_staging_trial"]
+		self.flags.ignore_permlevel_for_fields = [
+			*(self.flags.ignore_permlevel_for_fields or []),
+			"is_staging_trial",
+		]
 		self._add_onboarding_steps()
 
 	def _add_onboarding_steps(self) -> None:
@@ -596,6 +616,7 @@ class Team(TeamLifecycle, Document):
 
 
 def on_doctype_update() -> None:
+	frappe.db.add_index("Team", ["affiliate"])
 	prepare_tenant_id_series()
 	# Model sync precedes the data patch that fills legacy zero values.
 	if not frappe.db.exists("Team", {"tenant_id": 0}):

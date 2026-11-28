@@ -10,6 +10,7 @@ import {
 	signInDestination,
 } from '@/lib/authRedirect'
 import { features } from '@/lib/features'
+import { __ } from '@/lib/translate'
 
 const routes = [
 	{
@@ -133,6 +134,12 @@ const routes = [
 				name: 'BillingPayments',
 				component: () => import('@/pages/billing/BillingPaymentsPage.vue'),
 				meta: { title: 'Payments' },
+			},
+			{
+				path: 'affiliate',
+				name: 'Affiliate',
+				component: () => import('@/pages/affiliate/AffiliatePage.vue'),
+				meta: { title: __('Affiliate') },
 			},
 			{
 				path: 'settings',

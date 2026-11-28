@@ -171,5 +171,7 @@ A team created at signup keeps how its owner first found Frappe Cloud. The brows
 | UTM Source, UTM Medium, UTM Campaign | The first page's query, trimmed to 140 characters |
 | Landing Product | The first page's `product`, when that product exists |
 | Referrer | The page that linked to the first page, trimmed to 1,000 characters |
+| Affiliate | The [affiliate](../../SPEC.md#affiliates) whose link the owner clicked, from the `central_affiliate` cookie |
+| UTM Content | The post that held the affiliate link, an `http` or `https` URL of at most 500 characters |
 
-A bad or unknown value is dropped and the team is still created. Join these fields with invoices to measure revenue by campaign. `trial_requested` carries the same fields, so Pulse can split the trial funnel by campaign.
+An affiliate click replaces the product and UTM values the browser remembered. A bad or unknown value is dropped and the team is still created. Join these fields with invoices to measure revenue by campaign. `trial_requested` carries the same fields, so Pulse can split the trial funnel by campaign.

@@ -21,6 +21,7 @@ class CentralSettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		affiliate_cookie_days: DF.Int
 		articles_enabled: DF.Check
 		block_disposable_emails: DF.Check
 		central_id: DF.Int
