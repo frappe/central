@@ -19,6 +19,7 @@ scheduler double-fire or a manual run overlapping the cron double-billed the tea
 import time
 
 import frappe
+from frappe import _
 
 from central.billing import settings
 from central.billing.catalog import commitments
@@ -322,6 +323,11 @@ def _generate_team_invoice(team: str, period_start, period_end):
 	if not rated:
 		record_outcome(team, period_end, NOTHING_TO_BILL, reason="Nothing billable in this month.")
 		return None
+	if not rated.payload["currency"]:
+		# The run records the team as Failed and retries it hourly, so the invoice comes once a profile does.
+		frappe.throw(
+			_("Team {0} has no billing currency. Add its Billing Profile to draft its invoice.").format(team)
+		)
 	if is_below_minimum(rated.payload):
 		_forgive(team, period_end, rated.payload)
 		return None
