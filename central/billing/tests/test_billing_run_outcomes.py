@@ -68,6 +68,19 @@ class TestBillingRunOutcomes(IntegrationTestCase):
 		self.assertEqual(_outcome().outcome, "Invoiced")
 		self.assertTrue(frappe.db.exists("Invoice", {"team": TEAM, "period_end": PERIOD[1]}))
 
+	def test_a_team_with_no_billing_currency_fails_until_it_has_one(self):
+		currency = frappe.db.get_value("Billing Profile", TEAM, "currency")
+		frappe.db.set_value("Billing Profile", TEAM, "currency", None)
+
+		self.assertEqual(run.draft_team_invoice(TEAM, *PERIOD), [])
+		self.assertEqual(_outcome().outcome, "Failed")
+		self.assertIn("no billing currency", _outcome().reason)
+		self.assertFalse(frappe.db.exists("Invoice", {"team": TEAM, "period_end": PERIOD[1]}))
+
+		frappe.db.set_value("Billing Profile", TEAM, "currency", currency)
+		run.retry_failed_invoices()
+		self.assertEqual(_outcome().outcome, "Invoiced")
+
 	def test_the_hourly_retry_takes_the_longest_waiting_failure_first(self):
 		with patch(RATE, side_effect=frappe.ValidationError("No rate for Storage")):
 			run.draft_team_invoice(TEAM, *PERIOD)
