@@ -4,7 +4,7 @@
 
 import frappe
 
-from central.billing.revenue import metering
+from central.billing.revenue import metering, rollup_updates
 from central.billing.tests.utils import BillingTestCase, ensure_team
 
 
@@ -32,7 +32,7 @@ class TestRollupTermsOverride(BillingTestCase):
 		).insert(ignore_permissions=True)
 
 	def test_the_original_row_is_never_edited(self):
-		new = metering.override_terms(self.rollup.name, rate=0.25, reason="rate was wrong")
+		new = rollup_updates.override_terms(self.rollup.name, rate=0.25, reason="rate was wrong")
 		old = frappe.get_doc("Usage Rollup", self.rollup.name)
 
 		self.assertEqual(old.locked_rate, 0.5)
@@ -40,32 +40,32 @@ class TestRollupTermsOverride(BillingTestCase):
 		self.assertEqual(frappe.db.get_value("Usage Rollup", new, "locked_rate"), 0.25)
 
 	def test_the_new_version_carries_the_quantity_and_the_untouched_terms(self):
-		new = metering.override_terms(self.rollup.name, rate=0.25)
+		new = rollup_updates.override_terms(self.rollup.name, rate=0.25)
 		doc = frappe.get_doc("Usage Rollup", new)
 		self.assertEqual(doc.quantity, 1000)
 		self.assertEqual(doc.locked_allowance, 100)
 		self.assertIsNone(doc.superseded_by)
 
 	def test_a_correction_may_move_the_allowance_alone(self):
-		new = metering.override_terms(self.rollup.name, allowance=250)
+		new = rollup_updates.override_terms(self.rollup.name, allowance=250)
 		doc = frappe.get_doc("Usage Rollup", new)
 		self.assertEqual(doc.locked_allowance, 250)
 		self.assertEqual(doc.locked_rate, 0.5)
 
 	def test_correcting_a_correction_follows_the_chain(self):
-		first = metering.override_terms(self.rollup.name, rate=0.25)
-		second = metering.override_terms(self.rollup.name, rate=0.1)
+		first = rollup_updates.override_terms(self.rollup.name, rate=0.25)
+		second = rollup_updates.override_terms(self.rollup.name, rate=0.1)
 
 		self.assertEqual(frappe.db.get_value("Usage Rollup", first, "superseded_by"), second)
-		self.assertEqual(metering.live_rollup(self.rollup.name), second)
+		self.assertEqual(rollup_updates.live_rollup(self.rollup.name), second)
 		self.assertEqual(frappe.db.get_value("Usage Rollup", second, "locked_rate"), 0.1)
 
 	def test_a_correction_needs_something_to_correct(self):
 		with self.assertRaises(frappe.ValidationError):
-			metering.override_terms(self.rollup.name)
+			rollup_updates.override_terms(self.rollup.name)
 
 	def test_only_the_live_version_is_billed(self):
-		metering.override_terms(self.rollup.name, rate=0.25)
+		rollup_updates.override_terms(self.rollup.name, rate=0.25)
 		lines = metering._metered_lines(self.team, ["cluster-1"], "2026-06-01", "2026-06-30")
 		self.assertLessEqual(len(lines), 1)
 		if lines:
@@ -73,7 +73,7 @@ class TestRollupTermsOverride(BillingTestCase):
 			self.assertEqual(lines[0]["rate"], 0.25)
 
 	def test_a_later_usage_report_lands_on_the_live_version(self):
-		new = metering.override_terms(self.rollup.name, rate=0.25)
+		new = rollup_updates.override_terms(self.rollup.name, rate=0.25)
 		metering.ingest_rollup({"idempotency_key": self.key, "quantity": 4321, "resource_type": "AI Tokens"})
 
 		self.assertEqual(frappe.db.get_value("Usage Rollup", new, "quantity"), 4321)
@@ -118,3 +118,46 @@ class TestConvertedRollupTerms(BillingTestCase):
 		locked = self.report(84.1, "2026-06-01")
 		self.assertEqual((locked.locked_rate, str(locked.rate_date)), (84.1, "2026-06-01"))
 		self.assertEqual(self.report(90, "2026-07-01").locked_rate, 84.1)
+
+
+class TestUsageMonthTerms(BillingTestCase):
+	def setUp(self):
+		self.team = ensure_team("team-rollup-terms")
+		self.month = frappe.get_doc(
+			{
+				"doctype": "Usage Month",
+				"service": "storage",
+				"meter": "bytes_stored",
+				"subject": "res-1",
+				"dimension": "",
+				"month": "2026-06-01",
+				"aggregation": "Level",
+				"team": self.team,
+				"subscription": "subscription-1",
+				"resource_type": "Storage",
+				"resource_id": "res-1",
+				"cluster": "cluster-1",
+				"quantity": 1000,
+				"currency": "USD",
+				"locked_allowance": 100,
+				"locked_rate": 0.5,
+				"counted_at": "2026-06-30 00:00:00",
+			}
+		)
+		self.month.db_insert()
+
+	def test_a_month_is_re_priced_in_place_with_its_old_terms_on_record(self):
+		name = rollup_updates.correct_terms(self.month.name, rate=0.25, reason="rate was wrong")
+		month = frappe.get_doc("Usage Month", name)
+		self.assertEqual((name, month.locked_rate, month.locked_allowance), (self.month.name, 0.25, 100))
+		self.assertFalse(month.terms_corrected)
+		comment = frappe.db.get_value(
+			"Comment", {"reference_doctype": "Usage Month", "reference_name": name}, "content"
+		)
+		self.assertIn("rate 0.5 to 0.25", comment)
+		self.assertIn("rate was wrong", comment)
+
+	def test_a_corrected_allowance_is_marked_so_a_recount_keeps_it(self):
+		rollup_updates.correct_terms(self.month.name, allowance=250)
+		month = frappe.get_doc("Usage Month", self.month.name)
+		self.assertEqual((month.locked_allowance, month.terms_corrected), (250, 1))

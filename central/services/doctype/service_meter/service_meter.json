@@ -24,12 +24,12 @@
    "reqd": 1
   },
   {
-   "description": "Level: the day's peak. Sum: the day's total.",
+   "description": "Level: the day's peak. Sum: the day's total. State: a count held over time, such as public IPv4 addresses, kept as Usage Segments.",
    "fieldname": "aggregation",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Aggregation",
-   "options": "Level\nSum",
+   "options": "Level\nSum\nState",
    "reqd": 1
   },
   {

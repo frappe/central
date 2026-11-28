@@ -1,0 +1,611 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-26 12:00:00.000000",
+ "description": "One subject's usage of one meter in one UTC month, with one value per day, and the terms the month is billed at (ADR 0028).",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "tab_usage",
+  "service",
+  "meter",
+  "subject",
+  "dimension",
+  "month",
+  "aggregation",
+  "column_break_who",
+  "team",
+  "subscription",
+  "resource_type",
+  "cluster",
+  "unit",
+  "carries_bundle",
+  "section_days",
+  "d01",
+  "d02",
+  "d03",
+  "d04",
+  "d05",
+  "d06",
+  "d07",
+  "d08",
+  "column_break_days_1",
+  "d09",
+  "d10",
+  "d11",
+  "d12",
+  "d13",
+  "d14",
+  "d15",
+  "d16",
+  "column_break_days_2",
+  "d17",
+  "d18",
+  "d19",
+  "d20",
+  "d21",
+  "d22",
+  "d23",
+  "d24",
+  "column_break_days_3",
+  "d25",
+  "d26",
+  "d27",
+  "d28",
+  "d29",
+  "d30",
+  "d31",
+  "section_state",
+  "filled",
+  "billed",
+  "written_off",
+  "column_break_state",
+  "estimated",
+  "open_days",
+  "unreported",
+  "changed_at",
+  "stamped_at",
+  "pruned",
+  "section_slots",
+  "slots",
+  "tab_rating",
+  "resource_id",
+  "quantity",
+  "locked_allowance",
+  "billed_quantity",
+  "column_break_rating",
+  "currency",
+  "locked_rate",
+  "rate_date",
+  "terms_corrected",
+  "counted_at",
+  "invoice",
+  "tab_corrections",
+  "corrections"
+ ],
+ "fields": [
+  {
+   "fieldname": "tab_usage",
+   "fieldtype": "Tab Break",
+   "label": "Usage"
+  },
+  {
+   "fieldname": "service",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Service",
+   "options": "Service",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "meter",
+   "fieldtype": "Data",
+   "label": "Meter",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "The bucket, the server, or the Grove team, as the service names it.",
+   "fieldname": "subject",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Subject",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "What a service splits a subject's usage by, such as the AI model. Blank when it does not.",
+   "fieldname": "dimension",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Dimension",
+   "not_nullable": 1,
+   "read_only": 1
+  },
+  {
+   "description": "The first day of the UTC month.",
+   "fieldname": "month",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Month",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "Level: each day's peak. Sum: each day's total. State: the most held at once on each day, from the Usage Segments.",
+   "fieldname": "aggregation",
+   "fieldtype": "Select",
+   "label": "Aggregation",
+   "options": "Level\nSum\nState",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_who",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "subscription",
+   "fieldtype": "Link",
+   "label": "Subscription",
+   "options": "Subscription",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "resource_type",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Resource Type",
+   "options": "Resource Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cluster",
+   "fieldtype": "Data",
+   "label": "Cluster",
+   "read_only": 1
+  },
+  {
+   "fieldname": "unit",
+   "fieldtype": "Data",
+   "label": "Unit",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "A day of this row records what the plan included.",
+   "fieldname": "carries_bundle",
+   "fieldtype": "Check",
+   "label": "Carries Bundle",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "description": "One value per UTC day. A value counts only when its day is filled.",
+   "fieldname": "section_days",
+   "fieldtype": "Section Break",
+   "label": "Day Values"
+  },
+  {
+   "fieldname": "d01",
+   "fieldtype": "Float",
+   "label": "Day 1",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d02",
+   "fieldtype": "Float",
+   "label": "Day 2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d03",
+   "fieldtype": "Float",
+   "label": "Day 3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d04",
+   "fieldtype": "Float",
+   "label": "Day 4",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d05",
+   "fieldtype": "Float",
+   "label": "Day 5",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d06",
+   "fieldtype": "Float",
+   "label": "Day 6",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d07",
+   "fieldtype": "Float",
+   "label": "Day 7",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d08",
+   "fieldtype": "Float",
+   "label": "Day 8",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_days_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "d09",
+   "fieldtype": "Float",
+   "label": "Day 9",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d10",
+   "fieldtype": "Float",
+   "label": "Day 10",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d11",
+   "fieldtype": "Float",
+   "label": "Day 11",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d12",
+   "fieldtype": "Float",
+   "label": "Day 12",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d13",
+   "fieldtype": "Float",
+   "label": "Day 13",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d14",
+   "fieldtype": "Float",
+   "label": "Day 14",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d15",
+   "fieldtype": "Float",
+   "label": "Day 15",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d16",
+   "fieldtype": "Float",
+   "label": "Day 16",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_days_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "d17",
+   "fieldtype": "Float",
+   "label": "Day 17",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d18",
+   "fieldtype": "Float",
+   "label": "Day 18",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d19",
+   "fieldtype": "Float",
+   "label": "Day 19",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d20",
+   "fieldtype": "Float",
+   "label": "Day 20",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d21",
+   "fieldtype": "Float",
+   "label": "Day 21",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d22",
+   "fieldtype": "Float",
+   "label": "Day 22",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d23",
+   "fieldtype": "Float",
+   "label": "Day 23",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d24",
+   "fieldtype": "Float",
+   "label": "Day 24",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_days_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "d25",
+   "fieldtype": "Float",
+   "label": "Day 25",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d26",
+   "fieldtype": "Float",
+   "label": "Day 26",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d27",
+   "fieldtype": "Float",
+   "label": "Day 27",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d28",
+   "fieldtype": "Float",
+   "label": "Day 28",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d29",
+   "fieldtype": "Float",
+   "label": "Day 29",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d30",
+   "fieldtype": "Float",
+   "label": "Day 30",
+   "read_only": 1
+  },
+  {
+   "fieldname": "d31",
+   "fieldtype": "Float",
+   "label": "Day 31",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "description": "Bit d-1 of each mask is day d.",
+   "fieldname": "section_state",
+   "fieldtype": "Section Break",
+   "label": "Day State"
+  },
+  {
+   "fieldname": "filled",
+   "fieldtype": "Int",
+   "label": "Filled Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "billed",
+   "fieldtype": "Int",
+   "label": "Billed Days",
+   "read_only": 1
+  },
+  {
+   "description": "Days from before the service started billing. Kept as a record, never billed.",
+   "fieldname": "written_off",
+   "fieldtype": "Int",
+   "label": "Written Off Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_state",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "estimated",
+   "fieldtype": "Int",
+   "label": "Estimated Days",
+   "read_only": 1
+  },
+  {
+   "description": "Filled days that are not billed and not written off.",
+   "fieldname": "open_days",
+   "fieldtype": "Int",
+   "label": "Open Days",
+   "read_only": 1
+  },
+  {
+   "description": "Billed days whose value names no Usage Report.",
+   "fieldname": "unreported",
+   "fieldtype": "Int",
+   "label": "Unreported Days",
+   "read_only": 1
+  },
+  {
+   "description": "When a day value last changed.",
+   "fieldname": "changed_at",
+   "fieldtype": "Datetime",
+   "label": "Changed At",
+   "read_only": 1
+  },
+  {
+   "description": "When an invoice last marked a day of this row as billed.",
+   "fieldname": "stamped_at",
+   "fieldtype": "Datetime",
+   "label": "Stamped At",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Past retention: the day values and slots are cleared; the month's totals and terms are kept.",
+   "fieldname": "pruned",
+   "fieldtype": "Check",
+   "label": "Days Pruned",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_slots",
+   "fieldtype": "Section Break",
+   "label": "Day Sources"
+  },
+  {
+   "description": "For each filled day: the source, the report that set it, when it was read and landed, the bundle, and the invoice that billed it.",
+   "fieldname": "slots",
+   "fieldtype": "JSON",
+   "label": "Slots",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tab_rating",
+   "fieldtype": "Tab Break",
+   "label": "Rating"
+  },
+  {
+   "description": "The resource the invoice line names: the subscription's subject or its server.",
+   "fieldname": "resource_id",
+   "fieldtype": "Data",
+   "label": "Billed As",
+   "read_only": 1
+  },
+  {
+   "description": "The month's counted quantity, with the late days of closed months.",
+   "fieldname": "quantity",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Quantity",
+   "read_only": 1
+  },
+  {
+   "fieldname": "locked_allowance",
+   "fieldtype": "Float",
+   "label": "Allowance",
+   "read_only": 1
+  },
+  {
+   "description": "The quantity above the allowance that the invoice billed.",
+   "fieldname": "billed_quantity",
+   "fieldtype": "Float",
+   "label": "Billed Quantity",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_rating",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "locked_rate",
+   "fieldtype": "Currency",
+   "label": "Rate",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rate_date",
+   "fieldtype": "Date",
+   "label": "Rate Date",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "An operator corrected the allowance, so a recount keeps it.",
+   "fieldname": "terms_corrected",
+   "fieldtype": "Check",
+   "label": "Allowance Corrected",
+   "read_only": 1
+  },
+  {
+   "description": "When a recount last rated this month. Only a counted row is billed.",
+   "fieldname": "counted_at",
+   "fieldtype": "Datetime",
+   "label": "Counted At",
+   "read_only": 1
+  },
+  {
+   "description": "The invoice that billed this month.",
+   "fieldname": "invoice",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Invoice",
+   "options": "Invoice",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tab_corrections",
+   "fieldtype": "Tab Break",
+   "label": "Corrections"
+  },
+  {
+   "description": "Values that arrived for a day after an invoice billed it. The billed value never changes.",
+   "fieldname": "corrections",
+   "fieldtype": "Table",
+   "label": "Corrections",
+   "options": "Usage Month Correction",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-27 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Usage Month",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 0
+  }
+ ],
+ "search_fields": "subject,service,team",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "subject",
+ "track_changes": 0
+}

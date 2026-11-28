@@ -6,7 +6,7 @@ This reconciles the metered rail only — it deliberately excludes fixed plan/bu
 fees on both sides so the two columns are directly comparable (coverage ≈ 100% when
 billing is correct):
 
-  Usage value = Σ max(0, quantity − allowance) × locked_rate over Usage Rollup rows —
+  Usage value = Σ max(0, quantity − allowance) × locked_rate over Usage Month and Usage Rollup rows:
                 the billable OVERAGE Central metered (usage within the allowance is
                 free, so it is not counted).
   Invoiced    = Σ(amount) of the METERED invoice line items (resource_type ≠ "bundle")
@@ -67,6 +67,16 @@ def _month(d) -> str:
 	return str(d)[:7]
 
 
+def _usage_rows(conditions: dict) -> list:
+	"""The usage months a recount rated and the rollups services reported, both keyed by period start."""
+	fields = ["quantity", "locked_allowance", "locked_rate", "currency", "team"]
+	months = {("month" if key == "period_start" else key): value for key, value in conditions.items()}
+	months["counted_at"] = ["is", "set"]
+	return frappe.get_all(
+		"Usage Rollup", filters=conditions, fields=[*fields, "period_start"]
+	) + frappe.get_all("Usage Month", filters=months, fields=[*fields, "month as period_start"])
+
+
 def get_data(filters: dict):
 	team = filters.get("team")
 	from_date = filters.get("from_date")
@@ -92,11 +102,7 @@ def get_data(filters: dict):
 	agg: dict[tuple, dict] = {}
 
 	# Usage side: billable overage worth (usage within the allowance is free).
-	for r in frappe.get_all(
-		"Usage Rollup",
-		filters=usage_conditions,
-		fields=["team", "period_start", "quantity", "locked_allowance", "locked_rate", "currency"],
-	):
+	for r in _usage_rows(usage_conditions):
 		key = (_month(r.period_start), r.team)
 		g = agg.setdefault(key, {"usage_value": 0.0, "invoiced": 0.0, "currency": r.currency})
 		overage = max(0.0, flt(r.quantity) - flt(r.locked_allowance))

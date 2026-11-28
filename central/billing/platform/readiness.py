@@ -12,7 +12,7 @@ from central.billing.catalog.subscriptions import active_segments
 from central.billing.doctype.invoice.invoice import unissued_filters
 from central.billing.india_gst import INDIA
 from central.billing.platform.invariants import Violation
-from central.billing.revenue import credits
+from central.billing.revenue import credits, usage_correction_checks, usage_retention
 from central.billing.revenue.exchange_rates import month_rate
 
 STALLED_HOURS = 3
@@ -327,16 +327,15 @@ def check_terminated_servers_stop_billing() -> list[Violation]:
 
 
 def check_storage_usage_is_recorded() -> list[Violation]:
-	"""Every billed bucket, a server's backup bucket too, that existed yesterday (UTC) has a Usage Day."""
+	"""Every billed bucket, a server's backup bucket too, that existed yesterday (UTC) has a value for it."""
 	from central.billing.revenue.bundled_buckets import billed_storage_subjects
 	from central.billing.revenue.usage_ledger import utc_today
+	from central.billing.revenue.usage_month_days import subjects_with_day
 	from central.services.doctype.service.service import STORAGE_SERVICE
 
 	# Only the buckets billed yesterday: not one made after it ended (UTC), nor a server's paused all day.
 	yesterday = utc_today() - datetime.timedelta(days=1)
-	read = set(
-		frappe.get_all("Usage Day", filters={"service": STORAGE_SERVICE, "day": yesterday}, pluck="subject")
-	)
+	read = subjects_with_day(STORAGE_SERVICE, yesterday)
 	return [
 		Violation(
 			check="M1",
@@ -378,7 +377,7 @@ def check_converted_usage_has_a_rate() -> list[Violation]:
 
 def check_public_ipv4_is_billed() -> list[Violation]:
 	"""Every billed server that holds a public IPv4 has a price for it in its team's currency and region."""
-	from central.billing.revenue.public_ipv4_usage import find_unbilled_addresses
+	from central.billing.revenue.public_ipv4 import find_unbilled_addresses
 
 	return [
 		Violation(
@@ -669,6 +668,10 @@ CHECKS = {
 	"M1": ("Storage usage is read daily", check_storage_usage_is_recorded),
 	"M2": ("Converted usage has an exchange rate", check_converted_usage_has_a_rate),
 	"M3": ("Public IPv4 is billed", check_public_ipv4_is_billed),
+	"M4": ("Lower usage values have a credit note", usage_correction_checks.check_credit_due_corrections),
+	"M5": ("Billed usage days name their evidence", usage_retention.check_billed_days_name_a_report),
+	"M6": ("Usage report bodies are intact", usage_retention.check_report_bodies_are_intact),
+	"M7": ("Reissued usage corrections are settled", usage_correction_checks.check_reissued_corrections),
 	"W1": ("Billed teams can pay", check_billed_teams_can_pay),
 	"W2": ("Promotional credit expires", check_promotional_credit_expires),
 	"X1": ("No staging trials outside staging", check_no_staging_trials_outside_staging),

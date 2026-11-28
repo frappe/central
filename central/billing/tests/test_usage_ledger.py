@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Storage usage is kept per bucket per UTC day as the day's peak, and billed as the GB-month."""
+"""Storage usage is kept per bucket as each UTC day's peak in a month row, and billed as the GB-month."""
 
 from unittest.mock import patch
 
@@ -13,7 +13,6 @@ from central.billing.revenue import storage_bridge, usage_ledger, usage_recount
 from central.billing.revenue.invoicing.generate import generate_team_invoice, team_clusters
 from central.billing.revenue.invoicing.lifecycle import cancel_invoice, reissue_invoice
 from central.billing.revenue.metering import ingest_rollup
-from central.billing.tests.test_credits import run_workers
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	_clear_metered_plans,
@@ -22,6 +21,9 @@ from central.billing.tests.utils import (
 	ensure_team,
 	give_team_a_card,
 	make_plan,
+	refused_lock,
+	usage_days,
+	usage_month_of,
 )
 from central.services.doctype.service.service import STORAGE_METER, STORAGE_SERVICE
 from central.services.doctype.team_service.team_service import TeamService
@@ -31,13 +33,6 @@ CLUSTER = "ap-south-1"
 PLAN = "usage-ledger-plan"
 BUCKET = "team-usage-ledger-bucket"
 GB = 1_000_000_000
-
-
-def on_own_connection(fn) -> None:
-	"""Run `fn` and commit it on a second database connection, as another worker would."""
-	[outcome] = run_workers(1, lambda _i: fn()).values()
-	if outcome != "ok":
-		raise AssertionError(f"the other worker failed: {outcome}")
 
 
 def read_one_page(names: list[str], run: str = "test-run") -> int:
@@ -91,21 +86,11 @@ class TestUsageLedger(IntegrationTestCase):
 			read_one_page([self.bucket.name])
 
 	def days(self, **filters):
-		return frappe.get_all(
-			"Usage Day",
-			filters={"team": TEAM, **filters},
-			fields=["day", "quantity", "estimated", "invoice"],
-			order_by="day asc",
-		)
+		return usage_days(team=TEAM, **filters)
 
 	def rollup(self, month: str):
 		usage_recount.recount_month(self.subscription, "Storage", month)
-		return frappe.db.get_value(
-			"Usage Rollup",
-			{"team": TEAM, "resource_type": "Storage", "period_start": month},
-			["quantity", "invoice"],
-			as_dict=True,
-		)
+		return usage_month_of(team=TEAM, resource_type="Storage", month=month)
 
 	def test_a_day_keeps_its_peak(self):
 		for gb in (10, 50, 20):
@@ -113,66 +98,40 @@ class TestUsageLedger(IntegrationTestCase):
 		[day] = self.days()
 		self.assertEqual(day.quantity, 50)
 
-	def test_a_line_that_loses_the_insert_race_is_written_by_the_next_reading(self):
+	def test_a_reading_whose_month_is_locked_by_another_worker_is_read_again(self):
 		self.read("2026-06-01", 10)
-		with (
-			patch.object(usage_ledger, "_existing_days", return_value={}),
-			patch("frappe.log_error") as log_error,
-		):
+		reports = frappe.db.count("Usage Report")
+		# Under snapshot isolation a row another worker changed after this transaction began
+		# refuses the lock and rolls the transaction back; the page fails, so its job runs again.
+		with refused_lock(), self.assertRaises(frappe.QueryDeadlockError):
 			self.read("2026-06-01", 40)
-		log_error.assert_not_called()
 		self.assertEqual([d.quantity for d in self.days()], [10])
+		self.assertEqual(frappe.db.count("Usage Report"), reports, "no report of lines not stored")
 		self.read("2026-06-01", 40)
 		self.assertEqual([d.quantity for d in self.days()], [40])
 
-	def test_a_day_another_worker_committed_after_this_snapshot_is_a_conflict(self):
-		meter = frappe.get_doc("Service", STORAGE_SERVICE).get_meter(STORAGE_METER)
-
-		def line(gb: float) -> dict:
-			day = frappe.utils.getdate("2026-06-01")
-			return meter.get_day_row(self.bucket, day, gb * GB, as_of=frappe.utils.now_datetime())
-
-		first = line(10)
-		frappe.get_all("Usage Day", limit=1)  # Opens this transaction's snapshot first.
-		on_own_connection(lambda: usage_ledger.write_days([first]))
-		self.addCleanup(
-			on_own_connection, lambda: frappe.db.delete("Usage Day", {"subject": first["subject"]})
+	def test_a_reading_names_the_report_central_kept_for_it(self):
+		self.read("2026-06-01", 10)
+		[day] = self.days()
+		report = frappe.db.get_value("Usage Report", day.report, ["kind", "service"], as_dict=True)
+		self.assertEqual(
+			(day.source, report.kind, report.service), ("Read By Central", "Read By Central", "storage")
 		)
-		# Ends this transaction first, so the cleanup is not waiting on its row lock.
-		self.addCleanup(frappe.db.rollback)
 
-		written = usage_ledger.write_days([line(40)])
-		self.assertEqual((written.count, [c["quantity"] for c in written.conflicts]), (0, [40]))
-		frappe.db.rollback()
-		self.assertEqual([d.quantity for d in self.days()], [10])
-
-		usage_ledger.write_days([line(40)])  # The resend, in a new transaction.
-		self.assertEqual([d.quantity for d in self.days()], [40])
-
-	def test_a_stale_read_never_lowers_a_peak(self):
-		self.read("2026-06-01", 50)
-		existing = usage_ledger._existing_days
-
-		def stale(rows, **kwargs):
-			return {key: frappe._dict(row, quantity=10) for key, row in existing(rows, **kwargs).items()}
-
-		with patch.object(usage_ledger, "_existing_days", side_effect=stale):
-			self.read("2026-06-01", 30)
-		self.assertEqual([d.quantity for d in self.days()], [50])
-
-	def test_a_usage_day_cannot_be_changed_by_hand(self):
+	def test_a_usage_month_cannot_be_changed_by_hand(self):
 		self.read("2026-06-01", 30)
-		day = frappe.get_doc("Usage Day", {"team": TEAM})
-		day.quantity = 1
+		month = frappe.get_doc("Usage Month", {"team": TEAM})
+		month.d01 = 1
 		with self.assertRaises(frappe.PermissionError):
-			day.save(ignore_permissions=True)
+			month.save(ignore_permissions=True)
 		with self.assertRaises(frappe.PermissionError):
-			frappe.delete_doc("Usage Day", day.name, ignore_permissions=True)
+			frappe.delete_doc("Usage Month", month.name, ignore_permissions=True)
 
 	def test_a_rerun_writes_no_second_row(self):
 		self.read("2026-06-01", 30)
 		self.read("2026-06-01", 30)
 		self.assertEqual(len(self.days()), 1)
+		self.assertEqual(frappe.db.count("Usage Month", {"team": TEAM}), 1)
 
 	def test_the_month_is_the_sum_of_daily_peaks_over_its_days(self):
 		self.read("2026-06-01", 30)
@@ -302,31 +261,18 @@ class TestUsageLedger(IntegrationTestCase):
 			side_effect=lambda method, **kwargs: usage_recount.recount_page(kwargs["months"]),
 		):
 			usage_recount.recount_changed()
-		quantity = frappe.db.get_value(
-			"Usage Rollup", {"team": TEAM, "period_start": "2026-06-01"}, "quantity"
-		)
-		self.assertAlmostEqual(quantity, 1.0)
+		self.assertAlmostEqual(usage_month_of(team=TEAM, month="2026-06-01").quantity, 1.0)
 
 	def test_the_hourly_recount_sees_a_day_that_committed_after_its_last_scan(self):
 		frappe.db.set_default(usage_recount.WATERMARK, "2026-06-02 10:00:00")
 		self.read("2026-06-01", 30)
-		frappe.db.set_value("Usage Day", {"team": TEAM}, "landed_at", "2026-06-02 09:58:00")
+		frappe.db.set_value("Usage Month", {"team": TEAM}, "changed_at", "2026-06-02 09:58:00")
 		with patch(
 			"frappe.enqueue",
 			side_effect=lambda method, **kwargs: usage_recount.recount_page(kwargs["months"]),
 		):
 			usage_recount.recount_changed(now="2026-06-02 11:00:00")
-		quantity = frappe.db.get_value(
-			"Usage Rollup", {"team": TEAM, "period_start": "2026-06-01"}, "quantity"
-		)
-		self.assertAlmostEqual(quantity, 1.0)
-
-	def test_billed_days_past_thirteen_months_are_pruned(self):
-		self.read("2025-03-01", 30)
-		self.read("2025-03-02", 30)
-		frappe.db.set_value("Usage Day", {"team": TEAM, "day": "2025-03-01"}, "invoice", "INV-OLD")
-		usage_ledger.prune_old_days("2026-06-15")
-		self.assertEqual([str(d.day) for d in self.days()], ["2025-03-02"])
+		self.assertAlmostEqual(usage_month_of(team=TEAM, month="2026-06-01").quantity, 1.0)
 
 	def test_the_deploy_carries_only_the_days_before_the_first_reading(self):
 		from central.patches.v0_0 import start_usage_day_ledger as patch_module
@@ -348,7 +294,7 @@ class TestUsageLedger(IntegrationTestCase):
 				"sequence": 5,
 			}
 		)
-		with patch.object(patch_module, "utc_today", return_value=frappe.utils.getdate("2026-06-04")):
+		with patch.object(usage_ledger, "utc_today", return_value=frappe.utils.getdate("2026-06-04")):
 			patch_module._carry_this_month()
 		days = self.days()
 		self.assertEqual([str(d.day) for d in days], ["2026-06-01", "2026-06-02", "2026-06-03"])
@@ -462,7 +408,7 @@ class TestUsageLedger(IntegrationTestCase):
 	def test_a_page_that_fails_to_write_still_logs_its_region_once(self):
 		def crash():
 			with (
-				patch.object(storage_bridge, "write_days", side_effect=frappe.QueryDeadlockError),
+				patch.object(storage_bridge, "write_central_days", side_effect=frappe.QueryDeadlockError),
 				self.assertRaises(frappe.QueryDeadlockError),
 			):
 				read_one_page([self.bucket.name])

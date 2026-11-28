@@ -8,8 +8,8 @@ import frappe
 
 from central.billing.platform.jobs import each_isolated
 from central.billing.revenue.service_reports import MAXIMUM_DIMENSION
-from central.billing.revenue.usage_ledger import utc_today, write_days
-from central.billing.revenue.usage_recount import dimension_room
+from central.billing.revenue.usage_ledger import CentralLines, utc_today, write_central_days
+from central.billing.revenue.usage_reports import READ_BY_CENTRAL
 from central.integrations.grove import GroveClient
 from central.services.doctype.service.service import (
 	AI_METER,
@@ -60,7 +60,7 @@ def read_page(teams: list[str]) -> int:
 	if not is_read_by_central_locked(AI_SERVICE):
 		frappe.logger("billing").debug("AI usage page skipped: Grove reports its usage now")
 		return 0
-	written = write_days(read.rows).count
+	written = write_central_days(read.rows).count
 	# Only after its rows are written, so a team that failed is read again from the same day.
 	_mark_read({subjects[team].name: plan[team][-1] for team in read.teams})
 	return written
@@ -69,7 +69,7 @@ def read_page(teams: list[str]) -> int:
 def read_days(
 	subjects: dict, days: dict, failure_title: str = "AI usage: {n} team(s) not read"
 ) -> frappe._dict:
-	"""Grove's landing days for each team, as Usage Day rows, and the teams read in full."""
+	"""Grove's landing days for each team, as day lines, and the teams read in full."""
 	client = GroveClient.from_settings()
 	meter = frappe.get_doc("Service", AI_SERVICE).get_meter(AI_METER)
 	rows, read, failed = [], [], []
@@ -91,7 +91,7 @@ def read_days(
 
 
 def landing_rows(client: GroveClient, team_service, meter, day: str) -> list[dict]:
-	"""One Usage Day line per model of what Grove recorded for the team during a UTC day."""
+	"""One day line per model of what Grove recorded for the team during a UTC day."""
 	now = datetime.datetime.now(datetime.UTC)
 	start = datetime.datetime.combine(frappe.utils.getdate(day), datetime.time(), datetime.UTC)
 	until = min(start + ONE_DAY, now)
@@ -100,10 +100,9 @@ def landing_rows(client: GroveClient, team_service, meter, day: str) -> list[dic
 	)
 	as_of = frappe.utils.convert_utc_to_system_timezone(now).replace(tzinfo=None)
 	models = usage.get("model_summary") or []
-	room = _model_room(team_service)
 	# Fails the team rather than cutting the name: two cut names could merge and lose one model's cost.
-	if too_long := [model["model"] for model in models if len(model["model"]) > room]:
-		raise ValueError(f"model name over {room} characters: {too_long[0][:room]}")
+	if too_long := [model["model"] for model in models if len(model["model"]) > MAXIMUM_DIMENSION]:
+		raise ValueError(f"model name over {MAXIMUM_DIMENSION} characters: {too_long[0][:MAXIMUM_DIMENSION]}")
 	return [
 		meter.get_day_row(
 			team_service,
@@ -134,10 +133,12 @@ def backfill(since: str) -> int:
 	last = frappe.utils.getdate(frappe.db.get_value("Service", AI_SERVICE, "bill_from")) - ONE_DAY
 	days = _days(frappe.utils.getdate(since), last)
 	subjects = billed_subjects(AI_SERVICE)
+	lines = CentralLines(READ_BY_CENTRAL)
 	written = 0
 	for start in range(0, len(days), BACKFILL_PAGE_DAYS):
 		page = days[start : start + BACKFILL_PAGE_DAYS]
-		written += write_days(read_days(subjects, {team: page for team in subjects}).rows).count
+		written += lines.write(read_days(subjects, {team: page for team in subjects}).rows).count
+	lines.keep()
 	return written
 
 
@@ -149,12 +150,6 @@ def _days_to_read(team_service, bill_from, today: datetime.date) -> list[str]:
 		first = max(started, frappe.utils.getdate(bill_from)) if bill_from else started
 	first = frappe.utils.getdate(first)
 	return _days(first, min(today, first + (CATCH_UP_DAYS - 1) * ONE_DAY))
-
-
-def _model_room(team_service) -> int:
-	"""The longest model name both the team's Usage Day and its monthly rollup key can hold."""
-	subject = frappe.db.get_value("Subscription", team_service.subscription, "service_subject")
-	return min(MAXIMUM_DIMENSION, dimension_room(AI_SERVICE, subject))
 
 
 def _days(first: datetime.date, last: datetime.date) -> list[str]:

@@ -141,7 +141,7 @@ after_install = [
 	"central.infrastructure.doctype.image_offering.image_offering.ensure_default_offerings",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.services.doctype.service.service.ensure_services",
-	"central.billing.revenue.public_ipv4_usage.start_on_install",
+	"central.billing.revenue.public_ipv4.start_on_install",
 	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
@@ -233,7 +233,10 @@ doc_events = {
 			"Credit Ledger Entry",
 			"Credit Wallet",
 			"Usage Day",
+			"Usage Month",
 			"Usage Rollup",
+			"Usage Report",
+			"Usage Segment",
 			"Webhook Event",
 			"Billing Event",
 			"Top-up Order",
@@ -335,7 +338,10 @@ scheduler_events = {
 		"central.billing.ingester.customer.sync_pending_profiles",
 		"central.billing.ingester.advance.sync_pending_advances",
 		"central.billing.revenue.usage_ledger.fill_missing_days",
-		"central.billing.revenue.usage_ledger.prune_old_days",
+		"central.billing.revenue.usage_corrections.write_off_expired",
+		"central.billing.revenue.usage_retention.prune_old_months",
+		"central.billing.revenue.usage_retention.prune_reports",
+		"central.billing.revenue.usage_retention.sample_report_bodies",
 		"central.services.doctype.deleted_bucket.deleted_bucket.prune_deleted_buckets",
 		"central.billing.platform.invariants.run_invariant_audit",
 		"central.billing.payments.reconciliation.recheck_completed_refunds",
@@ -344,7 +350,6 @@ scheduler_events = {
 		"central.billing.revenue.invoicing.collect_due_invoices",
 		"central.billing.revenue.storage_bridge.read_storage_usage",
 		"central.billing.revenue.grove_bridge.read_ai_usage",
-		"central.billing.revenue.public_ipv4_usage.read_public_ipv4",
 		"central.billing.revenue.usage_recount.recount_changed",
 		"central.billing.payments.collection.collect_on_payment_date",
 		"central.billing.ingester.erpnext_sync.retry_failed_syncs",
@@ -375,6 +380,13 @@ after_migrate = [
 	"central.investigator.knowledge.load_knowledge_bases_after_migrate",
 	"central.users.ensure_staff_role_profile",
 ]
+
+# Usage Segment subjects: each subject doctype names the module that tells the segment ledger
+# when its subjects were billed and which of them a team's draft bills. The module defines
+# billed_windows(subjects, before) and team_subjects(team); see revenue/usage_segments.py.
+billing_segment_subjects = {
+	"Virtual Machine": "central.billing.revenue.public_ipv4",
+}
 
 # Testing
 # -------
@@ -492,7 +504,9 @@ _BILLING_TEAM_RECORDS = (
 	"Subscription Change",
 	"Tax Profile",
 	"Top-up Order",
+	"Usage Month",
 	"Usage Rollup",
+	"Usage Segment",
 )
 
 permission_query_conditions = {

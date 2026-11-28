@@ -1,0 +1,213 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-27 12:00:00.000000",
+ "description": "One stretch of time a subject held a quantity of a state meter, such as the public IPv4 addresses of a server. Rows are only added and closed, never changed.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "service",
+  "meter",
+  "subject",
+  "subject_doctype",
+  "column_break_who",
+  "team",
+  "quantity",
+  "section_opened",
+  "starts_at",
+  "opened_source",
+  "column_break_opened",
+  "opened_by",
+  "opened_reference",
+  "section_closed",
+  "ends_at",
+  "closed_source",
+  "column_break_closed",
+  "closed_by",
+  "closed_reference",
+  "section_key",
+  "open_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "service",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Service",
+   "options": "Service",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "meter",
+   "fieldtype": "Data",
+   "label": "Meter",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "The server, or other record, that holds the state, as the service names it.",
+   "fieldname": "subject",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Subject",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "subject_doctype",
+   "fieldtype": "Link",
+   "label": "Subject Type",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_who",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "How many the subject held, such as the number of public IPv4 addresses.",
+   "fieldname": "quantity",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Quantity",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_opened",
+   "fieldtype": "Section Break",
+   "label": "Opened"
+  },
+  {
+   "fieldname": "starts_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Starts At",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "State Report: the service reported the change. Operator: an operator corrected the record. Migration: made from the day values kept before this record existed.",
+   "fieldname": "opened_source",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Opened By Source",
+   "options": "State Report\nOperator\nMigration",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_opened",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "opened_by",
+   "fieldtype": "Link",
+   "label": "Opened By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "description": "When the service reported the change, the patch name, or the operator's note.",
+   "fieldname": "opened_reference",
+   "fieldtype": "Data",
+   "label": "Opened Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_closed",
+   "fieldtype": "Section Break",
+   "label": "Closed"
+  },
+  {
+   "description": "Empty while the subject still holds the quantity.",
+   "fieldname": "ends_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Ends At",
+   "read_only": 1
+  },
+  {
+   "description": "State Report: the service reported the change. Termination: the subject ended. Operator: an operator corrected the record. Migration: made from the day values kept before this record existed.",
+   "fieldname": "closed_source",
+   "fieldtype": "Select",
+   "label": "Closed By Source",
+   "options": "\nState Report\nTermination\nOperator\nMigration",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_closed",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "closed_by",
+   "fieldtype": "Link",
+   "label": "Closed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "description": "When the service reported the change, the patch name, or the operator's note.",
+   "fieldname": "closed_reference",
+   "fieldtype": "Data",
+   "label": "Closed Reference",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_key",
+   "fieldtype": "Section Break",
+   "label": "Key"
+  },
+  {
+   "description": "Service, meter and subject while the segment is open, so a subject has one open segment. Empty once closed.",
+   "fieldname": "open_key",
+   "fieldtype": "Data",
+   "label": "Open Key",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-27 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Usage Segment",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 0
+  }
+ ],
+ "search_fields": "subject,service,team",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "subject",
+ "track_changes": 0
+}

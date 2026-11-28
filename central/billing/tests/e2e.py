@@ -99,6 +99,7 @@ def reopen_onboarding(team: str) -> None:
 	seeded_team.save()
 
 
+# nosemgrep: guest-whitelisted-method -- _enter_test_mode refuses a site without allow_tests in its own config.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def teardown(team: str | None = None, email: str | None = None) -> dict:
 	"""Delete everything `seed()` created for one spec. Best-effort and idempotent:
@@ -120,6 +121,7 @@ def teardown(team: str | None = None, email: str | None = None) -> dict:
 			"Credit Wallet",
 			"Gateway Customer",
 			"Usage Rollup",
+			"Usage Month",
 			"Billing Notification Log",
 			"Billing Profile",
 			"Tax Profile",

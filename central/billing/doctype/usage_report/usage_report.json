@@ -1,0 +1,166 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-26 12:00:00.000000",
+ "description": "One usage report a service sent, or one read or estimate Central made itself, kept as the evidence behind the day values it set.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "service",
+  "kind",
+  "column_break_when",
+  "received_at",
+  "as_of",
+  "section_counts",
+  "line_count",
+  "accepted_count",
+  "column_break_counts",
+  "rejected_count",
+  "section_evidence",
+  "body_sha256",
+  "signature",
+  "secret_fingerprint",
+  "body",
+  "damaged_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "service",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Service",
+   "options": "Service",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "Pushed: a signed report the service sent. Read By Central: Central read the service. Estimated: no reading came, so Central used the last one. Migrated: the days kept before this record existed.",
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Kind",
+   "options": "Pushed\nRead By Central\nEstimated\nMigrated",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_when",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "received_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Received At",
+   "read_only": 1
+  },
+  {
+   "description": "When the service says it took the readings.",
+   "fieldname": "as_of",
+   "fieldtype": "Datetime",
+   "label": "Read At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_counts",
+   "fieldtype": "Section Break",
+   "label": "Lines"
+  },
+  {
+   "fieldname": "line_count",
+   "fieldtype": "Int",
+   "label": "Lines",
+   "read_only": 1
+  },
+  {
+   "fieldname": "accepted_count",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Accepted",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_counts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "rejected_count",
+   "fieldtype": "Int",
+   "label": "Rejected",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_evidence",
+   "fieldtype": "Section Break",
+   "label": "Evidence"
+  },
+  {
+   "description": "SHA-256 of the body exactly as it was received.",
+   "fieldname": "body_sha256",
+   "fieldtype": "Data",
+   "label": "Body SHA-256",
+   "read_only": 1
+  },
+  {
+   "description": "The signature header the service sent. Empty for Central's own reports.",
+   "fieldname": "signature",
+   "fieldtype": "Small Text",
+   "label": "Signature",
+   "read_only": 1
+  },
+  {
+   "description": "The start of the SHA-256 of the secret that signed the body. A changed secret cannot verify an older body.",
+   "fieldname": "secret_fingerprint",
+   "fieldtype": "Data",
+   "label": "Secret Fingerprint",
+   "read_only": 1
+  },
+  {
+   "description": "The body as received, compressed with gzip.",
+   "fieldname": "body",
+   "fieldtype": "Attach",
+   "label": "Body",
+   "read_only": 1
+  },
+  {
+   "description": "When a daily sample found that the kept body no longer has the hash recorded when it was received.",
+   "fieldname": "damaged_at",
+   "fieldtype": "Datetime",
+   "label": "Body Damaged At",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-26 19:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Usage Report",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 0
+  }
+ ],
+ "search_fields": "service,kind,body_sha256",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "service",
+ "track_changes": 0
+}
