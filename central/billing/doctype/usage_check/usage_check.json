@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "hash",
  "creation": "2026-11-24 12:00:00.000000",
- "description": "Central's own reading of a pushed service's usage for one subject and UTC day, compared with the stored Usage Day. Kept 7 days.",
+ "description": "Central's own reading of a pushed service's usage for one subject and UTC day, compared with the day value stored in its Usage Month. Kept 7 days.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
@@ -74,7 +74,7 @@
    "label": "Read At"
   },
   {
-   "description": "What the Usage Day holds, in the meter's unit.",
+   "description": "The day value its Usage Month holds, in the meter's unit.",
    "fieldname": "stored_value",
    "fieldtype": "Float",
    "label": "Stored Value"

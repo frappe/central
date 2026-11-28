@@ -521,7 +521,7 @@ class TestServiceAPI(IntegrationTestCase):
 
 	def test_a_lower_total_is_refused_after_the_terms_are_corrected(self):
 		"""A correction moves the billed total to a new row; the refusal follows it."""
-		from central.billing.revenue.metering import override_terms
+		from central.billing.revenue.rollup_updates import override_terms
 
 		subject = self.subscribe_service(plan=self.plan, cluster="mumbai")["service_subject"]
 		self.report_usage(service="PDF API", quantity=500, cluster="mumbai")

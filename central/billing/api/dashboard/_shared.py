@@ -302,9 +302,23 @@ def _metered_detail(team: str, li, period: tuple) -> str:
 
 
 def _rollup_allowance(team: str, li, period: tuple) -> float:
-	"""The allowance of the rollup the line billed in its own period."""
-	# Each month of a server has its own rollup and its own bundle.
+	"""The allowance of the usage month, or else the rollup, that the line billed in its own period."""
+	# Each month of a server has its own row and its own bundle.
 	start, end = (frappe.utils.getdate(on) for on in period)
+	month = frappe.db.get_value(
+		"Usage Month",
+		[
+			["team", "=", team],
+			["resource_id", "=", li.subscription_resource],
+			["resource_type", "=", li.resource_type],
+			["counted_at", "is", "set"],
+			["month", "between", [start, end]],
+		],
+		"locked_allowance",
+		order_by="month desc",
+	)
+	if month is not None:
+		return frappe.utils.flt(month)
 	filters = [
 		["team", "=", team],
 		["resource_id", "=", li.subscription_resource],

@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""The public IPv4 addresses a server holds, as one Level Usage Day per UTC day on its subscription."""
+"""The public IPv4 addresses a server holds, as one Level day value per UTC day on its subscription."""
 
 import datetime
 
@@ -16,7 +16,7 @@ from central.billing.doctype.subscription_change.subscription_change import (
 	SEGMENT_CHANGE_TYPES,
 )
 from central.billing.platform.jobs import each_isolated
-from central.billing.revenue.usage_ledger import utc_day_window, utc_today, write_days
+from central.billing.revenue.usage_ledger import utc_day_window, utc_today, write_central_days
 from central.services.doctype.service.service import NETWORK_SERVICE, PUBLIC_IPV4_METER, ensure_services
 
 SWEPT_DAY = "public_ipv4_swept_day"
@@ -95,7 +95,7 @@ def held_addresses() -> dict[str, int]:
 
 
 def write_ipv4_days(day, held: dict[str, int]) -> int:
-	"""Write one Usage Day for each server in `held` that billed at some moment of the UTC day `day`."""
+	"""Write one day value for each server in `held` that billed at some moment of the UTC day `day`."""
 	pages = _pages(held)
 	write_page = _page_writer(day, pages, held)
 	return sum(write_page(first) for first in pages)
@@ -176,7 +176,7 @@ def _page_writer(day, pages: dict[str, list[str]], held: dict[str, int]):
 			for server, segment in billed.items()
 			if server not in skipped
 		]
-		return write_days(rows).count
+		return write_central_days(rows).count
 
 	return write_page
 

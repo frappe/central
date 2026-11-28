@@ -10,12 +10,18 @@ import frappe
 from central.billing.api.dashboard._shared import _describe_line
 from central.billing.catalog.pricing import get_catalog_rates, set_catalog_rates
 from central.billing.platform import readiness
-from central.billing.revenue import public_ipv4_usage
+from central.billing.revenue import public_ipv4_usage, usage_month
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.invoicing.lines import _subscription_clusters
 from central.billing.revenue.usage_ledger import utc_day_start, utc_today
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import add_segment, make_plan, run_enqueued_inline, seed_running_resource
+from central.billing.tests.utils import (
+	add_segment,
+	make_plan,
+	run_enqueued_inline,
+	seed_running_resource,
+	usage_days,
+)
 from central.patches.v0_0 import bill_public_ipv4_per_day
 from central.services.doctype.service.service import NETWORK_SERVICE
 
@@ -52,13 +58,24 @@ class IPv4DaysTestCase(IntegrationTestCase):
 			public_ipv4_usage.write_ipv4_days(day, {self.server: addresses})
 
 	def days(self) -> list[str]:
-		rows = frappe.get_all(
-			"Usage Day",
-			filters={"service": NETWORK_SERVICE, "subject": self.server},
-			pluck="day",
-			order_by="day",
+		return [str(day.day) for day in usage_days(service=NETWORK_SERVICE, subject=self.server)]
+
+	def forget_day(self, day: str) -> None:
+		"""Remove one stored day, as if it had never been written."""
+		month = frappe.get_doc("Usage Month", {"subject": self.server, "month": usage_month.month_of(day)})
+		number = frappe.utils.getdate(day).day
+		slots = frappe.parse_json(month.slots)
+		slots.pop(str(number))
+		mask = ~usage_month.bit(number)
+		frappe.db.set_value(
+			"Usage Month",
+			month.name,
+			{
+				"filled": month.filled & mask,
+				"open_days": month.open_days & mask,
+				"slots": frappe.as_json(slots),
+			},
 		)
-		return [str(day) for day in rows]
 
 	def invoice(self):
 		return frappe.get_doc("Invoice", generate_team_invoice(self.team, "2026-06-01", "2026-06-30"))
@@ -118,7 +135,7 @@ class TestIPv4DayBilling(IPv4DaysTestCase):
 		self.write("2026-06-05", addresses=0)
 
 		self.assertEqual(self.days(), ["2026-06-05"])
-		self.assertEqual(frappe.db.get_value("Usage Day", {"subject": self.server}, "quantity"), 1)
+		self.assertEqual([day.quantity for day in usage_days(subject=self.server)], [1])
 
 	def test_an_address_held_for_part_of_a_day_bills_the_day(self):
 		frappe.db.set_value("Virtual Machine", self.server, "public_ipv4", None)
@@ -175,7 +192,7 @@ class TestIPv4DayBilling(IPv4DaysTestCase):
 		self.assertEqual(self.days(), ["2026-06-10", "2026-06-11"])
 
 		# Later runs that day write only today, so an address attached today never bills yesterday.
-		frappe.db.delete("Usage Day", {"subject": self.server, "day": "2026-06-10"})
+		self.forget_day("2026-06-10")
 		self.sweep("2026-06-11")
 		self.assertEqual(self.days(), ["2026-06-11"])
 
@@ -183,7 +200,7 @@ class TestIPv4DayBilling(IPv4DaysTestCase):
 		self.keep_swept_day()
 		frappe.db.set_default(public_ipv4_usage.SWEPT_DAY, "2026-06-09")
 
-		with patch.object(public_ipv4_usage, "write_days", side_effect=frappe.QueryTimeoutError):
+		with patch.object(public_ipv4_usage, "write_central_days", side_effect=frappe.QueryTimeoutError):
 			self.sweep("2026-06-11")
 		self.assertEqual(frappe.db.get_default(public_ipv4_usage.SWEPT_DAY), "2026-06-09")
 
@@ -295,7 +312,7 @@ class TestIPv4Readiness(IPv4DaysTestCase):
 
 
 class TestIPv4Cutover(IPv4DaysTestCase):
-	"""The patch that moves public IPv4 from per-address subscriptions to Usage Days."""
+	"""The patch that moves public IPv4 from per-address subscriptions to day values."""
 
 	def setUp(self):
 		super().setUp()
@@ -345,9 +362,7 @@ class TestIPv4Cutover(IPv4DaysTestCase):
 
 		yesterday = self.today - datetime.timedelta(days=1)
 		self.assertEqual(self.days(), [str(yesterday), str(self.today)])
-		self.assertTrue(
-			frappe.db.get_value("Usage Day", {"subject": self.server, "day": yesterday}, "written_off")
-		)
+		self.assertTrue(usage_days(subject=self.server, day=yesterday)[0].written_off)
 
 	def test_an_address_paused_on_the_cutover_day_bills_that_day_only_on_its_old_subscription(self):
 		address = self.address_subscription(utc_day_start("2026-06-01"))
@@ -433,7 +448,7 @@ class TestIPv4Cutover(IPv4DaysTestCase):
 			public_ipv4_usage.queue_today(self.server, 1)
 
 	def clear_days(self) -> None:
-		frappe.db.delete("Usage Day", {"service": NETWORK_SERVICE, "subject": self.server})
+		frappe.db.delete("Usage Month", {"service": NETWORK_SERVICE, "subject": self.server})
 
 	def cancelled_at(self, subscription: str) -> list:
 		return frappe.get_all(
